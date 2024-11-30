@@ -1,0 +1,12 @@
+[2021-08-13 12:33:10] File backup: --- YourcastBot START BACKUP 2021-08-13 ---
+[2021-08-13 12:33:10] File backup: Создаем архив каталогов backup/2021-08-13-files-YourcastBot.tar.gz
+[2021-08-13 12:33:11] File backup: Выгружаем на Яндекс.Диск архив с файлами backup/2021-08-13-files-YourcastBot.tar.gz
+[2021-08-13 12:33:11] File backup: YourcastBot - Yandex.Disk error: UnauthorizedError
+[2021-08-13 12:33:11] File backup: Удаляем архивы с диска
+[2021-08-13 12:33:11] File backup: Завершение скрипта бекапа
+[2021-08-13 12:34:48] File /home/kinton/Projects/Telegram/yourcast/bot/backup: --- YourcastBot START BACKUP 2021-08-13 ---
+[2021-08-13 12:34:48] File /home/kinton/Projects/Telegram/yourcast/bot/backup: Создаем архив каталогов /home/kinton/Projects/Telegram/yourcast/bot/backup/2021-08-13-files-YourcastBot.tar.gz
+[2021-08-13 12:34:48] File /home/kinton/Projects/Telegram/yourcast/bot/backup: Выгружаем на Яндекс.Диск архив с файлами /home/kinton/Projects/Telegram/yourcast/bot/backup/2021-08-13-files-YourcastBot.tar.gz
+[2021-08-13 12:35:04] File /home/kinton/Projects/Telegram/yourcast/bot/backup: YourcastBot - Copying file to Yandex.Disk success
+[2021-08-13 12:35:04] File /home/kinton/Projects/Telegram/yourcast/bot/backup: Удаляем архивы с диска
+[2021-08-13 12:35:04] File /home/kinton/Projects/Telegram/yourcast/bot/backup: Завершение скрипта бекапа

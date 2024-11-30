@@ -1,0 +1,87 @@
+1. setup constants.py
+
+creatorId = int
+botId = int
+
+transmitterBotToken = 'str'
+
+payment_login = 'str'
+(robokassa settings)
+payment_p1 = 'str'
+payment_p2 = 'str'
+payment_p1_test = 'str'
+payment_p2_test = 'str'
+
+app_api_id = int
+app_api_hash = 'str'
+
+isServer = Bool
+isUnderMaintenance = Bool
+
+serverWorkDir = "str"
+serverToken = 'str'
+serverBotName = "str"
+serverAgentId = int
+serverTransmitterChatId = ''
+payment_log_path = "str"
+
+localWorkDir = "str"
+localToken = 'str'
+localBotName = "str"
+localAgentId = int
+localTransmitterChatId = 'str'
+
+databaseName = 'yourcast.db'
+
+noPhoto = 'link'
+
+
+
+2. visudo:
+www-data ALL =(root) NOPASSWD: /home/yourcast/yourcast/scripts/subscription_income.py
+www-data ALL =(root) NOPASSWD: /home/yourcast/yourcast/scripts/send_message.py
+...
+
+
+
+3. nginx (/etc/nginx/sites-available/default)
+
+server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+
+        root *bot_server_path*;
+
+        index index.html index.htm index.nginx-debian.html index.php;
+
+        server_name *ip* *www.domain*;
+
+        location / {
+                # First attempt to serve request as file, then
+                # as directory, then fall back to displaying a 404.
+                try_files $uri $uri/ =404;
+        }
+
+        location ~ \.php$ {
+                include snippets/fastcgi-php.conf;
+                fastcgi_pass unix:/run/php/php7.0-fpm.sock;
+}
+
+3'. nginx (/etc/nginx/nginx.conf)
+
+add to http 'client_max_body_size 20M;
+
+3''. php.ini (/etc/php/7.0/fpm/php.ini)
+
+; Maximum allowed size for uploaded files.
+upload_max_filesize = 20M 
+; Must be greater than or equal to upload_max_filesize
+post_max_size = 20M 
+
+3'''. systemctl restarn nginx && service php7.0-fpm restart
+
+
+
+4. Access rights
+bot/db -> chmod 777 db
+bot/db/yourcast.db -> chmod 766 yourcast.db

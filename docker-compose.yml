@@ -1,0 +1,13 @@
+version: '3.9'
+
+services:
+    bot:
+        build:
+            context: .
+            dockerfile: ./Dockerfile
+            target: dev
+        volumes:
+            - ./:/yourcastbot
+        restart: no
+        ports:
+            - 88:88
