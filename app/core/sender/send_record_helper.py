@@ -20,7 +20,7 @@ from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage, telegram_cache
 from app.service.podcast.podcast import prepare_podcast_update_time
 from app.service.record.caption import prepare_message_text
-from config import botName, botId, work_dir, maxPodcastDateCallDataHexLen
+from config import botName, botId, creatorId, work_dir, maxPodcastDateCallDataHexLen
 from lib.markup.cleaner import html_mrkd_cleaner
 # from tools.audio_processing import compress_audio
 from lib.requests import requesterModule
@@ -556,7 +556,7 @@ class Sender:
                         result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
                         new_file_id = None
                         try:
-                            storage_chat = botId  # forward to bot's own private storage
+                            storage_chat = creatorId  # forward to creator's chat to obtain Bot API file_id
                             fwd = self.bot.forward_message(
                                 chat_id=storage_chat,
                                 from_chat_id=result['chat_id'],
@@ -577,7 +577,6 @@ class Sender:
                                     # Update in-memory cache so remaining chat_ids in this batch
                                     # use the cached file_id directly, avoiding repeated forwards
                                     self.cached_file_id = new_file_id
-                                    file = new_file_id
                         except Exception as fwd_e:
                             # Forward/cache failure is non-fatal — the file was already delivered
                             self.logger.log("Could not obtain Bot API file_id for cache:", fwd_e)
