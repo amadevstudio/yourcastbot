@@ -556,7 +556,7 @@ class Sender:
                         result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
                         new_file_id = None
                         try:
-                            storage_chat = config.botId  # forward to bot's own private storage
+                            storage_chat = botId  # forward to bot's own private storage
                             fwd = self.bot.forward_message(
                                 chat_id=storage_chat,
                                 from_chat_id=result['chat_id'],
@@ -968,4 +968,3 @@ class Sender:
             self.blocked_chats.append(error_chat_id)
 
         return user_blocked or channel_blocked
-
