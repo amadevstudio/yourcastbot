@@ -547,7 +547,15 @@ class Sender:
                             file,
                             record_message_text)
                     else:
-                        new_file_id = bot_telethon.send_uploaded(self.thonbot, message_info, file)
+                        # bot_telethon.send_uploaded now returns {'message_id': ..., 'chat_id': ...}
+                        # We use Bot API forwardMessage to get a proper Bot API file_id,
+                        # since MTProto document.id is not compatible with Bot API.
+                        result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
+                        fwd = self.bot.forward_message(
+                            chat_id=chat_id,
+                            from_chat_id=result['chat_id'],
+                            message_id=result['message_id'])
+                        new_file_id = fwd.audio.file_id if fwd and fwd.audio else None
 
                     if new_file_id is not None:
                         telegram_cache.add_file_id(self.link, new_file_id, 'audio',
