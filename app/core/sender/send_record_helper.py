@@ -548,14 +548,32 @@ class Sender:
                             record_message_text)
                     else:
                         # bot_telethon.send_uploaded now returns {'message_id': ..., 'chat_id': ...}
-                        # We use Bot API forwardMessage to get a proper Bot API file_id,
-                        # since MTProto document.id is not compatible with Bot API.
+                        # MTProto document.id is not compatible with Bot API file_id, so we forward
+                        # the sent message to a private storage chat (creatorId) to obtain a valid
+                        # Bot API file_id. The forwarded copy is deleted immediately after.
                         result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
-                        fwd = self.bot.forward_message(
-                            chat_id=chat_id,
-                            from_chat_id=result['chat_id'],
-                            message_id=result['message_id'])
-                        new_file_id = fwd.audio.file_id if fwd and fwd.audio else None
+                        new_file_id = None
+                        try:
+                            storage_chat = botId  # forward to bot's own private storage
+                            fwd = self.bot.forward_message(
+                                chat_id=storage_chat,
+                                from_chat_id=result['chat_id'],
+                                message_id=result['message_id'])
+                            if fwd:
+                                # Extract file_id regardless of whether Telegram returns audio or document
+                                if fwd.audio:
+                                    new_file_id = fwd.audio.file_id
+                                elif fwd.document:
+                                    new_file_id = fwd.document.file_id
+                                else:
+                                    self.logger.log("forward returned unexpected media type, skipping cache")
+                                try:
+                                    self.bot.delete_message(storage_chat, fwd.message_id)
+                                except Exception:
+                                    pass  # Non-fatal: cleanup failure doesn't affect delivery
+                        except Exception as fwd_e:
+                            # Forward/cache failure is non-fatal — the file was already delivered
+                            self.logger.log("Could not obtain Bot API file_id for cache:", fwd_e)
 
                     if new_file_id is not None:
                         telegram_cache.add_file_id(self.link, new_file_id, 'audio',
@@ -943,3 +961,4 @@ class Sender:
             self.blocked_chats.append(error_chat_id)
 
         return user_blocked or channel_blocked
+
