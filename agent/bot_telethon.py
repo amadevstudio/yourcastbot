@@ -98,7 +98,7 @@ async def sender(local_thonbot, argv, file):
     # (MTProto document ID) because it is not compatible with Bot API file_id.
     return {
         'message_id': file_sending_result.id,
-        'chat_id': chat_id,
+        'chat_id': int(chat_id),
     }
 
 
@@ -138,3 +138,4 @@ def get_next_ep_button(argv):
 #         asyncio.set_event_loop(loop)
 #     print("LOOOOP IS ", loop, flush=True)
 #     return loop
+
