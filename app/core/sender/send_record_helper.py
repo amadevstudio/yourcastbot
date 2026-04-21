@@ -543,9 +543,10 @@ class Sender:
                 def send_uploaded():
                     new_file_id: str | None
                     if self.cached_file_id is not None:
-                        new_file_id = self.send_audio(
+                        new_file_id = self.cached_file_id
+                        self.send_audio(
                             chat_id,
-                            file,
+                            new_file_id,
                             record_message_text)
                     else:
                         # bot_telethon.send_uploaded now returns {'message_id': ..., 'chat_id': ...}
