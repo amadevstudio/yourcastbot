@@ -541,47 +541,42 @@ class Sender:
                     message_info['nextEpButtonData'] = self.get_button_data()
 
                 def send_uploaded():
-                    new_file_id: str | None
                     if self.cached_file_id is not None:
-                        new_file_id = self.cached_file_id
                         self.send_audio(
                             chat_id,
-                            new_file_id,
+                            self.cached_file_id,
                             record_message_text)
-                    else:
-                        # bot_telethon.send_uploaded now returns {'message_id': ..., 'chat_id': ...}
-                        # MTProto document.id is not compatible with Bot API file_id, so we forward
-                        # the sent message to a private storage chat to obtain a valid Bot API file_id.
-                        # The forwarded copy is deleted immediately after extraction.
-                        # Forward is only done once per batch — self.cached_file_id is updated on success
-                        # so subsequent chat_ids in the same loop reuse the cached value.
-                        result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
-                        new_file_id = None
-                        try:
-                            storage_chat = storageChatId  # forward to storage chat to obtain Bot API file_id
-                            fwd = self.bot.forward_message(
-                                chat_id=storage_chat,
-                                from_chat_id=result['chat_id'],
-                                message_id=result['message_id'])
-                            if fwd:
-                                # Extract file_id regardless of whether Telegram returns audio or document
-                                if fwd.audio:
-                                    new_file_id = fwd.audio.file_id
-                                elif fwd.document:
-                                    new_file_id = fwd.document.file_id
-                                else:
-                                    self.logger.log("forward returned unexpected media type, skipping cache")
-                                try:
-                                    self.bot.delete_message(storage_chat, fwd.message_id)
-                                except Exception:
-                                    pass  # Non-fatal: cleanup failure doesn't affect delivery
-                                if new_file_id is not None:
-                                    # Update in-memory cache so remaining chat_ids in this batch
-                                    # use the cached file_id directly, avoiding repeated forwards
-                                    self.cached_file_id = new_file_id
-                        except Exception as fwd_e:
-                            # Forward/cache failure is non-fatal — the file was already delivered
-                            self.logger.log("Could not obtain Bot API file_id for cache:", fwd_e)
+                        successfully_sent_to.append(chat_id)
+                        self.logger.log(chat_id, "success_l ", str(self.podcast_info['id']))
+                        self.__set_resend_status(chat_id)
+                        return
+
+                    # bot_telethon.send_uploaded returns {'message_id': ..., 'chat_id': ...}
+                    # MTProto document.id is not compatible with Bot API file_id, so we forward
+                    # the sent message to a storage chat to obtain a valid Bot API file_id.
+                    result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
+                    new_file_id = None
+                    try:
+                        storage_chat = storageChatId
+                        fwd = self.bot.forward_message(
+                            chat_id=storage_chat,
+                            from_chat_id=result['chat_id'],
+                            message_id=result['message_id'])
+                        if fwd:
+                            if fwd.audio:
+                                new_file_id = fwd.audio.file_id
+                            elif fwd.document:
+                                new_file_id = fwd.document.file_id
+                            else:
+                                self.logger.log("forward returned unexpected media type, skipping cache")
+                            try:
+                                self.bot.delete_message(storage_chat, fwd.message_id)
+                            except Exception:
+                                pass
+                            if new_file_id is not None:
+                                self.cached_file_id = new_file_id
+                    except Exception as fwd_e:
+                        self.logger.log("Could not obtain Bot API file_id for cache:", fwd_e)
 
                     if new_file_id is not None:
                         telegram_cache.add_file_id(self.link, new_file_id, 'audio',

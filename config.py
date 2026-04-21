@@ -15,6 +15,7 @@ work_dir = BASE_DIR
 apple_itunes_search = "https://itunes.apple.com/search"
 
 creatorId = constants.creatorId
+storageChatId = getattr(constants, 'storageChatId', None) or creatorId
 # agentId = creatorId
 botId = constants.botId
 donate_link = constants.donate_link
@@ -102,7 +103,8 @@ db_path = os.path.join(BASE_DIR, 'db/' + database_name)
 
 shelve_name = os.path.join(BASE_DIR, 'db/shelve.db')
 telegram_cache_shelve_name = os.path.join(BASE_DIR, 'db/shelve_telegram_cache.db')
-use_cache = True if server else False
+# use_cache = True if server else False
+use_cache = True
 
 noPhoto = constants.noPhoto
 
