@@ -541,6 +541,7 @@ class Sender:
                     message_info['nextEpButtonData'] = self.get_button_data()
 
                 def send_uploaded():
+                    new_file_id: str | None
                     if self.cached_file_id is not None:
                         new_file_id = self.send_audio(
                             chat_id,
