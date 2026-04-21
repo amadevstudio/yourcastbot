@@ -760,10 +760,11 @@ class SQLighter:
 
     def get_all_users(self, language: str | None = None) -> list[UserDBType]:
         with self.connection:
-            query = 'SELECT * FROM users'
             if language is not None:
-                query += f" WHERE lang = '{language}'"
-            return self.cursor.execute(query).fetchall()
+                return self.cursor.execute(
+                    'SELECT * FROM users WHERE lang = ?',
+                    (language,)).fetchall()
+            return self.cursor.execute('SELECT * FROM users').fetchall()
 
     def get_user_by_id(self, user_id) -> UserDBType:
         with self.connection:
@@ -1164,10 +1165,12 @@ class SQLighter:
             if original_request.lower() in get_message_rtd(['genres', genre], language_code).lower():
                 found_results.append(genre)
 
-        search_query = "LOWER_UNICODE(g.name) LIKE LOWER_UNICODE(?)"
+        conditions = ["LOWER_UNICODE(g.name) LIKE LOWER_UNICODE(?)"]
+        genre_params = ()
         for genre_code in found_results:
-            search_query += f" OR LOWER_UNICODE(g.name) LIKE LOWER_UNICODE('{genre_code}')"
-        return "(" + search_query + ")"
+            conditions.append("LOWER_UNICODE(g.name) LIKE LOWER_UNICODE(?)")
+            genre_params += (genre_code,)
+        return "(" + " OR ".join(conditions) + ")", genre_params
 
     # количество жанров, выводимых в топе
     def select_genres_count(self, lang_code: str, lang_top: bool, search: str | None = None):
@@ -1185,7 +1188,9 @@ class SQLighter:
 
             if search is not None:
                 params += ("%" + search + "%",)
-                search_query = "WHERE " + self.get_genre_codes_from_orig_search(lang_code, search)
+                genre_sql, genre_params = self.get_genre_codes_from_orig_search(lang_code, search)
+                search_query = "WHERE " + genre_sql
+                params += genre_params
             else:
                 search_query = ""
 
@@ -1236,7 +1241,9 @@ class SQLighter:
 
             if search is not None:
                 params += ("%" + search + "%",)
-                search_query = "WHERE " + self.get_genre_codes_from_orig_search(lang_code, search)
+                genre_sql, genre_params = self.get_genre_codes_from_orig_search(lang_code, search)
+                search_query = "WHERE " + genre_sql
+                params += genre_params
             else:
                 search_query = ""
 

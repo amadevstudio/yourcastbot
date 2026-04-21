@@ -1,5 +1,5 @@
-db/shelve.db
-db/shelve_telegram_cache.db
+db/shelve.db*
+db/shelve_telegram_cache.db*
 db/yourcast.db
 
 log/*

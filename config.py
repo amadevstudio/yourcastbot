@@ -102,7 +102,8 @@ db_path = os.path.join(BASE_DIR, 'db/' + database_name)
 
 shelve_name = os.path.join(BASE_DIR, 'db/shelve.db')
 telegram_cache_shelve_name = os.path.join(BASE_DIR, 'db/shelve_telegram_cache.db')
-use_cache = True if server else False
+# use_cache = True if server else False
+use_cache = True 
 
 noPhoto = constants.noPhoto
 
