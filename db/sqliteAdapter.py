@@ -1158,7 +1158,7 @@ class SQLighter:
     top_rate_limit = 0
     top_count_limit = 0
 
-    def get_genre_codes_from_orig_search(self, language_code: str, original_request: str):
+    def get_genre_codes_from_orig_search(self, language_code: str, original_request: str) -> tuple[str, tuple]:
         found_results = []
         genres_dict = typing_cast(dict, routed_messages.get('genres', {}))
         for genre in genres_dict:

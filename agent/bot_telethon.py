@@ -56,6 +56,7 @@ def upload(local_thonbot, fname, callback=None, retries=3):
         return file
     except RuntimeError as e:
         if retries <= 0:
+            logger.log("Upload retries exhausted:", e)
             raise
         logger.log("Runtime error while uploading, retries left:", retries, e)
         time.sleep(10)
@@ -109,6 +110,7 @@ def send_uploaded(local_thonbot, data, file, retries=3):
         return result
     except RuntimeError as e:
         if retries <= 0:
+            logger.log("Send retries exhausted:", e)
             raise
         logger.log("Runtime error while sending, retries left:", retries, e)
         time.sleep(10)
