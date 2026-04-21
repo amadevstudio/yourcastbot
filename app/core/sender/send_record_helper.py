@@ -20,7 +20,7 @@ from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage, telegram_cache
 from app.service.podcast.podcast import prepare_podcast_update_time
 from app.service.record.caption import prepare_message_text
-from config import botName, botId, creatorId, work_dir, maxPodcastDateCallDataHexLen
+from config import botName, creatorId, work_dir, maxPodcastDateCallDataHexLen
 from lib.markup.cleaner import html_mrkd_cleaner
 # from tools.audio_processing import compress_audio
 from lib.requests import requesterModule
