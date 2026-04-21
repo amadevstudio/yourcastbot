@@ -138,7 +138,7 @@ class Sender:
         self.bitrates = {}
         self.send_attempts = {}
         self.fname = ''
-        self.cached_file_id: int | None = None
+        self.cached_file_id: str | None = None
         self.recordSize: int | None = None
         self.recordSizeMb: float = 51  # will be downloaded and sent via agent by default
         self.compressed_file_size_mb = None
@@ -558,7 +558,7 @@ class Sender:
                         result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
                         new_file_id = None
                         try:
-                            storage_chat = creatorId  # forward to creator's chat to obtain Bot API file_id
+                            storage_chat = storageChatId  # forward to storage chat to obtain Bot API file_id
                             fwd = self.bot.forward_message(
                                 chat_id=storage_chat,
                                 from_chat_id=result['chat_id'],
