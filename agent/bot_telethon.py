@@ -75,12 +75,7 @@ async def sender(local_thonbot, argv, file):
     await local_thonbot.connect()
     file_sending_result = await local_thonbot.send_file(
         int(chat_id),
-        # int(transmitter_chat),  # попытка сделать загрузку через другого бота
         file,
-        # caption=str(
-        #     chat_id + ':!:' + object_id + ':!:' + duration
-        #     + ':!:' + file_name
-        #     + ':!:' + performer + ':!:' + message_text)[0:1024],
         caption=str(message_text)[0:1024],
         buttons=get_next_ep_button(argv),
         parse_mode='HTML',
@@ -96,16 +91,22 @@ async def sender(local_thonbot, argv, file):
     await local_thonbot.disconnect()
 
     logger.log("sent in agent")
-    return file_sending_result.media.document.id
+    # Return message_id and chat_id so the caller can obtain a Bot API file_id
+    # via forwardMessage. We cannot return file_sending_result.media.document.id
+    # (MTProto document ID) because it is not compatible with Bot API file_id.
+    return {
+        'message_id': file_sending_result.id,
+        'chat_id': int(chat_id),
+    }
 
 
 def send_uploaded(local_thonbot, data, file, retries=3):
     try:
         logger.log("sending uploaded...")
-        file_id = local_thonbot.loop.run_until_complete(
+        result = local_thonbot.loop.run_until_complete(
             sender(local_thonbot, data, file))
         logger.log("STATUS OK")
-        return file_id
+        return result
     except RuntimeError as e:
         if retries <= 0:
             raise
@@ -137,3 +138,4 @@ def get_next_ep_button(argv):
 #         asyncio.set_event_loop(loop)
 #     print("LOOOOP IS ", loop, flush=True)
 #     return loop
+

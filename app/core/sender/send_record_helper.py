@@ -20,7 +20,7 @@ from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage, telegram_cache
 from app.service.podcast.podcast import prepare_podcast_update_time
 from app.service.record.caption import prepare_message_text
-from config import botName, work_dir, maxPodcastDateCallDataHexLen
+from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen
 from lib.markup.cleaner import html_mrkd_cleaner
 # from tools.audio_processing import compress_audio
 from lib.requests import requesterModule
@@ -138,7 +138,7 @@ class Sender:
         self.bitrates = {}
         self.send_attempts = {}
         self.fname = ''
-        self.cached_file_id: int | None = None
+        self.cached_file_id: str | None = None
         self.recordSize: int | None = None
         self.recordSizeMb: float = 51  # will be downloaded and sent via agent by default
         self.compressed_file_size_mb = None
@@ -542,12 +542,41 @@ class Sender:
 
                 def send_uploaded():
                     if self.cached_file_id is not None:
-                        new_file_id = self.send_audio(
+                        self.send_audio(
                             chat_id,
-                            file,
+                            self.cached_file_id,
                             record_message_text)
-                    else:
-                        new_file_id = bot_telethon.send_uploaded(self.thonbot, message_info, file)
+                        successfully_sent_to.append(chat_id)
+                        self.logger.log(chat_id, "success_l ", str(self.podcast_info['id']))
+                        self.__set_resend_status(chat_id)
+                        return
+
+                    # bot_telethon.send_uploaded returns {'message_id': ..., 'chat_id': ...}
+                    # MTProto document.id is not compatible with Bot API file_id, so we forward
+                    # the sent message to a storage chat to obtain a valid Bot API file_id.
+                    result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
+                    new_file_id = None
+                    try:
+                        storage_chat = storageChatId
+                        fwd = self.bot.forward_message(
+                            chat_id=storage_chat,
+                            from_chat_id=result['chat_id'],
+                            message_id=result['message_id'])
+                        if fwd:
+                            if fwd.audio:
+                                new_file_id = fwd.audio.file_id
+                            elif fwd.document:
+                                new_file_id = fwd.document.file_id
+                            else:
+                                self.logger.log("forward returned unexpected media type, skipping cache")
+                            try:
+                                self.bot.delete_message(storage_chat, fwd.message_id)
+                            except Exception:
+                                pass
+                            if new_file_id is not None:
+                                self.cached_file_id = new_file_id
+                    except Exception as fwd_e:
+                        self.logger.log("Could not obtain Bot API file_id for cache:", fwd_e)
 
                     if new_file_id is not None:
                         telegram_cache.add_file_id(self.link, new_file_id, 'audio',

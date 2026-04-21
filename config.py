@@ -15,6 +15,7 @@ work_dir = BASE_DIR
 apple_itunes_search = "https://itunes.apple.com/search"
 
 creatorId = constants.creatorId
+storageChatId = getattr(constants, 'storageChatId', None) or creatorId
 # agentId = creatorId
 botId = constants.botId
 donate_link = constants.donate_link

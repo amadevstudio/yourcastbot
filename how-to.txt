@@ -2,6 +2,7 @@
 
 creatorId = int
 botId = int
+storageChatId = int  # private chat/channel where bot is admin, used to obtain Bot API file_id after Telethon uploads (falls back to creatorId if not set)
 
 transmitterBotToken = 'str'
 
