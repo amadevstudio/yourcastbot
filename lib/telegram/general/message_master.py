@@ -195,7 +195,8 @@ def skip_not_modified(e: Exception):
 
 
 def render_messages(chat_id: int,
-                    message_structures: list[MessageStructuresInterface] | None = None, resending: bool = False) \
+                    message_structures: list[MessageStructuresInterface] | None = None, resending: bool = False,
+                    _retry: bool = False) \
         -> list[ResultMessageStructuresInterface]:
     if message_structures is None:
         message_structures = []
@@ -230,8 +231,8 @@ def render_messages(chat_id: int,
         elif bot_blocked_reaction(e, chat_id):
             return previous_message_structures
 
-        elif message_to_edit_not_found(e):
-            return render_messages(chat_id, message_structures, resending=True)
+        elif message_to_edit_not_found(e) and not _retry:
+            return render_messages(chat_id, message_structures, resending=True, _retry=True)
 
         else:
             logger.err(e)
