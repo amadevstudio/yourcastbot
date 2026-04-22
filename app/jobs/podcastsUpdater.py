@@ -197,7 +197,7 @@ def send_new_records_by_channel(
                         and (pc_info["collectionName"] != ""):
                     outer_sender(connection['user_telegram_id'], [{
                         'type': 'text', 'text':
-                            "<br>" + pc_info['collectionName'] + "</b>\n\n"
+                            "<b>" + pc_info['collectionName'] + "</b>\n\n"
                             + get_message('notificationsFCDisabled', user_language)
                     }])
                     storage.set_user_resend_flag(user[1])

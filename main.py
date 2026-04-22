@@ -82,7 +82,7 @@ def setup_threads():
         target=app.jobs.payment_watcher.patreon_watcher,
         args=(config.payment_service_watcher_period,))
     t_patreon_watcher.daemon = True
-    t_balance_watcher.name = 'Patreon payment watcher'
+    t_patreon_watcher.name = 'Patreon payment watcher'
     t_patreon_watcher.start()
     threads_to_watch.append(t_patreon_watcher)
 

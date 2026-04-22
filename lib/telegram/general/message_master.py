@@ -317,9 +317,13 @@ def message_editor(chat_id: int, message_structure: MessageStructuresInterface, 
 
 def message_master(
         bot, chat_id, resending: bool = False,
-        message_structures: list[MessageStructuresInterface] = [],
-        previous_message_structures: list[ResultMessageStructuresInterface] = []
+        message_structures: list[MessageStructuresInterface] | None = None,
+        previous_message_structures: list[ResultMessageStructuresInterface] | None = None
 ) -> list[ResultMessageStructuresInterface]:
+    if message_structures is None:
+        message_structures = []
+    if previous_message_structures is None:
+        previous_message_structures = []
     # Process images
     message_structures = prepare_images(copy.deepcopy(message_structures))
 
