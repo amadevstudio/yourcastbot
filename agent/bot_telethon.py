@@ -48,20 +48,19 @@ async def __uploader(local_thonbot, fname, callback=None):
     return file
 
 
-def upload(local_thonbot, fname, callback=None):
+def upload(local_thonbot, fname, callback=None, retries=3):
     try:
         logger.log("uploading file via agent...", datetime.datetime.now())
         file = local_thonbot.loop.run_until_complete(
             __uploader(local_thonbot, fname, callback=callback))
-        # loop = asyncio.get_event_loop()
-        # future = asyncio.run_coroutine_threadsafe(
-        #     uploader(thonbot, fname), loop)
-        # file = future.result()
         return file
     except RuntimeError as e:
-        logger.log("Runtime error while uploading:", e)
+        if retries <= 0:
+            logger.log("Upload retries exhausted:", e)
+            raise
+        logger.log("Runtime error while uploading, retries left:", retries, e)
         time.sleep(10)
-        return upload(local_thonbot, fname, callback=callback)
+        return upload(local_thonbot, fname, callback=callback, retries=retries - 1)
 
 
 async def sender(local_thonbot, argv, file):
@@ -102,7 +101,7 @@ async def sender(local_thonbot, argv, file):
     }
 
 
-def send_uploaded(local_thonbot, data, file):
+def send_uploaded(local_thonbot, data, file, retries=3):
     try:
         logger.log("sending uploaded...")
         result = local_thonbot.loop.run_until_complete(
@@ -110,9 +109,12 @@ def send_uploaded(local_thonbot, data, file):
         logger.log("STATUS OK")
         return result
     except RuntimeError as e:
-        logger.log("Runtime error while uploading:", e)
+        if retries <= 0:
+            logger.log("Send retries exhausted:", e)
+            raise
+        logger.log("Runtime error while sending, retries left:", retries, e)
         time.sleep(10)
-        return send_uploaded(local_thonbot, data, file)
+        return send_uploaded(local_thonbot, data, file, retries=retries - 1)
 
 
 def get_next_ep_button(argv):

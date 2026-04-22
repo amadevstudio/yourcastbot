@@ -1,8 +1,9 @@
 from urllib.parse import unquote
 
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 from urllib3.exceptions import InsecureRequestWarning
 
 STD_REQUEST_HEADERS = {
@@ -29,8 +30,7 @@ class Requester:
         }
 
     def __disable_insecure_request_warning(self):
-        requests.packages.urllib3.disable_warnings(
-            category=InsecureRequestWarning)
+        urllib3.disable_warnings(category=InsecureRequestWarning)
 
     def __get_session(self):
         session = requests.Session()
