@@ -186,12 +186,11 @@ def build_markup(message_structure: TextStructureInterface):
     return keyboard_builder
 
 
-def skip_not_modified(e: Exception):
-    if (
-            'specified new message content and reply markup are exactly the same as a current content'
-            ' and reply markup of the message'
-    ) not in str(e):
-        return False
+def is_not_modified_error(e: Exception) -> bool:
+    return (
+        'specified new message content and reply markup are exactly the same as a current content'
+        ' and reply markup of the message'
+    ) in str(e)
 
 
 def render_messages(chat_id: int,
@@ -312,7 +311,7 @@ def message_editor(chat_id: int, message_structure: MessageStructuresInterface, 
             raise TypeError(f"Not implemented: {message_structure['type']}")
 
     except ApiTelegramException as e:
-        if skip_not_modified(e):
+        if not is_not_modified_error(e):
             raise e
 
 
