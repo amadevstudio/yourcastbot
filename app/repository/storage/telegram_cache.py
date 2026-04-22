@@ -1,12 +1,14 @@
 import json
 import shelve
 import datetime
+import threading
 from typing import Literal, Any
 
 from config import telegram_cache_shelve_name, use_cache
 
 storage = shelve.open(telegram_cache_shelve_name)
 storage.clear()
+_lock = threading.RLock()
 
 file_types = Literal['img', 'audio']
 
@@ -18,7 +20,6 @@ def __process_with_expiration(key) -> Any:
         return None
 
     if datetime.datetime.fromisoformat(f['exp']) < datetime.datetime.now():
-        storage[key] = None
         del storage[key]
         return None
 
@@ -33,21 +34,29 @@ def get_file_id(file: str, file_type: file_types):
     if not use_cache:
         return None
 
-    key = f'{file_type}:{file}'
-    return __process_with_expiration(key)
+    with _lock:
+        key = f'{file_type}:{file}'
+        return __process_with_expiration(key)
 
 
 def add_file_id(
         file: str, file_id: str, file_type: file_types,
-        expiration_date: datetime.datetime = datetime.datetime.now() + datetime.timedelta(days=3)):
-    __save_with_expiration(f'{file_type}:{file}', file_id, expiration_date)
+        expiration_date: datetime.datetime | None = None):
+    if expiration_date is None:
+        expiration_date = datetime.datetime.now() + datetime.timedelta(days=3)
+    with _lock:
+        __save_with_expiration(f'{file_type}:{file}', file_id, expiration_date)
 
 
 def get_cached(unique: str):
-    return __process_with_expiration(f'strCache:{unique}')
+    with _lock:
+        return __process_with_expiration(f'strCache:{unique}')
 
 
 def add_cache(
         unique: str, value: Any,
-        expiration_date: datetime.datetime = datetime.datetime.now() + datetime.timedelta(hours=1)):
-    __save_with_expiration(f'strCache:{unique}', value, expiration_date)
+        expiration_date: datetime.datetime | None = None):
+    if expiration_date is None:
+        expiration_date = datetime.datetime.now() + datetime.timedelta(hours=1)
+    with _lock:
+        __save_with_expiration(f'strCache:{unique}', value, expiration_date)
