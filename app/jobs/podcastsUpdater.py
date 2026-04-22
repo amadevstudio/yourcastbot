@@ -69,20 +69,9 @@ def main(interval=120):
         send_message_to_creator(
             "New cirlce #new_circle; luci: " + str(last_updated_channel_id))
 
-        db_users = SQLighter(db_path)
-        # # получение всех подкастов с подписками
-        # channels_to_check = db_users.get_channels_to_check()
-        # channels_to_check_ids = []
-        # for channel in channels_to_check:
-        # 	channels_to_check_ids.append(str(channel['id']))
-        # # channels = db_users.get_all_channels()
-        # # for channel in channels:
-        # channel = db_users.get_channel_or_next(
-        # 	last_updated_channel_id, channels_to_check_ids)
-        # ---------
-        # получение всех, так как шлём пользователям без подписки уведомления
-        channel = db_users.get_channel_or_next(last_updated_channel_id)
-        db_users.close()
+        with SQLighter(db_path) as db_users:
+            # получение всех, так как шлём пользователям без подписки уведомления
+            channel = db_users.get_channel_or_next(last_updated_channel_id)
 
         storage.clear_new_podcast_available_flags()
 
@@ -91,20 +80,19 @@ def main(interval=120):
             # if not server:
             logger.log("Processig channel", channel['id'])
 
-            db_users = SQLighter(db_path)
-            # работаем только с пользователями, у которых есть включены уведомления
-            # именно благодаря им у остальных будет появляться надпись "new"
-            # ...
-            # пользователи с подпиской на бота и уведомлениями
-            connections = db_users.get_uccs_by_channel(
-                channel['id'], have_subscription=True, notifications_enabled=True)
-            # пользователи без подписки на бота и уведомлениями
-            nosubs_connections = db_users.get_uccs_by_channel(
-                channel['id'], have_subscription=False, notifications_enabled=True)
-            # каналы, владельцы которых подписаны на бота
-            tg_channel_connections = db_users.getTgChannelSubConnectionsByPodcast(
-                channel['id'], have_subscription=True, notifications_enabled=True)
-            db_users.close()
+            with SQLighter(db_path) as db_users:
+                # работаем только с пользователями, у которых есть включены уведомления
+                # именно благодаря им у остальных будет появляться надпись "new"
+                # ...
+                # пользователи с подпиской на бота и уведомлениями
+                connections = db_users.get_uccs_by_channel(
+                    channel['id'], have_subscription=True, notifications_enabled=True)
+                # пользователи без подписки на бота и уведомлениями
+                nosubs_connections = db_users.get_uccs_by_channel(
+                    channel['id'], have_subscription=False, notifications_enabled=True)
+                # каналы, владельцы которых подписаны на бота
+                tg_channel_connections = db_users.getTgChannelSubConnectionsByPodcast(
+                    channel['id'], have_subscription=True, notifications_enabled=True)
 
             storage.set_last_channel_id(channel['id'])
 
@@ -114,9 +102,8 @@ def main(interval=120):
                     nosubs_connections=nosubs_connections,
                     tg_channel_connections=tg_channel_connections)
 
-            db_users = SQLighter(db_path)
-            channel = db_users.get_next_channel(channel['id'])
-            db_users.close()
+            with SQLighter(db_path) as db_users:
+                channel = db_users.get_next_channel(channel['id'])
 
             if channel is None:
                 logger.log("Next channel is None!")
@@ -140,9 +127,8 @@ def main(interval=120):
                 "Sending 'new episodes available' message to "
                 + str(len(flag_no_sub_users)) + " users")
             for user_tg_id in flag_no_sub_users:
-                db_users = SQLighter(db_path)
-                user = db_users.get_user_by_tg(user_tg_id)
-                db_users.close()
+                with SQLighter(db_path) as db_users:
+                    user = db_users.get_user_by_tg(user_tg_id)
                 user_language = app.service.user.language.user_language(user['lang'])
                 outer_sender(user['telegramId'], [{
                     'type': 'text', 'text': get_message("youHaveNewEpisodes", user_language)
@@ -191,20 +177,18 @@ def send_new_records_by_channel(
         try:
             if nosubs_connections is not None:
                 for connection in nosubs_connections:
-                    db_users = SQLighter(db_path)
-                    db_users.turn_notify_tg(
-                        connection['user_telegram_id'], connection['channel_id'], False)
-                    db_users.close()
+                    with SQLighter(db_path) as db_users:
+                        db_users.turn_notify_tg(
+                            connection['user_telegram_id'], connection['channel_id'], False)
         except Exception:
             pass
 
         for connection in connections:
-            db_users = SQLighter(db_path)
-            user = db_users.get_user_by_tg(connection['user_telegram_id'])
-            user_language = app.service.user.language.user_language(user['lang'])
-            # Выключить уведомления для канала для пользователей с подпиской
-            db_users.turn_notify_tg(user['telegramId'], connection['channel_id'], False)
-            db_users.close()
+            with SQLighter(db_path) as db_users:
+                user = db_users.get_user_by_tg(connection['user_telegram_id'])
+                user_language = app.service.user.language.user_language(user['lang'])
+                # Выключить уведомления для канала для пользователей с подпиской
+                db_users.turn_notify_tg(user['telegramId'], connection['channel_id'], False)
             collection_name = ""
 
             try:
@@ -311,17 +295,16 @@ def send_new_records_by_channel(
     target_chats = dict(target_users_tg_set)
     utg_langs: dict[int, str] = {}
     bitrates_tg: dict[int, int | None] = {}
-    db_users = SQLighter(db_path)
-    for utg in target_users_tg_set:
-        user = db_users.get_user_by_tg(utg)
-        utg_langs[utg] = app.service.user.language.user_language(user['lang'])
+    with SQLighter(db_path) as db_users:
+        for utg in target_users_tg_set:
+            user = db_users.get_user_by_tg(utg)
+            utg_langs[utg] = app.service.user.language.user_language(user['lang'])
 
-        subscription = db_users.getUserSubscriptionByTg(utg)
-        if user['bitrate'] is not None and is_subscription_active(subscription):
-            bitrates_tg[utg] = int(user['bitrate'])
-        else:
-            bitrates_tg[utg] = std_bitrate
-    db_users.close()
+            subscription = db_users.getUserSubscriptionByTg(utg)
+            if user['bitrate'] is not None and is_subscription_active(subscription):
+                bitrates_tg[utg] = int(user['bitrate'])
+            else:
+                bitrates_tg[utg] = std_bitrate
 
     ch_name = ""
     flag_have_users = 0
@@ -562,9 +545,8 @@ def send_new_records_by_channel(
         if not manual:
             for user_tg_id in successfully_sent_to:
                 if notify_left_tg[user_tg_id] > 0:
-                    db_users = SQLighter(db_path)
-                    db_users.decrease_notify_count(user_tg_id, 1)
-                    db_users.close()
+                    with SQLighter(db_path) as db_users:
+                        db_users.decrease_notify_count(user_tg_id, 1)
                     notify_left_tg[user_tg_id] -= 1
                 if notify_left_tg[user_tg_id] == 0:
                     outer_sender(user_tg_id, [{
@@ -577,44 +559,40 @@ def send_new_records_by_channel(
 
         logger.log("SENT AUTOMATICALLY! To: ", successfully_sent_to)
 
-    db_users = SQLighter(db_path)
+    with SQLighter(db_path) as db_users:
+        pgd = app.service.record.helpers.get_record_uniq_id(last_guid, last_pub_date_strped, last_title)
+        # INFO: обновление инф. о последнем обновлении канала
+        db_users.update_channel_last_guid_date(channel['id'], pgd, last_date)
 
-    pgd = app.service.record.helpers.get_record_uniq_id(last_guid, last_pub_date_strped, last_title)
-    # INFO: обновление инф. о последнем обновлении канала
-    db_users.update_channel_last_guid_date(channel['id'], pgd, last_date)
-
-    # обновление данных о последнем выпуске для пользователей
-    if len(guids) > 0:
-
-        # для пользователей с подпиской
+        # обновление данных о последнем выпуске для пользователей
         if len(guids) > 0:
-            for user_tg_id in target_chats:
 
-                # если канал, то обновить владельца, если его уже нет в общем списке
-                if 'based_on_user_id' in target_chats[user_tg_id] \
-                        and target_chats[user_tg_id]['based_on_user_id']:
-                    user_tg_id = target_chats[user_tg_id]['based_on_user_id']
-                    if user_tg_id in target_chats:
-                        continue
+            # для пользователей с подпиской
+            if len(guids) > 0:
+                for user_tg_id in target_chats:
 
-                try:
-                    db_users.update_sub_last_guid_and_date(
-                        user_tg_id, channel['id'], pgd, last_date)
-                except Exception as e:
-                    logger.err("podacstUpdater/db_after_ops2: ", e)
-                    return new_recs_flag
+                    # если канал, то обновить владельца, если его уже нет в общем списке
+                    if 'based_on_user_id' in target_chats[user_tg_id] \
+                            and target_chats[user_tg_id]['based_on_user_id']:
+                        user_tg_id = target_chats[user_tg_id]['based_on_user_id']
+                        if user_tg_id in target_chats:
+                            continue
 
-    db_users.close()
+                    try:
+                        db_users.update_sub_last_guid_and_date(
+                            user_tg_id, channel['id'], pgd, last_date)
+                    except Exception as e:
+                        logger.err("podacstUpdater/db_after_ops2: ", e)
+                        return new_recs_flag
 
     return new_recs_flag
 
 
 def update_feed(data: ControllerParams):
-    db_users = SQLighter(db_path)
-    is_user_have_bot_subscription = db_users.is_user_have_bot_subscription(data['chat_id'])
-    send_promo_message = not is_user_have_bot_subscription
-    user_podcast_count = int(db_users.get_uccs_count_by_tg(data['chat_id']))
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        is_user_have_bot_subscription = db_users.is_user_have_bot_subscription(data['chat_id'])
+        send_promo_message = not is_user_have_bot_subscription
+        user_podcast_count = int(db_users.get_uccs_count_by_tg(data['chat_id']))
 
     if send_promo_message:
         promo_message = get_message('another_projects_text', data['language_code'])
@@ -665,16 +643,14 @@ def update_feed_thread(input_data, thonbot):
     data: ControllerParams = input_data['func_params']['data']
     is_user_have_bot_subscription = input_data['func_params']['is_user_have_bot_subscription']
 
-    db_users = SQLighter(db_path)
-    new_records_check = False
-    connections = db_users.get_uccs_by_tg(
-        data['chat_id'], is_user_have_bot_subscription=is_user_have_bot_subscription)
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        new_records_check = False
+        connections = db_users.get_uccs_by_tg(
+            data['chat_id'], is_user_have_bot_subscription=is_user_have_bot_subscription)
 
     for connection in connections:
-        db_users = SQLighter(db_path)
-        channel = db_users.get_channel(connection['channel_id'])
-        db_users.close()
+        with SQLighter(db_path) as db_users:
+            channel = db_users.get_channel(connection['channel_id'])
         if channel is not None:
             new_records_check = send_new_records_by_channel(
                 channel, [connection], thonbot=thonbot,

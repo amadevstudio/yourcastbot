@@ -56,13 +56,12 @@ class TariffParams(TypedDict):
 
 
 def get_tariff_params_by_tg(telegram_id: int) -> Tuple[TariffParams, int, int, int]:
-    db = SQLighter(db_path)
-    subscription = db.getUserSubscriptionByTg(telegram_id)
-    if subscription is None:
-        subscription = {
-            "tariff_id": 0, 'balance': 0, 'time_left': 0, 'notify_count': 0}
-    tariff = db.getTariffById(subscription['tariff_id'])
-    db.close()
+    with SQLighter(db_path) as db:
+        subscription = db.getUserSubscriptionByTg(telegram_id)
+        if subscription is None:
+            subscription = {
+                "tariff_id": 0, 'balance': 0, 'time_left': 0, 'notify_count': 0}
+        tariff = db.getTariffById(subscription['tariff_id'])
 
     if tariff is None:
         tariff = {
@@ -90,86 +89,77 @@ def giveAward(refer_tg_id, refered_tg_id, mode):
     if not mode:
         mode = 'reged'
 
-    db = SQLighter(db_path)
-    user = db.get_user_by_tg(refer_tg_id)
+    with SQLighter(db_path) as db:
+        user = db.get_user_by_tg(refer_tg_id)
 
-    if user is None:
-        return None
-
-    message = ""
-    language_code = user['lang'] if user['lang'] is not None else 'en'
-
-    # приглашённый начал пользоваться
-    if mode == 'reged':
-        current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
-        if current_subscription is None:
-            extreme = db.getExtremeTariff('min')
-            db.subscribeUserToTariffByTg(
-                refer_tg_id, extreme['id'], 0,
-                tariff_ref_no_subscription_period, extreme['notify_count'])
-            # по вашей ссылке зарегался реферал, теперь у вас бронза
-            message += get_message("award_without_s_new_user", language_code)
-        else:
-            db.subscribeUserToTariffByTg(
-                refer_tg_id, current_subscription['tariff_id'],
-                current_subscription['balance'],
-                int(current_subscription['time_left']) + int(tariff_ref_period),
-                int(current_subscription['notify_count'] + int(tariff_ref_notifies)))
-            # по вышей ссылке зарегался, текущие условия улучшены
-            message += get_message("award_with_s_new_user", language_code)
-
-    # приглашённый купил подписку, refer_tg_id здесь — нового пользователя
-    elif mode == 'replenished':
-        current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
-        extreme = db.getExtremeTariff('max')
-        if current_subscription is None:
-            db.subscribeUserToTariffByTg(
-                refer_tg_id, extreme['id'], 0,
-                tariff_ref_sub_period, extreme['notify_count'])
-            # реферал купил подписку, теперь у вас максимальный тариф на х дней
-            message += get_message("award_without_s_subscribed", language_code)
-        else:
-            db.subscribeUserToTariffByTg(
-                refer_tg_id, extreme['id'],
-                current_subscription['balance'],
-                int(current_subscription['time_left']) + int(tariff_ref_sub_period),
-                extreme['notify_count'])
-            # реферал купил подписку, тариф улучшен до максимального и продлён на х
-            message += get_message("award_with_s_subscribed", language_code)
-        db.user_clear_refer(refered_tg_id)
-
-    # новым пользователям — подписка
-    elif mode == 'new':
-        pc_count = db.select_users_subs_count(refer_tg_id)
-
-        if pc_count == 0:
-            on_period = tariff_new_user_period
-            message += get_message("award_welcome", language_code)
-        else:
-            on_period = tariff_secret_start_cmd_period
-            message += get_message("secret_award_welcome", language_code)
-
-        current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
-
-        if current_subscription is None:
-            extreme = db.getExtremeTariff('max')
-
-            db.subscribeUserToTariffByTg(
-                refer_tg_id, extreme['id'], 0,
-                on_period, extreme['notify_count'])
-
-        else:
-            db.close()
+        if user is None:
             return None
-        # db.subscribeUserToTariffByTg(
-        # 	refer_tg_id, extreme['id'],
-        # 	current_subscription['balance'],
-        # 	int(current_subscription['time_left']) + int(tariff_new_user_period),
-        # 	extreme['notify_count'])
-        # # реферал купил подписку, тариф улучшен до максимального и продлён на х
-        # message += get_message("award_welcome", language_code)
 
-    db.close()
+        message = ""
+        language_code = user['lang'] if user['lang'] is not None else 'en'
+
+        # приглашённый начал пользоваться
+        if mode == 'reged':
+            current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
+            if current_subscription is None:
+                extreme = db.getExtremeTariff('min')
+                db.subscribeUserToTariffByTg(
+                    refer_tg_id, extreme['id'], 0,
+                    tariff_ref_no_subscription_period, extreme['notify_count'])
+                # по вашей ссылке зарегался реферал, теперь у вас бронза
+                message += get_message("award_without_s_new_user", language_code)
+            else:
+                db.subscribeUserToTariffByTg(
+                    refer_tg_id, current_subscription['tariff_id'],
+                    current_subscription['balance'],
+                    int(current_subscription['time_left']) + int(tariff_ref_period),
+                    int(current_subscription['notify_count'] + int(tariff_ref_notifies)))
+                # по вышей ссылке зарегался, текущие условия улучшены
+                message += get_message("award_with_s_new_user", language_code)
+
+        # приглашённый купил подписку, refer_tg_id здесь — нового пользователя
+        elif mode == 'replenished':
+            current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
+            extreme = db.getExtremeTariff('max')
+            if current_subscription is None:
+                db.subscribeUserToTariffByTg(
+                    refer_tg_id, extreme['id'], 0,
+                    tariff_ref_sub_period, extreme['notify_count'])
+                # реферал купил подписку, теперь у вас максимальный тариф на х дней
+                message += get_message("award_without_s_subscribed", language_code)
+            else:
+                db.subscribeUserToTariffByTg(
+                    refer_tg_id, extreme['id'],
+                    current_subscription['balance'],
+                    int(current_subscription['time_left']) + int(tariff_ref_sub_period),
+                    extreme['notify_count'])
+                # реферал купил подписку, тариф улучшен до максимального и продлён на х
+                message += get_message("award_with_s_subscribed", language_code)
+            db.user_clear_refer(refered_tg_id)
+
+        # новым пользователям — подписка
+        elif mode == 'new':
+            pc_count = db.select_users_subs_count(refer_tg_id)
+
+            if pc_count == 0:
+                on_period = tariff_new_user_period
+                message += get_message("award_welcome", language_code)
+            else:
+                on_period = tariff_secret_start_cmd_period
+                message += get_message("secret_award_welcome", language_code)
+
+            current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
+
+            if current_subscription is None:
+                extreme = db.getExtremeTariff('max')
+
+                db.subscribeUserToTariffByTg(
+                    refer_tg_id, extreme['id'], 0,
+                    on_period, extreme['notify_count'])
+
+            else:
+                return None
+
     tariff, balance, time_left, notify_left = get_tariff_params_by_tg(refer_tg_id)
     tariff_str = decode_tariff(tariff['level'], language_code)
     message += "\n\n" + get_tariff_info_message(

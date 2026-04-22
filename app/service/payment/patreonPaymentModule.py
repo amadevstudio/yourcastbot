@@ -63,19 +63,17 @@ def patreon_email_input_page(data: ControllerParams):
     if data['callback'] is None:
         email = data['message'].text if data['message'] is not None else None
 
-        db = SQLighter(db_path)
-        db.savePaymentServiceEmail(data['chat_id'], email, "patreon")
-        saved_email = db.getPaymentServiceEmail(data['chat_id'], "patreon")
-        db.close()
+        with SQLighter(db_path) as db:
+            db.savePaymentServiceEmail(data['chat_id'], email, "patreon")
+            saved_email = db.getPaymentServiceEmail(data['chat_id'], "patreon")
 
         saved = (True if saved_email == email else False)
         tariff_payment_message = get_patreon_email_message(saved_email, data['language_code'], saved)
 
     # Show status message
     else:
-        db = SQLighter(db_path)
-        current_email = db.getPaymentServiceEmail(data['chat_id'], "patreon")
-        db.close()
+        with SQLighter(db_path) as db:
+            current_email = db.getPaymentServiceEmail(data['chat_id'], "patreon")
 
         tariff_payment_message = get_patreon_email_message(current_email, data['language_code'])
 
@@ -117,16 +115,13 @@ def check_patreon_accounts(initiator=None):
         "cents": 100,
     }
 
-    db = SQLighter(db_path)
-    payments_data = db.getPaymentDataByService("patreon")
+    with SQLighter(db_path) as db:
+        payments_data = db.getPaymentDataByService("patreon")
+        max_tariff = db.getExtremeTariff('max')
 
     today = datetime.datetime.today().date()
 
     initiator_answer = None
-
-    max_tariff = db.getExtremeTariff('max')
-
-    db.close()
 
     for data in payments_data:
         patron_email = data['email'].lower()
@@ -145,61 +140,60 @@ def check_patreon_accounts(initiator=None):
                 if cents < max_tariff['price']:
                     cents = max_tariff['price']
 
-            db = SQLighter(db_path)
-            user = db.get_user_by_id(user_id)
-            current_subscription = db.getUserSubscriptionByUid(user['id'])
+            with SQLighter(db_path) as db:
+                user = db.get_user_by_id(user_id)
+                current_subscription = db.getUserSubscriptionByUid(user['id'])
 
-            # проверяем дату, должен быть
-            # как минимум следующий месяц и второе число
-            if last_update is not None:
-                last_date = datetime.datetime.strptime(last_update, "%Y-%m-%d").date()
-                # следующий месяц
-                # и (
-                # прошло больше 1 месяца
-                # или день месяца старше
-                # или последний день месяца
-                # )
-                months_delta = (today.year - last_date.year) * 12 \
-                    + today.month - last_date.month
-                if not (
-                        (months_delta > 0)
-                        and (
-                                months_delta > 1
-                                or today.day >= last_date.day
-                                or today.day == calendar.monthrange(today.year, today.month)[1])
-                ):
-                    # посылаем инициатору сообщение, что уже было пополнено в этом месяце
-                    if initiator is not None:
-                        if initiator['telegramId'] == user['telegramId']:
-                            initiator_answer = get_message(
-                                "thisMonthHasAlreadyBeenReplenished", initiator['language_code'])
-                    continue
+                # проверяем дату, должен быть
+                # как минимум следующий месяц и второе число
+                if last_update is not None:
+                    last_date = datetime.datetime.strptime(last_update, "%Y-%m-%d").date()
+                    # следующий месяц
+                    # и (
+                    # прошло больше 1 месяца
+                    # или день месяца старше
+                    # или последний день месяца
+                    # )
+                    months_delta = (today.year - last_date.year) * 12 \
+                        + today.month - last_date.month
+                    if not (
+                            (months_delta > 0)
+                            and (
+                                    months_delta > 1
+                                    or today.day >= last_date.day
+                                    or today.day == calendar.monthrange(today.year, today.month)[1])
+                    ):
+                        # посылаем инициатору сообщение, что уже было пополнено в этом месяце
+                        if initiator is not None:
+                            if initiator['telegramId'] == user['telegramId']:
+                                initiator_answer = get_message(
+                                    "thisMonthHasAlreadyBeenReplenished", initiator['language_code'])
+                        continue
 
-            # Пополняем баланс в бд
-            if current_subscription is None:
-                db.subscribeUserToTariffByUid(
-                    user['id'], 0, cents, 0, 0)
-                current_subscription = {
-                    'tariff_id': 0,
-                    'balance': 0,
-                    'time_left': 0,
-                    'notify_count': 0
-                }
-            else:
-                db.subscribeUserToTariffByUid(
-                    user['id'], current_subscription['tariff_id'],
-                    int(current_subscription['balance']) + cents,
-                    current_subscription['time_left'],
-                    current_subscription['notify_count'])
+                # Пополняем баланс в бд
+                if current_subscription is None:
+                    db.subscribeUserToTariffByUid(
+                        user['id'], 0, cents, 0, 0)
+                    current_subscription = {
+                        'tariff_id': 0,
+                        'balance': 0,
+                        'time_left': 0,
+                        'notify_count': 0
+                    }
+                else:
+                    db.subscribeUserToTariffByUid(
+                        user['id'], current_subscription['tariff_id'],
+                        int(current_subscription['balance']) + cents,
+                        current_subscription['time_left'],
+                        current_subscription['notify_count'])
 
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
 
-            db.updatePaymentServiceLastReplenishment(user_id, 'patreon', now_utc.strftime("%Y-%m-%d"))
+                db.updatePaymentServiceLastReplenishment(user_id, 'patreon', now_utc.strftime("%Y-%m-%d"))
 
-            message = get_message("balanceFromPatreonAdded", user['lang'])
+                message = get_message("balanceFromPatreonAdded", user['lang'])
 
-            tariff = db.getTariffById(current_subscription['tariff_id'])
-            db.close()
+                tariff = db.getTariffById(current_subscription['tariff_id'])
 
             tariff_str = decode_tariff(tariff['level'], user['lang'])
 

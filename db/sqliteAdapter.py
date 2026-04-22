@@ -25,10 +25,19 @@ def helper_remove_proto_from_link(link):
 class SQLighter:
 
     def __init__(self, database):
-        self.connection = sqlite3.connect(database, timeout=10)
+        self.connection = sqlite3.connect(database, timeout=30)
+        self.connection.execute("PRAGMA journal_mode=WAL")
+        self.connection.execute("PRAGMA busy_timeout=30000")
         self.connection.create_function("LOWER_UNICODE", 1, self.__lower_unicode)
         self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
     def __lower_unicode(self, string):
         return str(string).lower()

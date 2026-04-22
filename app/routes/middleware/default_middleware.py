@@ -19,9 +19,8 @@ from scripts import restart_bot
 
 
 def get_user(user_id: int) -> Any:
-    db_users = SQLighter(config.db_path)
-    user = db_users.get_user_by_tg(user_id)
-    db_users.close()
+    with SQLighter(config.db_path) as db_users:
+        user = db_users.get_user_by_tg(user_id)
     return user
 
 
