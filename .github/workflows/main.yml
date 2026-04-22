@@ -32,15 +32,19 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USERNAME }}
           password: ${{ secrets.SERVER_PASSWORD }}
+          script_stop: true
           script: |
             # Pulling
             cd ${{ secrets.PROJECT_PATH }}
             git pull
 
             # Building
-            python -V
+            python3 -V
+            if [ ! -d venv ]; then
+              python3 -m venv venv
+            fi
             source venv/bin/activate
-            python -m pip install -r requirements.txt
+            python3 -m pip install -r requirements.txt
 
             # Configuring
             cat supervisor.conf > /etc/supervisor/conf.d/yourcast.conf
