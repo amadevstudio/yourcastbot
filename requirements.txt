@@ -5,7 +5,7 @@ faust-cchardet==2.1.19
 certifi>=2024.7.4
 charset-normalizer==3.1.0
 idna>=3.7
-lxml==4.9.2
+lxml>=6.1.0
 patreon==0.5.0
 pyaes==1.6.1
 pyasn1>=0.6.3
@@ -13,10 +13,10 @@ Pympler==1.0.1
 pyTelegramBotAPI==4.11.0
 python-dateutil==2.8.2
 pytz==2023.3
-requests>=2.32.4,<2.33.0
+requests>=2.33.0
 rsa==4.9
 six==1.16.0
 Telethon==1.28.5
-urllib3==1.26.19
+urllib3>=2.6.3
 pydub==0.25.1
 mutagen==1.46.0
