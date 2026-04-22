@@ -19,14 +19,13 @@ def show_subs(data: ControllerParams):
     current_state_data = determine_search_query_and_page(data['callback'], data['message'], data['united_data'])
     search_query = current_state_data.get('search', None)
 
-    db_users = SQLighter(db_path)
-    message_navigation = get_full_message_navigation(
-        current_state_data.get('p', None), search_query,
-        db_users.select_users_subs_name_noty,[data['chat_id'], search_query],
-        db_users.select_users_subs_count, [data['chat_id'], search_query],
-        PER_PAGE,[{'have_new_episodes': 'DESC'}, 'channels.name'],
-        data['language_code'], data['route_name'], back_button_text='goBackMenu')
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        message_navigation = get_full_message_navigation(
+            current_state_data.get('p', None), search_query,
+            db_users.select_users_subs_name_noty,[data['chat_id'], search_query],
+            db_users.select_users_subs_count, [data['chat_id'], search_query],
+            PER_PAGE,[{'have_new_episodes': 'DESC'}, 'channels.name'],
+            data['language_code'], data['route_name'], back_button_text='goBackMenu')
 
     if 'error' in message_navigation['page_data']:
         if message_navigation['page_data']['error'] == 'empty':

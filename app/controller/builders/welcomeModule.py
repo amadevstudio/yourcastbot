@@ -26,18 +26,15 @@ def start(data: ControllerParams):
 
 
 def referral_processing(data: ControllerParams, refer_id: int | None, action_mode: bool = False):
-    db_users = SQLighter(config.db_path)
-
-    # регистрируем, если он ещё нет, с учётом рефералки
-    is_new_user, is_by_refer = db_users.register_new_user(
-        data['chat_id'], data['language_code'], refer_id)
+    with SQLighter(config.db_path) as db_users:
+        # регистрируем, если он ещё нет, с учётом рефералки
+        is_new_user, is_by_refer = db_users.register_new_user(
+            data['chat_id'], data['language_code'], refer_id)
 
     if is_by_refer is True and refer_id is not None and int(refer_id) != int(data['chat_id']):
         result_message_for_refer = paymentSafeModule.giveAward(refer_id, data['chat_id'], 'reged')
     else:
         result_message_for_refer = None
-
-    db_users.close()
 
     # даём платную подписку на неделю новому или на пару дней при /start
     # подписываем их на Ted Talks Daily
@@ -155,22 +152,19 @@ def action_processing(data: ControllerParams, action: str | None, *action_params
 def construct_welcome_message(language_code, offer=False, top=False) -> list[MessageStructuresInterface]:
     if top:
         welcome_elements_count = 6
-        db_users = SQLighter(db_path)
-
-        top_list = db_users.select_top(
-            None,
-            language_code, True,
-            None, None, welcome_elements_count, 0)
-
-        founded_count = len(top_list)
-        top_list_glob = None
-        if founded_count < welcome_elements_count:
-            top_list_glob = db_users.select_top(
+        with SQLighter(db_path) as db_users:
+            top_list = db_users.select_top(
                 None,
-                language_code, False,
-                None, None, (welcome_elements_count - founded_count), 0)
+                language_code, True,
+                None, None, welcome_elements_count, 0)
 
-        db_users.close()
+            founded_count = len(top_list)
+            top_list_glob = None
+            if founded_count < welcome_elements_count:
+                top_list_glob = db_users.select_top(
+                    None,
+                    language_code, False,
+                    None, None, (welcome_elements_count - founded_count), 0)
 
         if top_list_glob is not None:
             for el in top_list_glob:

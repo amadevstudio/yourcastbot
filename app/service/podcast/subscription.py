@@ -100,13 +100,12 @@ def add_sub_rss(
 
     notify = True
 
-    db_users = SQLighter(db_path)
-    db_users.add_sub(
-        u_tg_id, podcast_id, service_id, rss_link,
-        pc_name, pgd, last_date, notify, service_name)
-    new_channel = db_users.get_channel_by_service_tg(
-        u_tg_id, service_id, service_name)
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        db_users.add_sub(
+            u_tg_id, podcast_id, service_id, rss_link,
+            pc_name, pgd, last_date, notify, service_name)
+        new_channel = db_users.get_channel_by_service_tg(
+            u_tg_id, service_id, service_name)
 
     podcast_data = storage.get_user_state_data(u_tg_id, 'podcast')
     if podcast_data is None:
@@ -122,9 +121,8 @@ def add_sub_rss(
 
 
 def remove_sub(u_tg_id, podcast_id, service_id, service_name='itunes') -> Tuple[str, int | None]:
-    db_users = SQLighter(db_path)
-    pc_name = db_users.remove_sub(u_tg_id, podcast_id, service_id, service_name)
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        pc_name = db_users.remove_sub(u_tg_id, podcast_id, service_id, service_name)
 
     podcast_data = storage.get_user_state_data(u_tg_id, 'podcast')
     podcast_data["id"] = None

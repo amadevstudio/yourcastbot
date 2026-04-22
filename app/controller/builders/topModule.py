@@ -23,16 +23,15 @@ def show_genres(data: ControllerParams):
 
     search_query = current_state_data.get('search', None)
 
-    db_users = SQLighter(db_path)
-    message_navigation = get_full_message_navigation(
-        current_state_data.get('p', None), search_query,
-        db_users.select_genres,
-        [data['language_code'], data['united_data'].get('lngTp', False), search_query],
-        db_users.select_genres_count,
-        [data['language_code'], data['united_data'].get('lngTp', False), search_query],
-        PER_PAGE, None,
-        data['language_code'], 'topGnrs', back_button_text='goBackMenu')
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        message_navigation = get_full_message_navigation(
+            current_state_data.get('p', None), search_query,
+            db_users.select_genres,
+            [data['language_code'], data['united_data'].get('lngTp', False), search_query],
+            db_users.select_genres_count,
+            [data['language_code'], data['united_data'].get('lngTp', False), search_query],
+            PER_PAGE, None,
+            data['language_code'], 'topGnrs', back_button_text='goBackMenu')
 
     if 'error' in message_navigation['page_data']:
         logger.warn('Top error in message navigation', message_navigation['page_data']['error'])
@@ -89,21 +88,20 @@ def show_top(data: ControllerParams):
 
     search_query = current_state_data.get('search', None)
 
-    db_users = SQLighter(db_path)
-    message_navigation = get_full_message_navigation(
-        current_state_data.get('p', None), search_query,
-        db_users.select_top,
-        [genre_id, data['language_code'], lang_top, search_query],
-        db_users.select_top_count,
-        [genre_id, data['language_code'], lang_top, search_query],
-        PER_PAGE, None,
-        data['language_code'], 'top_ch', back_button_text='goBackMenu')
+    with SQLighter(db_path) as db_users:
+        message_navigation = get_full_message_navigation(
+            current_state_data.get('p', None), search_query,
+            db_users.select_top,
+            [genre_id, data['language_code'], lang_top, search_query],
+            db_users.select_top_count,
+            [genre_id, data['language_code'], lang_top, search_query],
+            PER_PAGE, None,
+            data['language_code'], 'top_ch', back_button_text='goBackMenu')
 
-    if genre_data is None or genre_id is None:
-        genre_name = get_message('generalTop', data['language_code'])
-    else:
-        genre_name = db_users.get_genre(genre_id)['name']
-    db_users.close()
+        if genre_data is None or genre_id is None:
+            genre_name = get_message('generalTop', data['language_code'])
+        else:
+            genre_name = db_users.get_genre(genre_id)['name']
 
     if 'error' in message_navigation['page_data']:
         logger.warn('Top error in message navigation', message_navigation['page_data']['error'])

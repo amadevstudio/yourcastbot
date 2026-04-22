@@ -242,9 +242,9 @@ class SQLighter:
             else:
                 return True
 
-    def get_channel_or_next(self, channel_id, channel_set=[]):
+    def get_channel_or_next(self, channel_id, channel_set=None):
         with self.connection:
-            if channel_set == []:
+            if not channel_set:
                 return self.cursor.execute(
                     "SELECT * FROM channels WHERE id >= ? LIMIT 1",
                     (str(channel_id),)).fetchone()

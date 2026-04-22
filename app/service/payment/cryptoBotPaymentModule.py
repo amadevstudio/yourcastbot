@@ -136,9 +136,8 @@ def get_amount_input_message(language_code, tariff_id, balance, time_left, notif
 
     menu_keyboard: list[list[InlineButtonData]] = []
 
-    db_users = SQLighter(db_path)
-    tariffs = db_users.getTariffs()
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        tariffs = db_users.getTariffs()
 
     tariff_lvl = 0
     tariff_price = 0

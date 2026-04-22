@@ -33,9 +33,8 @@ def user_unavailable_error(e):
 
 def bot_blocked_reaction(e, user_id):
 	if user_unavailable_error(e):
-		db_users = SQLighter(db_path)
-		db_users.delete_user_tg(int(user_id), False)
-		db_users.close()
+		with SQLighter(db_path) as db_users:
+			db_users.delete_user_tg(int(user_id), False)
 		return True
 	else:
 		return False

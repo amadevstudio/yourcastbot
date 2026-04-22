@@ -72,24 +72,23 @@ def channel_query(data: ControllerParams):
     service_id = None
     service_name = None
 
-    db_users = SQLighter(db_path)
-    # Custom service id
-    if "sId" in call_data:
-        service_id = call_data["sId"]
-        service_name = call_data.get("sName", "itunes")
-        channel = db_users.get_channel_by_service(service_id, service_name)
-        channel_id = (channel["id"] if (channel is not None) else None)
-        bad_data = False
-    # Std id
-    elif "id" in call_data:
-        channel = db_users.get_channel(call_data["id"])
-        channel_id = (channel["id"] if (channel is not None) else None)
-        bad_data = False
-    else:
-        channel = None
-        bad_data = True
-        channel_id = None
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        # Custom service id
+        if "sId" in call_data:
+            service_id = call_data["sId"]
+            service_name = call_data.get("sName", "itunes")
+            channel = db_users.get_channel_by_service(service_id, service_name)
+            channel_id = (channel["id"] if (channel is not None) else None)
+            bad_data = False
+        # Std id
+        elif "id" in call_data:
+            channel = db_users.get_channel(call_data["id"])
+            channel_id = (channel["id"] if (channel is not None) else None)
+            bad_data = False
+        else:
+            channel = None
+            bad_data = True
+            channel_id = None
 
     # Get channel data
     if not bad_data and \
@@ -261,28 +260,25 @@ def get_podcast_data(chat_id, service_id, podcast_id=None, service_name='itunes'
                     'isMain': primary_genre_name == genre
                 })
 
-    db_users = SQLighter(db_path)
+    with SQLighter(db_path) as db_users:
+        # subscribed = db_users.check_subscription(chId, itunes_id)
+        # notify = db_users.check_notify(chId, itunes_id)
+        db_users.complete_itunes_data(podcast_id, pc_info['feedUrl'], service_id, service_name)
 
-    # subscribed = db_users.check_subscription(chId, itunes_id)
-    # notify = db_users.check_notify(chId, itunes_id)
-    db_users.complete_itunes_data(podcast_id, pc_info['feedUrl'], service_id, service_name)
+        if chat_id is not None:
+            user_related_info = db_users.get_user_related_podcast_info(chat_id, podcast_id)
+        else:
+            user_related_info = db_users.get_user_related_podcast_info(None, None)
 
-    if chat_id is not None:
-        user_related_info = db_users.get_user_related_podcast_info(chat_id, podcast_id)
-    else:
-        user_related_info = db_users.get_user_related_podcast_info(None, None)
+        subscribed = user_related_info['subscribed']
+        notify = user_related_info['notify']
+        user_rate = user_related_info['rate']
+        rating = user_related_info['rating']
+        have_new_episodes = user_related_info['have_new_episodes']
+        last_user_date = user_related_info['last_date']
+        last_user_guid = user_related_info['last_guid']
 
-    subscribed = user_related_info['subscribed']
-    notify = user_related_info['notify']
-    user_rate = user_related_info['rate']
-    rating = user_related_info['rating']
-    have_new_episodes = user_related_info['have_new_episodes']
-    last_user_date = user_related_info['last_date']
-    last_user_guid = user_related_info['last_guid']
-
-    db_users.catchGenres(podcast_id, podcast_genres)
-
-    db_users.close()
+        db_users.catchGenres(podcast_id, podcast_genres)
 
     # не всегда в rss присутствует lastBuildDate
     if last_pub_date is not None:
@@ -318,11 +314,10 @@ def cant_find_podcast(
     markup = go_back_inline_markup(language_code)
 
     if channel_id is not None:
-        db_users = SQLighter(db_path)
-        if db_users.check_subscription(chat_id, channel_id):
-            markup[0].insert(0, {
-                'text': get_message('unsubscribe', language_code), 'callback_data': {'tp': 'subscription'}})
-        db_users.close()
+        with SQLighter(db_path) as db_users:
+            if db_users.check_subscription(chat_id, channel_id):
+                markup[0].insert(0, {
+                    'text': get_message('unsubscribe', language_code), 'callback_data': {'tp': 'subscription'}})
 
     return [{
         'type': 'text',
@@ -513,20 +508,18 @@ def switch_subscription(data: ControllerParams):
     if 'subscribed' in data['united_data']:
         action = not data['united_data'].get('subscribed')
     else:
-        db_users = SQLighter(db_path)
-        user_related_info = db_users.get_user_related_podcast_info(
-            data['chat_id'], data['united_data'].get('id', None))
+        with SQLighter(db_path) as db_users:
+            user_related_info = db_users.get_user_related_podcast_info(
+                data['chat_id'], data['united_data'].get('id', None))
         action = not user_related_info['subscribed']
-        db_users.close()
 
     updated_state_data: PodcastStateData = (copy.deepcopy(data['united_data'])
                                             | {'subscribed': action})
 
     # ограничение подписок
-    db_users = SQLighter(db_path)
-    subs_count = db_users.get_uccs_count_by_tg(data['chat_id'])
-    subscription = db_users.getUserSubscriptionByTg(data['chat_id'])
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        subs_count = db_users.get_uccs_count_by_tg(data['chat_id'])
+        subscription = db_users.getUserSubscriptionByTg(data['chat_id'])
 
     # если больше максимального, нет тарифа и одновременно действие подписки
     if subs_count > max_subscriptions_without_tariff \
@@ -589,13 +582,12 @@ def change_channel_notify(data: ControllerParams):
 
     u_action = 'notifyoned' if updated_state_data['notify'] else 'notifyoffed'
     try:
-        db_users = SQLighter(db_path)
-        db_users.turn_notify_tg(
-            data['chat_id'],
-            storage.get_user_state_data(data['chat_id'], 'podcast')["id"],
-            updated_state_data['notify'])
+        with SQLighter(db_path) as db_users:
+            db_users.turn_notify_tg(
+                data['chat_id'],
+                storage.get_user_state_data(data['chat_id'], 'podcast')["id"],
+                updated_state_data['notify'])
         notify(data['callback'], data['message'], get_message(u_action, data['language_code']), alert=True)
-        db_users.close()
     except Exception:
         try:
             notify(
@@ -617,21 +609,20 @@ def rate(data: ControllerParams):
             data['callback'], data['message'], get_message("parsingError", data['language_code']), alert=True)
         return False
 
-    db_users = SQLighter(db_path)
-    try:
-        db_users.rate_podcast(
-            data['chat_id'], storage.get_user_state_data(data['chat_id'], 'podcast')['id'],
-            current_state_data['rate'])
-    except Exception:
+    with SQLighter(db_path) as db_users:
         try:
-            notify(
-                data['callback'], data['message'],
-                get_message("parsingError", data['language_code']), alert=True)
+            db_users.rate_podcast(
+                data['chat_id'], storage.get_user_state_data(data['chat_id'], 'podcast')['id'],
+                current_state_data['rate'])
         except Exception:
-            pass
+            try:
+                notify(
+                    data['callback'], data['message'],
+                    get_message("parsingError", data['language_code']), alert=True)
+            except Exception:
+                pass
 
-        return
-    db_users.close()
+            return
 
     storage.set_user_state_data(data['chat_id'], 'podcast', current_state_data)
 

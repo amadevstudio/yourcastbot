@@ -19,12 +19,11 @@ def is_admin(data: ControllerParams) -> bool:
 
 
 def send_users_count_to_creator(data: ControllerParams):
-    db_users = SQLighter(config.db_path)
-    users_c = db_users.count_users()
-    users_c_ws = db_users.count_users(True)
-    users_c_wsa = db_users.count_users(with_subs_active=True)
-    users_c_p = db_users.count_users(payed=True)
-    db_users.close()
+    with SQLighter(config.db_path) as db_users:
+        users_c = db_users.count_users()
+        users_c_ws = db_users.count_users(True)
+        users_c_wsa = db_users.count_users(with_subs_active=True)
+        users_c_p = db_users.count_users(payed=True)
     last_channel_id = storage.get_last_channel_id()
     render_messages(data['chat_id'], [{
         'type': 'text',
@@ -45,18 +44,16 @@ def add_to_balance(data: ControllerParams):
     user_tg_id = incoming[1]
     new_balance = int(incoming[2]) * 100
 
-    db_users = SQLighter(config.db_path)
-    curr_sub = db_users.getUserSubscriptionByTg(user_tg_id)
-    curr_trf = db_users.getTariffById(curr_sub['tariff_id'])
+    with SQLighter(config.db_path) as db_users:
+        curr_sub = db_users.getUserSubscriptionByTg(user_tg_id)
+        curr_trf = db_users.getTariffById(curr_sub['tariff_id'])
 
-    if curr_sub is not None:
-        new_balance += int(curr_sub['balance'])
+        if curr_sub is not None:
+            new_balance += int(curr_sub['balance'])
 
-    db_users.subscribeUserToTariffByTg(
-        user_tg_id, curr_sub['tariff_id'], new_balance,
-        curr_sub['time_left'], curr_sub['notify_count'])
-
-    db_users.close()
+        db_users.subscribeUserToTariffByTg(
+            user_tg_id, curr_sub['tariff_id'], new_balance,
+            curr_sub['time_left'], curr_sub['notify_count'])
 
     lang_code = 'en'
     tariff_str = paymentModule.decode_tariff(curr_trf['level'], lang_code)

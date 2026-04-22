@@ -278,13 +278,12 @@ def inline_podcast_searcher(data: InlineControllerParams):
     if founded_count == 0:
         return
 
-    db = SQLighter(db_path)
-    user = db.get_user_by_tg(inline_query.user_id)
+    with SQLighter(db_path) as db:
+        user = db.get_user_by_tg(inline_query.user_id)
     if user is not None:
         language_code = app.service.user.language.user_language(user['lang'])
     else:
         language_code = "en"
-    db.close()
 
     # def get_rss_data(collection_id, rss_datas, index):
     # 	podcastExists, podcastRssData = podcastModule.getPodcastData(None, collection_id)
@@ -293,15 +292,14 @@ def inline_podcast_searcher(data: InlineControllerParams):
 
     # ответ с подкастами
     if record_query is None or record_query == "":
-        db = SQLighter(db_path)
-        podcasts = []
-        # rss_datas = [None] * founded_count
-        # threads = [None] * founded_count
-        for i in range(founded_count):
-            podcast_data = result['results'][i]
-            podcast = db.get_channel_by_service(podcast_data['collectionId'], 'itunes')
-            podcasts.append({'podcast': podcast, 'podcastData': podcast_data})
-        db.close()
+        with SQLighter(db_path) as db:
+            podcasts = []
+            # rss_datas = [None] * founded_count
+            # threads = [None] * founded_count
+            for i in range(founded_count):
+                podcast_data = result['results'][i]
+                podcast = db.get_channel_by_service(podcast_data['collectionId'], 'itunes')
+                podcasts.append({'podcast': podcast, 'podcastData': podcast_data})
 
         # # Too long to load all rss data
         # 	threads[i] = Thread(target=get_rss_data, args=(podcastData['collectionId'], rss_datas, i))
@@ -435,9 +433,8 @@ def construct_inline_podcast_searcher_channel(podcast, podcast_data, rss_podcast
 def construct_inline_podcast_searcher_records(podcast_data, rd, founded_count, language_code):
     inline_buttons = []
 
-    db = SQLighter(db_path)
-    channel = db.get_channel_by_service(podcast_data['collectionId'], 'itunes')
-    db.close()
+    with SQLighter(db_path) as db:
+        channel = db.get_channel_by_service(podcast_data['collectionId'], 'itunes')
 
     for i in range(founded_count):
         pgd = app.service.record.helpers.get_record_uniq_id(rd['guids'][i], rd['pubDates'][i], rd['title'][i])

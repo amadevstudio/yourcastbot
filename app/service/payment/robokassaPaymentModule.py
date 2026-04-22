@@ -27,9 +27,8 @@ def get_tariff_payment_message(
         language_code, tariff_id, balance, time_left, notify_left):
     message_text = get_message('bot_sub_pmnt_page', language_code) + "\n\n"
 
-    db_users = SQLighter(db_path)
-    tariffs = db_users.getTariffs()
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        tariffs = db_users.getTariffs()
 
     menu_key_board: list[list[InlineButtonData]] = []
 

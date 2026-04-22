@@ -161,9 +161,8 @@ def get_tariffs_sub_message(language_code, tariff_id, balance, time_left, notify
 
     menu_keyboard: list[list[InlineButtonData]] = []
 
-    db_users = SQLighter(db_path)
-    tariffs = db_users.getTariffs()
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        tariffs = db_users.getTariffs()
     # yes_msg = get_message("yes", language_code)
     # no_msg = get_message("no", language_code)
     tariff_lvl = 0
@@ -224,18 +223,17 @@ def get_tariff_description_and_button_text(
 
 # выбран тариф
 def choose_bot_subscription_tariff(data: ControllerParams):
-    db = SQLighter(db_path)
-    # tariffs = db.getTariffs()
-    current_subscription = db.getUserSubscriptionByTg(data['chat_id'])
-    if current_subscription is None or current_subscription['tariff_id'] == 0:
-        current_tariff = {'id': 0, 'price': 0, 'level': 0, 'notify_count': 0}
-    else:
-        current_tariff = db.getTariffById(current_subscription['tariff_id'])
-    if data['united_data']['v'] == 0:
-        desire_tariff = {'id': 0, 'price': 0, 'level': 0, 'notify_count': 0}
-    else:
-        desire_tariff = db.getTariffById(data['united_data']['v'])
-    db.close()
+    with SQLighter(db_path) as db:
+        # tariffs = db.getTariffs()
+        current_subscription = db.getUserSubscriptionByTg(data['chat_id'])
+        if current_subscription is None or current_subscription['tariff_id'] == 0:
+            current_tariff = {'id': 0, 'price': 0, 'level': 0, 'notify_count': 0}
+        else:
+            current_tariff = db.getTariffById(current_subscription['tariff_id'])
+        if data['united_data']['v'] == 0:
+            desire_tariff = {'id': 0, 'price': 0, 'level': 0, 'notify_count': 0}
+        else:
+            desire_tariff = db.getTariffById(data['united_data']['v'])
 
     if desire_tariff is None or current_tariff is None:
         notify(data['callback'], data['message'], get_message('error', data['language_code']), alert=True)
@@ -326,15 +324,14 @@ def choose_bot_subscription_tariff(data: ControllerParams):
                 new_balance = new_balance - desire_tariff['price']
                 new_time_left = tariff_period
 
-        db = SQLighter(db_path)
-        db.subscribeUserToTariffByTg(
-            data['chat_id'], desire_tariff['id'], new_balance, new_time_left, new_notify_count)
+        with SQLighter(db_path) as db:
+            db.subscribeUserToTariffByTg(
+                data['chat_id'], desire_tariff['id'], new_balance, new_time_left, new_notify_count)
 
-        current_subscription = db.getUserSubscriptionByTg(data['chat_id'])
-        current_tariff = db.getTariffById(current_subscription['tariff_id'])
-        if current_tariff is None:
-            current_tariff = {'id': 0, 'level': 0, 'price': 0}
-        db.close()
+            current_subscription = db.getUserSubscriptionByTg(data['chat_id'])
+            current_tariff = db.getTariffById(current_subscription['tariff_id'])
+            if current_tariff is None:
+                current_tariff = {'id': 0, 'level': 0, 'price': 0}
 
         if current_subscription is not None \
                 and int(data['united_data']['v']) == current_subscription['tariff_id']:

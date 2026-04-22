@@ -55,9 +55,8 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
     message += "\n\n" + get_message("patreonShort", language_code)
 
     # есть ли новые эпизоды
-    db_users = SQLighter(db_path)
-    have_new_eps = db_users.is_user_have_new_episodes(chat_id)
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        have_new_eps = db_users.is_user_have_new_episodes(chat_id)
 
     if have_new_eps:
         message += "\n\n" + standartSymbols.get("newItem", "") + " " \

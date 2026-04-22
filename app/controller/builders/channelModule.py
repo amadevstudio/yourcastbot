@@ -25,9 +25,8 @@ PER_PAGE = 5
 def open_connecting_channel(data: ControllerParams):
     tariff, balance, time_left, notify_left = paymentModule.get_tariff_params_by_tg(data['chat_id'])
 
-    db = SQLighter(db_path)
-    tariffs = db.getTariffs(channel_control=True)
-    db.close()
+    with SQLighter(db_path) as db:
+        tariffs = db.getTariffs(channel_control=True)
 
     conn_message = get_connecting_channel_message(data['language_code'], tariff, tariffs)
 
@@ -84,14 +83,13 @@ def open_channel_list(data: ControllerParams):
     # search_query = current_state_data.get('search', None)
     search_query = None  # We are don't keep the name of connected channel for now TODO: let's keep?
 
-    db_users = SQLighter(db_path)
-    message_navigation = get_full_message_navigation(
-        current_state_data.get('p', None), search_query,
-        db_users.get_user_tg_channels,[data['chat_id']],  # search_query
-        db_users.get_user_tg_channels_count, [data['chat_id']],  # search_query
-        PER_PAGE, 'ch.tg_id DESC',
-        data['language_code'], data['route_name'], back_button_text='goBackMenu')
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        message_navigation = get_full_message_navigation(
+            current_state_data.get('p', None), search_query,
+            db_users.get_user_tg_channels,[data['chat_id']],  # search_query
+            db_users.get_user_tg_channels_count, [data['chat_id']],  # search_query
+            PER_PAGE, 'ch.tg_id DESC',
+            data['language_code'], data['route_name'], back_button_text='goBackMenu')
 
     if 'error' in message_navigation['page_data']:
         logger.warn(message_navigation['page_data']['error'])
@@ -166,9 +164,8 @@ def get_channel_title(channel_id: int) -> str | None:
 
 # открыть страницу управления добавленным каналом
 def open_connected_channel(data: ControllerParams):
-    db = SQLighter(db_path)
-    channel_data_row = db.getTgChannelDataById(data['chat_id'], data['united_data']['id'])
-    db.close()
+    with SQLighter(db_path) as db:
+        channel_data_row = db.getTgChannelDataById(data['chat_id'], data['united_data']['id'])
 
     channel_data: TgChannelDataType = {
         'id': channel_data_row['id'], 'user_id': channel_data_row['user_id'], 'tg_id': channel_data_row['tg_id'],
@@ -240,9 +237,8 @@ def change_channel_active(data: ControllerParams):
 
     tg_channel_data['active'] = not tg_channel_data['active']
 
-    db = SQLighter(db_path)
-    db.addOrUpdateTgChannel(data['chat_id'], tg_channel_data['tg_id'], tg_channel_data['active'])
-    db.close()
+    with SQLighter(db_path) as db:
+        db.addOrUpdateTgChannel(data['chat_id'], tg_channel_data['tg_id'], tg_channel_data['active'])
 
     storage.set_user_state_data(data['chat_id'], 'myTgChannel', tg_channel_data)
 
@@ -264,9 +260,8 @@ def stop_deleting_channel(tg_channel_data: TgChannelDataType):
 def delete_channel(data: ControllerParams):
     # !!! удаление
     if 'deleting' in data['united_data']:
-        db = SQLighter(db_path)
-        db.deleteTgChannel(data['chat_id'], data['united_data']['id'])
-        db.close()
+        with SQLighter(db_path) as db:
+            db.deleteTgChannel(data['chat_id'], data['united_data']['id'])
 
         return data['go_back_action'](data)
 
@@ -295,14 +290,13 @@ def open_channel_subs(data: ControllerParams):
     current_state_data = determine_search_query_and_page(data['callback'], data['message'], data['united_data'])
     search_query = current_state_data.get('search', None)
 
-    db = SQLighter(db_path)
-    message_navigation = get_full_message_navigation(
-        current_state_data.get('p', None), search_query,
-        db.select_users_subs_name_tg_channel, [data['chat_id'], tg_channel_data['id'], search_query],
-        db.select_users_subs_count, [data['chat_id'], search_query],
-        PER_PAGE, ['channels.name'],
-        data['language_code'], 'myTgChSubs')
-    db.close()
+    with SQLighter(db_path) as db:
+        message_navigation = get_full_message_navigation(
+            current_state_data.get('p', None), search_query,
+            db.select_users_subs_name_tg_channel, [data['chat_id'], tg_channel_data['id'], search_query],
+            db.select_users_subs_count, [data['chat_id'], search_query],
+            PER_PAGE, ['channels.name'],
+            data['language_code'], 'myTgChSubs')
 
     if 'error' in message_navigation['page_data']:
         logger.warn(message_navigation['page_data']['error'])
@@ -359,9 +353,8 @@ def change_channel_sub_active(data: ControllerParams):
 
     podcast_id = data['united_data']['id']
 
-    db = SQLighter(db_path)
-    updated = db.changeTgChannelToPodcastConnect(data['chat_id'], channel_id, podcast_id)
-    db.close()
+    with SQLighter(db_path) as db:
+        updated = db.changeTgChannelToPodcastConnect(data['chat_id'], channel_id, podcast_id)
 
     # обновляем счётчик числа подкастов
     if updated == "deleted":
@@ -380,9 +373,8 @@ def change_channel_sub_active(data: ControllerParams):
 
 # страница ввода id канала
 def channel_input_page(data: ControllerParams):
-    db = SQLighter(db_path)
-    current_channel_count = db.get_user_tg_channels_count(data['chat_id'])
-    db.close()
+    with SQLighter(db_path) as db:
+        current_channel_count = db.get_user_tg_channels_count(data['chat_id'])
 
     if current_channel_count >= maxTgChannelsPerAccount:
         notify(data['callback'], data['message'],
@@ -442,10 +434,9 @@ def channel_save_id(data: ControllerParams):
     else:
         channel_id = data['message'].text
 
-    db = SQLighter(db_path)
-    current_channel_count = db.get_user_tg_channels_count(data['chat_id'])
-    already_added = db.isTgChannelAlreadyAdded(data['chat_id'], channel_id)
-    db.close()
+    with SQLighter(db_path) as db:
+        current_channel_count = db.get_user_tg_channels_count(data['chat_id'])
+        already_added = db.isTgChannelAlreadyAdded(data['chat_id'], channel_id)
 
     # уже добавлен
     if already_added:
@@ -467,10 +458,9 @@ def channel_save_id(data: ControllerParams):
 
         else:
 
-            db = SQLighter(db_path)
-            db.addOrUpdateTgChannel(data['chat_id'], channel_id)
-            added = db.isTgChannelAlreadyAdded(data['chat_id'], channel_id)
-            db.close()
+            with SQLighter(db_path) as db:
+                db.addOrUpdateTgChannel(data['chat_id'], channel_id)
+                added = db.isTgChannelAlreadyAdded(data['chat_id'], channel_id)
 
             if added:
                 channel_input_message = get_input_channel_id_message(data['language_code'], 'added', channel)
@@ -493,15 +483,14 @@ def bot_removed_from_channel_reaction(e, tgChannelId):
             or "bot was kicked from the channel" in str(e) \
             or "Could not find the input entity for PeerChannel" in str(e):
 
-        db_users = SQLighter(db_path)
-        user_tg_id = db_users.getUserTgIdByChannelTg(tgChannelId)
-        channel = db_users.getTgChannelDataByTgId(user_tg_id, tgChannelId)
-        if channel is not None and channel['active']:
-            db_users.addOrUpdateTgChannel(user_tg_id, tgChannelId, False)
-            owner = db_users.get_user_by_tg(user_tg_id)
-        else:
-            owner = None
-        db_users.close()
+        with SQLighter(db_path) as db_users:
+            user_tg_id = db_users.getUserTgIdByChannelTg(tgChannelId)
+            channel = db_users.getTgChannelDataByTgId(user_tg_id, tgChannelId)
+            if channel is not None and channel['active']:
+                db_users.addOrUpdateTgChannel(user_tg_id, tgChannelId, False)
+                owner = db_users.get_user_by_tg(user_tg_id)
+            else:
+                owner = None
 
         if channel is not None and channel['active']:
 

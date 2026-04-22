@@ -115,18 +115,17 @@ def open_recs(data: ControllerParams):
     last_date = app.service.podcast.podcast.set_last_date(last_date, records_info['globalLastPubDate'])
     pgd = app.service.record.helpers.get_record_uniq_id(
         records_info['lastGuid'], records_info['lastPubDate'], records_info['lastRecordTitle'])
-    db_users = SQLighter(db_path)
-    channel = db_users.get_channel_by_service_tg(
-        id, podcast_data["service_id"], podcast_data["service_name"])
-    # при открытии записей считать подкаст просмотренным
-    if channel is not None and recs_data['p'] == 1:
-        db_users.update_sub_last_guid_and_date(
-            id, channel['id'], pgd, last_date)
-        db_users.update_channel_last_guid_date(
-            channel['id'], pgd, last_date)
-        podcast_data["have_new_episodes"] = False
-        podcast_data["last_user_guid"] = pgd
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        channel = db_users.get_channel_by_service_tg(
+            id, podcast_data["service_id"], podcast_data["service_name"])
+        # при открытии записей считать подкаст просмотренным
+        if channel is not None and recs_data['p'] == 1:
+            db_users.update_sub_last_guid_and_date(
+                id, channel['id'], pgd, last_date)
+            db_users.update_channel_last_guid_date(
+                channel['id'], pgd, last_date)
+            podcast_data["have_new_episodes"] = False
+            podcast_data["last_user_guid"] = pgd
     storage.set_user_state_data(id, 'podcast', podcast_data)
 
 
@@ -484,9 +483,8 @@ def send_record(data: ControllerParams):
 
     elif call_data.get('id', None) is not None:
         # If the podcast was added by rss or subscribed, it'll be in database
-        db = SQLighter(db_path)
-        channel = dict(db.get_channel(call_data['id']))
-        db.close()
+        with SQLighter(db_path) as db:
+            channel = dict(db.get_channel(call_data['id']))
 
     if channel is None:
         podcast_state_data: PodcastStateData | None \
@@ -509,9 +507,8 @@ def send_record_by_hash_using_start(data: ControllerParams, episode_data: dict):
     if 'service' in episode_data and episode_data['service'] == 'itunes':
         channel = {'itunes_id': episode_data['sId']}
     else:
-        db = SQLighter(db_path)
-        channel = dict(db.get_channel(episode_data['id']))
-        db.close()
+        with SQLighter(db_path) as db:
+            channel = dict(db.get_channel(episode_data['id']))
 
     send_record_direct(channel, data['chat_id'], data['language_code'], prev_hash, from_num)
 
@@ -620,9 +617,8 @@ def send_record_direct(
     record_uniq_id = record_info['recordUniqId']
 
     bitratestg = {}
-    db_users = SQLighter(db_path)
-    user = db_users.get_user_by_tg(chat_id)
-    db_users.close()
+    with SQLighter(db_path) as db_users:
+        user = db_users.get_user_by_tg(chat_id)
     if user['bitrate'] is not None:
         bitratestg[chat_id] = int(user['bitrate'])
     else:
