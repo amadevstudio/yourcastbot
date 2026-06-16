@@ -16,8 +16,7 @@ from lib.tools.logger import logger
 
 
 def start(data: ControllerParams):
-    welcome_message = construct_welcome_message(
-        data['language_code'], top=True)
+    welcome_message = construct_welcome_message(data['language_code'])
 
     render_messages(data['chat_id'], message_structures=welcome_message)
 
@@ -149,73 +148,38 @@ def action_processing(data: ControllerParams, action: str | None, *action_params
             logger.err(e)
 
 
-def construct_welcome_message(language_code, offer=False, top=False) -> list[MessageStructuresInterface]:
-    if top:
-        welcome_elements_count = 6
-        with SQLighter(db_path) as db_users:
-            top_list = db_users.select_top(
+def construct_welcome_message(language_code) -> list[MessageStructuresInterface]:
+    welcome_elements_count = 6
+    with SQLighter(db_path) as db_users:
+        top_list = db_users.select_top(
+            None,
+            language_code, True,
+            None, None, welcome_elements_count, 0)
+
+        founded_count = len(top_list)
+        top_list_glob = None
+        if founded_count < welcome_elements_count:
+            top_list_glob = db_users.select_top(
                 None,
-                language_code, True,
-                None, None, welcome_elements_count, 0)
+                language_code, False,
+                None, None, (welcome_elements_count - founded_count), 0)
 
-            founded_count = len(top_list)
-            top_list_glob = None
-            if founded_count < welcome_elements_count:
-                top_list_glob = db_users.select_top(
-                    None,
-                    language_code, False,
-                    None, None, (welcome_elements_count - founded_count), 0)
+    if top_list_glob is not None:
+        for el in top_list_glob:
+            if el not in top_list:
+                top_list.append(el)
 
-        if top_list_glob is not None:
-            for el in top_list_glob:
-                if el not in top_list:
-                    top_list.append(el)
+    def top_button_row(channels: list):
+        return [{'text': channel["name"],
+                'callback_data': {"tp": "podcast", "id": channel["id"]}} for channel in channels]
 
-        def top_button_row(channels: list):
-            return [{'text': channel["name"],
-                    'callback_data': {"tp": "podcast", "id": channel["id"]}} for channel in channels]
+    welcome_channels = [top_button_row(top_list[i: i + 2]) for i in range(0, len(top_list), 2)]
 
-        welcome_channels = [top_button_row(top_list[i: i + 2]) for i in range(0, len(top_list), 2)]
-
-    # захардкоженный топ, в перспективе рекламные подкасты
-    else:
-        if language_code != 'ru':
-            data_lang = 'en'
-        else:
-            data_lang = 'ru'
-        welcome_channels_list = {
-            "ru":
-                {"list": [
-                    {"name": "Лайфхакер", "id": 1297225487},
-                    {"name": "Медуза: как жить", "id": 1325076874},
-                    {"name": "Science Friday", "id": 73329284},
-                    {"name": "КиноЧетверг", "id": 1029693220},
-                    {"name": "The Empire Film Podcast", "id": 507987292}
-                ]},
-            "en":
-                {"list": [
-                    {"name": "Science Friday", "id": 73329284},
-                    {"name": "The Empire Film Podcast", "id": 507987292}
-                ]},
-        }[data_lang]
-
-        def top_button_row(channels: list):
-            return [{'text': channel["name"],
-                    'callback_data': {"tp": "podcast", "sId": channel["id"]}} for channel in channels]
-
-        welcome_channels = [
-            top_button_row(welcome_channels_list["list"][i: i + 2])
-            for i in range(0, len(welcome_channels_list["list"]), 2)]
-
-    if offer:
-        b_text = "goBack"
-        message_text = "offerMessage"
-    else:
-        b_text = "skipWelcome"
-        message_text = "welcomeMessage"
-
-    menu_button: InlineButtonData = {'text': get_message(b_text, language_code), 'callback_data': {'tp': 'menu'}}
-    if len(welcome_channels[-1]) == 1:
+    menu_button: InlineButtonData = {
+        'text': get_message("skipWelcome", language_code),
+        'callback_data': {'tp': 'menu'}
+    }
+    if welcome_channels and len(welcome_channels[-1]) == 1:
         welcome_channels[-1].append(menu_button)
     else:
         welcome_channels.append([menu_button])
@@ -226,7 +190,7 @@ def construct_welcome_message(language_code, offer=False, top=False) -> list[Mes
 
     result: list[MessageStructuresInterface] = [{
         'type': 'text',
-        'text': get_message(message_text, language_code),
+        'text': get_message("welcomeMessage", language_code),
         'reply_markup': welcome_channels
     }]
     return result

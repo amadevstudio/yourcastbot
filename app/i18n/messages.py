@@ -184,27 +184,6 @@ messages = {
         }
 
     },
-    "offerMessage": {
-        "ru": {
-            "ro_msg": emojiCodes.get('crown') + "\n" + "Популярные каналы:"
-        },
-        "en": {
-            "ro_msg": emojiCodes.get('crown') + "\n" + "Popular channels:"
-        },
-        "pt-BR": {
-            "ro_msg": emojiCodes.get('crown') + "\n" + "Podcastas populares:"
-        },
-        "es": {
-            "ro_msg": emojiCodes.get('crown') + "\n" + "Canales populares:"
-        },
-        "de": {
-            "ro_msg": emojiCodes.get('crown') + "\n" + "Beliebte Podcasts:"
-        },
-        "he": {
-            "ro_msg": emojiCodes.get('crown') + "\n" + "ערוצים פופולריים:"
-        }
-
-    },
     "weAlsoSignedYouOnPodcastName": {
         "ru": {
             "ro_msg": "Мы также подписали вас на <a href='http://t.me/%s?start=podcast_%s'>%s</a>"
@@ -1487,7 +1466,7 @@ messages = {
             "ro_msg": (
                     emojiCodes.get('magnifier') + "\n"
                     + "Пришлите мне название подкаста, который вы хотите найти."
-                      " Например, 'Лайфхакер'")
+                      " Например, 'TED Talks Daily'")
         },
         "en": {
             "ro_msg": (
