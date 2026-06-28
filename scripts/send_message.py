@@ -43,6 +43,13 @@ def log_line(log_path, *args):
 		f.write(line + "\n")
 
 
+def is_channel_identifier(tgid):
+	try:
+		return str(int(tgid)).startswith("-100")
+	except Exception:
+		return False
+
+
 async def send_to_user(
 	tgid, message, parse_mode, attachments, attachment_type, retries=1):
 
@@ -142,13 +149,19 @@ try:
 			"to_creator_only=", to_creator_only)
 		sent_count = 0
 		failed_count = 0
+		skipped_channel_count = 0
 		for reciever in send_to:
 			i += 1
 			if i % SEND_BATCH_SIZE == 0:
 				time.sleep(SEND_BATCH_SLEEP_SECONDS)
 			if i % 100 == 0:
 				log_line(log_path, "progress:", i, "/", recievers_len,
-					"sent=", sent_count, "failed=", failed_count)
+					"sent=", sent_count, "failed=", failed_count,
+					"skipped_channels=", skipped_channel_count)
+			if is_channel_identifier(reciever['telegramId']):
+				skipped_channel_count += 1
+				log_line(log_path, "skipped_channel:", reciever['telegramId'])
+				continue
 			ok, error = bot.loop.run_until_complete(
 				send_to_user(
 					reciever['telegramId'], message, parse_mode,
@@ -162,9 +175,11 @@ try:
 		bot.loop.run_until_complete(
 			send_to_user(
 				config.creatorId,
-				f"All messages sent. Sent: {sent_count}. Failed: {failed_count}. Log: {log_path}",
+				f"All messages sent. Sent: {sent_count}. Failed: {failed_count}. "
+				f"Skipped channels: {skipped_channel_count}. Log: {log_path}",
 				"markdown", [], ""))
-	log_line(log_path, "done:", "sent=", sent_count, "failed=", failed_count)
+	log_line(log_path, "done:", "sent=", sent_count, "failed=", failed_count,
+		"skipped_channels=", skipped_channel_count)
 	print("All done", flush=True)
 	print("Log:", log_path, flush=True)
 
