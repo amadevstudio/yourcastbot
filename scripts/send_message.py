@@ -16,13 +16,12 @@ import os
 import sys
 import base64
 
-from db.dbTypes import UserDBType
-
 bot_path = str(sys.argv[2])
 
 sys.path.insert(1, bot_path)
 os.chdir(bot_path)
 
+from db.dbTypes import UserDBType
 from db.sqliteAdapter import SQLighter
 # from app.repository.storage import storage
 import config
