@@ -5,7 +5,13 @@ from app.controller.builders import welcomeModule, menuModule, subsModule, searc
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
-from app.service.payment import paymentModule, patreonPaymentModule, cryptoBotPaymentModule, robokassaPaymentModule
+from app.service.payment import (
+    paymentModule,
+    patreonPaymentModule,
+    cryptoBotPaymentModule,
+    robokassaPaymentModule,
+    starsPaymentModule,
+)
 
 
 class RouteActionsInterface(TypedDict, total=False):
@@ -109,7 +115,7 @@ class RouteMap:
             'method': paymentModule.open_subscription_page,
             'available_from': ['call', 'command'],
             'commands': ['subscription', 'payment'],
-            'routes': ['bs_trfs', 'bs_patr', 'bs_cryptobot']
+            'routes': ['bs_trfs', 'bs_patr', 'bs_cryptobot', 'bs_stars', 'bs_robokassa']
         },
         'bs_trfs': {
             'method': paymentModule.open_subscription_tariffs_page,
@@ -143,6 +149,15 @@ class RouteMap:
             'method': cryptoBotPaymentModule.open_amount_input_page,
             'available_from': ['call', 'message'],
             'waits_for_input': True,
+        },
+        'bs_stars': {
+            'method': starsPaymentModule.open_subscription_page,
+            'available_from': ['call'],
+            'routes': ['bs_stars_pay']
+        },
+        'bs_stars_pay': {
+            'method': starsPaymentModule.send_invoice,
+            'available_from': ['call']
         },
         'bs_robokassa': {
             'method': robokassaPaymentModule.open_subscription_payment_page,

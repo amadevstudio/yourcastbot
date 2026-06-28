@@ -16,7 +16,7 @@ pytz==2023.3
 requests>=2.32.4,<2.33.0
 rsa==4.9
 six==1.16.0
-Telethon==1.28.5
+Telethon==1.44.0
 urllib3==1.26.19
 pydub==0.25.1
 mutagen==1.46.0

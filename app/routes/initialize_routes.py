@@ -1,3 +1,4 @@
+import asyncio
 import json
 import threading
 from functools import partial
@@ -5,6 +6,8 @@ from typing import Callable, Tuple
 
 import telethon.events
 from telethon import events
+from telethon.tl import types as tl_types
+from telethon.tl.functions.messages import SetBotPrecheckoutResultsRequest
 
 import config
 from agent.bot_telethon import thonbot
@@ -19,6 +22,7 @@ from app.routes import router_tools
 from app.routes.routes_list import AvailableActions
 from app.routes.ptypes import Chat, User, ForwardedFrom, Message, Callback, HandleInThreadParams, Inline
 from app.routes.routes import AvailableRoutes, RouteMap
+from app.service.payment import starsPaymentModule
 from lib.python import dict_tools
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -102,6 +106,18 @@ def test_call(event, state):
         return False
 
 
+def get_payment_chat_id(message) -> int | None:
+    peer_id = getattr(message, 'peer_id', None)
+    if hasattr(peer_id, 'user_id'):
+        return peer_id.user_id
+
+    from_id = getattr(message, 'from_id', None)
+    if hasattr(from_id, 'user_id'):
+        return from_id.user_id
+
+    return None
+
+
 t_answer_sender: TelebotBalancer | None = None
 
 
@@ -116,6 +132,50 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
                 t_answer_sender = telebotAnswerer.TelebotBalancer(
                     answer_sender_queue, threads_to_watch)
             t_answer_sender.main_queue.put(params)
+
+    @thonbot.on(events.Raw(tl_types.UpdateBotPrecheckoutQuery))
+    async def telegram_stars_precheckout(update: tl_types.UpdateBotPrecheckoutQuery):
+        try:
+            success, error = starsPaymentModule.validate_precheckout_payload(
+                update.payload, update.user_id, update.currency, update.total_amount)
+        except Exception as e:
+            logger.err(e)
+            success, error = False, "Invalid payment payload"
+        try:
+            await thonbot(SetBotPrecheckoutResultsRequest(
+                query_id=update.query_id,
+                success=success,
+                error=error if not success else None))
+        except Exception as e:
+            logger.err(e)
+
+    @thonbot.on(events.Raw((tl_types.UpdateNewMessage, tl_types.UpdateNewChannelMessage)))
+    async def telegram_stars_successful_payment(update):
+        message = getattr(update, 'message', None)
+        action = getattr(message, 'action', None)
+        if not isinstance(action, tl_types.MessageActionPaymentSentMe):
+            return
+
+        chat_id = get_payment_chat_id(message)
+        if chat_id is None:
+            logger.err("Telegram Stars successful payment without user chat id")
+            return
+
+        charge_id = getattr(action.charge, 'id', None)
+        if charge_id is None:
+            logger.err("Telegram Stars successful payment without charge id")
+            return
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            starsPaymentModule.process_successful_payment,
+            chat_id,
+            action.currency,
+            action.total_amount,
+            action.payload,
+            charge_id,
+            getattr(action.charge, 'provider_charge_id', None))
 
     # Outer middlewares
     # Catch all message when under maintenance

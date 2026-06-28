@@ -1034,6 +1034,139 @@ class SQLighter:
         return self.findInvoice(
             tgId, serviceType, invoiceId, invoiceHash=invoiceHash)
 
+    def applyPaymentReplenishmentOnce(
+            self, user, serviceType, invoiceId, paidAt, amountCents,
+            tariff_period, invoiceHash=None, status=None
+    ):
+        try:
+            self.cursor.execute("BEGIN IMMEDIATE")
+            user_id = user['id']
+            telegram_id = user['telegramId']
+
+            invoice = self.cursor.execute(
+                """
+                    SELECT * FROM payment_history
+                    WHERE user_id = ? AND service_type = ? AND invoice_id = ?
+                """,
+                (str(user_id), str(serviceType), str(invoiceId),)).fetchone()
+            if invoice is not None:
+                self.connection.commit()
+                return {
+                    'already_processed': True,
+                    'invoice': invoice
+                }
+
+            current_subscription_row = self.cursor.execute(
+                'SELECT * FROM user_tariff_cs WHERE uid = ?',
+                (str(user_id),)).fetchone()
+
+            if current_subscription_row is None:
+                current_subscription = None
+                current_tariff = None
+            else:
+                current_subscription = {
+                    'id': current_subscription_row['id'],
+                    'uid': current_subscription_row['uid'],
+                    'tariff_id': current_subscription_row['tariff_id'],
+                    'balance': current_subscription_row['balance'],
+                    'time_left': current_subscription_row['time_left'],
+                    'notify_count': current_subscription_row['notify_count']
+                }
+                current_tariff = self.cursor.execute(
+                    'SELECT * FROM tariffs WHERE id = ?',
+                    (str(current_subscription['tariff_id']),)).fetchone()
+
+            if current_tariff is None:
+                current_tariff = {
+                    'id': 0, 'level': 0, 'price': 0,
+                    'notify_count': 0, 'compression': 0
+                }
+
+            if current_subscription is None or current_subscription.get('id') == 0:
+                tariff_id = 0
+                new_balance = int(amountCents)
+                new_time_left = 0
+                new_notify_count = 0
+                current_subscription = {
+                    'balance': new_balance,
+                    'time_left': new_time_left,
+                    'notify_count': new_notify_count
+                }
+                result_mode = 0
+                self.cursor.execute(
+                    """
+                        INSERT INTO user_tariff_cs
+                            (uid, tariff_id, balance, time_left, notify_count)
+                        VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (str(user_id), str(tariff_id), str(new_balance),
+                     str(new_time_left), str(new_notify_count),))
+
+            elif current_subscription['time_left'] > 0:
+                new_balance = current_subscription['balance'] + int(amountCents)
+                new_time_left = current_subscription['time_left']
+                new_notify_count = current_subscription['notify_count']
+                self.cursor.execute(
+                    """
+                        UPDATE user_tariff_cs
+                        SET balance = ?, time_left = ?, notify_count = ?
+                        WHERE uid = ?
+                    """,
+                    (str(new_balance), str(new_time_left),
+                     str(new_notify_count), str(user_id),))
+                current_subscription['balance'] = new_balance
+                result_mode = 1
+
+            else:
+                new_balance = current_subscription['balance'] + int(amountCents)
+                new_time_left = current_subscription['time_left']
+                new_notify_count = 0
+
+                if current_tariff['price'] != 0 and new_balance >= current_tariff['price']:
+                    new_balance -= current_tariff['price']
+                    new_time_left = tariff_period
+                    new_notify_count = current_tariff['notify_count']
+                    result_mode = 2
+                elif current_tariff['price'] != 0:
+                    result_mode = 3
+                else:
+                    result_mode = 0
+
+                self.cursor.execute(
+                    """
+                        UPDATE user_tariff_cs
+                        SET balance = ?, time_left = ?, notify_count = ?
+                        WHERE uid = ?
+                    """,
+                    (str(new_balance), str(new_time_left),
+                     str(new_notify_count), str(user_id),))
+                current_subscription['balance'] = new_balance
+                current_subscription['time_left'] = new_time_left
+                current_subscription['notify_count'] = new_notify_count
+
+            self.cursor.execute(
+                """
+                    INSERT INTO payment_history
+                        (user_id, service_type, invoice_id, invoice_hash,
+                         status, amount, datetime)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (str(user_id), str(serviceType), str(invoiceId), invoiceHash,
+                 status, int(amountCents) if amountCents is not None else amountCents,
+                 str(paidAt),))
+            self.connection.commit()
+
+            return {
+                'already_processed': False,
+                'result_mode': result_mode,
+                'current_tariff': current_tariff,
+                'current_subscription': current_subscription,
+                'telegram_id': telegram_id
+            }
+        except Exception:
+            self.connection.rollback()
+            raise
+
     def subscribeUserToTariffByTg(
             self, telegram_id, tariff_id, balance, time_left, notify_count):
         with self.connection:

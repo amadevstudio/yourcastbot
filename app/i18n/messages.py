@@ -2272,6 +2272,70 @@ messages = {
             "ro_msg": "Fazer uma recarga através do Crypto Bot"
         }
     },
+    "payViaTelegramStars": {
+        "ru": {
+            "ro_msg": "Пополнить через Telegram Stars ⭐"
+        },
+        "en": {
+            "ro_msg": "Top up with Telegram Stars ⭐"
+        },
+        "pt-BR": {
+            "ro_msg": "Recarregar com Telegram Stars ⭐"
+        }
+    },
+    "bot_sub_stars_page_body": {
+        "ru": {
+            "ro_msg": "Выберите сумму пополнения баланса через Telegram Stars.\n"
+                      "Кнопки ниже пополняют USD-баланс на стоимость соответствующего тарифа. "
+                      "Текущий тариф затем активируется или продлевается по обычным правилам баланса.\n"
+                      "Курс Telegram: 1000 ⭐ ≈ {rate}$."
+        },
+        "en": {
+            "ro_msg": "Choose a balance top-up amount via Telegram Stars.\n"
+                      "The buttons below top up the USD balance by the corresponding tariff price. "
+                      "Your current tariff is then activated or renewed by the usual balance rules.\n"
+                      "Telegram rate: 1000 ⭐ ≈ ${rate}."
+        },
+        "pt-BR": {
+            "ro_msg": "Escolha um valor de recarga do saldo via Telegram Stars.\n"
+                      "Os botões abaixo recarregam o saldo USD pelo preço do plano correspondente. "
+                      "Seu plano atual é ativado ou renovado pelas regras normais do saldo.\n"
+                      "Taxa do Telegram: 1000 ⭐ ≈ US${rate}."
+        }
+    },
+    "telegram_stars_invoice_title": {
+        "ru": {
+            "ro_msg": "Пополнение баланса"
+        },
+        "en": {
+            "ro_msg": "Balance top-up"
+        },
+        "pt-BR": {
+            "ro_msg": "Recarga de saldo"
+        }
+    },
+    "telegram_stars_invoice_description": {
+        "ru": {
+            "ro_msg": "Пополнение баланса на {balance}$ за {stars} ⭐. Курс: 1000 ⭐ ≈ {rate}$."
+        },
+        "en": {
+            "ro_msg": "Top up balance by ${balance} for {stars} ⭐. Rate: 1000 ⭐ ≈ ${rate}."
+        },
+        "pt-BR": {
+            "ro_msg": "Recarregar saldo em US${balance} por {stars} ⭐. Taxa: 1000 ⭐ ≈ US${rate}."
+        }
+    },
+    "telegram_stars_invoice_error": {
+        "ru": {
+            "ro_msg": "Не удалось создать счёт Telegram Stars. Попробуйте позже."
+        },
+        "en": {
+            "ro_msg": "Could not create a Telegram Stars invoice. Please try again later."
+        },
+        "pt-BR": {
+            "ro_msg": "Não foi possível criar a fatura do Telegram Stars. Tente novamente mais tarde."
+        }
+    },
     "bot_sub_cryptobot_page_body": {
         "ru": {
             "ro_msg": "Выберите криптовалюту, которая есть "
