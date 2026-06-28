@@ -6,7 +6,8 @@ from config import db_path
 from config import (
     tariff_ref_period, tariff_ref_no_subscription_period,
     tariff_ref_notifies, tariff_ref_sub_period,
-    tariff_new_user_period, tariff_secret_start_cmd_period)
+    tariff_new_user_period, tariff_secret_start_cmd_period,
+    tariff_period)
 from db.sqliteAdapter import SQLighter
 
 
@@ -53,6 +54,84 @@ class TariffParams(TypedDict):
     price: int
     notify_count: int
     compression: int
+
+
+class PaymentApplyResult(TypedDict):
+    result_mode: int
+    current_tariff: TariffParams
+    current_subscription: dict
+
+
+def apply_balance_replenishment(db: SQLighter, user, amount_cents: int) -> PaymentApplyResult:
+    chat_tg_id = user['telegramId']
+
+    current_subscription = db.getUserSubscriptionByTg(chat_tg_id)
+    if current_subscription is None:
+        current_tariff = None
+    else:
+        current_subscription = {
+            'id': current_subscription['id'],
+            'uid': current_subscription['uid'],
+            'tariff_id': current_subscription['tariff_id'],
+            'balance': current_subscription['balance'],
+            'time_left': current_subscription['time_left'],
+            'notify_count': current_subscription['notify_count']
+        }
+        current_tariff = db.getTariffById(current_subscription['tariff_id'])
+    if current_tariff is None:
+        current_tariff = {'id': 0, 'level': 0, 'price': 0, 'notify_count': 0, 'compression': 0}
+
+    if current_subscription is None or current_subscription['id'] == 0:
+        balance = int(amount_cents)
+        db.subscribeUserToTariffByTg(chat_tg_id, 0, balance, 0, 0)
+        current_subscription = {
+            'balance': balance,
+            'time_left': 0,
+            'notify_count': 0
+        }
+        result_mode = 0
+
+    elif current_subscription['time_left'] > 0:
+        new_user_balance = current_subscription['balance'] + int(amount_cents)
+        db.subscribeUserToTariffByTg(
+            chat_tg_id, current_subscription['tariff_id'],
+            new_user_balance, current_subscription['time_left'],
+            current_subscription['notify_count'])
+        current_subscription['balance'] = new_user_balance
+        result_mode = 1
+
+    else:
+        new_user_balance = current_subscription['balance'] + int(amount_cents)
+        if current_tariff['price'] != 0:
+            if new_user_balance >= current_tariff['price']:
+                new_user_balance -= current_tariff['price']
+                db.subscribeUserToTariffByTg(
+                    chat_tg_id, current_subscription['tariff_id'],
+                    new_user_balance, tariff_period,
+                    current_tariff['notify_count'])
+                current_subscription['balance'] = new_user_balance
+                current_subscription['time_left'] = tariff_period
+                current_subscription['notify_count'] = current_tariff['notify_count']
+                result_mode = 2
+            else:
+                db.subscribeUserToTariffByTg(
+                    chat_tg_id, current_subscription['tariff_id'],
+                    new_user_balance, current_subscription['time_left'], 0)
+                current_subscription['balance'] = new_user_balance
+                current_subscription['notify_count'] = 0
+                result_mode = 3
+        else:
+            db.subscribeUserToTariffByTg(
+                chat_tg_id, current_subscription['tariff_id'],
+                new_user_balance, current_subscription['time_left'], 0)
+            current_subscription['balance'] = new_user_balance
+            result_mode = 0
+
+    return {
+        'result_mode': result_mode,
+        'current_tariff': current_tariff,
+        'current_subscription': current_subscription
+    }
 
 
 def get_tariff_params_by_tg(telegram_id: int) -> Tuple[TariffParams, int, int, int]:

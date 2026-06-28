@@ -130,6 +130,7 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
         [{'text': get_message("tariffs", language_code), 'callback_data': {'tp': 'bs_trfs'}}],
         [{'text': get_message("payViaPatreon", language_code), 'callback_data': {'tp': 'bs_patr'}}],
         [{'text': get_message("payViaCryptoBot", language_code), 'callback_data': {'tp': 'bs_cryptobot'}}],
+        [{'text': get_message("payViaTelegramStars", language_code), 'callback_data': {'tp': 'bs_stars'}}],
         # [{'text': get_message("payViaRobokassa", language_code), 'callback_data': {'tp': 'bs_robokassa'}}],
         [go_back_inline_button(language_code)]]
 

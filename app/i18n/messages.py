@@ -2272,6 +2272,67 @@ messages = {
             "ro_msg": "Fazer uma recarga através do Crypto Bot"
         }
     },
+    "payViaTelegramStars": {
+        "ru": {
+            "ro_msg": "Оплатить Telegram Stars ⭐"
+        },
+        "en": {
+            "ro_msg": "Pay with Telegram Stars ⭐"
+        },
+        "pt-BR": {
+            "ro_msg": "Pagar com Telegram Stars ⭐"
+        }
+    },
+    "bot_sub_stars_page_body": {
+        "ru": {
+            "ro_msg": "Выберите тариф для оплаты звёздами Telegram.\n"
+                      "Цены тарифов остаются в USD-балансе бота и пересчитываются "
+                      "в Stars по текущему курсу Telegram: 1000 ⭐ ≈ {rate}$."
+        },
+        "en": {
+            "ro_msg": "Choose a tariff to pay with Telegram Stars.\n"
+                      "Tariff prices stay in the bot's USD balance and are converted "
+                      "to Stars using Telegram's current rate: 1000 ⭐ ≈ ${rate}."
+        },
+        "pt-BR": {
+            "ro_msg": "Escolha um plano para pagar com Telegram Stars.\n"
+                      "Os preços dos planos continuam no saldo USD do bot e são convertidos "
+                      "para Stars pela taxa atual do Telegram: 1000 ⭐ ≈ US${rate}."
+        }
+    },
+    "telegram_stars_invoice_title": {
+        "ru": {
+            "ro_msg": "Пополнение баланса"
+        },
+        "en": {
+            "ro_msg": "Balance top-up"
+        },
+        "pt-BR": {
+            "ro_msg": "Recarga de saldo"
+        }
+    },
+    "telegram_stars_invoice_description": {
+        "ru": {
+            "ro_msg": "Пополнение баланса на {balance}$ за {stars} ⭐. Курс: 1000 ⭐ ≈ {rate}$."
+        },
+        "en": {
+            "ro_msg": "Top up balance by ${balance} for {stars} ⭐. Rate: 1000 ⭐ ≈ ${rate}."
+        },
+        "pt-BR": {
+            "ro_msg": "Recarregar saldo em US${balance} por {stars} ⭐. Taxa: 1000 ⭐ ≈ US${rate}."
+        }
+    },
+    "telegram_stars_invoice_error": {
+        "ru": {
+            "ro_msg": "Не удалось создать счёт Telegram Stars. Попробуйте позже."
+        },
+        "en": {
+            "ro_msg": "Could not create a Telegram Stars invoice. Please try again later."
+        },
+        "pt-BR": {
+            "ro_msg": "Não foi possível criar a fatura do Telegram Stars. Tente novamente mais tarde."
+        }
+    },
     "bot_sub_cryptobot_page_body": {
         "ru": {
             "ro_msg": "Выберите криптовалюту, которая есть "
