@@ -31,29 +31,50 @@ api_hash = config.app_api_hash
 bot_token = config.token
 
 getps = sys.argv[1]
+SEND_BATCH_SIZE = 50
+SEND_BATCH_SLEEP_SECONDS = 1
+
+
+def log_line(log_path, *args):
+	now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+	line = f"[{now}] " + " ".join(str(arg) for arg in args)
+	print(line, flush=True)
+	with open(log_path, "a", encoding="utf-8") as f:
+		f.write(line + "\n")
 
 
 async def send_to_user(
-	tgid, message, parse_mode, attachments, attachment_type):
+	tgid, message, parse_mode, attachments, attachment_type, retries=1):
 
 	try:
 		if attachment_type == "":
-			msg = await bot.send_message(int(tgid), message, parse_mode=parse_mode)
+			await bot.send_message(int(tgid), message, parse_mode=parse_mode)
 			# storage.set_user_last_text(tgid, msg.id)
 		elif attachment_type == "image" or attachment_type == "audio":
-			msg = await bot.send_message(
+			await bot.send_message(
 				int(tgid), message, parse_mode=parse_mode, file=attachments)
-	except Exception:
-		pass
+		return True, None
+	except Exception as e:
+		wait_seconds = getattr(e, "seconds", None)
+		if wait_seconds is not None and retries > 0:
+			time.sleep(int(wait_seconds) + 1)
+			return await send_to_user(
+				tgid, message, parse_mode, attachments, attachment_type,
+				retries=retries - 1)
+		return False, e
 
 async def upload_file(link, filename):
 	file = await bot.upload_file(link, file_name=filename)
 	return file
 
 try:
+	log_dir = os.path.join(bot_path, "log")
+	os.makedirs(log_dir, exist_ok=True)
+	log_file_name = "admin_mailing_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".log"
+	log_path = os.path.join(log_dir, log_file_name)
 
 	params = json.loads(base64.b64decode(getps).decode('utf-8'))
-	print(params, flush=True)
+	log_line(log_path, "params:", params)
 
 	if 'to_creator_only' in params and params['to_creator_only'] == 'true':
 		to_creator_only = True
@@ -117,21 +138,35 @@ try:
 			send_to_user(
 				config.creatorId, f"Start sending messages to {recievers_len}",
 				"markdown", [], ""))
+		log_line(log_path, "start:", "recipients=", recievers_len, "language=", language,
+			"to_creator_only=", to_creator_only)
+		sent_count = 0
+		failed_count = 0
 		for reciever in send_to:
 			i += 1
-			if i % 10 == 0:
-				time.sleep(1)
+			if i % SEND_BATCH_SIZE == 0:
+				time.sleep(SEND_BATCH_SLEEP_SECONDS)
 			if i % 100 == 0:
-				print('%d / %d' % (i, recievers_len), flush=True)
-				print(datetime.datetime.now())
-			bot.loop.run_until_complete(
+				log_line(log_path, "progress:", i, "/", recievers_len,
+					"sent=", sent_count, "failed=", failed_count)
+			ok, error = bot.loop.run_until_complete(
 				send_to_user(
 					reciever['telegramId'], message, parse_mode,
 					attachments, attachment_type))
+			if ok:
+				sent_count += 1
+			else:
+				failed_count += 1
+				log_line(log_path, "failed:", reciever['telegramId'],
+					type(error).__name__, error)
 		bot.loop.run_until_complete(
 			send_to_user(
-				config.creatorId, "All messages sent", "markdown", [], ""))
+				config.creatorId,
+				f"All messages sent. Sent: {sent_count}. Failed: {failed_count}. Log: {log_path}",
+				"markdown", [], ""))
+	log_line(log_path, "done:", "sent=", sent_count, "failed=", failed_count)
 	print("All done", flush=True)
+	print("Log:", log_path, flush=True)
 
 except Exception as e:
 
