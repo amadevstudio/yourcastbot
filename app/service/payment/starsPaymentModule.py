@@ -39,6 +39,10 @@ _stars_rate_updated_at: float | None = None
 logger = Logger(file="payment_stars")
 
 
+class StarsRateUnavailable(Exception):
+    pass
+
+
 class StarsPayload(TypedDict):
     t: int
     b: int
@@ -79,7 +83,7 @@ async def _fetch_stars_withdraw_rate_x1000() -> int:
         await client.disconnect()
 
 
-def get_stars_withdraw_rate_x1000(force: bool = False) -> int:
+def get_stars_withdraw_rate_x1000(force: bool = False, allow_fallback: bool = True) -> int:
     global _stars_rate_x1000, _stars_rate_updated_at
 
     now = time.time()
@@ -91,15 +95,21 @@ def get_stars_withdraw_rate_x1000(force: bool = False) -> int:
         return _stars_rate_x1000
 
     try:
-        _stars_rate_x1000 = asyncio.run(_fetch_stars_withdraw_rate_x1000())
+        rate = asyncio.run(_fetch_stars_withdraw_rate_x1000())
+        _stars_rate_x1000 = rate
         _stars_rate_updated_at = now
+        return rate
     except Exception as e:
         logger.err(e)
-        if _stars_rate_x1000 is None:
-            _stars_rate_x1000 = STARS_DEFAULT_WITHDRAW_RATE_X1000
-        _stars_rate_updated_at = now
+        if allow_fallback:
+            return _stars_rate_x1000 or STARS_DEFAULT_WITHDRAW_RATE_X1000
+        raise StarsRateUnavailable("Telegram Stars withdraw rate is unavailable") from e
 
     return _stars_rate_x1000
+
+
+def get_invoice_stars_withdraw_rate_x1000() -> int:
+    return get_stars_withdraw_rate_x1000(allow_fallback=False)
 
 
 def stars_for_balance(balance_amount: int, rate_x1000: int) -> int:
@@ -233,7 +243,12 @@ def send_invoice(data: ControllerParams):
         return False
 
     amount_balance = int(selected_tariff['price'])
-    rate_x1000 = get_stars_withdraw_rate_x1000()
+    try:
+        rate_x1000 = get_invoice_stars_withdraw_rate_x1000()
+    except StarsRateUnavailable as e:
+        logger.err(e)
+        notify(data['callback'], data['message'], get_message('telegram_stars_invoice_error', data['language_code']), alert=True)
+        return False
     amount_stars = stars_for_balance(amount_balance, rate_x1000)
 
     payload = create_payload(data['chat_id'], amount_balance, amount_stars, rate_x1000)

@@ -2274,30 +2274,33 @@ messages = {
     },
     "payViaTelegramStars": {
         "ru": {
-            "ro_msg": "Оплатить Telegram Stars ⭐"
+            "ro_msg": "Пополнить через Telegram Stars ⭐"
         },
         "en": {
-            "ro_msg": "Pay with Telegram Stars ⭐"
+            "ro_msg": "Top up with Telegram Stars ⭐"
         },
         "pt-BR": {
-            "ro_msg": "Pagar com Telegram Stars ⭐"
+            "ro_msg": "Recarregar com Telegram Stars ⭐"
         }
     },
     "bot_sub_stars_page_body": {
         "ru": {
-            "ro_msg": "Выберите тариф для оплаты звёздами Telegram.\n"
-                      "Цены тарифов остаются в USD-балансе бота и пересчитываются "
-                      "в Stars по текущему курсу Telegram: 1000 ⭐ ≈ {rate}$."
+            "ro_msg": "Выберите сумму пополнения баланса через Telegram Stars.\n"
+                      "Кнопки ниже пополняют USD-баланс на стоимость соответствующего тарифа. "
+                      "Текущий тариф затем активируется или продлевается по обычным правилам баланса.\n"
+                      "Курс Telegram: 1000 ⭐ ≈ {rate}$."
         },
         "en": {
-            "ro_msg": "Choose a tariff to pay with Telegram Stars.\n"
-                      "Tariff prices stay in the bot's USD balance and are converted "
-                      "to Stars using Telegram's current rate: 1000 ⭐ ≈ ${rate}."
+            "ro_msg": "Choose a balance top-up amount via Telegram Stars.\n"
+                      "The buttons below top up the USD balance by the corresponding tariff price. "
+                      "Your current tariff is then activated or renewed by the usual balance rules.\n"
+                      "Telegram rate: 1000 ⭐ ≈ ${rate}."
         },
         "pt-BR": {
-            "ro_msg": "Escolha um plano para pagar com Telegram Stars.\n"
-                      "Os preços dos planos continuam no saldo USD do bot e são convertidos "
-                      "para Stars pela taxa atual do Telegram: 1000 ⭐ ≈ US${rate}."
+            "ro_msg": "Escolha um valor de recarga do saldo via Telegram Stars.\n"
+                      "Os botões abaixo recarregam o saldo USD pelo preço do plano correspondente. "
+                      "Seu plano atual é ativado ou renovado pelas regras normais do saldo.\n"
+                      "Taxa do Telegram: 1000 ⭐ ≈ US${rate}."
         }
     },
     "telegram_stars_invoice_title": {
