@@ -1,37 +1,29 @@
-import patreon
+import json
 
-creator_access_token = "6jzw4B9fOW-QOEBJ64szhxdU1fJ-0mWO8CSYid8ZrfY"
+import requests
 
-api_client = patreon.API(creator_access_token)
-# print(dir(api_client))
-campaign_id = api_client.fetch_campaign_and_patrons().data()[0].id()
-pledges_response = api_client.fetch_page_of_pledges(
-    campaign_id,
-    25,
-)
+from config import (
+    patreon_creator_access_token, patreon_subs_perpage,
+    patreon_api_v2_url, patreon_request_timeout)
 
-# names = []
-all_pledges = pledges_response.data()
-# print(all_pledges)
-# for pledge in all_pledges:
-#     patron_id = pledge.relationship('patron').id()
-#     # x = pledge.relationship('patron').attributes()
-#     # print(x)
-#     # patron = find_resource_by_type_and_id('user', patron_id)
-#     # names.append(patron.attribute('full_name'))
-#     names.append(patron_id)
+headers = {'Authorization': "Bearer {}".format(patreon_creator_access_token)}
 
-# https://docs.patreon.com/?python#campaign
-names_and_membershipss = [{
-    # 'attributes': member.attributes(),
-    # 'relationships': member.relationships(),
-    'cents': member.attribute('amount_cents'),
-    'currency': member.attribute('currency'),
-    'user': member.relationship('patron').attribute('email'),
-    'declined_cinse': member.attribute('declined_since'),
-    'status': member.attribute('status'),
-    'is_paused': member.attribute('is_paused'),
-    # 'user_id': member.relationships()['patron']['data']['id'],
-} for member in all_pledges]
+# https://docs.patreon.com/#campaigns
+campaigns = requests.get(
+    "{}/campaigns".format(patreon_api_v2_url),
+    params={'page[count]': 1}, headers=headers,
+    timeout=patreon_request_timeout).json()
+campaign_id = campaigns['data'][0]['id']
 
-print(names_and_membershipss)
+# https://docs.patreon.com/#members
+members = requests.get(
+    "{}/campaigns/{}/members".format(patreon_api_v2_url, campaign_id),
+    params={
+        'fields[member]': ','.join([
+            'email', 'currently_entitled_amount_cents', 'patron_status',
+            'last_charge_date', 'last_charge_status']),
+        'page[count]': patreon_subs_perpage,
+    },
+    headers=headers, timeout=patreon_request_timeout).json()
+
+print(json.dumps(members, indent=2, ensure_ascii=False))

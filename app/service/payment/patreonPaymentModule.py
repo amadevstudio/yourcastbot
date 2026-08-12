@@ -3,7 +3,6 @@ import datetime
 import threading
 from typing import Any
 
-import patreon
 import requests
 from telebot import types
 
@@ -19,6 +18,7 @@ from app.service.payment.paymentModule import (
 from config import (
     db_path, creator_email, special_paid_emails,
     patreon_creator_access_token, patreon_subs_perpage,
+    patreon_api_v2_url, patreon_request_timeout,
     donate_link)
 from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
@@ -230,30 +230,75 @@ def check_patreon_accounts(initiator=None):
         storage.add_user_state(initiator['telegramId'], 'empty')
 
 
-# загрузить патронов из patreon
-def load_patrons() -> dict[str, Any] | None:
-    api_client = patreon.API(patreon_creator_access_token)
+# запрос к patreon api v2
+def patreon_api_get(url: str, params: dict[str, Any]) -> dict[str, Any] | None:
     try:
-        campaign_id = api_client.fetch_campaign_and_patrons().data()[0].id()
-    except requests.exceptions.JSONDecodeError as e:
+        response = requests.get(
+            url, params=params,
+            headers={'Authorization': "Bearer {}".format(patreon_creator_access_token)},
+            timeout=patreon_request_timeout)
+        body = response.json()
+    except (requests.exceptions.RequestException, requests.exceptions.JSONDecodeError) as e:
         logger.err(e)
         return None
 
-    pledges_response = api_client.fetch_page_of_pledges(
-        campaign_id,
-        patreon_subs_perpage,
-    )
-    all_pledges = pledges_response.data()
+    if response.status_code != 200 or body.get('errors'):
+        logger.warn("Patreon api error", response.status_code, body.get('errors'))
+        return None
+
+    return body
+
+
+# загрузить патронов из patreon
+def load_patrons() -> dict[str, Any] | None:
+    campaigns = patreon_api_get(
+        "{}/campaigns".format(patreon_api_v2_url), {'page[count]': 1})
+    if campaigns is None:
+        return None
+
+    campaigns_data = campaigns.get('data') or []
+    if not campaigns_data:
+        logger.warn("No patreon campaigns found")
+        return None
+    campaign_id = campaigns_data[0]['id']
+
+    params: dict[str, Any] = {
+        'fields[member]': ','.join([
+            'email', 'currently_entitled_amount_cents', 'patron_status',
+            'last_charge_date', 'last_charge_status']),
+        'page[count]': patreon_subs_perpage,
+    }
+    members_url = "{}/campaigns/{}/members".format(patreon_api_v2_url, campaign_id)
+
     members: dict[str, Any] = {}
-    for member in all_pledges:
-        patron_email = member.relationship('patron').attribute('email').lower()
-        members[patron_email] = {
-            'cents': member.attribute('amount_cents'),
-            'currency': member.attribute('currency'),
-            'declined_since': member.attribute('declined_since'),
-            'status': member.attribute('status'),
-            'is_paused': member.attribute('is_paused'),
-        }
+    while True:
+        page = patreon_api_get(members_url, params)
+        if page is None:
+            return None
+
+        for member in page.get('data') or []:
+            attributes = member.get('attributes') or {}
+
+            # патрон мог не дать доступ к почте — сопоставить с юзером нечем
+            patron_email = attributes.get('email')
+            if not patron_email:
+                continue
+
+            # неактивных не начисляем: у них currently_entitled_amount_cents = 0
+            if attributes.get('patron_status') != 'active_patron':
+                continue
+
+            members[patron_email.lower()] = {
+                'cents': attributes.get('currently_entitled_amount_cents') or 0,
+                'status': attributes.get('patron_status'),
+                'last_charge_date': attributes.get('last_charge_date'),
+                'last_charge_status': attributes.get('last_charge_status'),
+            }
+
+        cursor = (page.get('meta') or {}).get('pagination', {}).get('cursors', {}).get('next')
+        if not cursor:
+            break
+        params = {**params, 'page[cursor]': cursor}
 
     return members
 

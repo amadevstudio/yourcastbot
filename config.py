@@ -73,6 +73,8 @@ creator_email = constants.yandex_disk_mail
 special_paid_emails = constants.special_paid_emails
 patreon_creator_access_token = constants.patreon_creator_access_token
 patreon_subs_perpage = 100
+patreon_api_v2_url = "https://www.patreon.com/api/oauth2/v2"
+patreon_request_timeout = 30
 
 crypto_bot_api_key = constants.crypto_bot_api_key
 crypto_bot_api_key_test = constants.crypto_bot_api_key_test
