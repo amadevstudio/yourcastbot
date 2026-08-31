@@ -50,47 +50,65 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
     def run(self):
 
         while True:
-            # bot, action, user_id, func_params
-            input_data = self.main_queue.get()
+            try:
+                input_data = self.main_queue.get()
+            except Exception as e:
+                logger.err("Send balancer failed to read queue:", e)
+                continue
 
-            logger.log("Received new sending task")
+            try:
+                self._dispatch(input_data)
+            except Exception as e:
+                logger.err("Send balancer failed to dispatch:", e)
+            finally:
+                try:
+                    self.main_queue.task_done()
+                except ValueError:
+                    pass
 
-            action = input_data['action']
-            if action not in self.actions:
-                return
+    def _dispatch(self, input_data):
+        logger.log("Received new sending task")
 
-            self.cancel_threads_booking()
+        action = input_data['action']
+        if action not in self.actions:
+            logger.warn(f"Unknown sender action {action!r}, skipping")
+            return
 
-            logger.log(f"Sender threads state for {action}",
-                       [f"Is alive: {t.is_alive()}, {t.name}" for t in self.threads[action]], "\n",
-                       "Pending queues", [q.qsize() for q in self.queues[action]], "\n",
-                       "User bookings", self.user_threads[action])
+        self.cancel_threads_booking()
 
-            # бронирован ли поток?
-            current_user_thread = self.user_threads[action].get(input_data['user_id'], None)
-            if current_user_thread is None:  # у пользователя нет занятых потоков
-                current_thread_index = self.less_loaded_thread_index(action)
-            else:  # пользователь уже занял поток
-                current_thread_index = current_user_thread
-            # бронируем поток под пользователя
-            self.user_threads[action][input_data['user_id']] = current_thread_index
+        logger.log(f"Sender threads state for {action}",
+                   [f"Is alive: {t.is_alive()}, {t.name}" for t in self.threads[action]], "\n",
+                   "Pending queues", [q.qsize() for q in self.queues[action]], "\n",
+                   "User bookings", self.user_threads[action])
 
-            logger.log(f"For user {input_data['user_id']} thread {current_thread_index} is chosen")
+        # бронирован ли поток?
+        current_user_thread = self.user_threads[action].get(input_data['user_id'], None)
+        if current_user_thread is None:  # у пользователя нет занятых потоков
+            current_thread_index = self.less_loaded_thread_index(action)
+        else:  # пользователь уже занял поток
+            current_thread_index = current_user_thread
+        # бронируем поток под пользователя
+        self.user_threads[action][input_data['user_id']] = current_thread_index
 
-            if not self.threads[action][current_thread_index].is_alive():
-                logger.log(f"Thread {action}:{current_thread_index} is dead, restarting")
-                self.threads[action][current_thread_index] = RecordSender(
-                    self.queues[action][current_thread_index],
-                    f"{action}_{current_thread_index}")
-                self.threads[action][current_thread_index].start()
-                logger.log(
-                    f"Thread {action}:{current_thread_index} is started, current is alive is "
-                    f"{self.threads[action][current_thread_index].is_alive()}")
+        logger.log(f"For user {input_data['user_id']} thread {current_thread_index} is chosen")
 
-            self.threads[action][current_thread_index].resume()
-            self.threads[action][current_thread_index].thread_queue.put(input_data)
+        self._ensure_sender_alive(action, current_thread_index)
 
-            self.main_queue.task_done()
+        self.threads[action][current_thread_index].resume()
+        self.queues[action][current_thread_index].put(input_data)
+
+    def _ensure_sender_alive(self, action, current_thread_index):
+        if self.threads[action][current_thread_index].is_alive():
+            return
+
+        logger.log(f"Thread {action}:{current_thread_index} is dead, restarting")
+        self.threads[action][current_thread_index] = RecordSender(
+            self.queues[action][current_thread_index],
+            f"{action}_{current_thread_index}")
+        self.threads[action][current_thread_index].start()
+        logger.log(
+            f"Thread {action}:{current_thread_index} is started, current is alive is "
+            f"{self.threads[action][current_thread_index].is_alive()}")
 
     def less_loaded_thread_index(self, action):
         minimum = -1
@@ -117,6 +135,7 @@ class RecordSender(threading.Thread):
 
         threading.Thread.__init__(self, args=(), kwargs=None)
         self.daemon = True
+        self.name = thread_num
         self.paused = True
         self.state = threading.Condition()
 
@@ -144,14 +163,21 @@ class RecordSender(threading.Thread):
         thonbot.disconnect()
 
         while True:
-            input_data = self.thread_queue.get()
-            logger.log(f"Sending in thread #{self.thread_num}")
+            try:
+                input_data = self.thread_queue.get()
+            except Exception as e:
+                logger.err(f"{self.thread_num} failed to read queue:", e)
+                continue
 
-            self.process_input(input_data, thonbot)
-
-            self.thread_queue.task_done()
-            if self.thread_queue.empty():
-                self.pause()
+            try:
+                logger.log(f"Sending in thread #{self.thread_num}")
+                self.process_input(input_data, thonbot)
+            except Exception as e:
+                logger.err(f"{self.thread_num} failed sending, continuing:", e)
+            finally:
+                self.thread_queue.task_done()
+                if self.thread_queue.empty():
+                    self.pause()
 
     def process_input(self, input_data, thonbot):
 

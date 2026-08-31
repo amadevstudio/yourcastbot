@@ -43,26 +43,36 @@ class TelebotBalancer(threading.Thread):
     def run(self):
 
         while True:
-            input_data = self.main_queue.get()
+            try:
+                input_data = self.main_queue.get()
+            except Exception as e:
+                logger.err("Telebot balancer failed to read queue:", e)
+                continue
 
-            logger.log('Incoming task...' + str(datetime.datetime.now()))
+            try:
+                logger.log('Incoming task...' + str(datetime.datetime.now()))
 
-            if not self.send_threads[self.current_send_thread].is_alive():
-                logger.warn(f"THREAD IS DEAD: send_{self.current_send_thread}")
-                self.send_queues[self.current_send_thread] = queue.Queue()
-                self.send_threads[self.current_send_thread] = TheSender(
-                    self.send_queues[self.current_send_thread],
-                    self.threads_to_watch,
-                    f"send_{self.current_send_thread}")
-                self.send_threads[self.current_send_thread].start()
-                print(
-                    self.send_queues[self.current_send_thread],
-                    self.send_threads[self.current_send_thread])
+                slot = self.current_send_thread
+                self._ensure_sender_alive(slot)
 
-            logger.log(f"Using thread {self.current_send_thread}")
-            self.send_threads[self.current_send_thread].thread_queue.put(input_data)
-            self.current_send_thread = (self.current_send_thread + 1) \
-                                       % self.count_send_threads
+                logger.log(f"Using thread {slot}")
+                # Always the slot queue, never a replacement: pending work
+                # survives a dead TheSender.
+                self.send_queues[slot].put(input_data)
+                self.current_send_thread = (slot + 1) % self.count_send_threads
+            except Exception as e:
+                logger.err("Telebot balancer failed to dispatch:", e)
+
+    def _ensure_sender_alive(self, slot: int):
+        if self.send_threads[slot].is_alive():
+            return
+
+        logger.warn(f"THREAD IS DEAD: send_{slot}, restarting on the same queue")
+        self.send_threads[slot] = TheSender(
+            self.send_queues[slot],
+            self.threads_to_watch,
+            f"send_{slot}")
+        self.send_threads[slot].start()
 
 
 def process_input(input_data) -> bool | None:
@@ -79,6 +89,7 @@ class TheSender(threading.Thread):
 
         threading.Thread.__init__(self, args=(), kwargs=None)
         self.daemon = True
+        self.name = thread_num
 
         self.threads_to_watch = threads_to_watch
 
@@ -88,40 +99,51 @@ class TheSender(threading.Thread):
     def run(self):
 
         while True:
-            input_data: HandleInThreadParams = self.thread_queue.get()
-            logger.log(f"Hello from {self.thread_num}")
-
-            if input_data['data'] is None:  # The action is filtered
+            try:
+                input_data: HandleInThreadParams = self.thread_queue.get()
+            except Exception as e:
+                logger.err(f"{self.thread_num} failed to read queue:", e)
                 continue
 
-            # Check threads
-            check_threads(self.threads_to_watch)
+            try:
+                self._serve(input_data)
+            except Exception as e:
+                logger.err(f"{self.thread_num} failed serving a request, continuing:", e)
 
-            # Actions in the bot
-            if 'message' in input_data['data'] and 'callback' in input_data['data']:
-                controller_params: ControllerParams = typing.cast(ControllerParams, input_data['data'])
-                log_incoming_data(controller_params['callback'], controller_params['message'])
+    def _serve(self, input_data: HandleInThreadParams):
+        logger.log(f"Hello from {self.thread_num}")
 
-                # Set user
-                input_data['data']['user'] = get_user(input_data['data']['chat_id'])
+        if input_data['data'] is None:  # The action is filtered
+            return
 
-                start_related_params = self._action(input_data)
-                analytics_serving(
-                    controller_params, input_data['data']['user'],
-                    start_related_params['is_new_user'], start_related_params['is_by_refer'],
-                    start_related_params['action'])
+        # Check threads
+        check_threads(self.threads_to_watch)
 
-            # Inline query
-            elif 'inline' in input_data['data']:
-                log_incoming_inline(input_data['data']['inline'])
+        # Actions in the bot
+        if 'message' in input_data['data'] and 'callback' in input_data['data']:
+            controller_params: ControllerParams = typing.cast(ControllerParams, input_data['data'])
+            log_incoming_data(controller_params['callback'], controller_params['message'])
 
-                # Set user
-                input_data['data']['user'] = get_user(input_data['data']['inline'].user_id)
+            # Set user
+            input_data['data']['user'] = get_user(input_data['data']['chat_id'])
 
-                process_input(input_data)
-                analytics_serving_inline(input_data['data'], input_data['data']['user'])
+            start_related_params = self._action(input_data)
+            analytics_serving(
+                controller_params, input_data['data']['user'],
+                start_related_params['is_new_user'], start_related_params['is_by_refer'],
+                start_related_params['action'])
 
-            logger.log("Served\n\n")
+        # Inline query
+        elif 'inline' in input_data['data']:
+            log_incoming_inline(input_data['data']['inline'])
+
+            # Set user
+            input_data['data']['user'] = get_user(input_data['data']['inline'].user_id)
+
+            process_input(input_data)
+            analytics_serving_inline(input_data['data'], input_data['data']['user'])
+
+        logger.log("Served\n\n")
 
     def _action(self, input_data):
         if not config.server:  # Inline don't have chat_id
