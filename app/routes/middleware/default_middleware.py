@@ -21,6 +21,13 @@ from scripts import restart_bot
 def get_user(user_id: int) -> Any:
     db_users = SQLighter(config.db_path)
     user = db_users.get_user_by_tg(user_id)
+
+    # Пользователь снова пишет боту: снимаем пометку, поставленную bot_blocked_reaction,
+    # и он опять начинает получать рассылки. Подписки никуда не девались.
+    if user is not None and dict(user).get('deleted_at') is not None:
+        db_users.restore_user_tg(user_id)
+        user = db_users.get_user_by_tg(user_id)
+
     db_users.close()
     return user
 
