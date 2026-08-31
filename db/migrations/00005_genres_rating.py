@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-import sqlite3
-
 import os
 import sys
 bot_path = os.getcwd().split('/db/migrations')[0]
 sys.path.insert(1, bot_path)
+
+from db.connection import connect_sqlite
 
 from constants import databaseName
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +13,7 @@ db_path = os.path.join(bot_path, 'db/' + databaseName)
 class SQLighterLocal:
 
 	def __init__(self, database):
-		self.connection = sqlite3.connect(database)
+		self.connection = connect_sqlite(database)
 		self.cursor = self.connection.cursor()
 
 	def create_genres_table(self):

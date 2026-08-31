@@ -9,6 +9,7 @@ from app.i18n.messages import routed_messages, get_message_rtd
 from config import (
     max_subscriptions_without_tariff)
 
+from db.connection import connect_sqlite
 from db.dbTypes import UserDBType
 
 from lib.tools.logger import logger
@@ -57,7 +58,7 @@ def helper_remove_proto_from_link(link):
 class SQLighter:
 
     def __init__(self, database):
-        self.connection = sqlite3.connect(database, timeout=10)
+        self.connection = connect_sqlite(database)
         self.connection.create_function("LOWER_UNICODE", 1, self.__lower_unicode)
         self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()

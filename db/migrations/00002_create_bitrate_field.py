@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-import sqlite3
-
 import os
 import sys
 bot_path = os.getcwd().split('/db/migrations')[0]
 sys.path.insert(1, bot_path)
+
+from db.connection import connect_sqlite
 
 from config import db_path
 
 class SQLighterLocal:
 
 	def __init__(self, database):
-		self.connection = sqlite3.connect(database)
+		self.connection = connect_sqlite(database)
 		self.cursor = self.connection.cursor()
 
 	def add_bitrate_to_users(self):

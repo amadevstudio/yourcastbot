@@ -26,6 +26,7 @@ bot_path = str(sys.argv[1])
 sys.path.insert(1, bot_path)
 os.chdir(bot_path)
 
+from db.connection import connect_sqlite
 from db.sqliteAdapter import SQLighter
 # import storage
 import config
@@ -304,7 +305,7 @@ def income_processing():
 		if config.server:
 			with open(payment_log_path, 'a+') as pfl:
 				import sqlite3
-				connection = sqlite3.connect(config.db_path, timeout=10)
+				connection = connect_sqlite(config.db_path)
 				pfl.write("Connection open\n")
 				connection.row_factory = sqlite3.Row
 				cursor = connection.cursor()
