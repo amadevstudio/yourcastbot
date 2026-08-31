@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+import datetime
 import sqlite3
 import re
+import threading
 from typing import Any, cast as typing_cast
 
 from app.i18n.messages import routed_messages, get_message_rtd
@@ -10,6 +12,36 @@ from config import (
 from db.dbTypes import UserDBType
 
 from lib.tools.logger import logger
+
+
+_users_deleted_at_lock = threading.Lock()
+_users_deleted_at_checked = False
+
+
+def _ensure_users_deleted_at_column(connection: sqlite3.Connection) -> None:
+    # db/migrations/00011_users_deleted_at.py adds users.deleted_at, but migrations are applied
+    # by hand while the deploy restarts the bot on its own. Every recipient query below reads the
+    # column, so it is created here as well, once per process, to survive a deploy that runs
+    # ahead of the migration.
+    global _users_deleted_at_checked
+    if _users_deleted_at_checked:
+        return
+
+    with _users_deleted_at_lock:
+        if _users_deleted_at_checked:
+            return
+        try:
+            columns = [
+                row[1] for row in
+                connection.execute("PRAGMA table_info(users)").fetchall()]
+            if len(columns) > 0 and 'deleted_at' not in columns:
+                connection.execute("ALTER TABLE users ADD COLUMN deleted_at text")
+                connection.commit()
+                logger.warn("users.deleted_at was missing and has been created")
+        except Exception as e:
+            logger.err("Could not ensure users.deleted_at column:", e)
+        finally:
+            _users_deleted_at_checked = True
 
 
 def helper_remove_proto_from_link(link):
@@ -29,6 +61,7 @@ class SQLighter:
         self.connection.create_function("LOWER_UNICODE", 1, self.__lower_unicode)
         self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()
+        _ensure_users_deleted_at_column(self.connection)
 
     def __lower_unicode(self, string):
         return str(string).lower()
@@ -263,7 +296,8 @@ class SQLighter:
 
     def get_uccs_by_channel(
             self, channel_id,
-            notifications_enabled=None, have_subscription=None):
+            notifications_enabled=None, have_subscription=None,
+            include_deleted_users=False):
         with self.connection:
             query = "SELECT uc.*, ut.notify_count \
                     FROM user_channel_cs uc \
@@ -271,6 +305,12 @@ class SQLighter:
                         FROM users u \
                         WHERE u.telegramId = uc.user_telegram_id) \
                     WHERE channel_id = ?"
+            # пользователи, помеченные удалёнными (заблокировали бота), сохраняют подписки,
+            # но ничего не получают
+            if not include_deleted_users:
+                query += " AND NOT EXISTS (SELECT 1 FROM users du \
+                    WHERE du.telegramId = uc.user_telegram_id \
+                        AND du.deleted_at IS NOT NULL)"
             if have_subscription is not None:
                 if have_subscription:
                     query += " AND (\
@@ -758,13 +798,18 @@ class SQLighter:
                 (str(bitrate) if bitrate is not None else None, str(telegramId),))
             self.connection.commit()
 
-    def get_all_users(self, language: str | None = None) -> list[UserDBType]:
+    def get_all_users(
+            self, language: str | None = None, include_deleted: bool = False
+    ) -> list[UserDBType]:
         with self.connection:
+            query = 'SELECT * FROM users WHERE 1'
+            params: tuple = ()
             if language is not None:
-                return self.cursor.execute(
-                    'SELECT * FROM users WHERE lang = ?',
-                    (language,)).fetchall()
-            return self.cursor.execute('SELECT * FROM users').fetchall()
+                query += ' AND lang = ?'
+                params += (language,)
+            if not include_deleted:
+                query += ' AND deleted_at IS NULL'
+            return self.cursor.execute(query, params).fetchall()
 
     def get_user_by_id(self, user_id) -> UserDBType:
         with self.connection:
@@ -791,6 +836,11 @@ class SQLighter:
                     (str(telegramId),)).fetchall()[0]
 
     def delete_user_tg(self, telegramId, hard=True):
+        # ВНИМАНИЕ: деструктивно и необратимо. Удаляет все подписки пользователя, а также
+        # каналы, у которых после этого не осталось подписчиков (независимо от hard).
+        # Для реакции на блокировку бота использовать mark_user_deleted_tg: подписки должны
+        # пережить блокировку, чтобы всё восстановилось, когда пользователь вернётся.
+        # Оставлено для явного удаления по запросу пользователя.
         with self.connection:
             user = self.cursor.execute(
                 "SELECT * FROM users WHERE telegramId = ?",
@@ -846,8 +896,50 @@ class SQLighter:
                 + ' ' + str(telegramId) + '; hard: ' + str(hard),
                 flush=True)
 
+    # Пометить пользователя удалённым: он перестаёт получать сообщения,
+    # но подписки и всё остальное остаётся на месте.
+    # Строка не создаётся: chat_id канала сюда тоже прилетает и не должен стать пользователем.
+    def mark_user_deleted_tg(self, telegramId) -> bool:
+        with self.connection:
+            self.cursor.execute(
+                'UPDATE users SET deleted_at = ? \
+                WHERE telegramId = ? AND deleted_at IS NULL',
+                (
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    str(telegramId),))
+            marked = self.cursor.rowcount > 0
+            self.connection.commit()
+
+            if marked:
+                print('user marked as deleted ' + str(telegramId), flush=True)
+
+            return marked
+
+    # Пользователь вернулся: снимаем пометку, всё продолжает работать как раньше
+    def restore_user_tg(self, telegramId) -> bool:
+        with self.connection:
+            self.cursor.execute(
+                'UPDATE users SET deleted_at = NULL \
+                WHERE telegramId = ? AND deleted_at IS NOT NULL',
+                (str(telegramId),))
+            restored = self.cursor.rowcount > 0
+            self.connection.commit()
+
+            if restored:
+                print('user restored ' + str(telegramId), flush=True)
+
+            return restored
+
+    def is_user_deleted_tg(self, telegramId) -> bool:
+        with self.connection:
+            row = self.cursor.execute(
+                'SELECT deleted_at FROM users WHERE telegramId = ?',
+                (str(telegramId),)).fetchone()
+            return row is not None and row['deleted_at'] is not None
+
     def count_users(
-            self, with_subs=False, with_subs_active=False, payed=False
+            self, with_subs=False, with_subs_active=False, payed=False,
+            deleted=False
     ):
         with self.connection:
             if with_subs:
@@ -855,7 +947,8 @@ class SQLighter:
                     'SELECT COUNT(DISTINCT ucc.user_telegram_id)\
                     FROM user_channel_cs ucc\
                     INNER JOIN users u\
-                        ON (u.telegramId = ucc.user_telegram_id)'
+                        ON (u.telegramId = ucc.user_telegram_id)\
+                    WHERE u.deleted_at IS NULL'
                 ).fetchall()[0]
             elif with_subs_active:
                 return self.cursor.execute(
@@ -863,17 +956,25 @@ class SQLighter:
                     FROM user_channel_cs ucc\
                     INNER JOIN users u\
                         ON (u.telegramId = ucc.user_telegram_id\
-                            AND ucc.notify = 1)'
+                            AND ucc.notify = 1)\
+                    WHERE u.deleted_at IS NULL'
                 ).fetchall()[0]
 
             elif payed:
                 return self.cursor.execute(
                     'SELECT count(*) FROM user_tariff_cs\
                     WHERE tariff_id > 0\
-                        AND time_left > 0 AND notify_count != 0').fetchone()
+                        AND time_left > 0 AND notify_count != 0\
+                        AND uid IN (SELECT id FROM users \
+                            WHERE deleted_at IS NULL)').fetchone()
+            elif deleted:
+                return self.cursor.execute(
+                    'SELECT COUNT(*) FROM users \
+                    WHERE deleted_at IS NOT NULL').fetchall()[0]
             else:
                 return self.cursor.execute(
-                    'SELECT COUNT(*) FROM users').fetchall()[0]
+                    'SELECT COUNT(*) FROM users \
+                    WHERE deleted_at IS NULL').fetchall()[0]
 
     def getTariffs(self, channel_control=None):
         with self.connection:
@@ -1207,11 +1308,16 @@ class SQLighter:
             self.connection.commit()
 
     def decrease_all_time_left(self):
+        # Подписка помеченного удалённым заморожена: он ничего не получает, поэтому
+        # его дни не должны сгорать. Когда он вернётся, отсчёт продолжится с того же места.
         with self.connection:
             self.cursor.execute(
                 "UPDATE user_tariff_cs \
                 SET time_left = time_left - 1\
-                WHERE time_left > 0 AND tariff_id != 0")
+                WHERE time_left > 0 AND tariff_id != 0\
+                    AND NOT EXISTS (SELECT 1 FROM users u \
+                        WHERE u.id = user_tariff_cs.uid \
+                            AND u.deleted_at IS NOT NULL)")
             self.connection.commit()
 
     def get_users_who_can_be_prolonged(self):
@@ -1223,6 +1329,7 @@ class SQLighter:
                 INNER JOIN tariffs t ON t.id = utc.tariff_id
                 INNER JOIN users u ON u.id = utc.uid
                 WHERE utc.balance >= t.price AND utc.time_left = 0
+                    AND u.deleted_at IS NULL
                 ORDER BY u.lang
             """
             return self.cursor.execute(sql).fetchall()
@@ -1237,11 +1344,16 @@ class SQLighter:
                 INNER JOIN tariffs t ON t.id = utc.tariff_id
                 INNER JOIN users u ON u.id = utc.uid
                 WHERE utc.balance < t.price AND utc.time_left = 1
+                    AND u.deleted_at IS NULL
                 ORDER BY u.lang
             """
             return self.cursor.execute(sql).fetchall()
 
     def prolong_users(self, tariff_period):
+        # Помеченного удалённым не продлеваем: списывать с баланса за выпуски,
+        # которые ему всё равно не отправляются, нельзя. Тот же фильтр стоит в
+        # get_users_who_can_be_prolonged, и условия обязаны совпадать — иначе
+        # деньги списываются, а уведомление о списании не уходит.
         with self.connection:
             sql = """
                 UPDATE user_tariff_cs
@@ -1256,6 +1368,10 @@ class SQLighter:
                     SELECT price FROM tariffs
                     WHERE tariffs.id = user_tariff_cs.tariff_id
                 ) AND time_left = 0
+                    AND NOT EXISTS (
+                        SELECT 1 FROM users u
+                        WHERE u.id = user_tariff_cs.uid
+                            AND u.deleted_at IS NOT NULL)
             """
             self.cursor.execute(sql, (str(tariff_period),))
             rowcount = self.cursor.rowcount

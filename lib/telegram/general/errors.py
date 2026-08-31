@@ -34,7 +34,10 @@ def user_unavailable_error(e):
 def bot_blocked_reaction(e, user_id):
 	if user_unavailable_error(e):
 		db_users = SQLighter(db_path)
-		db_users.delete_user_tg(int(user_id), False)
+		# Пометить, а не удалять: подписки должны пережить блокировку, чтобы всё
+		# восстановилось, когда пользователь снова напишет боту (см. middleware get_user).
+		# Помеченным просто перестают отправляться сообщения.
+		db_users.mark_user_deleted_tg(int(user_id))
 		db_users.close()
 		return True
 	else:

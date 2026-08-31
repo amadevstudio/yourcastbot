@@ -24,6 +24,7 @@ def send_users_count_to_creator(data: ControllerParams):
     users_c_ws = db_users.count_users(True)
     users_c_wsa = db_users.count_users(with_subs_active=True)
     users_c_p = db_users.count_users(payed=True)
+    users_c_d = db_users.count_users(deleted=True)
     db_users.close()
     last_channel_id = storage.get_last_channel_id()
     render_messages(data['chat_id'], [{
@@ -32,6 +33,7 @@ def send_users_count_to_creator(data: ControllerParams):
                 + "\nС подписками на каналы: " + str(users_c_ws[0])
                 + "\nС подписками и уведомлениями: " + str(users_c_wsa[0])
                 + "\nС подпиской на бота: " + str(users_c_p[0])
+                + "\nЗаблокировали бота (не считаются выше): " + str(users_c_d[0])
                 + "\nТекущий id канала: " + str(last_channel_id),
         'reply_markup': go_back_inline_markup(data['language_code'])
     }])
