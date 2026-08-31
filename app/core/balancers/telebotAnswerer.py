@@ -132,6 +132,13 @@ class TheSender(threading.Thread):
                 controller_params, input_data['data']['user'],
                 start_related_params['is_new_user'], start_related_params['is_by_refer'],
                 start_related_params['action'])
+            callback = controller_params.get('callback')
+            if callback is not None:
+                try:
+                    from agent.bot_telebot import bot
+                    bot.answer_callback_query(callback.id)
+                except Exception:
+                    pass
 
         # Inline query
         elif 'inline' in input_data['data']:

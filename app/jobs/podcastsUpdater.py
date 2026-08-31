@@ -15,7 +15,7 @@ import app.service.record.helpers
 import app.service.user.language
 import lib.markup.cleaner
 from agent.bot_telebot import bot
-from agent.bot_telethon import thobot_session_handler
+from agent import bot_telethon
 from app.controller.builders.helpModule import get_promo_messages
 from app.controller.general.notify import notify
 from app.core.sender.send_record_helper import ChatParamsType, DescriptionModeOptions
@@ -51,13 +51,18 @@ logger = Logger(file="updater")
 def main(interval=120):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop = asyncio.get_event_loop()
 
-    asyncio.set_event_loop(loop)
-    thonbot = TelegramClient(
-        StringSession(thobot_session_handler), app_api_id, app_api_hash, loop=loop
-    ).start(bot_token=token)
-    thonbot.disconnect()
+    if bot_telethon.telethon_available and bot_telethon.thobot_session_handler:
+        try:
+            thonbot = TelegramClient(
+                StringSession(bot_telethon.thobot_session_handler),
+                app_api_id, app_api_hash, loop=loop
+            ).start(bot_token=token)
+            thonbot.disconnect()
+        except Exception as e:
+            logger.err("Telethon unavailable for updater:", e)
+    else:
+        logger.log("Updater running without Telethon session warmup")
 
     while True:
         if not server:

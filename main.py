@@ -15,7 +15,7 @@ from app.routes.initialize_routes import initialize_routes
 from lib.analytics import analytics
 from app.core.balancers import recordSender, telebotAnswerer
 
-from agent.bot_telethon import thonbot
+from agent.bot_telethon import thonbot, try_start_telethon
 from lib.tools.logger import logger
 
 logger.log("The bot is starting", '---\n\n')
@@ -44,6 +44,8 @@ analytics.Analytics(
 
 
 threads_to_watch = []
+
+telethon_ok = try_start_telethon()
 
 t_podcast_sender = recordSender.RecordBalancer(None)  # already initialized in builders/recsModule
 
@@ -121,6 +123,15 @@ if __name__ == '__main__':
         answer_sender_queue, threads_to_watch)
     t_answer_sender.start()
 
-    initialize_routes(t_answer_sender, answer_sender_queue, threads_to_watch)
+    initialize_routes(
+        t_answer_sender, answer_sender_queue, threads_to_watch,
+        register_telethon=telethon_ok)
 
-    thonbot.run_until_disconnected()
+    if telethon_ok:
+        logger.log("Receiving via Telethon MTProto")
+        thonbot.run_until_disconnected()
+    else:
+        from app.routes.botapi_receiver import initialize_botapi_routes, run_botapi_polling
+        logger.warn("Telethon MTProto unavailable, receiving via Bot API long polling")
+        initialize_botapi_routes()
+        run_botapi_polling()
