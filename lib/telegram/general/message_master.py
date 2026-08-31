@@ -1,13 +1,14 @@
 import copy
 import enum
 import json
+import os
 import typing
 from io import TextIOWrapper
 from typing import TypedDict, Literal, Required, Sequence
-from urllib.parse import unquote
 
 from app.routes.routes_list import AvailableActions, AvailableRoutes
-from lib.telegram.general.errors import bot_blocked_reaction, get_timeout_from_error_bot, message_to_edit_not_found
+from lib.telegram.general.errors import bot_blocked_reaction, get_timeout_from_error_bot, \
+    media_fetch_failed, message_to_edit_not_found
 from lib.telegram.telebot import types as telegram_types
 
 from agent.bot_telebot import bot
@@ -91,12 +92,20 @@ def build_new_prev_message_structure(message_id: int,
     return result
 
 
-def image_digger(image_message_structure: ImageStructureInterface) -> str:
+def image_digger(image_message_structure: ImageStructureInterface) -> str | tuple[str, bytes]:
     file_id = image_message_structure.get('file_id')
     if file_id is not None:
         return file_id
 
-    return image_message_structure['image']
+    image = image_message_structure['image']
+
+    # Local placeholders are shipped with the repo, telegram has to receive their content, not a path.
+    # The name is kept so telegram sees a proper extension in the multipart part
+    if isinstance(image, str) and os.path.isfile(image):
+        with open(image, 'rb') as image_file:
+            return os.path.basename(image), image_file.read()
+
+    return image
 
 
 def prepare_images(message_structures: Sequence[BaseStructureInterface]):
@@ -106,10 +115,9 @@ def prepare_images(message_structures: Sequence[BaseStructureInterface]):
 
         image_str = message_structure.get('image', None)
         if isinstance(image_str, str):
-            # Unquote url
-            typing.cast(ImageStructureInterface, message_structures[i])['image'] = unquote(image_str)
-            file_id = telegram_cache.get_file_id(
-                typing.cast(ImageStructureInterface, message_structures[i])['image'], 'img')
+            # Url is passed as is: unquoting it turns valid %-escapes into raw spaces and telegram
+            # then answers with "failed to get HTTP URL content"
+            file_id = telegram_cache.get_file_id(image_str, 'img')
             typing.cast(ImageStructureInterface, message_structures[i])['file_id'] = file_id
     return message_structures
 
@@ -186,12 +194,13 @@ def build_markup(message_structure: TextStructureInterface):
     return keyboard_builder
 
 
-def skip_not_modified(e: Exception):
-    if (
+# True when the error is a real one and has to be re-raised, False for the harmless
+# "nothing changed" answer telegram gives when an edit produces identical content
+def skip_not_modified(e: Exception) -> bool:
+    return (
             'specified new message content and reply markup are exactly the same as a current content'
             ' and reply markup of the message'
-    ) not in str(e):
-        return False
+    ) not in str(e)
 
 
 def render_messages(chat_id: int,
@@ -310,8 +319,15 @@ def message_editor(chat_id: int, message_structure: MessageStructuresInterface, 
         else:
             raise TypeError(f"Not implemented: {message_structure['type']}")
 
-    except ApiTelegramException as e:
-        if skip_not_modified(e):
+    except Exception as e:
+        # The media is unreachable for telegram (dead cover host and such). The keyboard still has to
+        # be refreshed, otherwise subscribe/rate buttons stop reacting to the user
+        if media_fetch_failed(e) and reply_markup is not None:
+            logger.warn("Media is unreachable for telegram, refreshing the keyboard only:", e)
+            bot.edit_message_reply_markup(
+                chat_id=chat_id, message_id=old_message_id, reply_markup=reply_markup)
+
+        elif skip_not_modified(e):
             raise e
 
 
@@ -401,11 +417,12 @@ def message_master(
                     chat_id=chat_id,
                     message_id=message_to_edit_id,
                     reply_markup=reply_markup)
-                bot.edit_message_caption(
-                    chat_id=chat_id,
-                    message_id=message_to_edit_id,
-                    caption=edit_message_structure.get('text', None),
-                    parse_mode=edit_message_structure.get('parse_mode', DEFAULT_PARSE_MODE))
+                if edit_message_structure.get('text', None) is not None:
+                    bot.edit_message_caption(
+                        chat_id=chat_id,
+                        message_id=message_to_edit_id,
+                        caption=edit_message_structure.get('text', None),
+                        parse_mode=edit_message_structure.get('parse_mode', DEFAULT_PARSE_MODE))
 
             else:
                 result = None
@@ -472,14 +489,10 @@ def message_master(
                 build_new_prev_message_structure(result.message_id, message_type, result))
 
             # Save files id
-            if result.photo is not None and send_message_structure.get('file_id', None) is None:
-                if isinstance(typing.cast(ImageStructureInterface, send_message_structure)['image'], str):
-                    telegram_cache.add_file_id(
-                        typing.cast(ImageStructureInterface, send_message_structure)['image'],
-                        result.photo[0].file_id, 'img')
-                elif isinstance(typing.cast(AudioStructureInterface, send_message_structure)['audio'], str):
-                    telegram_cache.add_file_id(
-                        typing.cast(str, typing.cast(AudioStructureInterface, send_message_structure)['audio']),
-                        result.photo[0].file_id, 'audio')
+            if result.photo and send_message_structure.get('file_id', None) is None:
+                image = typing.cast(ImageStructureInterface, send_message_structure).get('image', None)
+                if isinstance(image, str):
+                    # Sizes go from the smallest thumbnail to the original one
+                    telegram_cache.add_file_id(image, result.photo[-1].file_id, 'img')
 
     return new_message_structures

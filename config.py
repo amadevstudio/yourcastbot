@@ -108,7 +108,10 @@ telegram_cache_shelve_name = os.path.join(BASE_DIR, 'db/shelve_telegram_cache.db
 # use_cache = True if server else False
 use_cache = True
 
-noPhoto = constants.noPhoto
+# Placeholder cover for podcasts without artwork. Shipped with the repo, so it never depends
+# on a third-party host staying alive (the previous external url now answers with html)
+no_photo_path = os.path.join(BASE_DIR, 'static/no_podcast_cover.png')
+noPhoto = no_photo_path if os.path.isfile(no_photo_path) else getattr(constants, 'noPhoto', '')
 
 available_podcast_hoster_links = [
     'castos.com',

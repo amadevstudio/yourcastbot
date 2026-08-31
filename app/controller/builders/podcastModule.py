@@ -7,7 +7,7 @@ import re
 import typing
 from datetime import datetime
 from typing import TypedDict, Literal
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 from app.controller.general.notify import notify
 import app.service.podcast.podcast
@@ -15,8 +15,10 @@ import app.service.podcast.subscription
 import app.service.record.caption
 import lib.markup.cleaner
 from app.routes.message_tools import go_back_inline_markup
+from lib.telegram.general.errors import media_fetch_failed
 from lib.telegram.general.message_master import message_master, render_messages, MessageStructuresInterface, \
     message_editor, InlineButtonData
+from lib.tools.logger import logger
 from app.i18n.messages import get_message, get_message_rtd, emojiCodes, standartSymbols
 from app.repository.storage import storage
 from config import (db_path, noPhoto, botName, max_subscriptions_without_tariff)
@@ -133,8 +135,10 @@ def channel_query(data: ControllerParams):
     try:
         render_messages(data['chat_id'], ch_msg)
     except Exception as e:
-        # If telegram can't send podcast image
-        if "Bad Request: wrong file identifier/HTTP URL specified" in str(e):
+        # If telegram can't fetch the cover, keep the menu alive: the keyboard lives on the image
+        # message, so without this fallback the user is left with a description and no buttons
+        if media_fetch_failed(e):
+            logger.warn("Podcast cover is unreachable for telegram:", ch_msg[1].get('image'), "|", e)
             ch_msg_without_image: list[MessageStructuresInterface] = [{
                 'type': 'text',
                 'text': ch_msg[0]['text'],
@@ -239,13 +243,13 @@ def get_podcast_data(chat_id, service_id, podcast_id=None, service_name='itunes'
     if descr is None or descr == "None":
         descr = ""
 
+    # Cover urls keep their %-escapes: unquoting turns them into raw spaces and telegram
+    # then answers with "failed to get HTTP URL content"
     if im_url == "" or im_url is None:
         if itunes_im_url != "":
-            im_url = unquote(itunes_im_url)
+            im_url = itunes_im_url
         else:
             im_url = noPhoto
-    else:
-        im_url = unquote(im_url)
 
     podcast_genres: list[GenresType] = []
     if pc_info['itunesData'] is not None and 'genres' in pc_info['itunesData']:

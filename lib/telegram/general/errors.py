@@ -42,3 +42,18 @@ def bot_blocked_reaction(e, user_id):
 
 def message_to_edit_not_found(e):
 	return "message to edit not found" in str(e)
+
+
+# Telegram could not download the media we handed it: dead/blocked host, broken url,
+# non-image content or an unsupported file. The menu has to degrade to a text one instead of dying
+def media_fetch_failed(e):
+	error_text = str(e)
+	return "failed to get HTTP URL content" in error_text \
+			or "wrong file identifier/HTTP URL specified" in error_text \
+			or "wrong file identifier" in error_text \
+			or "wrong remote file identifier" in error_text \
+			or "IMAGE_PROCESS_FAILED" in error_text \
+			or "PHOTO_INVALID_DIMENSIONS" in error_text \
+			or "WEBPAGE_MEDIA_EMPTY" in error_text \
+			or "MEDIA_EMPTY" in error_text \
+			or "Bad Request: PHOTO_EXT_INVALID" in error_text
