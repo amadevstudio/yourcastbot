@@ -10,6 +10,7 @@ from telethon.sessions import StringSession
 
 import app.i18n.messages
 import app.service.podcast.podcast
+import app.service.podcast.rss
 import app.service.record.helpers
 import app.service.user.language
 import lib.markup.cleaner
@@ -36,6 +37,13 @@ from lib.tools.logger import Logger
 from app.routes.ptypes import ControllerParams
 
 MAX_EPISODES_PER_PODCAST = 3
+
+# Сколько кругов обновления подряд фид должен быть недоступен,
+# прежде чем выключать уведомления подписчикам.
+# Разовый таймаут/503/битый ответ не должен ничего гасить.
+FEED_FAILURES_BEFORE_NOTIFY_OFF = 5
+# Фид ответил 404/410 — его точно больше нет, порог ниже.
+FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF = 3
 
 logger = Logger(file="updater")
 
@@ -188,6 +196,73 @@ def send_new_records_by_channel(
         service_id = channel["rss_link"]
 
     if root is False:
+        failure_reason = pc_info.get(
+            'failureReason', app.service.podcast.rss.FEED_STATUS_UNAVAILABLE)
+
+        # Ручное обновление по кнопке ничего не выключает:
+        # пользователь не должен терять уведомления из-за того,
+        # что нажал 'обновить' в неудачный момент.
+        if manual:
+            logger.log(
+                "Feed is not available for channel", channel['id'],
+                "; reason:", failure_reason,
+                "; manual update, notifications are left untouched")
+
+            # Пользователь нажал «обновить» и должен узнать, что лента не ответила.
+            # Иначе update_feed_thread покажет «новых эпизодов нет» — как будто
+            # подкаст просто молчит. Уведомления при этом не трогаем: один неудачный
+            # клик не должен гасить подписку. connections здесь — инициатор запроса
+            # (update_feed_thread передаёт ровно один connection).
+            # new_recs_flag=True, чтобы в конце не приклеилось ещё и «новых эпизодов нет».
+            podcast_name = (pc_info or {}).get("collectionName") or channel["name"] or ""
+            for connection in connections:
+                try:
+                    db_users = SQLighter(db_path)
+                    user = db_users.get_user_by_tg(connection['user_telegram_id'])
+                    db_users.close()
+
+                    user_language = app.service.user.language.user_language(
+                        user['lang'] if user is not None else None)
+                    title = lib.markup.cleaner.html_mrkd_cleaner(str(podcast_name))
+                    body = get_message('feedTemporarilyUnavailable', user_language)
+                    text = ("<b>" + title + "</b>\n\n" + body) if title else body
+                    outer_sender(connection['user_telegram_id'], [{
+                        'type': 'text',
+                        'text': text
+                    }])
+                    new_recs_flag = True
+                except Exception as e:
+                    logger.err("podcastsUpdater/manualFeedUnavailableNotice: ", e)
+
+            return new_recs_flag
+
+        failures = storage.increase_channel_feed_failures(channel['id'])
+        if failure_reason == app.service.podcast.rss.FEED_STATUS_GONE:
+            failures_threshold = FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF
+        else:
+            failures_threshold = FEED_FAILURES_BEFORE_NOTIFY_OFF
+
+        # Недоступность может быть временной — ждём подтверждения
+        # на следующих кругах, уведомления пока не трогаем.
+        if failures < failures_threshold:
+            logger.log(
+                "Feed is not available for channel", channel['id'],
+                "; reason:", failure_reason,
+                "; consecutive failures:", failures, "of", failures_threshold,
+                "; notifications are left enabled")
+            return new_recs_flag
+
+        logger.warn(
+            "Feed is stably unavailable for channel", channel['id'],
+            "; reason:", failure_reason,
+            "; consecutive failures:", failures,
+            "; turning notifications off for", len(connections), "subscribers and",
+            (0 if nosubs_connections is None else len(nosubs_connections)),
+            "users without a tariff")
+        # счётчик сброшен: если фид вернётся и пользователь снова
+        # включит уведомления, отсчёт начнётся заново
+        storage.reset_channel_feed_failures(channel['id'])
+
         try:
             if nosubs_connections is not None:
                 for connection in nosubs_connections:
@@ -213,7 +288,8 @@ def send_new_records_by_channel(
                         and (pc_info["collectionName"] != ""):
                     outer_sender(connection['user_telegram_id'], [{
                         'type': 'text', 'text':
-                            "<br>" + pc_info['collectionName'] + "</b>\n\n"
+                            "<b>" + lib.markup.cleaner.html_mrkd_cleaner(
+                                str(pc_info['collectionName'])) + "</b>\n\n"
                             + get_message('notificationsFCDisabled', user_language)
                     }])
                     storage.set_user_resend_flag(user[1])
@@ -231,6 +307,9 @@ def send_new_records_by_channel(
                     "PARSING ERROR! In podcastUpdater2. ",
                     "Notifications disabled for podcast ", e)
         return new_recs_flag
+
+    # фид получен — серия неудач прервана
+    storage.reset_channel_feed_failures(channel['id'])
 
     if service_name == 'itunes':
         # # flag = True
@@ -497,7 +576,10 @@ def send_new_records_by_channel(
                         ).encode('utf-8'))
 
         if not manual:
-            for utg in last_guids_to_users[pgd]:
+            # notify_left_tg уменьшается в этом же проходе после каждого выпуска,
+            # поэтому ноль на втором эпизоде — штатное состояние. Без list()
+            # del во время итерации роняет поток апдейтера RuntimeError.
+            for utg in list(last_guids_to_users[pgd]):
                 if notify_left_tg[utg] == 0:
                     del last_guids_to_users[pgd][utg]
         if len(last_guids_to_users[pgd]) == 0:

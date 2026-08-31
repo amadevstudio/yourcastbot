@@ -204,6 +204,32 @@ def is_last_channel_restarted():
         return False
 
 
+# счётчик подряд идущих неудачных выборок фида канала
+# нужен, чтобы не гасить уведомления из-за разового сбоя
+def __channel_feed_failures_key(channel_id):
+    return "channel_feed_failures_" + str(channel_id)
+
+
+def get_channel_feed_failures(channel_id) -> int:
+    try:
+        return int(storage[__channel_feed_failures_key(channel_id)])
+    except Exception:
+        return 0
+
+
+def increase_channel_feed_failures(channel_id) -> int:
+    failures = get_channel_feed_failures(channel_id) + 1
+    storage[__channel_feed_failures_key(channel_id)] = str(failures)
+    return failures
+
+
+def reset_channel_feed_failures(channel_id):
+    try:
+        del storage[__channel_feed_failures_key(channel_id)]
+    except Exception:
+        pass
+
+
 # флаги, что доступны подкасты
 def set_new_podcast_available_flag(user_id):
     try:

@@ -3349,6 +3349,36 @@ messages = {
             "ro_msg": "עקוב אחר הקישור למטה ופעל על פי ההוראות\n\n"
         }
     },
+    # Лента не отвечает при ручном обновлении. Уведомления при этом НЕ выключаются,
+    # поэтому текст отличается от notificationsFCDisabled: там следствие — отключили,
+    # здесь — оставили включёнными. Не говорим, что подкаст мёртв: 404 тоже бывает
+    # разовым, а гасить по кнопке «обновить» нельзя.
+    "feedTemporarilyUnavailable": {
+        "ru": {
+            "ro_msg": "Не удалось получить rss ленту прямо сейчас.\n"
+                      "Уведомления остались включёнными. Попробуйте обновить позже."
+        },
+        "en": {
+            "ro_msg": "Failed to get the rss feed right now.\n"
+                      "Notifications are still on. Try updating later."
+        },
+        "pt-BR": {
+            "ro_msg": "Não foi possível obter o feed RSS agora.\n"
+                      "As notificações continuam ativadas. Tente atualizar mais tarde."
+        },
+        "es": {
+            "ro_msg": "No se pudo obtener el feed rss en este momento.\n"
+                      "Las notificaciones siguen activadas. Intente actualizar más tarde."
+        },
+        "de": {
+            "ro_msg": "Der RSS-Feed konnte gerade nicht geladen werden.\n"
+                      "Die Benachrichtigungen bleiben aktiviert. Versuche es später erneut."
+        },
+        "he": {
+            "ro_msg": "לא ניתן לקבל את עדכון ה-RSS כרגע.\n"
+                      "ההתראות נשארו פעילות. נסה לרענן מאוחר יותר."
+        }
+    },
     "notificationsFCDisabled": {
         "ru": {
             "ro_msg": "Не удалось получить rss ленту, "
