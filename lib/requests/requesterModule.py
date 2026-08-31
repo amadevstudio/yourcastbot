@@ -1,5 +1,3 @@
-from urllib.parse import unquote
-
 import requests
 import urllib3
 from requests.adapters import HTTPAdapter
@@ -103,7 +101,7 @@ class Requester:
         # meta = site.info()
         session = self.__get_session()
         session_headers = self.__decide_request_headers(headers)
-        response = session.head(unquote(link), verify=verify, allow_redirects=True, headers=session_headers)
+        response = session.head(link, verify=verify, allow_redirects=True, headers=session_headers)
         return response.headers
 
     def get_headers_with_pre_download(self, link, verify=False, headers=None):

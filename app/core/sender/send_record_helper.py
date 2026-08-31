@@ -3,7 +3,6 @@ import json
 import os
 import threading
 import time
-import urllib
 from hashlib import sha256
 from io import BufferedReader
 from typing import Union, Any, Optional, TypedDict, Literal, BinaryIO
@@ -26,7 +25,7 @@ from lib.markup.cleaner import html_mrkd_cleaner
 from lib.requests import requesterModule
 from lib.system import space
 from lib.telegram.general.errors import get_timeout_from_error_client, get_timeout_from_error_bot, bot_blocked_reaction, \
-    user_unavailable_error
+    user_unavailable_error, message_to_edit_not_found
 from lib.telegram.general.message_master import outer_sender, message_editor, message_deleter, message_master, \
     render_messages
 from lib.tools.logger import Logger
@@ -61,12 +60,19 @@ def transform_duration(duration):
 
 def get_file_size_HTTP(link: str) -> int:
     meta = requester.get_headers(link)
+    content_type = meta.get('Content-Type') or ''
+    content_length = meta.get('Content-Length')
 
-    if 'audio' not in meta['Content-Type']:
+    # HEAD often has no Content-Length (chunked / some CDNs). int(None) used to
+    # blow up here and the caller silently kept the 51 MB default.
+    if 'audio' not in content_type or not content_length:
         logger.log("Can't get file size via headers, trying via pre downloading...")
         meta = requester.get_headers_with_pre_download(link)
+        content_length = meta.get('Content-Length')
 
-    return int(meta.get("Content-Length"))
+    if not content_length:
+        raise ValueError("Content-Length is missing")
+    return int(content_length)
 
 
 class OutcomeMessagePauseErrorType(TypedDict):
@@ -125,7 +131,7 @@ class Sender:
 
         self.thonbot = thonbot
         self.bot = bot
-        self.link = urllib.parse.unquote(link)
+        self.link = link
         self.chats = chats
         self.blocked_chats: list[int] = []
         self.lang_codes_by_utg = lang_codes_by_utg
@@ -256,6 +262,12 @@ class Sender:
                 self.__set_status_message_pause(chat_id, timeout)
                 return
 
+            # Progress edits a throwaway status message. If the user (or Telegram)
+            # already dropped it, keep sending the audio and stop poking the ghost.
+            if message_to_edit_not_found(e):
+                self.outcome_messages[chat_id]['message_id'] = None
+                return
+
             self.logger.err(e, status)
 
     def __set_status_message_pause(self, chat_id, timeout):
@@ -282,29 +294,35 @@ class Sender:
         if not self.withStatusMessage:
             return
 
+        status_key = status
         once_statuses = ["compressing"]
-        once_condition = status in once_statuses or (status == "uploading_to_telegram_servers" and additional is None)
+        once_condition = status_key in once_statuses or (
+            status_key == "uploading_to_telegram_servers" and additional is None)
 
         for chat_id in self.chats:
             if self.__chat_is_silent(chat_id):
                 continue
 
-            status = self.statusTemplate + get_message_rtd(["file_processing", status], self.lang_codes_by_utg[chat_id])
+            # status_key stays the lookup key: overwriting `status` in this loop
+            # used to feed the first user's translated text into get_message_rtd
+            # for everyone after them.
+            text = self.statusTemplate + get_message_rtd(
+                ["file_processing", status_key], self.lang_codes_by_utg[chat_id])
             if additional is not None:
                 if 'percent' in additional:
-                    status += f": {additional['percent']}%"
+                    text += f": {additional['percent']}%"
 
             try:
                 if once_condition:
-                    self.__make_update_status_message(chat_id, status)
+                    self.__make_update_status_message(chat_id, text)
 
                 else:
                     write_thread = threading.Thread(
                         target=self.__make_update_status_message_excepted,
-                        args=(chat_id, status,))
+                        args=(chat_id, text,))
                     write_thread.start()
             except Exception as e:
-                self.logger.warn(f"Can't set status {status} with error:")
+                self.logger.warn(f"Can't set status {text} with error:")
                 self.logger.err(e)
 
     def __delete_status_messages(self):

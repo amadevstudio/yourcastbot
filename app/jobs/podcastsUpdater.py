@@ -280,21 +280,17 @@ def send_new_records_by_channel(
             # Выключить уведомления для канала для пользователей с подпиской
             db_users.turn_notify_tg(user['telegramId'], connection['channel_id'], False)
             db_users.close()
-            collection_name = ""
+            collection_name = (pc_info or {}).get("collectionName") or channel["name"] or ""
 
             try:
-                if ("collectionName" in pc_info) \
-                        and (pc_info["collectionName"] is not None) \
-                        and (pc_info["collectionName"] != ""):
-                    outer_sender(connection['user_telegram_id'], [{
-                        'type': 'text', 'text':
-                            "<b>" + lib.markup.cleaner.html_mrkd_cleaner(
-                                str(pc_info['collectionName'])) + "</b>\n\n"
-                            + get_message('notificationsFCDisabled', user_language)
-                    }])
-                    storage.set_user_resend_flag(user[1])
-                    new_recs_flag = True
-                    collection_name = pc_info["collectionName"]
+                title = lib.markup.cleaner.html_mrkd_cleaner(str(collection_name))
+                body = get_message('notificationsFCDisabled', user_language)
+                text = ("<b>" + title + "</b>\n\n" + body) if title else body
+                outer_sender(connection['user_telegram_id'], [{
+                    'type': 'text', 'text': text
+                }])
+                storage.set_user_resend_flag(user['telegramId'])
+                new_recs_flag = True
             except Exception as e:
                 logger.err("podcastsUpdater/whileNotifyUserAboutNtfDisabled: ", e)
 
