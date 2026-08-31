@@ -1308,11 +1308,16 @@ class SQLighter:
             self.connection.commit()
 
     def decrease_all_time_left(self):
+        # Подписка помеченного удалённым заморожена: он ничего не получает, поэтому
+        # его дни не должны сгорать. Когда он вернётся, отсчёт продолжится с того же места.
         with self.connection:
             self.cursor.execute(
                 "UPDATE user_tariff_cs \
                 SET time_left = time_left - 1\
-                WHERE time_left > 0 AND tariff_id != 0")
+                WHERE time_left > 0 AND tariff_id != 0\
+                    AND NOT EXISTS (SELECT 1 FROM users u \
+                        WHERE u.id = user_tariff_cs.uid \
+                            AND u.deleted_at IS NOT NULL)")
             self.connection.commit()
 
     def get_users_who_can_be_prolonged(self):
@@ -1345,6 +1350,10 @@ class SQLighter:
             return self.cursor.execute(sql).fetchall()
 
     def prolong_users(self, tariff_period):
+        # Помеченного удалённым не продлеваем: списывать с баланса за выпуски,
+        # которые ему всё равно не отправляются, нельзя. Тот же фильтр стоит в
+        # get_users_who_can_be_prolonged, и условия обязаны совпадать — иначе
+        # деньги списываются, а уведомление о списании не уходит.
         with self.connection:
             sql = """
                 UPDATE user_tariff_cs
@@ -1359,6 +1368,10 @@ class SQLighter:
                     SELECT price FROM tariffs
                     WHERE tariffs.id = user_tariff_cs.tariff_id
                 ) AND time_left = 0
+                    AND NOT EXISTS (
+                        SELECT 1 FROM users u
+                        WHERE u.id = user_tariff_cs.uid
+                            AND u.deleted_at IS NOT NULL)
             """
             self.cursor.execute(sql, (str(tariff_period),))
             rowcount = self.cursor.rowcount
