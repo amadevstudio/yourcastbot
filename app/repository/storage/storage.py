@@ -1,5 +1,7 @@
 import json
 import shelve
+import threading
+from functools import wraps
 from typing import Mapping, Any, Sequence
 
 from app.routes.routes_list import AvailableRoutes
@@ -7,8 +9,19 @@ from config import shelve_name
 from lib.tools.logger import logger
 
 storage = shelve.open(shelve_name)
+_lock = threading.RLock()
 
 
+def _locked(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with _lock:
+            return fn(*args, **kwargs)
+    return wrapped
+
+
+
+@_locked
 def clear_user_storage(chat_id):
     storage_values = ["states", "states_data", "resend_flag"]
     for i in storage_values:
@@ -18,6 +31,7 @@ def clear_user_storage(chat_id):
             pass  # print("can't delete " + i, flush=True)
 
 
+@_locked
 def clear_user_storage_partly(chat_id, storage_values=None):
     if storage_values is None:
         storage_values = []
@@ -28,6 +42,7 @@ def clear_user_storage_partly(chat_id, storage_values=None):
             pass  # print("can't delete " + i, flush=True)
 
 
+@_locked
 def get_message_structures(chat_id: int):
     try:
         message_structures_encoded = storage[f'users:tg:{chat_id}:message_structures']
@@ -37,15 +52,18 @@ def get_message_structures(chat_id: int):
     return json.loads(message_structures_encoded)
 
 
+@_locked
 def set_user_message_structures(chat_id: int, message_structures: Sequence[Any]):
     storage[f'users:tg:{chat_id}:message_structures'] = json.dumps(message_structures)
 
 
 # флаг для повторной отправки
+@_locked
 def set_user_resend_flag(chat_id):
     storage[str(chat_id) + "_resend_flag"] = str(1)
 
 
+@_locked
 def get_user_resend_flag(chat_id):
     try:
         if storage[str(chat_id) + "_resend_flag"] == "1":
@@ -56,6 +74,7 @@ def get_user_resend_flag(chat_id):
         return False
 
 
+@_locked
 def del_user_resend_flag(chat_id):
     try:
         del storage[str(chat_id) + "_resend_flag"]
@@ -64,6 +83,7 @@ def del_user_resend_flag(chat_id):
 
 
 # состояния
+@_locked
 def add_user_state(chat_id, state: AvailableRoutes):
     curr_state = get_user_curr_state(chat_id)
     if curr_state == state:
@@ -83,6 +103,7 @@ def add_user_state(chat_id, state: AvailableRoutes):
     storage[str(chat_id) + "_states"] = json.dumps(curr_states)
 
 
+@_locked
 def get_user_states(chat_id) -> list[AvailableRoutes] | None:
     try:
         return json.loads(storage[str(chat_id) + "_states"])
@@ -90,6 +111,7 @@ def get_user_states(chat_id) -> list[AvailableRoutes] | None:
         return None
 
 
+@_locked
 def get_user_curr_state(chat_id) -> AvailableRoutes | None:
     try:
         curr_states = json.loads(storage[str(chat_id) + "_states"])
@@ -98,6 +120,7 @@ def get_user_curr_state(chat_id) -> AvailableRoutes | None:
         return None
 
 
+@_locked
 def get_user_prev_state(chat_id) -> AvailableRoutes | None:
     try:
         curr_states = json.loads(storage[str(chat_id) + "_states"])
@@ -106,6 +129,7 @@ def get_user_prev_state(chat_id) -> AvailableRoutes | None:
         return None
 
 
+@_locked
 def get_user_prev_curr_states(chat_id) -> tuple[AvailableRoutes | None, AvailableRoutes | None]:
     try:
         curr_states = json.loads(storage[str(chat_id) + '_states'])
@@ -119,6 +143,7 @@ def get_user_prev_curr_states(chat_id) -> tuple[AvailableRoutes | None, Availabl
         return None, None
 
 
+@_locked
 def del_user_curr_state(chat_id):
     try:
         curr_states = json.loads(storage[str(chat_id) + "_states"])
@@ -129,6 +154,7 @@ def del_user_curr_state(chat_id):
     storage[str(chat_id) + "_states"] = json.dumps(curr_states)
 
 
+@_locked
 def del_user_state(chat_id):
     try:
         del storage[str(chat_id) + "_states"]
@@ -137,6 +163,7 @@ def del_user_state(chat_id):
 
 
 # сохранение открытых каналов, поиска и так далее
+@_locked
 def set_user_state_data(chat_id, st_name: AvailableRoutes, st_params=None):
     if st_params is None:
         st_params = {}
@@ -148,6 +175,7 @@ def set_user_state_data(chat_id, st_name: AvailableRoutes, st_params=None):
     storage[str(chat_id) + "_states_data"] = json.dumps(curr_data)
 
 
+@_locked
 def get_user_state_data(chat_id, st_name: AvailableRoutes | None) -> dict | None:
     if st_name is None:
         return None
@@ -158,6 +186,7 @@ def get_user_state_data(chat_id, st_name: AvailableRoutes | None) -> dict | None
         return None
 
 
+@_locked
 def get_user_state_data_empty(chat_id, st_name: AvailableRoutes):
     try:
         return json.loads(storage[str(chat_id) + "_states_data"])[st_name] == {}
@@ -165,6 +194,7 @@ def get_user_state_data_empty(chat_id, st_name: AvailableRoutes):
         return True
 
 
+@_locked
 def del_user_state_data(chat_id, st_name: AvailableRoutes):
     try:
         curr_data = json.loads(storage[str(chat_id) + "_states_data"])
@@ -174,6 +204,7 @@ def del_user_state_data(chat_id, st_name: AvailableRoutes):
     storage[str(chat_id) + "_states_data"] = json.dumps(curr_data)
 
 
+@_locked
 def del_user_state_alldata(chat_id):
     try:
         del storage[str(chat_id) + "_states_data"]
@@ -182,10 +213,12 @@ def del_user_state_alldata(chat_id):
 
 
 # сохранение последнего id канала в обработке
+@_locked
 def set_last_channel_id(channel_id):
     storage["last_channel_id"] = str(channel_id)
 
 
+@_locked
 def get_last_channel_id():
     try:
         return int(storage["last_channel_id"])
@@ -193,10 +226,12 @@ def get_last_channel_id():
         return 1
 
 
+@_locked
 def set_last_channel_restarted(restarted):
     storage["last_channel_restarted"] = ("1" if restarted else "0")
 
 
+@_locked
 def is_last_channel_restarted():
     try:
         return bool(int(storage["last_channel_restarted"]))
@@ -210,6 +245,7 @@ def __channel_feed_failures_key(channel_id):
     return "channel_feed_failures_" + str(channel_id)
 
 
+@_locked
 def get_channel_feed_failures(channel_id) -> int:
     try:
         return int(storage[__channel_feed_failures_key(channel_id)])
@@ -217,12 +253,14 @@ def get_channel_feed_failures(channel_id) -> int:
         return 0
 
 
+@_locked
 def increase_channel_feed_failures(channel_id) -> int:
     failures = get_channel_feed_failures(channel_id) + 1
     storage[__channel_feed_failures_key(channel_id)] = str(failures)
     return failures
 
 
+@_locked
 def reset_channel_feed_failures(channel_id):
     try:
         del storage[__channel_feed_failures_key(channel_id)]
@@ -231,6 +269,7 @@ def reset_channel_feed_failures(channel_id):
 
 
 # флаги, что доступны подкасты
+@_locked
 def set_new_podcast_available_flag(user_id):
     try:
         flags = json.loads(storage["new_podcast_available_flag"])
@@ -241,6 +280,7 @@ def set_new_podcast_available_flag(user_id):
         storage["new_podcast_available_flag"] = json.dumps(flags)
 
 
+@_locked
 def get_new_podcast_available_flags():
     try:
         return json.loads(storage["new_podcast_available_flag"])
@@ -248,6 +288,7 @@ def get_new_podcast_available_flags():
         return []
 
 
+@_locked
 def clear_new_podcast_available_flags():
     try:
         del storage["new_podcast_available_flag"]

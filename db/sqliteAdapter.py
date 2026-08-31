@@ -64,6 +64,13 @@ class SQLighter:
         self.cursor = self.connection.cursor()
         _ensure_users_deleted_at_column(self.connection)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
     def __lower_unicode(self, string):
         return str(string).lower()
 
@@ -267,9 +274,9 @@ class SQLighter:
             else:
                 return True
 
-    def get_channel_or_next(self, channel_id, channel_set=[]):
+    def get_channel_or_next(self, channel_id, channel_set=None):
         with self.connection:
-            if channel_set == []:
+            if not channel_set:
                 return self.cursor.execute(
                     "SELECT * FROM channels WHERE id >= ? LIMIT 1",
                     (str(channel_id),)).fetchone()

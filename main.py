@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import signal
+import sys
 import threading
 import queue
 # import tracemalloc
@@ -82,12 +84,37 @@ def setup_threads():
         target=app.jobs.payment_watcher.patreon_watcher,
         args=(config.payment_service_watcher_period,))
     t_patreon_watcher.daemon = True
-    t_balance_watcher.name = 'Patreon payment watcher'
+    t_patreon_watcher.name = 'Patreon payment watcher'
     t_patreon_watcher.start()
     threads_to_watch.append(t_patreon_watcher)
 
 
+def shutdown(signum, frame):
+    logger.log(f"Received signal {signum}, shutting down...")
+
+    from app.repository.storage import storage as storage_module
+    from app.repository.storage import telegram_cache
+    try:
+        storage_module.storage.sync()
+        storage_module.storage.close()
+        logger.log("Storage shelve closed")
+    except Exception as e:
+        logger.err("Error closing storage shelve:", e)
+    try:
+        telegram_cache.storage.sync()
+        telegram_cache.storage.close()
+        logger.log("Telegram cache shelve closed")
+    except Exception as e:
+        logger.err("Error closing telegram cache shelve:", e)
+
+    logger.log("Shutdown complete")
+    sys.exit(0)
+
+
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
     setup_threads()
 
     t_answer_sender = telebotAnswerer.TelebotBalancer(
