@@ -231,8 +231,10 @@ def render_messages(chat_id: int,
         return new_message_structures
 
     except (ApiTelegramException, ApiException) as e:
+        # get_timeout_from_error_bot returns False, not None, when the error is not a 429:
+        # `pause is not None` was always true and swallowed every api error here
         pause = get_timeout_from_error_bot(e)
-        if pause is not None:
+        if pause:
             # TODO: Schedule resending?
             return previous_message_structures
 

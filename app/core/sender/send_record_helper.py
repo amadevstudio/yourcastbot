@@ -599,7 +599,12 @@ class Sender:
                     # для юзера, если много отправлений, пытаемся ещё раз
                     pause = get_timeout_from_error_client(e)
                     if pause:
-                        send_uploaded()
+                        # вторая попытка не должна ронять рассылку остальным получателям
+                        try:
+                            time.sleep(pause)
+                            send_uploaded()
+                        except Exception as retry_e:
+                            self.logger.err(retry_e)
 
                 except Exception as e:
                     self.logger.err(e)
