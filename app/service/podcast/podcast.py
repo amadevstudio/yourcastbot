@@ -2,12 +2,16 @@ import json
 from typing import TypedDict, Dict, Tuple, Literal
 from urllib.parse import unquote, quote
 
-from app.service.podcast.rss import get_rss_root
+from app.service.podcast.rss import (
+    get_rss_root_with_status,
+    FeedStatus, FEED_STATUS_GONE, FEED_STATUS_UNAVAILABLE)
 from lib.requests import requesterModule
 from lib.tools.logger import logger
 from lib.tools.time_tools.general import format_rss_last_date, prepare_date_time_from_formatted
 
 requester = requesterModule.Requester()
+
+ITUNES_REQUEST_TIMEOUT = (5, 15)  # (connect, read)
 
 
 class RootAdapter:
@@ -24,13 +28,21 @@ class PodcastInfoType(TypedDict, total=False):
     feedUrl: str | bool
     collectionName: None | str
     itunesData: Dict | None
+    # почему выборка не удалась: FEED_STATUS_GONE | FEED_STATUS_UNAVAILABLE
+    failureReason: FeedStatus
 
 
 def podcast_info_query(payload, service_name='itunes', direct_link=False) \
         -> Tuple[RootAdapter | Literal[False], PodcastInfoType]:
     if service_name == 'itunes':
         api_url_base = 'https://itunes.apple.com/lookup'
-        response = requester.get(api_url_base, params=payload)
+        try:
+            response = requester.get(api_url_base, params=payload, timeout=ITUNES_REQUEST_TIMEOUT)
+        except Exception as e:
+            # сеть до itunes могла моргнуть; раньше исключение улетало наверх
+            # и роняло поток апдейтера
+            logger.warn("Itunes request failed: ", payload, "; error: ", e)
+            return False, {'failureReason': FEED_STATUS_UNAVAILABLE}
 
         # if response.status_code == 200:
         # 	return json.loads(response.content.decode('utf-8'))
@@ -43,7 +55,7 @@ def podcast_info_query(payload, service_name='itunes', direct_link=False) \
             itunes_json = json.loads(response.content.decode('utf-8'))["results"]
         except Exception as e:
             print("mainf/parsing_error1: ", e, "; payload: ", payload, flush=True)
-            return False, {}
+            return False, {'failureReason': FEED_STATUS_UNAVAILABLE}
 
         feed_url: str | bool = ""
         collection_name = ""
@@ -79,17 +91,26 @@ def podcast_info_query(payload, service_name='itunes', direct_link=False) \
 
     if not feed_url or feed_url == "":
         logger.warn("Feed url is empty: ", payload)
-        return False, {"collectionName": collection_name}
+        # itunes ответил, но подкаста в выдаче нет. Это может быть и снятие
+        # подкаста с публикации, и временный сбой выдачи, поэтому — unavailable:
+        # решение о выключении уведомлений принимается по счётчику неудач.
+        return False, {
+            "collectionName": collection_name,
+            'failureReason': FEED_STATUS_UNAVAILABLE}
 
     feed_url = str(feed_url)
 
-    root = get_rss_root(feed_url)
+    root, feed_status = get_rss_root_with_status(feed_url)
     if root is False and "www." in feed_url and not direct_link:
         feed_url = feed_url.replace("www.", "")
-        root = get_rss_root(feed_url)
+        root, feed_status = get_rss_root_with_status(feed_url)
     if root is False:
-        logger.warn("Error payload info: ", payload)
-        return False, {'collectionName': collection_name}
+        logger.warn("Error payload info: ", payload, "; reason: ", feed_status)
+        return False, {
+            'collectionName': collection_name,
+            'failureReason': (
+                FEED_STATUS_GONE if feed_status == FEED_STATUS_GONE
+                else FEED_STATUS_UNAVAILABLE)}
 
     return root, {
         'lastDate': last_date, 'itunesLink': itunes_link,

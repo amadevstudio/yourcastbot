@@ -15,14 +15,23 @@ STD_REQUEST_HEADERS = {
 
 
 class Requester:
-    def __init__(self, attempts=3, factor=0.005, insecure_warnings=False, request_headers=None):
+    def __init__(self, attempts=3, factor=0.005, insecure_warnings=False, request_headers=None,
+                 total_attempts=None):
         if request_headers is None:
             request_headers = STD_REQUEST_HEADERS
 
         if not insecure_warnings:
             self.__disable_insecure_request_warning()
 
-        retry = Retry(connect=attempts, backoff_factor=factor)
+        retry_params = {'connect': attempts, 'backoff_factor': factor}
+        # By default urllib3 allows up to 10 retries in total, which turns a slow
+        # host into a multi-minute hang. Callers that need a bounded worst case
+        # (e.g. the feed fetcher) pass total_attempts explicitly.
+        if total_attempts is not None:
+            retry_params['total'] = total_attempts
+            retry_params['read'] = total_attempts
+
+        retry = Retry(**retry_params)
         self.adapter = HTTPAdapter(max_retries=retry)
 
         self.headers = {

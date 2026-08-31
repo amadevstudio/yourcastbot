@@ -10,6 +10,7 @@ from telethon.sessions import StringSession
 
 import app.i18n.messages
 import app.service.podcast.podcast
+import app.service.podcast.rss
 import app.service.record.helpers
 import app.service.user.language
 import lib.markup.cleaner
@@ -36,6 +37,13 @@ from lib.tools.logger import Logger
 from app.routes.ptypes import ControllerParams
 
 MAX_EPISODES_PER_PODCAST = 3
+
+# Сколько кругов обновления подряд фид должен быть недоступен,
+# прежде чем выключать уведомления подписчикам.
+# Разовый таймаут/503/битый ответ не должен ничего гасить.
+FEED_FAILURES_BEFORE_NOTIFY_OFF = 5
+# Фид ответил 404/410 — его точно больше нет, порог ниже.
+FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF = 3
 
 logger = Logger(file="updater")
 
@@ -188,6 +196,46 @@ def send_new_records_by_channel(
         service_id = channel["rss_link"]
 
     if root is False:
+        failure_reason = pc_info.get(
+            'failureReason', app.service.podcast.rss.FEED_STATUS_UNAVAILABLE)
+
+        # Ручное обновление по кнопке ничего не выключает:
+        # пользователь не должен терять уведомления из-за того,
+        # что нажал 'обновить' в неудачный момент.
+        if manual:
+            logger.log(
+                "Feed is not available for channel", channel['id'],
+                "; reason:", failure_reason,
+                "; manual update, notifications are left untouched")
+            return new_recs_flag
+
+        failures = storage.increase_channel_feed_failures(channel['id'])
+        if failure_reason == app.service.podcast.rss.FEED_STATUS_GONE:
+            failures_threshold = FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF
+        else:
+            failures_threshold = FEED_FAILURES_BEFORE_NOTIFY_OFF
+
+        # Недоступность может быть временной — ждём подтверждения
+        # на следующих кругах, уведомления пока не трогаем.
+        if failures < failures_threshold:
+            logger.log(
+                "Feed is not available for channel", channel['id'],
+                "; reason:", failure_reason,
+                "; consecutive failures:", failures, "of", failures_threshold,
+                "; notifications are left enabled")
+            return new_recs_flag
+
+        logger.warn(
+            "Feed is stably unavailable for channel", channel['id'],
+            "; reason:", failure_reason,
+            "; consecutive failures:", failures,
+            "; turning notifications off for", len(connections), "subscribers and",
+            (0 if nosubs_connections is None else len(nosubs_connections)),
+            "users without a tariff")
+        # счётчик сброшен: если фид вернётся и пользователь снова
+        # включит уведомления, отсчёт начнётся заново
+        storage.reset_channel_feed_failures(channel['id'])
+
         try:
             if nosubs_connections is not None:
                 for connection in nosubs_connections:
@@ -231,6 +279,9 @@ def send_new_records_by_channel(
                     "PARSING ERROR! In podcastUpdater2. ",
                     "Notifications disabled for podcast ", e)
         return new_recs_flag
+
+    # фид получен — серия неудач прервана
+    storage.reset_channel_feed_failures(channel['id'])
 
     if service_name == 'itunes':
         # # flag = True
