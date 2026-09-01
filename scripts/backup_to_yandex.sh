@@ -88,16 +88,16 @@ function checkError()
 
 function getUploadUrl()
 {
-    json_out=`curl -s -H "Authorization: OAuth $TOKEN" https://cloud-api.yandex.net:443/v1/disk/resources/upload/?path=app:/$backupName&overwrite=true`
+    json_out=$(curl -s -H "Authorization: OAuth $TOKEN" \
+        "https://cloud-api.yandex.net:443/v1/disk/resources/upload/?path=app:/${backupName}&overwrite=true")
     json_error=$(checkError "$json_out")
     if [[ $json_error != '' ]];
     then
         logger "$PROJECT - Yandex.Disk error: $json_error"
         mailing "$PROJECT - Yandex.Disk backup error" "ERROR copy file $FILENAME. Yandex.Disk error: $json_error"
-    echo ''
+        echo ''
     else
-        output=$(parseJson 'href' $json_out)
-        echo $output
+        parseJson 'href' "$json_out"
     fi
 }
 
@@ -109,7 +109,7 @@ function uploadFile
     uploadUrl=$(getUploadUrl)
     if [[ $uploadUrl != '' ]];
     then
-        json_out=`curl -s --max-time 900 -T $1 -H "Authorization: OAuth $TOKEN" $uploadUrl`
+        json_out=$(curl -s --max-time 900 -T "$1" -H "Authorization: OAuth $TOKEN" "$uploadUrl")
         json_error=$(checkError "$json_out")
         if [[ $json_error != '' ]];
         then
