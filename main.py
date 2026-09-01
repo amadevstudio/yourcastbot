@@ -66,7 +66,7 @@ def setup_threads():
 
     if config.server:
         t_db_backuper = threading.Thread(
-            target=backup_db.main, args=(1440,))
+            target=backup_db.main)
         t_db_backuper.daemon = True
         t_db_backuper.name = 'Db backup'
         t_db_backuper.start()
