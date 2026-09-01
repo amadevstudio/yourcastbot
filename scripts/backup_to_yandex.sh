@@ -53,6 +53,13 @@ if [ -z "$TOKEN" ]; then
     exit 1
 fi
 
+mkdir -p "$BACKUP_DIR"
+exec 9>"$BACKUP_DIR/backup.lock"
+if ! flock -n 9; then
+    echo "Backup already running" >&2
+    exit 0
+fi
+
 function mailing()
 {
     if [ ! $sendLog = '' ];then
@@ -78,12 +85,12 @@ function parseJson()
     local output
     regex="(\"$1\":[\"]?)([^\",\}]+)([\"]?)"
     [[ $2 =~ $regex ]] && output=${BASH_REMATCH[2]}
-    echo $output
+    printf '%s\n' "$output"
 }
 
 function checkError()
 {
-    echo $(parseJson 'error' "$1")
+    parseJson 'error' "$1"
 }
 
 function getUploadUrl()
@@ -105,20 +112,24 @@ function uploadFile
 {
     local json_out
     local uploadUrl
-    local json_error
-    uploadUrl=$(getUploadUrl)
+    local http_code
+    uploadUrl=$(getUploadUrl | tr -d '\r')
+    wait
     if [[ $uploadUrl != '' ]];
     then
-        json_out=$(curl -s --max-time 900 -T "$1" -H "Authorization: OAuth $TOKEN" "$uploadUrl")
-        json_error=$(checkError "$json_out")
-        if [[ $json_error != '' ]];
+        json_out=$(mktemp)
+        http_code=$(curl -sS -o "$json_out" -w "%{http_code}" --max-time 900 \
+            -T "$1" -H "Authorization: OAuth $TOKEN" -- "$uploadUrl" || true)
+        if [[ "$http_code" != 201 && "$http_code" != 200 ]];
         then
-            logger "$PROJECT - Yandex.Disk error: $json_error"
-            mailing "$PROJECT - Yandex.Disk backup error" "ERROR copy file $FILENAME. Yandex.Disk error: $json_error"
+            logger "$PROJECT - Yandex.Disk upload HTTP $http_code $(tr '\n' ' ' < "$json_out")"
+            mailing "$PROJECT - Yandex.Disk backup error" "ERROR copy file $FILENAME. HTTP $http_code"
+            rm -f "$json_out"
             return 1
         else
             logger "$PROJECT - Copying file to Yandex.Disk success"
             mailing "$PROJECT - Yandex.Disk backup success" "SUCCESS copy file $FILENAME"
+            rm -f "$json_out"
             return 0
         fi
     else
