@@ -114,16 +114,17 @@ function uploadFile
     local uploadUrl
     local http_code
     uploadUrl=$(getUploadUrl | tr -d '\r')
-    wait
     if [[ $uploadUrl != '' ]];
     then
         json_out=$(mktemp)
-        http_code=$(curl -sS -o "$json_out" -w "%{http_code}" --max-time 900 \
-            -T "$1" -H "Authorization: OAuth $TOKEN" -- "$uploadUrl" || true)
-        if [[ "$http_code" != 201 && "$http_code" != 200 ]];
+        curl_exit=0
+        http_code=$(curl -sS -o "$json_out" -w "%{http_code}" \
+            --connect-timeout 30 --max-time 3600 \
+            -T "$1" -H "Authorization: OAuth $TOKEN" -- "$uploadUrl") || curl_exit=$?
+        if [[ "$curl_exit" -ne 0 || ( "$http_code" != 201 && "$http_code" != 200 ) ]];
         then
-            logger "$PROJECT - Yandex.Disk upload HTTP $http_code $(tr '\n' ' ' < "$json_out")"
-            mailing "$PROJECT - Yandex.Disk backup error" "ERROR copy file $FILENAME. HTTP $http_code"
+            logger "$PROJECT - Yandex.Disk upload curl=$curl_exit HTTP $http_code $(tr '\n' ' ' < "$json_out")"
+            mailing "$PROJECT - Yandex.Disk backup error" "ERROR copy file $FILENAME. curl=$curl_exit HTTP $http_code"
             rm -f "$json_out"
             return 1
         else
@@ -144,23 +145,26 @@ function backups_list() {
 }
 
 function backups_count() {
-    local bkps=$(backups_list | wc -l)
-    # Если мы бекапим и файлы, и БД, то на 1 бекап у нас приходится 2 файла. Поэтому количество бекапов = количество файлов / 2:
-    expr $bkps / 2
+    backups_list | wc -l
 }
 
 function remove_old_backups() {
     bkps=$(backups_count)
     old_bkps=$((bkps - MAX_BACKUPS))
     if [ "$old_bkps" -gt "0" ];then
-        logger "Удаляем старые бекапы с Яндекс.Диска"
-        # Цикл удаления старых бекапов:
-        # Выполняем удаление первого в списке файла 2*old_bkps раз
-        for i in `eval echo {1..$((old_bkps * 2))}`; do
-            curl -X DELETE -s -H "Authorization: OAuth $TOKEN" "https://cloud-api.yandex.net:443/v1/disk/resources?path=app:/$(backups_list | awk '(NR == 1)')&permanently=true"
+        logger "Удаляем старые бекапы с Яндекс.Диска ($old_bkps of $bkps)"
+        for i in $(seq 1 "$old_bkps"); do
+            curl -X DELETE -s -H "Authorization: OAuth $TOKEN" \
+                "https://cloud-api.yandex.net:443/v1/disk/resources?path=app:/$(backups_list | awk '(NR == 1)')&permanently=true"
         done
     fi
 }
+
+if [ "${FORCE_BACKUP:-}" != 1 ] && [ -f "$BACKUP_DIR/last_success" ] \
+    && [ "$(cat "$BACKUP_DIR/last_success")" = "$DATE" ]; then
+    logger "--- $PROJECT SKIP BACKUP $DATE (already succeeded today) ---"
+    exit 0
+fi
 
 logger "--- $PROJECT START BACKUP $DATE ---"
 # logger "Выгружаем дампы баз"
@@ -174,6 +178,7 @@ logger "--- $PROJECT START BACKUP $DATE ---"
 # rm -rf $BACKUP_DIR/$DATE
 
 logger "Создаем архив каталогов $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz"
+find "$BACKUP_DIR" -type f -name "*.gz" -delete
 tar -czf $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz -C $HOME_DIR $DIRS
 
 # FILENAME=$DATE-mysql-$PROJECT.tar.gz
@@ -187,11 +192,16 @@ backupName=$DATE-files-$PROJECT.tar.gz
 uploadFile $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz
 upload_status=$?
 
-logger "Удаляем архивы с диска"
-find $BACKUP_DIR -type f -name "*.gz" -exec rm '{}' \;
-
-# Удаляем старые бекапы с Яндекс.Диска (если MAX_BACKUPS > 0)
-if [ $upload_status -eq 0 ] && [ $MAX_BACKUPS -gt 0 ];then remove_old_backups; fi
+if [ $upload_status -eq 0 ]; then
+    logger "Удаляем локальный архив после успешной заливки"
+    rm -f "$BACKUP_DIR/$FILENAME"
+    echo "$DATE" > "$BACKUP_DIR/last_success"
+    if [ $MAX_BACKUPS -gt 0 ]; then
+        remove_old_backups
+    fi
+else
+    logger "Локальный архив оставлен после ошибки: $BACKUP_DIR/$FILENAME"
+fi
 
 logger "Завершение скрипта бекапа"
 exit $upload_status
