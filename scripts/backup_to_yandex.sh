@@ -34,6 +34,8 @@ DIRS="db"
 
 # Yandex.Disk токен (как получить - см. на neblog.info)
 TOKEN="${YANDEX_DISK_BACKUP_TOKEN:-}"
+export TOKEN
+export YANDEX_DISK_BACKUP_TOKEN="$TOKEN"
 
 # Имя лог-файла, хранится в директории, указанной в $BACKUP_DIR
 LOGFILE='backup.log'
@@ -140,8 +142,22 @@ function uploadFile
 }
 
 function backups_list() {
-    # Ищем в директории приложения все файлы бекапов и выводим их названия:
-    curl -s -H "Authorization: OAuth $TOKEN" "https://cloud-api.yandex.net:443/v1/disk/resources?path=app:/&sort=created&limit=100" | tr "{},[]" "\n" | grep "name[[:graph:]]*.tar.gz" | cut -d: -f 2 | tr -d '"'
+    # Unique names from the JSON API. The old grep on flattened JSON matched
+    # each file twice, so "/ 2" looked like a mysql+files pair count.
+    python3 - <<'PY'
+import json, os, urllib.request
+tok = os.environ.get("YANDEX_DISK_BACKUP_TOKEN") or os.environ.get("TOKEN", "")
+req = urllib.request.Request(
+    "https://cloud-api.yandex.net/v1/disk/resources?path=app:/&sort=created&limit=100",
+    headers={"Authorization": "OAuth " + tok},
+)
+with urllib.request.urlopen(req, timeout=30) as r:
+    data = json.loads(r.read().decode())
+for it in (data.get("_embedded") or {}).get("items") or []:
+    name = it.get("name") or ""
+    if name.endswith(".tar.gz"):
+        print(name)
+PY
 }
 
 function backups_count() {
@@ -149,13 +165,22 @@ function backups_count() {
 }
 
 function remove_old_backups() {
-    bkps=$(backups_count)
-    old_bkps=$((bkps - MAX_BACKUPS))
-    if [ "$old_bkps" -gt "0" ];then
-        logger "Удаляем старые бекапы с Яндекс.Диска ($old_bkps of $bkps)"
-        for i in $(seq 1 "$old_bkps"); do
+    local files
+    local count
+    local old_bkps
+    local name
+    mapfile -t files < <(backups_list)
+    count=${#files[@]}
+    old_bkps=$((count - MAX_BACKUPS))
+    if [ "$old_bkps" -gt 0 ]; then
+        logger "Удаляем старые бекапы с Яндекс.Диска ($old_bkps of $count)"
+        for name in "${files[@]:0:old_bkps}"; do
+            if [ -z "$name" ] || [ "$name" = "$backupName" ]; then
+                logger "Skip deleting empty or just-uploaded name: '$name'"
+                continue
+            fi
             curl -X DELETE -s -H "Authorization: OAuth $TOKEN" \
-                "https://cloud-api.yandex.net:443/v1/disk/resources?path=app:/$(backups_list | awk '(NR == 1)')&permanently=true"
+                "https://cloud-api.yandex.net:443/v1/disk/resources?path=app:/${name}&permanently=true"
         done
     fi
 }
