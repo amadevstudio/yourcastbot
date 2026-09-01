@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from typing import Literal
+
 import config
 from app.repository.storage import storage
 from app.routes.message_tools import go_back_inline_markup
@@ -9,6 +11,15 @@ from app.service.payment import paymentModule
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import render_messages
 from scripts import restart_bot as restart_bot_script
+
+CreatorAlertLevel = Literal['fatal', 'error', 'warning', 'info']
+
+_CREATOR_TAGS = {
+    'fatal': '#problem #fatal',
+    'error': '#problem #error',
+    'warning': '#problem #warning',
+    'info': '#info',
+}
 
 
 def is_admin(data: ControllerParams) -> bool:
@@ -89,10 +100,9 @@ def show_commands(data: ControllerParams):
 # Helpers
 def send_thread_dead_message_to_creator():
     storage.set_last_channel_restarted(True)
-    render_messages(config.creatorId, [{
-        'type': 'text', 'text': 'Поток упал! Перезагрузка...', 'reply_markup': go_back_inline_markup('ru')}],
-                    resending=True)
+    send_message_to_creator('Поток упал! Перезагрузка...', level='fatal')
 
 
-def send_message_to_creator(message_text: str):
-    render_messages(config.creatorId, [{'type': 'text', 'text': message_text}], resending=True)
+def send_message_to_creator(message_text: str, level: CreatorAlertLevel = 'info'):
+    tagged = f"{_CREATOR_TAGS[level]}\n{message_text}"
+    render_messages(config.creatorId, [{'type': 'text', 'text': tagged}], resending=True)

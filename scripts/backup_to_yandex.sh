@@ -17,9 +17,6 @@
 
 # # # # # # # # # # ОБЩИЕ НАСТРОЙКИ # # # # # # # # # #
 
-# Директория для временного хранения бекапов, которые удаляются после отправки на Яндекс.Диск
-BACKUP_DIR="$3/backup"
-
 # Название проекта, используется в логах и именах архивов
 PROJECT='YourcastBot'
 
@@ -29,12 +26,14 @@ MAX_BACKUPS='14'
 # Дата, используется в именах архивов
 DATE=`date '+%Y-%m-%d'`
 
-# Директории для архивации (указываются через пробел), которые будут помещены в единый архив и отправлены на Яндекс.Диск
-HOME_DIR="$3"
+# Work dir is the only positional arg (token comes from the environment so
+# it does not show up in `ps`).
+HOME_DIR="${1:?work dir required}"
+BACKUP_DIR="$HOME_DIR/backup"
 DIRS="db"
 
 # Yandex.Disk токен (как получить - см. на neblog.info)
-TOKEN="$1"
+TOKEN="${YANDEX_DISK_BACKUP_TOKEN:-}"
 
 # Имя лог-файла, хранится в директории, указанной в $BACKUP_DIR
 LOGFILE='backup.log'
@@ -48,6 +47,11 @@ sendLogErrorsOnly='false'
 
 # # # # # # # # # # КОНЕЦ НАСТРОЕК # # # # # # # # # # # # # 
 # # # # # # # # ДАЛЬШЕ НИЧЕГО НЕ МЕНЯЕМ! # # # # # # # # # #
+
+if [ -z "$TOKEN" ]; then
+    echo "YANDEX_DISK_BACKUP_TOKEN is empty" >&2
+    exit 1
+fi
 
 function mailing()
 {
@@ -105,21 +109,21 @@ function uploadFile
     uploadUrl=$(getUploadUrl)
     if [[ $uploadUrl != '' ]];
     then
-    echo $UploadUrl
-        json_out=`curl -s -T $1 -H "Authorization: OAuth $TOKEN" $uploadUrl`
+        json_out=`curl -s --max-time 900 -T $1 -H "Authorization: OAuth $TOKEN" $uploadUrl`
         json_error=$(checkError "$json_out")
-    if [[ $json_error != '' ]];
-    then
-        logger "$PROJECT - Yandex.Disk error: $json_error"
-        mailing "$PROJECT - Yandex.Disk backup error" "ERROR copy file $FILENAME. Yandex.Disk error: $json_error"
-
+        if [[ $json_error != '' ]];
+        then
+            logger "$PROJECT - Yandex.Disk error: $json_error"
+            mailing "$PROJECT - Yandex.Disk backup error" "ERROR copy file $FILENAME. Yandex.Disk error: $json_error"
+            return 1
+        else
+            logger "$PROJECT - Copying file to Yandex.Disk success"
+            mailing "$PROJECT - Yandex.Disk backup success" "SUCCESS copy file $FILENAME"
+            return 0
+        fi
     else
-        logger "$PROJECT - Copying file to Yandex.Disk success"
-        mailing "$PROJECT - Yandex.Disk backup success" "SUCCESS copy file $FILENAME"
-
-    fi
-    else
-    	echo 'Some errors occured. Check log file for detail'
+        echo 'Some errors occured. Check log file for detail'
+        return 1
     fi
 }
 
@@ -170,11 +174,13 @@ FILENAME=$DATE-files-$PROJECT.tar.gz
 logger "Выгружаем на Яндекс.Диск архив с файлами $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz"
 backupName=$DATE-files-$PROJECT.tar.gz
 uploadFile $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz
+upload_status=$?
 
 logger "Удаляем архивы с диска"
 find $BACKUP_DIR -type f -name "*.gz" -exec rm '{}' \;
 
 # Удаляем старые бекапы с Яндекс.Диска (если MAX_BACKUPS > 0)
-if [ $MAX_BACKUPS -gt 0 ];then remove_old_backups; fi
+if [ $upload_status -eq 0 ] && [ $MAX_BACKUPS -gt 0 ];then remove_old_backups; fi
 
 logger "Завершение скрипта бекапа"
+exit $upload_status

@@ -351,6 +351,7 @@ def process_successful_payment(
             outer_sender(user['ref_id'], [{'type': 'text', 'text': award_message}])
 
     if config.server:
-        outer_sender(config.creatorId, [{'type': 'text', 'text': "New income by Telegram Stars"}])
+        from app.controller.builders.adminModule import send_message_to_creator
+        send_message_to_creator("New income by Telegram Stars", level='info')
 
     return True

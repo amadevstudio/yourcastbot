@@ -843,7 +843,8 @@ class Sender:
         if str(type(self.link)) == "# <class 'str'>" or not isinstance(self.link, str):
             send_message_to_creator("lxml.etree._Element ERROR!!!!!!!!!\n\n" +
                 str(chat_id) + str(self.podcast_info['title'])
-                + str(lang_code) + str(self.podcast_info['channelLink']) + "\n\n" + str(self.link))
+                + str(lang_code) + str(self.podcast_info['channelLink']) + "\n\n" + str(self.link),
+                level='error')
 
         error_text = (
                 self.prepare_record_text(chat_id, mode='short', on_error=True) + "\n\n"

@@ -48,7 +48,8 @@ def check_threads(threads_to_watch: list[threading.Thread]):
                 print("\n\nmainf/serving: ", e, "\n\n", flush=True)
 
                 if "[Errno 12] Cannot allocate memory" in str(e):
-                    adminModule.send_message_to_creator("Cannot allocate memory")
+                    adminModule.send_message_to_creator(
+                        "Cannot allocate memory", level='fatal')
                     restart_bot.print_top_memory()
                     restart_bot.restart()
 

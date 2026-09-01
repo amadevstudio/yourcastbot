@@ -61,7 +61,7 @@ def main(interval=120):
 
     while True:
         if not server:
-            send_message_to_creator("Started")
+            send_message_to_creator("Started", level='info')
             time.sleep(60 * 60)
             storage.set_last_channel_id(1)
 
@@ -71,11 +71,12 @@ def main(interval=120):
         if storage.is_last_channel_restarted() or last_updated_channel_id != 1:
             last_updated_channel_id += 1
             storage.set_last_channel_restarted(False)
-            send_message_to_creator("#restarted")
+            send_message_to_creator("#restarted", level='warning')
 
         logger.log("New circle, luci: ", last_updated_channel_id, "| ", time.ctime())
         send_message_to_creator(
-            "New cirlce #new_circle; luci: " + str(last_updated_channel_id))
+            "New cirlce #new_circle; luci: " + str(last_updated_channel_id),
+            level='info')
 
         db_users = SQLighter(db_path)
         # # получение всех подкастов с подписками
@@ -139,7 +140,8 @@ def main(interval=120):
 
         send_message_to_creator(
             "Circle finished #circle_finished; luci: "
-            + str(storage.get_last_channel_id()))
+            + str(storage.get_last_channel_id()),
+            level='info')
 
         # отправка уведомлений о новых эпизодах пользователям без подписки
         flag_no_sub_users = storage.get_new_podcast_available_flags()
@@ -565,7 +567,8 @@ def send_new_records_by_channel(
         if pgd == '':
             send_message_to_creator(
                 "BAD GUID: " + str(pgd) + "; "
-                + str(title) + "; " + link)
+                + str(title) + "; " + link,
+                level='warning')
             logger.warn((
                                 "BAD GUID: " + str(pgd) + "; "
                                 + str(title) + "; " + str(link)
