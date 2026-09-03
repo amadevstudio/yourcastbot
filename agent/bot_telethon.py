@@ -18,22 +18,54 @@ app_id = config.app_api_id
 api_hash = config.app_api_hash
 bot_token = config.token
 
-thonbot = TelegramClient(
-    session_handler, app_id, api_hash).start(bot_token=bot_token)
-
-if os.path.exists(uploader_session):
-    with open(uploader_session, 'r') as f:
-        string_session = StringSession(f.readline())
-else:
-    string_session = StringSession()
-
-thonbot_uploader = TelegramClient(string_session, app_id, api_hash).start(bot_token=bot_token)
-thobot_session_handler = thonbot_uploader.session.save()
+# Do not connect at import time: MTProto is blocked in some environments
+# (Cloud Agent, filtered networks) while Bot API HTTPS still works.
+thonbot = TelegramClient(session_handler, app_id, api_hash)
+thonbot_uploader: TelegramClient | None = None
+thobot_session_handler = ""
+telethon_available = False
 
 logger = Logger(file="sender")
 
-with open(uploader_session, 'w+') as f:
-    f.write(thobot_session_handler)
+
+def try_start_telethon() -> bool:
+    """Connect Telethon clients. Returns False when MTProto is unavailable."""
+    global thonbot_uploader, thobot_session_handler, telethon_available
+
+    if telethon_available:
+        return True
+
+    if os.environ.get('TELEGRAM_FORCE_BOTAPI', '').lower() in ('1', 'true', 'yes'):
+        logger.log("TELEGRAM_FORCE_BOTAPI is set, skipping MTProto")
+        return False
+
+    if not bot_token or not app_id or not api_hash:
+        logger.log("Telethon credentials missing, skipping MTProto")
+        return False
+
+    try:
+        thonbot.start(bot_token=bot_token)
+
+        if os.path.exists(uploader_session):
+            with open(uploader_session, 'r') as f:
+                string_session = StringSession(f.readline())
+        else:
+            string_session = StringSession()
+
+        uploader = TelegramClient(string_session, app_id, api_hash).start(
+            bot_token=bot_token)
+        session_string = uploader.session.save()
+        with open(uploader_session, 'w+') as f:
+            f.write(session_string)
+
+        thonbot_uploader = uploader
+        thobot_session_handler = session_string
+        telethon_available = True
+        logger.log("Telethon MTProto connected")
+        return True
+    except Exception as e:
+        logger.err("Telethon MTProto connect failed:", e)
+        return False
 
 
 async def __uploader(local_thonbot, fname, callback=None):
@@ -131,13 +163,3 @@ def get_next_ep_button(argv):
 
     else:
         return None
-
-# def get_or_create_event_loop():
-#     try:
-#         loop = asyncio.get_event_loop()
-#     except RuntimeError:
-#         loop = asyncio.new_event_loop()
-#         asyncio.set_event_loop(loop)
-#     print("LOOOOP IS ", loop, flush=True)
-#     return loop
-

@@ -1,5 +1,3 @@
-import telethon
-
 from app.repository.storage import storage
 from app.routes import router_tools
 from app.routes.routes import RouteMap
@@ -10,8 +8,8 @@ from app.core.navigation import goBackModule
 from lib.python import dict_tools
 
 
-def empty_state_input_state_corrector(event: telethon.events.NewMessage.Event):
-    prev, curr = storage.get_user_prev_curr_states(event.chat_id)
+def empty_state_input_state_corrector(chat_id: int):
+    prev, curr = storage.get_user_prev_curr_states(chat_id)
     if prev is None:
         return
 
@@ -31,7 +29,7 @@ def empty_state_input_state_corrector(event: telethon.events.NewMessage.Event):
             (dict_tools.deep_get(RouteMap.ROUTES, prev, 'waits_for_input', default=False)
              or someone_have_state_for_input)
             and curr == empty):
-        storage.del_user_curr_state(event.chat_id)
+        storage.del_user_curr_state(chat_id)
 
 
 def construct_params(

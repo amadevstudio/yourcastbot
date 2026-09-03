@@ -19,8 +19,11 @@ def notify(
         disable_web_page_preview: bool = True
 ):
     if call is not None:
-        bot.answer_callback_query(
-            callback_query_id=call.id, show_alert=alert, text=text)
+        try:
+            bot.answer_callback_query(
+                callback_query_id=call.id, show_alert=alert, text=text)
+        except Exception:
+            pass
         return
 
     if message is not None:

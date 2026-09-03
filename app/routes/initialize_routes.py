@@ -2,7 +2,7 @@ import asyncio
 import json
 import threading
 from functools import partial
-from typing import Callable, Tuple
+from typing import Any, Callable, Tuple
 
 import telethon.events
 from telethon import events
@@ -30,11 +30,11 @@ from lib.python import dict_tools
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-def get_tp(data):
+def get_tp(data: Any) -> str:
     try:
         return json.loads(data)['tp']
     except Exception as e:
-        logger.err(e, flush=True)
+        logger.err(e)
         return ""
 
 
@@ -119,19 +119,79 @@ def get_payment_chat_id(message) -> int | None:
 
 
 t_answer_sender: TelebotBalancer | None = None
+_answer_sender_queue: Any = None
+_threads_to_watch: Any = None
 
 
-def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queue, threads_to_watch):
+def handle_event_in_thread(params: HandleInThreadParams):
     global t_answer_sender
-    t_answer_sender = t_answer_sender_outer
+    if isinstance(t_answer_sender, threading.Thread):
+        if not t_answer_sender.is_alive() and _answer_sender_queue is not None:
+            t_answer_sender = telebotAnswerer.TelebotBalancer(
+                _answer_sender_queue, _threads_to_watch or [])
+        t_answer_sender.main_queue.put(params)
 
-    def handle_event_in_thread(params: HandleInThreadParams):
-        global t_answer_sender
-        if isinstance(t_answer_sender, threading.Thread):
-            if not t_answer_sender.is_alive():
-                t_answer_sender = telebotAnswerer.TelebotBalancer(
-                    answer_sender_queue, threads_to_watch)
-            t_answer_sender.main_queue.put(params)
+
+def dispatch_route(
+        route_name: AvailableRoutes, call: Callback | None, message: Message | None):
+    menu_route: AvailableRoutes = 'menu'
+    method_params = construct_params(call, message, route_name)
+
+    validator = dict_tools.deep_get(RouteMap.ROUTES, route_name, 'validator')
+    if validator is not None:
+        valid = validator(method_params)
+        if not valid:
+            return
+
+    if call is None and message is not None:
+        if router_tools.is_command(message.text):
+            storage.clear_user_storage(message.chat.id)
+            storage.add_user_state(method_params['chat_id'], menu_route)
+        storage.set_user_resend_flag(message.chat.id)
+
+    method: Callable = dict_tools.deep_get(RouteMap.ROUTES, route_name, 'method')
+    handle_event_in_thread(
+        {'action': method, 'data': method_params}
+    )
+
+
+def dispatch_action(
+        route_name: AvailableRoutes, action_name: AvailableActions,
+        call: Callback, message: Message | None):
+    method_params = construct_params(call, message, route_name, action_name)
+    method: Callable = dict_tools.deep_get(
+        RouteMap.ROUTES, route_name, 'actions', action_name, 'method')
+    handle_event_in_thread({'action': method, 'data': method_params})
+
+
+def dispatch_go_back(call: Callback | None, message: Message | None):
+    method_params = construct_params(call, message, None)
+    handle_event_in_thread(
+        {'action': goBackModule.go_back, 'data': method_params})
+
+
+def dispatch_inline(inline: Inline):
+    handle_event_in_thread({
+        'action': searchModule.inline_podcast_searcher,
+        'data': {'inline': inline}, 'special': 'inline'})
+
+
+def dispatch_maintenance(call: Callback | None, message: Message | None):
+    method_params = construct_params(call, message, None)
+    handle_event_in_thread(
+        {'action': welcomeModule.maintenance, 'data': method_params})
+
+
+def initialize_routes(
+        t_answer_sender_outer: TelebotBalancer, answer_sender_queue, threads_to_watch,
+        register_telethon: bool = True):
+    global t_answer_sender, _answer_sender_queue, _threads_to_watch
+    t_answer_sender = t_answer_sender_outer
+    _answer_sender_queue = answer_sender_queue
+    _threads_to_watch = threads_to_watch
+
+    if not register_telethon:
+        return
 
     @thonbot.on(events.Raw(tl_types.UpdateBotPrecheckoutQuery))
     async def telegram_stars_precheckout(update: tl_types.UpdateBotPrecheckoutQuery):
@@ -182,9 +242,7 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
     if config.maintenance:
         async def maintenance_catcher(event: telethon.events.NewMessage.Event | telethon.events.CallbackQuery.Event):
             callback, message = await get_call_and_message(event)
-            method_params = construct_params(callback, message, None)
-            handle_event_in_thread(
-                {'action': welcomeModule.maintenance, 'data': method_params})
+            dispatch_maintenance(callback, message)
 
         thonbot.add_event_handler(maintenance_catcher, events.NewMessage(incoming=True))
         thonbot.add_event_handler(maintenance_catcher, events.CallbackQuery())
@@ -192,7 +250,7 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
 
     # If status is 'empty' and previous waits for text, goback to previously and process
     async def process_empty_state_input(event: telethon.events.NewMessage.Event):
-        empty_state_input_state_corrector(event)
+        empty_state_input_state_corrector(event.chat_id)
     thonbot.add_event_handler(process_empty_state_input, events.NewMessage(incoming=True))
 
     # /Outer middlewares
@@ -211,48 +269,20 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
         # ---
 
         call, message = await get_call_and_message(event)
-
-        menu_route: AvailableRoutes = 'menu'
-        method_params = construct_params(call, message, route_name)
-
-        # Validate access
-        validator = dict_tools.deep_get(RouteMap.ROUTES, route_name, 'validator')
-        if validator is not None:
-            valid = validator(method_params)
-            if not valid:
-                return
-
-        if call is None and message is not None:
-            # Clear state on commands
-            if router_tools.is_command(message.text):
-                storage.clear_user_storage(event.chat.id)
-                storage.add_user_state(method_params['chat_id'], menu_route)
-            # Set resend on message
-            storage.set_user_resend_flag(message.chat.id)
-
-        method: Callable = dict_tools.deep_get(RouteMap.ROUTES, route_name, 'method')
-
-        # succeed = await method(method_params)
-        handle_event_in_thread(
-            {'action': method, 'data': method_params}
-        )
-        # if succeed is not False:  # returns None by default
-        #     storage.add_user_state(method_params['chat_id'], route_name)
+        dispatch_route(route_name, call, message)
 
     async def action_processor(
             route_name: AvailableRoutes, action_name: AvailableActions, call: telethon.events.CallbackQuery.Event):
-        call, message = await get_call_and_message(call)
-        method_params = construct_params(call, message, route_name, action_name)
-        method: Callable = dict_tools.deep_get(RouteMap.ROUTES, route_name, 'actions', action_name, 'method')
-        handle_event_in_thread({'action': method, 'data': method_params})
+        callback, message = await get_call_and_message(call)
+        if callback is None:
+            return
+        dispatch_action(route_name, action_name, callback, message)
 
     # Goback module
     @thonbot.on(events.CallbackQuery(func=lambda call: get_tp(call.data) == 'bck'))
     async def go_back(event: events.CallbackQuery.Event):
         callback, message = await get_call_and_message(event)
-        method_params = construct_params(callback, message, None)
-        handle_event_in_thread(
-            {'action': goBackModule.go_back, 'data': method_params})
+        dispatch_go_back(callback, message)
 
     def commands_list_validator(commands: list[str], incoming_command: str):
         return incoming_command[1:] in commands
@@ -354,6 +384,4 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
     @thonbot.on(events.InlineQuery)
     async def inline_queries_handler(event):
         inline = await get_inline(event)
-        handle_event_in_thread({
-            'action': searchModule.inline_podcast_searcher,
-            'data': {'inline': inline}, 'special': 'inline'})
+        dispatch_inline(inline)

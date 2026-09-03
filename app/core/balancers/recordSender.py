@@ -6,7 +6,7 @@ from typing import Dict, List
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-from agent.bot_telethon import thobot_session_handler
+from agent import bot_telethon
 from app.controller.builders import recsModule
 from app.jobs import podcastsUpdater
 from config import app_api_id, app_api_hash, token, threads_config
@@ -155,12 +155,9 @@ class RecordSender(threading.Thread):
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop = asyncio.get_event_loop()
 
-        thonbot = TelegramClient(
-            StringSession(thobot_session_handler), app_api_id, app_api_hash, loop=loop
-        ).start(bot_token=token)
-        thonbot.disconnect()
+        thonbot = None
+        logger.log(f"{self.thread_num} waiting for send jobs")
 
         while True:
             try:
@@ -171,13 +168,35 @@ class RecordSender(threading.Thread):
 
             try:
                 logger.log(f"Sending in thread #{self.thread_num}")
-                self.process_input(input_data, thonbot)
+                if thonbot is None:
+                    thonbot = self._connect_telethon(loop)
+                if thonbot is None:
+                    logger.warn(
+                        f"{self.thread_num} Telethon unavailable, "
+                        f"cannot {input_data.get('action')}")
+                else:
+                    self.process_input(input_data, thonbot)
             except Exception as e:
                 logger.err(f"{self.thread_num} failed sending, continuing:", e)
             finally:
                 self.thread_queue.task_done()
                 if self.thread_queue.empty():
                     self.pause()
+
+    def _connect_telethon(self, loop):
+        if not bot_telethon.telethon_available or not bot_telethon.thobot_session_handler:
+            logger.log(f"{self.thread_num} running without Telethon")
+            return None
+        try:
+            client = TelegramClient(
+                StringSession(bot_telethon.thobot_session_handler),
+                app_api_id, app_api_hash, loop=loop
+            ).start(bot_token=token)
+            client.disconnect()
+            return client
+        except Exception as e:
+            logger.err(f"{self.thread_num} Telethon connect failed:", e)
+            return None
 
     def process_input(self, input_data, thonbot):
 
