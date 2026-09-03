@@ -1,4 +1,5 @@
 import json
+import os
 import shelve
 import threading
 from functools import wraps
@@ -6,10 +7,66 @@ from typing import Mapping, Any, Sequence
 
 from app.routes.routes_list import AvailableRoutes
 from config import shelve_name
+from db import runtime_kv
+from lib.python.file_lock import InterprocessLock
 from lib.tools.logger import logger
 
-storage = shelve.open(shelve_name)
-_lock = threading.RLock()
+# gdbm is exclusive. Bot and jobs (Patreon FSM writes) may open it under flock.
+# Updater must not: cursor, resend flags, and message ids live in runtime_kv.
+_lock = InterprocessLock(shelve_name + ".lock")
+_shelve_init_lock = threading.Lock()
+_shelve_db = None
+
+
+def _role():
+    return os.environ.get("YOURCAST_ROLE") or ""
+
+
+def _shelve_allowed():
+    return _role() in ("", "bot", "jobs")
+
+
+def _get_shelve():
+    global _shelve_db
+    if not _shelve_allowed():
+        raise RuntimeError(
+            "FSM shelve is opened only in the bot process; "
+            "updater must use sqlite (runtime_kv)")
+    with _shelve_init_lock:
+        if _shelve_db is None:
+            _shelve_db = shelve.open(shelve_name)
+        return _shelve_db
+
+
+class _LazyShelve:
+    def __getitem__(self, key):
+        return _get_shelve()[key]
+
+    def __setitem__(self, key, value):
+        _get_shelve()[key] = value
+
+    def __delitem__(self, key):
+        del _get_shelve()[key]
+
+    def sync(self):
+        db = _shelve_db
+        if db is not None:
+            db.sync()
+
+    def close(self):
+        global _shelve_db
+        with _shelve_init_lock:
+            db = _shelve_db
+            _shelve_db = None
+        if db is not None:
+            try:
+                db.sync()
+                db.close()
+            except Exception:
+                pass
+
+
+storage = _LazyShelve()
 
 
 def _locked(fn):
@@ -29,6 +86,7 @@ def clear_user_storage(chat_id):
             del storage[str(chat_id) + "_" + i]
         except Exception:
             pass  # print("can't delete " + i, flush=True)
+    del_user_resend_flag(chat_id)
 
 
 @_locked
@@ -42,44 +100,33 @@ def clear_user_storage_partly(chat_id, storage_values=None):
             pass  # print("can't delete " + i, flush=True)
 
 
-@_locked
 def get_message_structures(chat_id: int):
+    raw = runtime_kv.get_kv("users:tg:%s:message_structures" % chat_id)
+    if not raw:
+        return []
     try:
-        message_structures_encoded = storage[f'users:tg:{chat_id}:message_structures']
-    except KeyError:
+        return json.loads(raw)
+    except Exception:
         return []
 
-    return json.loads(message_structures_encoded)
 
-
-@_locked
 def set_user_message_structures(chat_id: int, message_structures: Sequence[Any]):
-    storage[f'users:tg:{chat_id}:message_structures'] = json.dumps(message_structures)
+    runtime_kv.set_kv(
+        "users:tg:%s:message_structures" % chat_id,
+        json.dumps(list(message_structures)))
 
 
-# флаг для повторной отправки
-@_locked
+# флаг для повторной отправки (sqlite: bot and updater both write this)
 def set_user_resend_flag(chat_id):
-    storage[str(chat_id) + "_resend_flag"] = str(1)
+    runtime_kv.set_kv("resend_flag_" + str(chat_id), "1")
 
 
-@_locked
 def get_user_resend_flag(chat_id):
-    try:
-        if storage[str(chat_id) + "_resend_flag"] == "1":
-            return True
-        else:
-            return False
-    except Exception:
-        return False
+    return runtime_kv.get_kv("resend_flag_" + str(chat_id)) == "1"
 
 
-@_locked
 def del_user_resend_flag(chat_id):
-    try:
-        del storage[str(chat_id) + "_resend_flag"]
-    except Exception:
-        pass  # print("can't delete resend flag", flush=True)
+    runtime_kv.delete_kv("resend_flag_" + str(chat_id))
 
 
 # состояния
@@ -212,85 +259,76 @@ def del_user_state_alldata(chat_id):
         pass  # print("can't delete user states data", flush=True)
 
 
-# сохранение последнего id канала в обработке
-@_locked
+# курсор апдейтера, счётчик фейлов фида, флаги дайджеста — sqlite,
+# потому что bot и updater — разные процессы и gdbm так не шарится.
 def set_last_channel_id(channel_id):
-    storage["last_channel_id"] = str(channel_id)
+    runtime_kv.set_kv("last_channel_id", str(channel_id))
 
 
-@_locked
 def get_last_channel_id():
     try:
-        return int(storage["last_channel_id"])
+        return int(runtime_kv.get_kv("last_channel_id") or 1)
     except Exception:
         return 1
 
 
-@_locked
 def set_last_channel_restarted(restarted):
-    storage["last_channel_restarted"] = ("1" if restarted else "0")
+    runtime_kv.set_kv("last_channel_restarted", "1" if restarted else "0")
 
 
-@_locked
 def is_last_channel_restarted():
     try:
-        return bool(int(storage["last_channel_restarted"]))
+        return bool(int(runtime_kv.get_kv("last_channel_restarted") or "0"))
     except Exception:
         return False
 
 
-# счётчик подряд идущих неудачных выборок фида канала
-# нужен, чтобы не гасить уведомления из-за разового сбоя
 def __channel_feed_failures_key(channel_id):
     return "channel_feed_failures_" + str(channel_id)
 
 
-@_locked
 def get_channel_feed_failures(channel_id) -> int:
     try:
-        return int(storage[__channel_feed_failures_key(channel_id)])
+        return int(runtime_kv.get_kv(__channel_feed_failures_key(channel_id)) or 0)
     except Exception:
         return 0
 
 
-@_locked
 def increase_channel_feed_failures(channel_id) -> int:
-    failures = get_channel_feed_failures(channel_id) + 1
-    storage[__channel_feed_failures_key(channel_id)] = str(failures)
-    return failures
+    return runtime_kv.incr_kv(__channel_feed_failures_key(channel_id))
 
 
-@_locked
 def reset_channel_feed_failures(channel_id):
-    try:
-        del storage[__channel_feed_failures_key(channel_id)]
-    except Exception:
-        pass
+    runtime_kv.delete_kv(__channel_feed_failures_key(channel_id))
 
 
-# флаги, что доступны подкасты
-@_locked
 def set_new_podcast_available_flag(user_id):
     try:
-        flags = json.loads(storage["new_podcast_available_flag"])
+        flags = json.loads(
+            runtime_kv.get_kv("new_podcast_available_flag") or "[]")
     except Exception:
         flags = []
     if user_id not in flags:
         flags.append(user_id)
-        storage["new_podcast_available_flag"] = json.dumps(flags)
+        runtime_kv.set_kv(
+            "new_podcast_available_flag", json.dumps(flags))
 
 
-@_locked
 def get_new_podcast_available_flags():
     try:
-        return json.loads(storage["new_podcast_available_flag"])
+        return json.loads(
+            runtime_kv.get_kv("new_podcast_available_flag") or "[]")
     except Exception:
         return []
 
 
-@_locked
 def clear_new_podcast_available_flags():
+    runtime_kv.delete_kv("new_podcast_available_flag")
+
+
+def close_storage():
     try:
-        del storage["new_podcast_available_flag"]
-    except Exception:
-        pass
+        storage.close()
+        logger.log("Storage shelve closed")
+    except Exception as e:
+        logger.err("Error closing storage shelve:", e)

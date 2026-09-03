@@ -21,6 +21,12 @@ _users_deleted_at_checked = False
 _channel_http_validators_lock = threading.Lock()
 _channel_http_validators_checked = False
 
+_send_outbox_lock = threading.Lock()
+_send_outbox_ready = set()
+
+_runtime_kv_lock = threading.Lock()
+_runtime_kv_ready = set()
+
 
 def _ensure_channel_http_validators_columns(connection: sqlite3.Connection) -> None:
     # db/migrations/00012_channel_http_validators.py adds ETag/Last-Modified
@@ -86,6 +92,60 @@ def _ensure_users_deleted_at_column(connection: sqlite3.Connection) -> None:
             _users_deleted_at_checked = True
 
 
+def ensure_send_outbox_table(connection: sqlite3.Connection, database=None) -> None:
+    # db/migrations/00013_send_outbox.py creates send_outbox, but migrations
+    # are applied by hand while the deploy restarts the bot on its own.
+    # Rec/update jobs must survive a restart, so the table is created here
+    # as well, once per database path.
+    key = database
+    if key is not None and key in _send_outbox_ready:
+        return
+
+    with _send_outbox_lock:
+        if key is not None and key in _send_outbox_ready:
+            return
+        try:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS send_outbox ("
+                "id INTEGER PRIMARY KEY, "
+                "created_at TEXT, "
+                "action TEXT NOT NULL, "
+                "user_id TEXT NOT NULL, "
+                "payload_json TEXT NOT NULL, "
+                "status TEXT NOT NULL, "
+                "attempts INTEGER NOT NULL DEFAULT 0, "
+                "leased_until TEXT NULL, "
+                "available_at TEXT NOT NULL)")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS send_outbox_claim_idx "
+                "ON send_outbox (status, available_at, id)")
+            connection.commit()
+            if key is not None:
+                _send_outbox_ready.add(key)
+        except Exception as e:
+            logger.err("Could not ensure send_outbox table:", e)
+
+
+def ensure_bot_runtime_kv_table(connection: sqlite3.Connection, database=None) -> None:
+    key = database
+    if key is not None and key in _runtime_kv_ready:
+        return
+
+    with _runtime_kv_lock:
+        if key is not None and key in _runtime_kv_ready:
+            return
+        try:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS bot_runtime_kv ("
+                "key TEXT PRIMARY KEY, "
+                "value TEXT NOT NULL)")
+            connection.commit()
+            if key is not None:
+                _runtime_kv_ready.add(key)
+        except Exception as e:
+            logger.err("Could not ensure bot_runtime_kv table:", e)
+
+
 def helper_remove_proto_from_link(link):
     link_tester = re.compile(r'(?:https?)?:\/\/((?:[a-z0-9-_\.]+)*\/.*)')
     reg_result = link_tester.match(link)
@@ -105,6 +165,8 @@ class SQLighter:
         self.cursor = self.connection.cursor()
         _ensure_users_deleted_at_column(self.connection)
         _ensure_channel_http_validators_columns(self.connection)
+        ensure_send_outbox_table(self.connection, database)
+        ensure_bot_runtime_kv_table(self.connection, database)
 
     def __enter__(self):
         return self

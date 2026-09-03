@@ -10,6 +10,7 @@ from app.routes.routes_list import AvailableRoutes
 from app.service.payment import paymentModule
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import render_messages
+from lib.tools.logger import logger
 from scripts import restart_bot as restart_bot_script
 
 CreatorAlertLevel = Literal['fatal', 'error', 'warning', 'info']
@@ -116,10 +117,13 @@ def show_commands(data: ControllerParams):
 
 # Helpers
 def send_thread_dead_message_to_creator():
-    storage.set_last_channel_restarted(True)
-    send_message_to_creator('Поток упал! Перезагрузка...', level='fatal')
+    send_message_to_creator('Поток упал! Перезагрузка роли...', level='fatal')
 
 
 def send_message_to_creator(message_text: str, level: CreatorAlertLevel = 'info'):
     tagged = f"{_CREATOR_TAGS[level]}\n{message_text}"
-    render_messages(config.creatorId, [{'type': 'text', 'text': tagged}], resending=True)
+    try:
+        from agent.bot_telebot import bot
+        bot.send_message(config.creatorId, tagged)
+    except Exception as e:
+        logger.err("send_message_to_creator failed:", e)

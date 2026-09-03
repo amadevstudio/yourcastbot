@@ -8,6 +8,7 @@ from app.controller.builders import welcomeModule
 from app.repository.storage import storage
 from app.routes.middleware.default_middleware import analytics_serving, \
     check_threads, get_user, analytics_serving_inline
+from app.core.balancers.sticky import StickySlotAssigner, incoming_user_id
 from app.routes.ptypes import HandleInThreadParams, ControllerParams
 from config import threads_config
 
@@ -25,10 +26,10 @@ class TelebotBalancer(threading.Thread):
         self.name = 'Telebot Balancer'
 
         self.main_queue = main_queue
-        self.current_send_thread = 0
         self.count_send_threads = threads_config['send']
         self.send_queues: list[queue.Queue] = []
         self.send_threads: list[TheSender] = []
+        self.slots = StickySlotAssigner()
 
         threads_to_watch.append(self)
         self.threads_to_watch = threads_to_watch
@@ -52,14 +53,15 @@ class TelebotBalancer(threading.Thread):
             try:
                 logger.log('Incoming task...' + str(datetime.datetime.now()))
 
-                slot = self.current_send_thread
+                qsizes = [q.qsize() for q in self.send_queues]
+                self.slots.release_idle([q.empty() for q in self.send_queues])
+                slot = self.slots.choose(incoming_user_id(input_data), qsizes)
                 self._ensure_sender_alive(slot)
 
-                logger.log(f"Using thread {slot}")
+                logger.log(f"Using thread {slot} for user {incoming_user_id(input_data)}")
                 # Always the slot queue, never a replacement: pending work
                 # survives a dead TheSender.
                 self.send_queues[slot].put(input_data)
-                self.current_send_thread = (slot + 1) % self.count_send_threads
             except Exception as e:
                 logger.err("Telebot balancer failed to dispatch:", e)
 

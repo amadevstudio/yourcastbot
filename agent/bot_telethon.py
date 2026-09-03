@@ -9,6 +9,7 @@ from telethon.sessions import StringSession
 from telethon.tl.types import DocumentAttributeAudio
 
 import config
+from lib.python.file_lock import InterprocessLock
 from lib.tools.logger import Logger
 
 session_handler = "telethon_sessions/yourcastbot"
@@ -18,22 +19,64 @@ app_id = config.app_api_id
 api_hash = config.app_api_hash
 bot_token = config.token
 
-thonbot = TelegramClient(
-    session_handler, app_id, api_hash).start(bot_token=bot_token)
-
-if os.path.exists(uploader_session):
-    with open(uploader_session, 'r') as f:
-        string_session = StringSession(f.readline())
-else:
-    string_session = StringSession()
-
-thonbot_uploader = TelegramClient(string_session, app_id, api_hash).start(bot_token=bot_token)
-thobot_session_handler = thonbot_uploader.session.save()
-
 logger = Logger(file="sender")
 
-with open(uploader_session, 'w+') as f:
-    f.write(thobot_session_handler)
+_thonbot = None
+_uploader_session_string = None
+_uploader_lock = InterprocessLock(uploader_session + ".lock")
+
+
+def _role():
+    return os.environ.get("YOURCAST_ROLE") or ""
+
+
+def get_uploader_session_string():
+    """StringSession for send workers / updater. Does not open the file session."""
+    global _uploader_session_string
+    if _uploader_session_string:
+        return _uploader_session_string
+    with _uploader_lock:
+        if _uploader_session_string:
+            return _uploader_session_string
+        if os.path.exists(uploader_session):
+            with open(uploader_session, "r") as f:
+                saved = f.readline().strip()
+            if saved:
+                _uploader_session_string = saved
+                return saved
+        client = TelegramClient(
+            StringSession(), app_id, api_hash).start(bot_token=bot_token)
+        saved = client.session.save()
+        client.disconnect()
+        directory = os.path.dirname(uploader_session)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(uploader_session, "w") as f:
+            f.write(saved)
+        _uploader_session_string = saved
+        return saved
+
+
+def get_thonbot():
+    """Receive client on the SQLite file session. Bot role only."""
+    global _thonbot
+    role = _role()
+    if role and role != "bot":
+        raise RuntimeError(
+            "file Telethon session is bot-only; role=%s" % role)
+    if _thonbot is None:
+        _thonbot = TelegramClient(
+            session_handler, app_id, api_hash).start(bot_token=bot_token)
+    return _thonbot
+
+
+def __getattr__(name):
+    if name == "thobot_session_handler":
+        return get_uploader_session_string()
+    if name == "thonbot":
+        return get_thonbot()
+    raise AttributeError(
+        "module %r has no attribute %r" % (__name__, name))
 
 
 async def __uploader(local_thonbot, fname, callback=None):
