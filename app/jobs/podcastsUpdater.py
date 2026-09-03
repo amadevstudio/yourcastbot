@@ -47,6 +47,15 @@ FEED_FAILURES_BEFORE_NOTIFY_OFF = 5
 # Фид ответил 404/410 — его точно больше нет, порог ниже.
 FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF = 3
 
+# skipped — канал без получателей, not_modified — HTTP 304, fetched — качали/парсили
+class ChannelUpdateResult(typing.NamedTuple):
+    new_recs: bool = False
+    outcome: str = 'fetched'
+
+    def __bool__(self):
+        return self.new_recs
+
+
 logger = Logger(file="updater")
 
 
@@ -91,8 +100,9 @@ def main(interval=120):
         # channel = db_users.get_channel_or_next(
         # 	last_updated_channel_id, channels_to_check_ids)
         # ---------
-        # получение всех, так как шлём пользователям без подписки уведомления
-        channel = db_users.get_channel_or_next(last_updated_channel_id)
+        # только каналы, по которым есть кому слать (notify=1, живой юзер
+        # или активный tg-канал). Пустые больше не крутим и не sleep(6).
+        channel = db_users.get_channel_or_next_to_poll(last_updated_channel_id)
         db_users.close()
 
         while channel is not None:
@@ -117,14 +127,15 @@ def main(interval=120):
 
             storage.set_last_channel_id(channel['id'])
 
+            update_result = ChannelUpdateResult(False, 'skipped')
             if connections is not None:
-                send_new_records_by_channel(
+                update_result = send_new_records_by_channel(
                     channel, connections, thonbot=thonbot,
                     nosubs_connections=nosubs_connections,
                     tg_channel_connections=tg_channel_connections)
 
             db_users = SQLighter(db_path)
-            channel = db_users.get_next_channel(channel['id'])
+            channel = db_users.get_next_channel_to_poll(channel['id'])
             db_users.close()
 
             if channel is None:
@@ -132,7 +143,10 @@ def main(interval=120):
             else:
                 logger.log("Next channel is:", channel['id'])
 
-            time.sleep(6)
+            # 6s только после реальной загрузки фида, чтобы не молотить хосты.
+            # 304 и каналы без получателей — сразу к следующему.
+            if update_result.outcome == 'fetched':
+                time.sleep(6)
             # time.sleep(60 * 60)
 
         storage.set_last_channel_id(1)
@@ -166,22 +180,30 @@ def send_new_records_by_channel(
             and (tg_channel_connections is None or len(tg_channel_connections) == 0):
         # # обновление инф. о последнем обновлении канала
         # updatePodcastLastGuidDate(channel)
-        return new_recs_flag
+        return ChannelUpdateResult(new_recs_flag, 'skipped')
 
-    root: app.service.podcast.podcast.RootAdapter | typing.Literal[False] = False
-    pc_info: app.service.podcast.podcast.PodcastInfoType = {}
-    service_name: str | None = None
+    root, pc_info, service_name, service_id = \
+        app.service.podcast.podcast.fetch_channel_feed(channel, manual=manual)
 
-    if channel["itunes_id"] is not None and channel["itunes_id"]:
-        payload = {'entity': 'podcast', 'id': channel['itunes_id']}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload)
-        service_name = 'itunes'
-        service_id = channel["itunes_id"]
-    if root is False and channel["rss_link"] is not None and channel["rss_link"]:
-        payload = {'rss_link': channel["rss_link"]}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, 'rss')
-        service_name = 'rss'
-        service_id = channel["rss_link"]
+    if pc_info.get('notModified'):
+        # 304: фид живой и не менялся. Не парсим, не шлём, счётчик сбоев не трогаем
+        # (сбрасываем — это успех «фид доступен»).
+        storage.reset_channel_feed_failures(channel['id'])
+        _persist_channel_http_validators(channel, pc_info)
+        if nosubs_connections:
+            nosub_connections_to_pgd = {}
+            for connection in nosubs_connections:
+                nosub_connections_to_pgd[connection['user_telegram_id']] = \
+                    connection['last_guid']
+            flag_nosubs_for_digest(
+                nosub_connections_to_pgd,
+                latest_episode_id(channel, connections),
+                channel['last_date'] if 'last_date' in channel.keys() else None,
+                channel['id'])
+        logger.log(
+            "Feed not modified for channel", channel['id'],
+            "; etag:", pc_info.get('http_etag'))
+        return ChannelUpdateResult(False, 'not_modified')
 
     if root is False:
         failure_reason = pc_info.get(
@@ -222,7 +244,7 @@ def send_new_records_by_channel(
                 except Exception as e:
                     logger.err("podcastsUpdater/manualFeedUnavailableNotice: ", e)
 
-            return new_recs_flag
+            return ChannelUpdateResult(new_recs_flag, 'fetched')
 
         failures = storage.increase_channel_feed_failures(channel['id'])
         if failure_reason == app.service.podcast.rss.FEED_STATUS_GONE:
@@ -238,7 +260,7 @@ def send_new_records_by_channel(
                 "; reason:", failure_reason,
                 "; consecutive failures:", failures, "of", failures_threshold,
                 "; notifications are left enabled")
-            return new_recs_flag
+            return ChannelUpdateResult(new_recs_flag, 'fetched')
 
         logger.warn(
             "Feed is stably unavailable for channel", channel['id'],
@@ -290,10 +312,11 @@ def send_new_records_by_channel(
                 logger.err(
                     "PARSING ERROR! In podcastUpdater2. ",
                     "Notifications disabled for podcast ", e)
-        return new_recs_flag
+        return ChannelUpdateResult(new_recs_flag, 'fetched')
 
     # фид получен — серия неудач прервана
     storage.reset_channel_feed_failures(channel['id'])
+    _persist_channel_http_validators(channel, pc_info)
 
     if service_name == 'itunes':
         # # flag = True
@@ -308,7 +331,7 @@ def send_new_records_by_channel(
         itunes_link = pc_info["itunesLink"]  # None
         feed_url = pc_info["feedUrl"]
     else:
-        return
+        return ChannelUpdateResult(False, 'fetched')
 
     # объединение связей с пользователями и каналами
     all_target_connections = connections
@@ -425,7 +448,7 @@ def send_new_records_by_channel(
                 flag_nosubs_for_digest(
                     nosub_connections_to_pgd, latest_pgd, last_date,
                     channel['id'])
-                return new_recs_flag
+                return ChannelUpdateResult(new_recs_flag, 'fetched')
 
         elif channelDescr.tag == "item":
             if flag_have_users == 1 or i > MAX_EPISODES_PER_PODCAST:  # ограничение на кол-во подкастов
@@ -507,7 +530,7 @@ def send_new_records_by_channel(
             i += 1
 
     if len(links) < 1:
-        return new_recs_flag
+        return ChannelUpdateResult(new_recs_flag, 'fetched')
 
     last_date = app.service.podcast.podcast.set_last_date(last_date, pub_dates_strped[0])
 
@@ -676,11 +699,36 @@ def send_new_records_by_channel(
                         user_tg_id, channel['id'], pgd, last_date)
                 except Exception as e:
                     logger.err("podacstUpdater/db_after_ops2: ", e)
-                    return new_recs_flag
+                    return ChannelUpdateResult(new_recs_flag, 'fetched')
 
     db_users.close()
 
-    return new_recs_flag
+    return ChannelUpdateResult(new_recs_flag, 'fetched')
+
+
+def _persist_channel_http_validators(channel, pc_info):
+    if not pc_info:
+        return
+    new_etag = pc_info.get('http_etag')
+    new_lm = pc_info.get('http_last_modified')
+    try:
+        old_etag = channel['http_etag']
+    except (KeyError, IndexError, TypeError):
+        old_etag = None
+    try:
+        old_lm = channel['http_last_modified']
+    except (KeyError, IndexError, TypeError):
+        old_lm = None
+    if new_etag == old_etag and new_lm == old_lm:
+        return
+    db_users = SQLighter(db_path)
+    try:
+        db_users.update_channel_http_validators(
+            channel['id'], new_etag, new_lm)
+    except Exception as e:
+        logger.err("podcastsUpdater/persistHttpValidators: ", e)
+    finally:
+        db_users.close()
 
 
 def flag_nosubs_for_digest(
