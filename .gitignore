@@ -1,6 +1,8 @@
 db/shelve.db*
 db/shelve_telegram_cache.db*
 db/yourcast.db
+db/*.lock
+db/updater_crash.flag
 
 log/*
 !log/.keep

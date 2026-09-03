@@ -1,4 +1,6 @@
 import json
+import os
+import signal
 import threading
 import time
 from typing import Any, Mapping
@@ -33,25 +35,37 @@ def get_user(user_id: int) -> Any:
 
 
 def check_threads(threads_to_watch: list[threading.Thread]):
-    # чекаем поток
-    for t in threads_to_watch:
-        if not t.is_alive():
-            try:
-                print(f"\n\nThreadDEAD!!! {t.name}\n\n", flush=True)
-                adminModule.send_thread_dead_message_to_creator()
+    alive_names = {t.name for t in threads_to_watch if t.is_alive()}
+    dead = [t for t in threads_to_watch if not t.is_alive()]
+    # A balancer may already have been recreated under the same name.
+    fatal = [t for t in dead if t.name not in alive_names]
+    if dead:
+        threads_to_watch[:] = [t for t in threads_to_watch if t.is_alive()]
+    if not fatal:
+        return
 
-                if config.server:
-                    time.sleep(1)
-                    restart_bot.restart()
+    try:
+        print(f"\n\nThreadDEAD!!! {[t.name for t in fatal]}\n\n", flush=True)
+        adminModule.send_thread_dead_message_to_creator()
 
-            except Exception as e:
-                print("\n\nmainf/serving: ", e, "\n\n", flush=True)
+        if os.environ.get("YOURCAST_ROLE"):
+            # Worker threads cannot sys.exit the process; signal the parent
+            # so only this role is restarted.
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
 
-                if "[Errno 12] Cannot allocate memory" in str(e):
-                    adminModule.send_message_to_creator(
-                        "Cannot allocate memory", level='fatal')
-                    restart_bot.print_top_memory()
-                    restart_bot.restart()
+        if config.server:
+            time.sleep(1)
+            restart_bot.restart()
+
+    except Exception as e:
+        print("\n\nmainf/serving: ", e, "\n\n", flush=True)
+
+        if "[Errno 12] Cannot allocate memory" in str(e):
+            adminModule.send_message_to_creator(
+                "Cannot allocate memory", level='fatal')
+            restart_bot.print_top_memory()
+            restart_bot.restart()
 
 
 def analytics_serving(tg_data: ControllerParams, user: Any, is_new_user: bool = False,
