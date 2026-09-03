@@ -7,6 +7,7 @@ source of truth across process restarts.
 import datetime
 import json
 import sqlite3
+import sys
 import threading
 
 from config import db_path
@@ -205,9 +206,25 @@ def _retry_delay(attempts, error):
     return min(MAX_BACKOFF_SECONDS, 2 ** max(int(attempts), 1))
 
 
+def _recs_module():
+    return sys.modules.get('app.controller.builders.recsModule')
+
+
+def _balancer_ready():
+    recs_module = _recs_module()
+    if recs_module is None:
+        return False
+    balancer = getattr(recs_module, 't_podcast_sender', None)
+    return bool(
+        balancer is not None and getattr(balancer, 'outbox_ready', False))
+
+
 def _wake(job):
-    from app.controller.builders import recsModule
-    recsModule.t_podcast_sender.main_queue.put(job)
+    recs_module = _recs_module()
+    if recs_module is None:
+        logger.warn("outbox: sender module is not loaded, job stays in sqlite")
+        return
+    recs_module.t_podcast_sender.main_queue.put(job)
 
 
 def _schedule_retry(outbox_id, delay, database):
@@ -253,7 +270,7 @@ def enqueue(job, database=None, dispatch=True):
     finally:
         conn.close()
 
-    if dispatch:
+    if dispatch and _balancer_ready():
         claimed = claim(database=database, outbox_id=outbox_id)
         if claimed is not None:
             _wake(claimed)

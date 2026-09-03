@@ -65,6 +65,20 @@ def _simulate_restart(db_path):
     return outbox.reclaim(database=db_path, force=True)
 
 
+def test_dispatch_without_balancer_stays_pending(db_path):
+    recs_name = 'app.controller.builders.recsModule'
+    _assert_true(
+        recs_name not in sys.modules,
+        "recsModule must not be imported by outbox tests")
+    outbox_id = outbox.enqueue(
+        _rec_job(chat_id=8008), database=db_path, dispatch=True)
+    _assert_true(
+        recs_name not in sys.modules,
+        "dispatch=True must not import recsModule")
+    row = outbox.get_row(outbox_id, database=db_path)
+    _assert_eq(row['status'], 'pending', "no balancer: row stays pending")
+
+
 def test_sqlighter_creates_table(db_path):
     db = SQLighter(db_path)
     try:
@@ -275,6 +289,7 @@ def test_max_attempts_marks_failed(db_path):
 def main():
     tmpdir = tempfile.mkdtemp(prefix="yourcast_send_outbox_")
     cases = (
+        test_dispatch_without_balancer_stays_pending,
         test_sqlighter_creates_table,
         test_enqueue_survives_restart,
         test_claim_done_not_claimed_again,

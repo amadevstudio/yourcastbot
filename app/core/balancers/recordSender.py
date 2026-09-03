@@ -28,6 +28,7 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         self.name = 'Send Balancer'
 
         self.main_queue = main_queue
+        self.outbox_ready = False
 
         self.actions = ['rec', 'update']
 
@@ -54,6 +55,7 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
             self._drain_outbox()
         except Exception as e:
             logger.err("Send balancer failed to restore outbox:", e)
+        self.outbox_ready = True
 
         while True:
             try:
