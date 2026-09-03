@@ -947,8 +947,11 @@ class SQLighter:
 
     def count_users(
             self, with_subs=False, with_subs_active=False, payed=False,
-            deleted=False
+            deleted=False, receive_episodes=False, digest_reminder=False
     ) -> int:
+        live_bot_sub = (
+            'utc.tariff_id > 0 AND utc.time_left > 0 '
+            'AND utc.notify_count != 0')
         with self.connection:
             if with_subs:
                 # telegramId / user_telegram_id are INTEGER in prod; do not
@@ -966,6 +969,27 @@ class SQLighter:
                     'INNER JOIN users u '
                     'ON u.telegramId = ucc.user_telegram_id '
                     'WHERE u.deleted_at IS NULL AND ucc.notify = 1')
+            elif receive_episodes:
+                # Audio/episode pushes: live tariff AND notify=1 on a podcast.
+                sql = (
+                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
+                    'FROM user_channel_cs ucc '
+                    'INNER JOIN users u '
+                    'ON u.telegramId = ucc.user_telegram_id '
+                    'INNER JOIN user_tariff_cs utc ON utc.uid = u.id '
+                    'WHERE u.deleted_at IS NULL AND ucc.notify = 1 '
+                    'AND ' + live_bot_sub)
+            elif digest_reminder:
+                # End-of-circle "you have new episodes" ping: notify=1, no tariff.
+                sql = (
+                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
+                    'FROM user_channel_cs ucc '
+                    'INNER JOIN users u '
+                    'ON u.telegramId = ucc.user_telegram_id '
+                    'WHERE u.deleted_at IS NULL AND ucc.notify = 1 '
+                    'AND NOT EXISTS ('
+                    'SELECT 1 FROM user_tariff_cs utc '
+                    'WHERE utc.uid = u.id AND ' + live_bot_sub + ')')
             elif payed:
                 # Same rule as is_user_have_bot_subscription: live tariff
                 # with remaining time and notification quota (including -1).

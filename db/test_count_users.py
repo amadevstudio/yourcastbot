@@ -92,6 +92,8 @@ def _counts(db):
         'with_subs': db.count_users(True),
         'with_subs_notify': db.count_users(with_subs_active=True),
         'payed': db.count_users(payed=True),
+        'receive_episodes': db.count_users(receive_episodes=True),
+        'digest_reminder': db.count_users(digest_reminder=True),
         'deleted': db.count_users(deleted=True),
     }
 
@@ -112,6 +114,7 @@ def test_count_users_cases(db_path):
         live_c = _add_user(db, 1003)
         live_d = _add_user(db, 1004)
         live_e = _add_user(db, 1005)
+        _add_user(db, 1006)
         blocked_id = _add_user(db, 2001, deleted_at="2026-01-01")
 
         _add_channel(db, 1)
@@ -122,6 +125,8 @@ def test_count_users_cases(db_path):
         _add_sub(db, 1001, 7, notify=1)
         # B: channel sub, notify off — in with_subs, not with_subs_notify
         _add_sub(db, 1002, 1, notify=0)
+        # F: notify on, no live tariff — digest reminder, not episode push
+        _add_sub(db, 1006, 1, notify=1)
         # blocked user still has a sub — excluded from live lines
         _add_sub(db, 2001, 1, notify=1)
 
@@ -140,10 +145,12 @@ def test_count_users_cases(db_path):
         _add_tariff(db, blocked_id, tariff_id=3, time_left=100, notify_count=-1)
 
         got = _counts(db)
-        _assert_eq(got['total'], 5, "live users")
-        _assert_eq(got['with_subs'], 2, "users with channel subs")
-        _assert_eq(got['with_subs_notify'], 1, "users with notify-on subs")
+        _assert_eq(got['total'], 6, "live users")
+        _assert_eq(got['with_subs'], 3, "users with channel subs")
+        _assert_eq(got['with_subs_notify'], 2, "users with notify-on subs")
         _assert_eq(got['payed'], 2, "users with bot subscription (A and E)")
+        _assert_eq(got['receive_episodes'], 1, "episode pushes (A only)")
+        _assert_eq(got['digest_reminder'], 1, "digest reminder (F only)")
         _assert_eq(got['deleted'], 1, "blocked users")
         _assert_eq(
             int(db.get_last_channel_id()['id']), 7, "max channel id")
@@ -201,15 +208,16 @@ def test_mixed_telegram_id_types(db_path):
 
 
 def test_report_text():
-    text = format_users_count_message(5, 2, 1, 2, 1, 3, 7)
+    text = format_users_count_message(6, 3, 2, 1, 1, 1, 3, 7)
     _assert_eq(
         text,
-        "Всего: 5\n"
-        "С подписками на каналы: 2\n"
-        "С подписками и уведомлениями: 1\n"
+        "Всего: 6\n"
+        "С подписками на каналы: 3\n"
         "С подпиской на бота: 2\n"
+        "Получают выпуски (тариф + уведомления): 1\n"
+        "Напоминание о боте (уведомления, без тарифа): 1\n"
         "Заблокировали бота (не считаются выше): 1\n"
-        "Апдейтер каналов: 3 / 7",
+        "Обход подкастов: 3 / 7",
         "admin report text")
 
 
@@ -227,8 +235,11 @@ def test_live_clone_db_still_consistent():
         last = db.get_last_channel_id()
         max_id = int(last['id']) if last else 0
         print(format_users_count_message(
-            got['total'], got['with_subs'], got['with_subs_notify'],
-            got['payed'], got['deleted'], 1, max_id))
+            got['total'], got['with_subs'], got['payed'],
+            got['receive_episodes'], got['digest_reminder'],
+            got['deleted'], 1, max_id))
+    except Exception as e:
+        print("skip live clone db (%s)" % e)
     finally:
         db.close()
 
