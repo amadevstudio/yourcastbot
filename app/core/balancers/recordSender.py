@@ -8,6 +8,7 @@ from telethon.sessions import StringSession
 
 from agent.bot_telethon import thobot_session_handler
 from app.controller.builders import recsModule
+from app.core.sender import outbox
 from app.jobs import podcastsUpdater
 from config import app_api_id, app_api_hash, token, threads_config
 from lib.python.singletonBase import Singleton
@@ -48,10 +49,21 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
                 self.threads[action][i].start()
 
     def run(self):
+        try:
+            outbox.reclaim(force=True)
+            self._drain_outbox()
+        except Exception as e:
+            logger.err("Send balancer failed to restore outbox:", e)
 
         while True:
             try:
-                input_data = self.main_queue.get()
+                input_data = self.main_queue.get(timeout=15)
+            except queue.Empty:
+                try:
+                    self._drain_outbox()
+                except Exception as e:
+                    logger.err("Send balancer failed to drain outbox:", e)
+                continue
             except Exception as e:
                 logger.err("Send balancer failed to read queue:", e)
                 continue
@@ -66,10 +78,21 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
                 except ValueError:
                     pass
 
+    def _drain_outbox(self):
+        outbox.reclaim(force=False)
+        while True:
+            job = outbox.claim()
+            if job is None:
+                return
+            self._dispatch(job)
+
     def _dispatch(self, input_data):
         logger.log("Received new sending task")
 
         action = input_data['action']
+        if action == 'drain':
+            self._drain_outbox()
+            return
         if action not in self.actions:
             logger.warn(f"Unknown sender action {action!r}, skipping")
             return
@@ -180,11 +203,22 @@ class RecordSender(threading.Thread):
                     self.pause()
 
     def process_input(self, input_data, thonbot):
-
-        if input_data['action'] == 'rec':
-
-            recsModule.send_record_thread(input_data, thonbot)
-
-        elif input_data['action'] == 'update':
-
-            podcastsUpdater.update_feed_thread(input_data, thonbot)
+        outbox_id = input_data.get('outbox_id')
+        attempts = input_data.get('outbox_attempts')
+        try:
+            if input_data['action'] == 'rec':
+                recsModule.send_record_thread(input_data, thonbot)
+            elif input_data['action'] == 'update':
+                podcastsUpdater.update_feed_thread(input_data, thonbot)
+            else:
+                return
+            if outbox_id is not None:
+                outbox.mark_done(outbox_id, attempts=attempts)
+        except Exception as e:
+            if outbox_id is not None:
+                try:
+                    outbox.fail_or_retry(
+                        outbox_id, error=e, attempts=attempts)
+                except Exception as mark_e:
+                    logger.err("Failed to record outbox retry:", mark_e)
+            raise

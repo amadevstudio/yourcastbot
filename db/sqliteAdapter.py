@@ -18,6 +18,9 @@ from lib.tools.logger import logger
 _users_deleted_at_lock = threading.Lock()
 _users_deleted_at_checked = False
 
+_send_outbox_lock = threading.Lock()
+_send_outbox_ready = set()
+
 
 def _ensure_users_deleted_at_column(connection: sqlite3.Connection) -> None:
     # db/migrations/00011_users_deleted_at.py adds users.deleted_at, but migrations are applied
@@ -45,6 +48,39 @@ def _ensure_users_deleted_at_column(connection: sqlite3.Connection) -> None:
             _users_deleted_at_checked = True
 
 
+def ensure_send_outbox_table(connection: sqlite3.Connection, database=None) -> None:
+    # db/migrations/00013_send_outbox.py creates send_outbox, but migrations are applied
+    # by hand while the deploy restarts the bot on its own. Rec/update jobs must survive
+    # a restart, so the table is created here as well, once per database path.
+    key = database
+    if key is not None and key in _send_outbox_ready:
+        return
+
+    with _send_outbox_lock:
+        if key is not None and key in _send_outbox_ready:
+            return
+        try:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS send_outbox ("
+                "id INTEGER PRIMARY KEY, "
+                "created_at TEXT, "
+                "action TEXT NOT NULL, "
+                "user_id TEXT NOT NULL, "
+                "payload_json TEXT NOT NULL, "
+                "status TEXT NOT NULL, "
+                "attempts INTEGER NOT NULL DEFAULT 0, "
+                "leased_until TEXT NULL, "
+                "available_at TEXT NOT NULL)")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS send_outbox_claim_idx "
+                "ON send_outbox (status, available_at, id)")
+            connection.commit()
+            if key is not None:
+                _send_outbox_ready.add(key)
+        except Exception as e:
+            logger.err("Could not ensure send_outbox table:", e)
+
+
 def helper_remove_proto_from_link(link):
     link_tester = re.compile(r'(?:https?)?:\/\/((?:[a-z0-9-_\.]+)*\/.*)')
     reg_result = link_tester.match(link)
@@ -63,6 +99,7 @@ class SQLighter:
         self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()
         _ensure_users_deleted_at_column(self.connection)
+        ensure_send_outbox_table(self.connection, database)
 
     def __enter__(self):
         return self

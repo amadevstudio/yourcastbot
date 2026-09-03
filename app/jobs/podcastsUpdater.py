@@ -25,7 +25,7 @@ from lib.telegram.general.message_master import message_master, outer_sender, re
 import lib.tools.time_tools.general
 from app.controller.builders import recsModule
 from app.controller.builders.adminModule import send_message_to_creator
-from app.core.sender import send_record_helper
+from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message
 from app.jobs.nosub_digest import (
     latest_episode_id, nosub_users_behind, should_skip_item_parse)
@@ -764,9 +764,9 @@ def update_feed(data: ControllerParams):
             data['callback'], data['message'],
             need_time_to_load_message)
 
-    recsModule.t_podcast_sender.main_queue.put(
+    outbox.enqueue(
         {
-            'bot': bot, 'action': 'update', 'user_id': data['chat_id'],
+            'action': 'update', 'user_id': data['chat_id'],
             'func_params': {
                 'data': data,
                 'is_user_have_bot_subscription': is_user_have_bot_subscription}
@@ -778,8 +778,16 @@ def update_feed(data: ControllerParams):
 
 
 def update_feed_thread(input_data, thonbot):
-    data: ControllerParams = input_data['func_params']['data']
-    is_user_have_bot_subscription = input_data['func_params']['is_user_have_bot_subscription']
+    func_params = input_data['func_params']
+    data = func_params.get('data')
+    if data is None:
+        data = {
+            'chat_id': func_params.get('chat_id', input_data.get('user_id')),
+            'language_code': func_params.get('language_code'),
+            'callback': None,
+            'message': None,
+        }
+    is_user_have_bot_subscription = func_params['is_user_have_bot_subscription']
 
     db_users = SQLighter(db_path)
     new_records_check = False

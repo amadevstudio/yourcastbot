@@ -18,7 +18,7 @@ from app.controller.types_helpers.recs import RecResult, RecsStateData, RecordsD
 from app.core.balancers import recordSender
 from app.core.message.navigationBuilder import determine_search_query_and_page, get_full_message_navigation, \
     FullMessageNavigation
-from app.core.sender import send_record_helper
+from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message, standartSymbols, emojiCodes, get_message_rtd
 from app.repository.storage import storage
 from app.routes.message_tools import go_back_inline_markup
@@ -649,7 +649,7 @@ def send_record_direct(
         'recordUniqId': record_uniq_id
     }
 
-    t_podcast_sender.main_queue.put(
+    outbox.enqueue(
         {
             'action': 'rec', 'user_id': chat_id,
             'func_params': {
