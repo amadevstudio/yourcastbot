@@ -18,6 +18,47 @@ from lib.tools.logger import logger
 _users_deleted_at_lock = threading.Lock()
 _users_deleted_at_checked = False
 
+_channel_http_validators_lock = threading.Lock()
+_channel_http_validators_checked = False
+
+
+def _ensure_channel_http_validators_columns(connection: sqlite3.Connection) -> None:
+    # db/migrations/00012_channel_http_validators.py adds ETag/Last-Modified
+    # columns, but migrations are applied by hand while deploy only git-pulls
+    # and restarts. The updater reads these on every circle, so create them
+    # here as well, once per process, to survive a deploy ahead of the migration.
+    global _channel_http_validators_checked
+    if _channel_http_validators_checked:
+        return
+
+    with _channel_http_validators_lock:
+        if _channel_http_validators_checked:
+            return
+        try:
+            columns = [
+                row[1] for row in
+                connection.execute("PRAGMA table_info(channels)").fetchall()]
+            if len(columns) > 0:
+                if 'http_etag' not in columns:
+                    connection.execute(
+                        "ALTER TABLE channels ADD COLUMN http_etag TEXT")
+                    connection.commit()
+                    logger.warn(
+                        "channels.http_etag was missing and has been created")
+                if 'http_last_modified' not in columns:
+                    connection.execute(
+                        "ALTER TABLE channels ADD COLUMN http_last_modified TEXT")
+                    connection.commit()
+                    logger.warn(
+                        "channels.http_last_modified was missing "
+                        "and has been created")
+        except Exception as e:
+            logger.err(
+                "Could not ensure channels HTTP validator columns:", e)
+        finally:
+            _channel_http_validators_checked = True
+
+
 
 def _ensure_users_deleted_at_column(connection: sqlite3.Connection) -> None:
     # db/migrations/00011_users_deleted_at.py adds users.deleted_at, but migrations are applied
@@ -63,6 +104,7 @@ class SQLighter:
         self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()
         _ensure_users_deleted_at_column(self.connection)
+        _ensure_channel_http_validators_columns(self.connection)
 
     def __enter__(self):
         return self
@@ -287,6 +329,59 @@ class SQLighter:
                     LIMIT 1",
                     (str(channel_id),)).fetchone()
 
+    def _live_notify_recipient_exists_sql(self):
+        # Same joins as get_uccs_by_channel / getTgChannelSubConnectionsByPodcast:
+        # notify=1 on a live user (paid or not), or an active tg-channel
+        # connection whose owner has channel_control. No CAST on telegram ids.
+        return """
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM user_channel_cs uc
+                    WHERE uc.channel_id = c.id
+                        AND uc.notify = 1
+                        AND NOT EXISTS (
+                            SELECT 1 FROM users du
+                            WHERE du.telegramId = uc.user_telegram_id
+                                AND du.deleted_at IS NOT NULL
+                        )
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM user_channel_cs AS uc
+                    INNER JOIN subscription_to_tg_channel_cs AS sttcc
+                        ON (sttcc.user_channel_cs_id = uc.id)
+                    INNER JOIN tg_channels AS tc
+                        ON (tc.id = sttcc.tg_channel_id)
+                    LEFT JOIN user_tariff_cs AS ut ON ut.uid = (SELECT id
+                        FROM users AS u
+                        WHERE u.telegramId = uc.user_telegram_id)
+                    LEFT JOIN tariffs AS t ON t.id = ut.tariff_id
+                    WHERE uc.channel_id = c.id
+                        AND tc.active = 1
+                        AND ut.notify_count != 0
+                        AND ut.time_left > 0
+                        AND t.channel_control = 1
+                )
+            )
+        """
+
+    def get_next_channel_to_poll(self, channel_id):
+        return self._get_channel_to_poll(channel_id, inclusive=False)
+
+    def get_channel_or_next_to_poll(self, channel_id):
+        return self._get_channel_to_poll(channel_id, inclusive=True)
+
+    def _get_channel_to_poll(self, channel_id, inclusive=True):
+        with self.connection:
+            op = ">=" if inclusive else ">"
+            sql = (
+                "SELECT c.* FROM channels c "
+                "WHERE c.id %s ? AND %s "
+                "ORDER BY c.id ASC LIMIT 1"
+            ) % (op, self._live_notify_recipient_exists_sql())
+            return self.cursor.execute(sql, (str(channel_id),)).fetchone()
+
     def get_last_channel_id(self):
         with self.connection:
             return self.cursor.execute(
@@ -300,6 +395,15 @@ class SQLighter:
                 WHERE id = ?',
                 (
                     str(lastGuid), str(lastDate), str(podcastId),))
+            self.connection.commit()
+
+    def update_channel_http_validators(
+            self, podcastId, etag, last_modified):
+        with self.connection:
+            self.cursor.execute(
+                'UPDATE channels SET http_etag = ?, http_last_modified = ? \
+                WHERE id = ?',
+                (etag, last_modified, str(podcastId),))
             self.connection.commit()
 
     def get_uccs_by_channel(
