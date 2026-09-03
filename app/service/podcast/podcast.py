@@ -4,7 +4,8 @@ from urllib.parse import unquote, quote
 
 from app.service.podcast.rss import (
     get_rss_root_with_status,
-    FeedStatus, FEED_STATUS_GONE, FEED_STATUS_UNAVAILABLE)
+    FeedStatus, FEED_STATUS_GONE, FEED_STATUS_UNAVAILABLE,
+    FEED_STATUS_NOT_MODIFIED)
 from lib.requests import requesterModule
 from lib.tools.logger import logger
 from lib.tools.time_tools.general import format_rss_last_date, prepare_date_time_from_formatted
@@ -30,9 +31,68 @@ class PodcastInfoType(TypedDict, total=False):
     itunesData: Dict | None
     # почему выборка не удалась: FEED_STATUS_GONE | FEED_STATUS_UNAVAILABLE
     failureReason: FeedStatus
+    http_etag: str | None
+    http_last_modified: str | None
+    notModified: bool
 
 
-def podcast_info_query(payload, service_name='itunes', direct_link=False) \
+def _channel_field(channel, key, default=None):
+    try:
+        value = channel[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    if value is None or value == '':
+        return default
+    return value
+
+
+def fetch_channel_feed(channel, manual=False):
+    """Выборка фида канала для апдейтера.
+
+    Scheduled (manual=False): наш rss_link + сохранённые HTTP-валидаторы.
+    iTunes — только если rss_link пустой.
+    Ручная кнопка «обновить» оставляет itunes-then-rss, но валидаторы
+    всё равно уходят на GET RSS.
+    """
+    etag = _channel_field(channel, 'http_etag')
+    last_modified = _channel_field(channel, 'http_last_modified')
+    rss_link = _channel_field(channel, 'rss_link')
+    itunes_id = _channel_field(channel, 'itunes_id')
+
+    if not manual and rss_link:
+        root, pc_info = podcast_info_query(
+            {'rss_link': rss_link}, 'rss',
+            etag=etag, last_modified=last_modified)
+        return root, pc_info, 'rss', rss_link
+
+    root: RootAdapter | Literal[False] = False
+    pc_info: PodcastInfoType = {}
+    service_name: str | None = None
+    service_id = None
+
+    if itunes_id:
+        payload = {'entity': 'podcast', 'id': itunes_id}
+        root, pc_info = podcast_info_query(
+            payload, etag=etag, last_modified=last_modified)
+        service_name = 'itunes'
+        service_id = itunes_id
+    if (
+            root is False
+            and not pc_info.get('notModified')
+            and rss_link
+    ):
+        root, pc_info = podcast_info_query(
+            {'rss_link': rss_link}, 'rss',
+            etag=etag, last_modified=last_modified)
+        service_name = 'rss'
+        service_id = rss_link
+
+    return root, pc_info, service_name, service_id
+
+
+def podcast_info_query(
+        payload, service_name='itunes', direct_link=False,
+        etag=None, last_modified=None) \
         -> Tuple[RootAdapter | Literal[False], PodcastInfoType]:
     if service_name == 'itunes':
         api_url_base = 'https://itunes.apple.com/lookup'
@@ -100,22 +160,48 @@ def podcast_info_query(payload, service_name='itunes', direct_link=False) \
 
     feed_url = str(feed_url)
 
-    root, feed_status = get_rss_root_with_status(feed_url)
-    if root is False and "www." in feed_url and not direct_link:
+    root, feed_status, validators = get_rss_root_with_status(
+        feed_url, etag=etag, last_modified=last_modified)
+    if (
+            root is False
+            and feed_status != FEED_STATUS_NOT_MODIFIED
+            and "www." in feed_url
+            and not direct_link
+    ):
         feed_url = feed_url.replace("www.", "")
-        root, feed_status = get_rss_root_with_status(feed_url)
+        root, feed_status, validators = get_rss_root_with_status(
+            feed_url, etag=etag, last_modified=last_modified)
+
+    http_etag = validators.get('etag') if validators else None
+    http_last_modified = validators.get('last_modified') if validators else None
+
+    if feed_status == FEED_STATUS_NOT_MODIFIED:
+        return False, {
+            'lastDate': last_date,
+            'itunesLink': itunes_link,
+            'feedUrl': feed_url,
+            'collectionName': collection_name,
+            'itunesData': itunes_podcast_data,
+            'http_etag': http_etag,
+            'http_last_modified': http_last_modified,
+            'notModified': True}
+
     if root is False:
         logger.warn("Error payload info: ", payload, "; reason: ", feed_status)
         return False, {
             'collectionName': collection_name,
             'failureReason': (
                 FEED_STATUS_GONE if feed_status == FEED_STATUS_GONE
-                else FEED_STATUS_UNAVAILABLE)}
+                else FEED_STATUS_UNAVAILABLE),
+            'http_etag': http_etag,
+            'http_last_modified': http_last_modified}
 
     return root, {
         'lastDate': last_date, 'itunesLink': itunes_link,
         'feedUrl': feed_url, 'collectionName': collection_name,
-        'itunesData': itunes_podcast_data}
+        'itunesData': itunes_podcast_data,
+        'http_etag': http_etag,
+        'http_last_modified': http_last_modified}
 
 
 def set_last_date(last_date, last_pub_date) -> str:  # strings: itunes, rss; not formatted
