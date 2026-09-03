@@ -948,41 +948,46 @@ class SQLighter:
     def count_users(
             self, with_subs=False, with_subs_active=False, payed=False,
             deleted=False
-    ):
+    ) -> int:
         with self.connection:
             if with_subs:
-                return self.cursor.execute(
-                    'SELECT COUNT(DISTINCT ucc.user_telegram_id)\
-                    FROM user_channel_cs ucc\
-                    INNER JOIN users u\
-                        ON (u.telegramId = ucc.user_telegram_id)\
-                    WHERE u.deleted_at IS NULL'
-                ).fetchall()[0]
+                # telegramId / user_telegram_id are INTEGER in prod; do not
+                # CAST to TEXT - that disables the index and hangs /usersCount.
+                sql = (
+                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
+                    'FROM user_channel_cs ucc '
+                    'INNER JOIN users u '
+                    'ON u.telegramId = ucc.user_telegram_id '
+                    'WHERE u.deleted_at IS NULL')
             elif with_subs_active:
-                return self.cursor.execute(
-                    'SELECT COUNT(DISTINCT ucc.user_telegram_id)\
-                    FROM user_channel_cs ucc\
-                    INNER JOIN users u\
-                        ON (u.telegramId = ucc.user_telegram_id\
-                            AND ucc.notify = 1)\
-                    WHERE u.deleted_at IS NULL'
-                ).fetchall()[0]
-
+                sql = (
+                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
+                    'FROM user_channel_cs ucc '
+                    'INNER JOIN users u '
+                    'ON u.telegramId = ucc.user_telegram_id '
+                    'WHERE u.deleted_at IS NULL AND ucc.notify = 1')
             elif payed:
-                return self.cursor.execute(
-                    'SELECT count(*) FROM user_tariff_cs\
-                    WHERE tariff_id > 0\
-                        AND time_left > 0 AND notify_count != 0\
-                        AND uid IN (SELECT id FROM users \
-                            WHERE deleted_at IS NULL)').fetchone()
+                # Same rule as is_user_have_bot_subscription: live tariff
+                # with remaining time and notification quota (including -1).
+                # COUNT(DISTINCT uid) so a duplicate tariff row cannot
+                # inflate the admin number.
+                sql = (
+                    'SELECT COUNT(DISTINCT utc.uid) '
+                    'FROM user_tariff_cs utc '
+                    'INNER JOIN users u ON u.id = utc.uid '
+                    'WHERE utc.tariff_id > 0 '
+                    'AND utc.time_left > 0 AND utc.notify_count != 0 '
+                    'AND u.deleted_at IS NULL')
             elif deleted:
-                return self.cursor.execute(
-                    'SELECT COUNT(*) FROM users \
-                    WHERE deleted_at IS NOT NULL').fetchall()[0]
+                sql = (
+                    'SELECT COUNT(*) FROM users '
+                    'WHERE deleted_at IS NOT NULL')
             else:
-                return self.cursor.execute(
-                    'SELECT COUNT(*) FROM users \
-                    WHERE deleted_at IS NULL').fetchall()[0]
+                sql = (
+                    'SELECT COUNT(*) FROM users '
+                    'WHERE deleted_at IS NULL')
+            row = self.cursor.execute(sql).fetchone()
+            return int(row[0]) if row is not None else 0
 
     def getTariffs(self, channel_control=None):
         with self.connection:

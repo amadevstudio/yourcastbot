@@ -29,23 +29,36 @@ def is_admin(data: ControllerParams) -> bool:
     return True
 
 
+def format_users_count_message(
+        total: int, with_subs: int, with_subs_notify: int,
+        with_bot_sub: int, blocked: int,
+        updater_channel_id: int, max_channel_id: int) -> str:
+    return (
+        "Всего: " + str(total)
+        + "\nС подписками на каналы: " + str(with_subs)
+        + "\nС подписками и уведомлениями: " + str(with_subs_notify)
+        + "\nС подпиской на бота: " + str(with_bot_sub)
+        + "\nЗаблокировали бота (не считаются выше): " + str(blocked)
+        + "\nАпдейтер каналов: "
+        + str(updater_channel_id) + " / " + str(max_channel_id)
+    )
+
+
 def send_users_count_to_creator(data: ControllerParams):
     db_users = SQLighter(config.db_path)
-    users_c = db_users.count_users()
-    users_c_ws = db_users.count_users(True)
-    users_c_wsa = db_users.count_users(with_subs_active=True)
-    users_c_p = db_users.count_users(payed=True)
-    users_c_d = db_users.count_users(deleted=True)
+    total = db_users.count_users()
+    with_subs = db_users.count_users(True)
+    with_subs_notify = db_users.count_users(with_subs_active=True)
+    with_bot_sub = db_users.count_users(payed=True)
+    blocked = db_users.count_users(deleted=True)
+    last_channel_row = db_users.get_last_channel_id()
+    max_channel_id = int(last_channel_row['id']) if last_channel_row else 0
     db_users.close()
-    last_channel_id = storage.get_last_channel_id()
     render_messages(data['chat_id'], [{
         'type': 'text',
-        'text': "Всего: " + str(users_c[0])
-                + "\nС подписками на каналы: " + str(users_c_ws[0])
-                + "\nС подписками и уведомлениями: " + str(users_c_wsa[0])
-                + "\nС подпиской на бота: " + str(users_c_p[0])
-                + "\nЗаблокировали бота (не считаются выше): " + str(users_c_d[0])
-                + "\nТекущий id канала: " + str(last_channel_id),
+        'text': format_users_count_message(
+            total, with_subs, with_subs_notify, with_bot_sub, blocked,
+            storage.get_last_channel_id(), max_channel_id),
         'reply_markup': go_back_inline_markup(data['language_code'])
     }])
 
