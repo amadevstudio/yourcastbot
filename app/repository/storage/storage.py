@@ -8,12 +8,9 @@ from typing import Mapping, Any, Sequence
 from app.routes.routes_list import AvailableRoutes
 from config import shelve_name
 from db import runtime_kv
-from lib.python.file_lock import InterprocessLock
 from lib.tools.logger import logger
 
-# gdbm is exclusive. Bot and jobs (Patreon FSM writes) may open it under flock.
-# Updater must not: cursor, resend flags, and message ids live in runtime_kv.
-_lock = InterprocessLock(shelve_name + ".lock")
+_thread_lock = threading.RLock()
 _shelve_init_lock = threading.Lock()
 _shelve_db = None
 
@@ -23,7 +20,8 @@ def _role():
 
 
 def _shelve_allowed():
-    return _role() in ("", "bot", "jobs")
+    # Unset role = legacy single process. After the split, only bot opens gdbm.
+    return _role() in ("", "bot")
 
 
 def _get_shelve():
@@ -31,7 +29,7 @@ def _get_shelve():
     if not _shelve_allowed():
         raise RuntimeError(
             "FSM shelve is opened only in the bot process; "
-            "updater must use sqlite (runtime_kv)")
+            "updater/jobs must use sqlite (runtime_kv)")
     with _shelve_init_lock:
         if _shelve_db is None:
             _shelve_db = shelve.open(shelve_name)
@@ -72,10 +70,9 @@ storage = _LazyShelve()
 def _locked(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
-        with _lock:
+        with _thread_lock:
             return fn(*args, **kwargs)
     return wrapped
-
 
 
 @_locked

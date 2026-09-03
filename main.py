@@ -74,6 +74,7 @@ def run_bot():
     _announce_restart_if_needed()
 
     import config
+    import app.jobs.payment_watcher
     from lib.analytics import analytics
     from agent.bot_telethon import thonbot
     from app.controller.builders import recsModule
@@ -88,6 +89,14 @@ def run_bot():
     threads_to_watch = []
     recsModule.start_record_balancer()
     threads_to_watch.append(recsModule.t_podcast_sender)
+
+    t_patreon_watcher = threading.Thread(
+        target=app.jobs.payment_watcher.patreon_watcher,
+        args=(config.payment_service_watcher_period,))
+    t_patreon_watcher.daemon = True
+    t_patreon_watcher.name = "Patreon payment watcher"
+    t_patreon_watcher.start()
+    threads_to_watch.append(t_patreon_watcher)
 
     answer_sender_queue: queue.Queue = queue.Queue()
     t_answer_sender = telebotAnswerer.TelebotBalancer(
@@ -116,7 +125,7 @@ def run_jobs():
 
     import app.jobs.balance_watcher
     import config
-    from app.jobs import backup_db, clean_old_data, payment_watcher
+    from app.jobs import backup_db, clean_old_data
 
     t_rec_cleaner = threading.Thread(
         target=clean_old_data.main, args=(1440,))
@@ -140,14 +149,6 @@ def run_jobs():
     t_balance_watcher.name = "Balance watcher"
     t_balance_watcher.start()
     watched.append(t_balance_watcher)
-
-    t_patreon_watcher = threading.Thread(
-        target=app.jobs.payment_watcher.patreon_watcher,
-        args=(config.payment_service_watcher_period,))
-    t_patreon_watcher.daemon = True
-    t_patreon_watcher.name = "Patreon payment watcher"
-    t_patreon_watcher.start()
-    watched.append(t_patreon_watcher)
 
     while True:
         time.sleep(2)
