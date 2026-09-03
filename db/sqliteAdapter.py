@@ -951,20 +951,20 @@ class SQLighter:
     ) -> int:
         with self.connection:
             if with_subs:
+                # telegramId / user_telegram_id are INTEGER in prod; do not
+                # CAST to TEXT - that disables the index and hangs /usersCount.
                 sql = (
                     'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
                     'FROM user_channel_cs ucc '
                     'INNER JOIN users u '
-                    'ON CAST(u.telegramId AS TEXT) '
-                    '= CAST(ucc.user_telegram_id AS TEXT) '
+                    'ON u.telegramId = ucc.user_telegram_id '
                     'WHERE u.deleted_at IS NULL')
             elif with_subs_active:
                 sql = (
                     'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
                     'FROM user_channel_cs ucc '
                     'INNER JOIN users u '
-                    'ON CAST(u.telegramId AS TEXT) '
-                    '= CAST(ucc.user_telegram_id AS TEXT) '
+                    'ON u.telegramId = ucc.user_telegram_id '
                     'WHERE u.deleted_at IS NULL AND ucc.notify = 1')
             elif payed:
                 # Same rule as is_user_have_bot_subscription: live tariff
