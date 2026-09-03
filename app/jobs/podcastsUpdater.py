@@ -27,6 +27,8 @@ from app.controller.builders import recsModule
 from app.controller.builders.adminModule import send_message_to_creator
 from app.core.sender import send_record_helper
 from app.i18n.messages import get_message
+from app.jobs.nosub_digest import (
+    latest_episode_id, nosub_users_behind, should_skip_item_parse)
 from app.repository.storage import storage
 from config import (
     db_path, std_bitrate, server,
@@ -93,8 +95,6 @@ def main(interval=120):
         channel = db_users.get_channel_or_next(last_updated_channel_id)
         db_users.close()
 
-        storage.clear_new_podcast_available_flags()
-
         while channel is not None:
 
             # if not server:
@@ -143,21 +143,7 @@ def main(interval=120):
             + str(storage.get_last_channel_id()),
             level='info')
 
-        # отправка уведомлений о новых эпизодах пользователям без подписки
-        flag_no_sub_users = storage.get_new_podcast_available_flags()
-        if flag_no_sub_users is not None and len(flag_no_sub_users) > 0:
-            logger.log(
-                "Sending 'new episodes available' message to "
-                + str(len(flag_no_sub_users)) + " users")
-            for user_tg_id in flag_no_sub_users:
-                db_users = SQLighter(db_path)
-                user = db_users.get_user_by_tg(user_tg_id)
-                db_users.close()
-                user_language = app.service.user.language.user_language(user['lang'])
-                outer_sender(user['telegramId'], [{
-                    'type': 'text', 'text': get_message("youHaveNewEpisodes", user_language)
-                                            + " t.me/" + botName + "?start=" + str(user['telegramId'])}])
-                time.sleep(1)
+        send_nosub_new_episode_digest()
 
         time.sleep(interval * 60)
 
@@ -430,12 +416,15 @@ def send_new_records_by_channel(
             except Exception:
                 last_date = str(channelDescr.text)
 
-            flag_rss = True
-            for connection in all_target_connections:
-                flag_rss = flag_rss and (last_date == connection['last_date'])
-
-            # если lastDate можно получить только из rss и все уже отправлены
-            if flag_rss:
+            # если lastDate можно получить только из rss и все платные уже
+            # текущие. Пустой all_target_connections не считается «все текущие»
+            # — иначе каналы только с бесплатными слушателями никогда не
+            # доходят до дайджеста.
+            if should_skip_item_parse(all_target_connections, last_date):
+                latest_pgd = latest_episode_id(channel, all_target_connections)
+                flag_nosubs_for_digest(
+                    nosub_connections_to_pgd, latest_pgd, last_date,
+                    channel['id'])
                 return new_recs_flag
 
         elif channelDescr.tag == "item":
@@ -664,6 +653,10 @@ def send_new_records_by_channel(
     # INFO: обновление инф. о последнем обновлении канала
     db_users.update_channel_last_guid_date(channel['id'], pgd, last_date)
 
+    flag_nosubs_for_digest(
+        nosub_connections_to_pgd, pgd, last_date, channel['id'],
+        db_users=db_users)
+
     # обновление данных о последнем выпуске для пользователей
     if len(guids) > 0:
 
@@ -688,6 +681,48 @@ def send_new_records_by_channel(
     db_users.close()
 
     return new_recs_flag
+
+
+def flag_nosubs_for_digest(
+        nosub_last_guids, latest_pgd, latest_date, channel_id, db_users=None):
+    behind = nosub_users_behind(nosub_last_guids, latest_pgd)
+    if not behind:
+        return
+    own_db = db_users is None
+    if own_db:
+        db_users = SQLighter(db_path)
+    try:
+        for user_tg_id in behind:
+            storage.set_new_podcast_available_flag(user_tg_id)
+            try:
+                db_users.update_sub_last_guid_and_date(
+                    user_tg_id, channel_id, latest_pgd, latest_date)
+            except Exception as e:
+                logger.err("podcastsUpdater/nosub_last_guid: ", e)
+    finally:
+        if own_db:
+            db_users.close()
+
+
+def send_nosub_new_episode_digest():
+    flag_no_sub_users = storage.get_new_podcast_available_flags()
+    if not flag_no_sub_users:
+        return
+    logger.log(
+        "Sending 'new episodes available' message to "
+        + str(len(flag_no_sub_users)) + " users")
+    for user_tg_id in flag_no_sub_users:
+        db_users = SQLighter(db_path)
+        user = db_users.get_user_by_tg(user_tg_id)
+        db_users.close()
+        if user is None or user['deleted_at'] is not None:
+            continue
+        user_language = app.service.user.language.user_language(user['lang'])
+        outer_sender(user['telegramId'], [{
+            'type': 'text', 'text': get_message("youHaveNewEpisodes", user_language)
+                                    + " t.me/" + botName + "?start=" + str(user['telegramId'])}])
+        time.sleep(1)
+    storage.clear_new_podcast_available_flags()
 
 
 def update_feed(data: ControllerParams):
