@@ -116,8 +116,7 @@ def show_commands(data: ControllerParams):
 
 # Helpers
 def send_thread_dead_message_to_creator():
-    storage.set_last_channel_restarted(True)
-    send_message_to_creator('Поток упал! Перезагрузка...', level='fatal')
+    send_message_to_creator('Поток упал! Перезагрузка роли...', level='fatal')
 
 
 def send_message_to_creator(message_text: str, level: CreatorAlertLevel = 'info'):

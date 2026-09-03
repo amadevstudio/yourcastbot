@@ -23,7 +23,6 @@ from app.routes.message_tools import go_back_inline_markup
 from app.service.payment.paymentSafeModule import is_subscription_active
 from lib.telegram.general.message_master import message_master, outer_sender, render_messages
 import lib.tools.time_tools.general
-from app.controller.builders import recsModule
 from app.controller.builders.adminModule import send_message_to_creator
 from app.core.sender import send_record_helper
 from app.i18n.messages import get_message
@@ -764,6 +763,7 @@ def update_feed(data: ControllerParams):
             data['callback'], data['message'],
             need_time_to_load_message)
 
+    from app.controller.builders import recsModule
     recsModule.t_podcast_sender.main_queue.put(
         {
             'bot': bot, 'action': 'update', 'user_id': data['chat_id'],

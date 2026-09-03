@@ -1,15 +1,15 @@
 import json
 import shelve
-import threading
 from functools import wraps
 from typing import Mapping, Any, Sequence
 
 from app.routes.routes_list import AvailableRoutes
 from config import shelve_name
+from lib.python.file_lock import InterprocessLock
 from lib.tools.logger import logger
 
 storage = shelve.open(shelve_name)
-_lock = threading.RLock()
+_lock = InterprocessLock(shelve_name + ".lock")
 
 
 def _locked(fn):
@@ -294,3 +294,12 @@ def clear_new_podcast_available_flags():
         del storage["new_podcast_available_flag"]
     except Exception:
         pass
+
+
+def close_storage():
+    try:
+        storage.sync()
+        storage.close()
+        logger.log("Storage shelve closed")
+    except Exception as e:
+        logger.err("Error closing storage shelve:", e)

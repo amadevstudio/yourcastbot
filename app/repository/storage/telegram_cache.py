@@ -1,13 +1,14 @@
 import json
 import shelve
 import datetime
-import threading
 from typing import Literal, Any
 
 from config import telegram_cache_shelve_name, use_cache
+from lib.python.file_lock import InterprocessLock
+from lib.tools.logger import logger
 
 storage = shelve.open(telegram_cache_shelve_name)
-_lock = threading.RLock()
+_lock = InterprocessLock(telegram_cache_shelve_name + ".lock")
 
 file_types = Literal['img', 'audio']
 
@@ -63,3 +64,12 @@ def add_cache(
 
     with _lock:
         __save_with_expiration(f'strCache:{unique}', value, expiration_date)
+
+
+def close_storage():
+    try:
+        storage.sync()
+        storage.close()
+        logger.log("Telegram cache shelve closed")
+    except Exception as e:
+        logger.err("Error closing telegram cache shelve:", e)
