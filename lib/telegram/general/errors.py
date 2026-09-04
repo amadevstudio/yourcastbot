@@ -24,11 +24,29 @@ def get_timeout_from_error_bot(error: Exception) -> int | bool:
 	return False
 
 
+# Чат больше не принимает сообщения. Помечаем deleted_at, не роняем процесс.
+# «group chat was upgraded to a supergroup chat» — старый id мёртв навсегда;
+# без этой строки дайджест nosub вылетал из updater main() и супервизор
+# крутил RSS с начала круга.
+_USER_UNAVAILABLE_SNIPPETS = (
+	"Forbidden: bot was blocked by the user",
+	"Bad Request: chat not found",
+	"Forbidden: user is deactivated",
+	"Forbidden: bot was kicked from the group chat",
+	"Forbidden: bot was kicked from the supergroup chat",
+	"Forbidden: bot is not a member of the supergroup chat",
+	"Forbidden: bot is not a member of the group chat",
+	"Forbidden: the group chat was deleted",
+	"Bad Request: group chat was upgraded to a supergroup chat",
+	"GROUP_CHAT_UPGRADED",
+	"PEER_ID_INVALID",
+	"Bad Request: CHAT_ID_EMPTY",
+)
+
+
 def user_unavailable_error(e):
-	return "Forbidden: bot was blocked by the user" in str(e) \
-			or "Bad Request: chat not found" in str(e) \
-			or "Forbidden: user is deactivated" in str(e) \
-			or "Forbidden: bot was kicked from the group chat" in str(e)
+	text = str(e)
+	return any(snippet in text for snippet in _USER_UNAVAILABLE_SNIPPETS)
 
 
 def bot_blocked_reaction(e, user_id):

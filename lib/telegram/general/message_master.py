@@ -268,15 +268,15 @@ def outer_sender(chat_id: int, message_structures: list[MessageStructuresInterfa
         if pause:
             # TODO: Schedule resending?
             return []
-        elif bot_blocked_reaction(e, chat_id):
+        if bot_blocked_reaction(e, chat_id):
             return []
-        else:
-            logger.err(e)
-            raise e
+        # Fire-and-forget: one dead/migrated chat must not kill updater/jobs.
+        logger.err(e)
+        return []
 
     except Exception as e:
         logger.err(e)
-        raise e
+        return []
 
 
 def message_deleter(chat_id: int, message_id: int):

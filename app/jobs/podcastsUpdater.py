@@ -26,7 +26,8 @@ from app.controller.builders.adminModule import send_message_to_creator
 from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message
 from app.jobs.nosub_digest import (
-    latest_episode_id, nosub_users_behind, should_skip_item_parse)
+    for_each_digest_user, latest_episode_id, nosub_users_behind,
+    should_skip_item_parse)
 from app.repository.storage import storage
 from config import (
     db_path, std_bitrate, server,
@@ -74,88 +75,87 @@ def main(interval=120):
             time.sleep(60 * 60)
             storage.set_last_channel_id(1)
 
-        last_updated_channel_id = storage.get_last_channel_id()
-        # если поток упал, то пропустить то, что уронило
-        logger.log("Restarted?", storage.is_last_channel_restarted())
-        if storage.is_last_channel_restarted() or last_updated_channel_id != 1:
-            last_updated_channel_id += 1
+        try:
+            last_updated_channel_id = storage.get_last_channel_id()
+            # если поток упал, то пропустить то, что уронило
+            logger.log("Restarted?", storage.is_last_channel_restarted())
+            if storage.is_last_channel_restarted() or last_updated_channel_id != 1:
+                last_updated_channel_id += 1
+                storage.set_last_channel_restarted(False)
+                send_message_to_creator("#restarted", level='warning')
+
+            logger.log("New circle, luci: ", last_updated_channel_id, "| ", time.ctime())
+            send_message_to_creator(
+                "New cirlce #new_circle; luci: " + str(last_updated_channel_id),
+                level='info')
+
+            db_users = SQLighter(db_path)
+            # только каналы, по которым есть кому слать (notify=1, живой юзер
+            # или активный tg-канал). Пустые больше не крутим и не sleep(6).
+            channel = db_users.get_channel_or_next_to_poll(last_updated_channel_id)
+            db_users.close()
+
+            while channel is not None:
+
+                # if not server:
+                logger.log("Processig channel", channel['id'])
+
+                db_users = SQLighter(db_path)
+                # работаем только с пользователями, у которых есть включены уведомления
+                # именно благодаря им у остальных будет появляться надпись "new"
+                # ...
+                # пользователи с подпиской на бота и уведомлениями
+                connections = db_users.get_uccs_by_channel(
+                    channel['id'], have_subscription=True, notifications_enabled=True)
+                # пользователи без подписки на бота и уведомлениями
+                nosubs_connections = db_users.get_uccs_by_channel(
+                    channel['id'], have_subscription=False, notifications_enabled=True)
+                # каналы, владельцы которых подписаны на бота
+                tg_channel_connections = db_users.getTgChannelSubConnectionsByPodcast(
+                    channel['id'], have_subscription=True, notifications_enabled=True)
+                db_users.close()
+
+                storage.set_last_channel_id(channel['id'])
+
+                update_result = ChannelUpdateResult(False, 'skipped')
+                try:
+                    if connections is not None:
+                        update_result = send_new_records_by_channel(
+                            channel, connections, thonbot=thonbot,
+                            nosubs_connections=nosubs_connections,
+                            tg_channel_connections=tg_channel_connections)
+                except Exception as e:
+                    logger.err(
+                        "podcastsUpdater/send_new_records_by_channel:",
+                        channel['id'], e)
+                    update_result = ChannelUpdateResult(False, 'fetched')
+
+                db_users = SQLighter(db_path)
+                channel = db_users.get_next_channel_to_poll(channel['id'])
+                db_users.close()
+
+                if channel is None:
+                    logger.log("Next channel is None!")
+                else:
+                    logger.log("Next channel is:", channel['id'])
+
+                # 6s только после реальной загрузки фида, чтобы не молотить хосты.
+                # 304 и каналы без получателей — сразу к следующему.
+                if update_result.outcome == 'fetched':
+                    time.sleep(6)
+                # time.sleep(60 * 60)
+
+            storage.set_last_channel_id(1)
             storage.set_last_channel_restarted(False)
-            send_message_to_creator("#restarted", level='warning')
 
-        logger.log("New circle, luci: ", last_updated_channel_id, "| ", time.ctime())
-        send_message_to_creator(
-            "New cirlce #new_circle; luci: " + str(last_updated_channel_id),
-            level='info')
+            send_message_to_creator(
+                "Circle finished #circle_finished; luci: "
+                + str(storage.get_last_channel_id()),
+                level='info')
 
-        db_users = SQLighter(db_path)
-        # # получение всех подкастов с подписками
-        # channels_to_check = db_users.get_channels_to_check()
-        # channels_to_check_ids = []
-        # for channel in channels_to_check:
-        # 	channels_to_check_ids.append(str(channel['id']))
-        # # channels = db_users.get_all_channels()
-        # # for channel in channels:
-        # channel = db_users.get_channel_or_next(
-        # 	last_updated_channel_id, channels_to_check_ids)
-        # ---------
-        # только каналы, по которым есть кому слать (notify=1, живой юзер
-        # или активный tg-канал). Пустые больше не крутим и не sleep(6).
-        channel = db_users.get_channel_or_next_to_poll(last_updated_channel_id)
-        db_users.close()
-
-        while channel is not None:
-
-            # if not server:
-            logger.log("Processig channel", channel['id'])
-
-            db_users = SQLighter(db_path)
-            # работаем только с пользователями, у которых есть включены уведомления
-            # именно благодаря им у остальных будет появляться надпись "new"
-            # ...
-            # пользователи с подпиской на бота и уведомлениями
-            connections = db_users.get_uccs_by_channel(
-                channel['id'], have_subscription=True, notifications_enabled=True)
-            # пользователи без подписки на бота и уведомлениями
-            nosubs_connections = db_users.get_uccs_by_channel(
-                channel['id'], have_subscription=False, notifications_enabled=True)
-            # каналы, владельцы которых подписаны на бота
-            tg_channel_connections = db_users.getTgChannelSubConnectionsByPodcast(
-                channel['id'], have_subscription=True, notifications_enabled=True)
-            db_users.close()
-
-            storage.set_last_channel_id(channel['id'])
-
-            update_result = ChannelUpdateResult(False, 'skipped')
-            if connections is not None:
-                update_result = send_new_records_by_channel(
-                    channel, connections, thonbot=thonbot,
-                    nosubs_connections=nosubs_connections,
-                    tg_channel_connections=tg_channel_connections)
-
-            db_users = SQLighter(db_path)
-            channel = db_users.get_next_channel_to_poll(channel['id'])
-            db_users.close()
-
-            if channel is None:
-                logger.log("Next channel is None!")
-            else:
-                logger.log("Next channel is:", channel['id'])
-
-            # 6s только после реальной загрузки фида, чтобы не молотить хосты.
-            # 304 и каналы без получателей — сразу к следующему.
-            if update_result.outcome == 'fetched':
-                time.sleep(6)
-            # time.sleep(60 * 60)
-
-        storage.set_last_channel_id(1)
-        storage.set_last_channel_restarted(False)
-
-        send_message_to_creator(
-            "Circle finished #circle_finished; luci: "
-            + str(storage.get_last_channel_id()),
-            level='info')
-
-        send_nosub_new_episode_digest()
+            send_nosub_new_episode_digest()
+        except Exception as e:
+            logger.err("podcastsUpdater/circle: ", e)
 
         time.sleep(interval * 60)
 
@@ -658,13 +658,17 @@ def send_new_records_by_channel(
                     db_users.close()
                     notify_left_tg[user_tg_id] -= 1
                 if notify_left_tg[user_tg_id] == 0:
-                    outer_sender(user_tg_id, [{
-                        'type': 'text', 'text': get_message("notificationsEnded", utg_langs[user_tg_id]),
-                        'reply_markup': [[{
-                            'text': get_message("tariffs", utg_langs[user_tg_id]),
-                            'callback_data': {'tp': 'bs_trfs'}
-                        }]]
-                    }])
+                    try:
+                        outer_sender(user_tg_id, [{
+                            'type': 'text', 'text': get_message("notificationsEnded", utg_langs[user_tg_id]),
+                            'reply_markup': [[{
+                                'text': get_message("tariffs", utg_langs[user_tg_id]),
+                                'callback_data': {'tp': 'bs_trfs'}
+                            }]]
+                        }])
+                    except Exception as e:
+                        logger.err(
+                            "podcastsUpdater/notificationsEnded:", user_tg_id, e)
 
         logger.log("SENT AUTOMATICALLY! To: ", successfully_sent_to)
 
@@ -757,18 +761,30 @@ def send_nosub_new_episode_digest():
     logger.log(
         "Sending 'new episodes available' message to "
         + str(len(flag_no_sub_users)) + " users")
-    for user_tg_id in flag_no_sub_users:
+
+    def handle_user(user_tg_id):
         db_users = SQLighter(db_path)
-        user = db_users.get_user_by_tg(user_tg_id)
-        db_users.close()
+        try:
+            user = db_users.get_user_by_tg(user_tg_id)
+        finally:
+            db_users.close()
         if user is None or user['deleted_at'] is not None:
-            continue
+            return
         user_language = app.service.user.language.user_language(user['lang'])
         outer_sender(user['telegramId'], [{
             'type': 'text', 'text': get_message("youHaveNewEpisodes", user_language)
                                     + " t.me/" + botName + "?start=" + str(user['telegramId'])}])
-        time.sleep(1)
-    storage.clear_new_podcast_available_flags()
+
+    def on_error(user_tg_id, e):
+        logger.err(
+            "podcastsUpdater/send_nosub_new_episode_digest:", user_tg_id, e)
+
+    try:
+        for_each_digest_user(
+            flag_no_sub_users, handle_user, on_error=on_error,
+            pause=lambda: time.sleep(1))
+    finally:
+        storage.clear_new_podcast_available_flags()
 
 
 def update_feed(data: ControllerParams):
