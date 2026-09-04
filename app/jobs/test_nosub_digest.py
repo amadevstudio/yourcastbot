@@ -8,7 +8,8 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from app.jobs.nosub_digest import (  # noqa: E402
-    latest_episode_id, nosub_users_behind, should_skip_item_parse)
+    for_each_digest_user, latest_episode_id, nosub_users_behind,
+    should_skip_item_parse)
 
 
 def _assert_eq(got, expected, label):
@@ -67,6 +68,25 @@ def main():
         latest_episode_id({'last_guid': ""}, []),
         None,
         "missing both")
+
+    sent = []
+    errors = []
+
+    def handle_user(user_tg_id):
+        if user_tg_id == 2:
+            raise RuntimeError(
+                "Bad Request: group chat was upgraded to a supergroup chat")
+        sent.append(user_tg_id)
+
+    pauses = []
+    for_each_digest_user(
+        [1, 2, 3],
+        handle_user,
+        on_error=lambda uid, _e: errors.append(uid),
+        pause=lambda: pauses.append(1))
+    _assert_eq(sent, [1, 3], "digest continues after one send error")
+    _assert_eq(errors, [2], "failed digest user is reported")
+    _assert_eq(pauses, [1, 1, 1], "pause still runs after a failure")
     print("all nosub_digest checks passed")
 
 

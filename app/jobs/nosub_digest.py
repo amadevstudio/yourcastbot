@@ -41,6 +41,18 @@ def latest_episode_id(channel, fallback_connections=None):
     return guid
 
 
+def for_each_digest_user(user_tg_ids, handle_user, on_error=None, pause=None):
+    """Call handle_user for each flagged chat. One failure does not stop the rest."""
+    for user_tg_id in user_tg_ids:
+        try:
+            handle_user(user_tg_id)
+        except Exception as e:
+            if on_error is not None:
+                on_error(user_tg_id, e)
+        if pause is not None:
+            pause()
+
+
 def nosub_users_behind(nosub_last_guids, latest_pgd):
     """Telegram ids whose saved last_guid is not the latest episode on this channel."""
     if is_missing_guid(latest_pgd):
