@@ -11,6 +11,7 @@ from config import (
 
 from db.connection import connect_sqlite
 from db.dbTypes import UserDBType
+from db.hot_indexes import ensure_hot_path_indexes
 
 from lib.tools.logger import logger
 
@@ -167,6 +168,7 @@ class SQLighter:
         _ensure_channel_http_validators_columns(self.connection)
         ensure_send_outbox_table(self.connection, database)
         ensure_bot_runtime_kv_table(self.connection, database)
+        ensure_hot_path_indexes(self.connection, database)
 
     def __enter__(self):
         return self
@@ -244,22 +246,21 @@ class SQLighter:
     # есть ли вообще новые выпуски у пользователя
     def is_user_have_new_episodes(self, telegramId):
         with self.connection:
-            hncq = self.cursor.execute(
+            row = self.cursor.execute(
                 """
-                    SELECT COUNT(*) AS channel_with_new_episodes
+                    SELECT 1
                     FROM user_channel_cs
                     INNER JOIN channels
                         ON user_channel_cs.channel_id = channels.id
                     WHERE user_channel_cs.user_telegram_id = ?
                         AND channels.last_guid IS NOT NULL
                         AND channels.last_date IS NOT NULL
-                        AND (
-                            channels.last_guid != user_channel_cs.last_guid
-                            AND channels.last_date > user_channel_cs.last_date
-                        )
+                        AND channels.last_guid != user_channel_cs.last_guid
+                        AND channels.last_date > user_channel_cs.last_date
+                    LIMIT 1
                 """,
-                (str(telegramId),)).fetchone()
-            return hncq["channel_with_new_episodes"] > 0
+                (telegramId,)).fetchone()
+            return row is not None
 
     def select_users_subs(self, telegramId, sql=""):
         with self.connection:
@@ -1120,54 +1121,51 @@ class SQLighter:
             'AND utc.notify_count != 0')
         with self.connection:
             if with_subs:
-                # telegramId / user_telegram_id are INTEGER in prod; do not
-                # CAST to TEXT - that disables the index and hangs /usersCount.
+                # Count users, not subscription rows. EXISTS uses
+                # ucc_user_notify_idx; COUNT(DISTINCT) over user_channel_cs
+                # scans the whole table and hangs /usersCount in production.
                 sql = (
-                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
-                    'FROM user_channel_cs ucc '
-                    'INNER JOIN users u '
-                    'ON u.telegramId = ucc.user_telegram_id '
-                    'WHERE u.deleted_at IS NULL')
+                    'SELECT COUNT(*) FROM users u '
+                    'WHERE u.deleted_at IS NULL AND EXISTS ('
+                    'SELECT 1 FROM user_channel_cs ucc '
+                    'WHERE ucc.user_telegram_id = u.telegramId)')
             elif with_subs_active:
                 sql = (
-                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
-                    'FROM user_channel_cs ucc '
-                    'INNER JOIN users u '
-                    'ON u.telegramId = ucc.user_telegram_id '
-                    'WHERE u.deleted_at IS NULL AND ucc.notify = 1')
+                    'SELECT COUNT(*) FROM users u '
+                    'WHERE u.deleted_at IS NULL AND EXISTS ('
+                    'SELECT 1 FROM user_channel_cs ucc '
+                    'WHERE ucc.user_telegram_id = u.telegramId '
+                    'AND ucc.notify = 1)')
             elif receive_episodes:
                 # Audio/episode pushes: live tariff AND notify=1 on a podcast.
                 sql = (
-                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
-                    'FROM user_channel_cs ucc '
-                    'INNER JOIN users u '
-                    'ON u.telegramId = ucc.user_telegram_id '
-                    'INNER JOIN user_tariff_cs utc ON utc.uid = u.id '
-                    'WHERE u.deleted_at IS NULL AND ucc.notify = 1 '
-                    'AND ' + live_bot_sub)
+                    'SELECT COUNT(*) FROM users u '
+                    'WHERE u.deleted_at IS NULL AND EXISTS ('
+                    'SELECT 1 FROM user_channel_cs ucc '
+                    'WHERE ucc.user_telegram_id = u.telegramId '
+                    'AND ucc.notify = 1) AND EXISTS ('
+                    'SELECT 1 FROM user_tariff_cs utc '
+                    'WHERE utc.uid = u.id AND ' + live_bot_sub + ')')
             elif digest_reminder:
                 # End-of-circle "you have new episodes" ping: notify=1, no tariff.
                 sql = (
-                    'SELECT COUNT(DISTINCT ucc.user_telegram_id) '
-                    'FROM user_channel_cs ucc '
-                    'INNER JOIN users u '
-                    'ON u.telegramId = ucc.user_telegram_id '
-                    'WHERE u.deleted_at IS NULL AND ucc.notify = 1 '
-                    'AND NOT EXISTS ('
+                    'SELECT COUNT(*) FROM users u '
+                    'WHERE u.deleted_at IS NULL AND EXISTS ('
+                    'SELECT 1 FROM user_channel_cs ucc '
+                    'WHERE ucc.user_telegram_id = u.telegramId '
+                    'AND ucc.notify = 1) AND NOT EXISTS ('
                     'SELECT 1 FROM user_tariff_cs utc '
                     'WHERE utc.uid = u.id AND ' + live_bot_sub + ')')
             elif payed:
                 # Same rule as is_user_have_bot_subscription: live tariff
                 # with remaining time and notification quota (including -1).
-                # COUNT(DISTINCT uid) so a duplicate tariff row cannot
+                # COUNT users with EXISTS so a duplicate tariff row cannot
                 # inflate the admin number.
                 sql = (
-                    'SELECT COUNT(DISTINCT utc.uid) '
-                    'FROM user_tariff_cs utc '
-                    'INNER JOIN users u ON u.id = utc.uid '
-                    'WHERE utc.tariff_id > 0 '
-                    'AND utc.time_left > 0 AND utc.notify_count != 0 '
-                    'AND u.deleted_at IS NULL')
+                    'SELECT COUNT(*) FROM users u '
+                    'WHERE u.deleted_at IS NULL AND EXISTS ('
+                    'SELECT 1 FROM user_tariff_cs utc '
+                    'WHERE utc.uid = u.id AND ' + live_bot_sub + ')')
             elif deleted:
                 sql = (
                     'SELECT COUNT(*) FROM users '

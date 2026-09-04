@@ -170,6 +170,11 @@ def main(argv=None):
             migrate_updater_state_from_shelve()
         except Exception as e:
             logger.err("Updater cursor migrate skipped:", e)
+        try:
+            from db.hot_indexes import build_hot_path_indexes
+            build_hot_path_indexes()
+        except Exception as e:
+            logger.err("Hot path indexes skipped:", e)
         run_supervisor()
         return
     os.environ.setdefault("YOURCAST_ROLE", args.role)

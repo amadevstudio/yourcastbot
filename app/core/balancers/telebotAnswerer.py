@@ -1,6 +1,6 @@
 import datetime
-import queue
 import threading
+import time
 import typing
 
 import config
@@ -8,7 +8,7 @@ from app.controller.builders import welcomeModule
 from app.repository.storage import storage
 from app.routes.middleware.default_middleware import analytics_serving, \
     check_threads, get_user, analytics_serving_inline
-from app.core.balancers.sticky import StickySlotAssigner, incoming_user_id
+from app.core.balancers.sticky import UserGate, incoming_user_id
 from app.routes.ptypes import HandleInThreadParams, ControllerParams
 from config import threads_config
 
@@ -16,7 +16,8 @@ from lib.tools.logger import logger
 from lib.tools.loggers.incoming import log_incoming_data, log_incoming_inline
 
 
-# main idea is to have several threads
+incoming_gate = UserGate()
+
 
 class TelebotBalancer(threading.Thread):
 
@@ -27,54 +28,30 @@ class TelebotBalancer(threading.Thread):
 
         self.main_queue = main_queue
         self.count_send_threads = threads_config['send']
-        self.send_queues: list[queue.Queue] = []
         self.send_threads: list[TheSender] = []
-        self.slots = StickySlotAssigner()
 
         threads_to_watch.append(self)
         self.threads_to_watch = threads_to_watch
 
         for i in range(0, self.count_send_threads):
-            self.send_queues.append(queue.Queue())
             self.send_threads.append(
                 TheSender(
-                    self.send_queues[i], self.threads_to_watch, f"send_{i}"))
+                    self.main_queue, self.threads_to_watch, f"send_{i}"))
             self.send_threads[i].start()
 
     def run(self):
-
+        # Workers consume main_queue directly. This thread only restarts
+        # a dead worker; it must not get() or it would steal jobs.
         while True:
-            try:
-                input_data = self.main_queue.get()
-            except Exception as e:
-                logger.err("Telebot balancer failed to read queue:", e)
-                continue
-
-            try:
-                logger.log('Incoming task...' + str(datetime.datetime.now()))
-
-                qsizes = [q.qsize() for q in self.send_queues]
-                self.slots.release_idle([q.empty() for q in self.send_queues])
-                slot = self.slots.choose(incoming_user_id(input_data), qsizes)
-                self._ensure_sender_alive(slot)
-
-                logger.log(f"Using thread {slot} for user {incoming_user_id(input_data)}")
-                # Always the slot queue, never a replacement: pending work
-                # survives a dead TheSender.
-                self.send_queues[slot].put(input_data)
-            except Exception as e:
-                logger.err("Telebot balancer failed to dispatch:", e)
-
-    def _ensure_sender_alive(self, slot: int):
-        if self.send_threads[slot].is_alive():
-            return
-
-        logger.warn(f"THREAD IS DEAD: send_{slot}, restarting on the same queue")
-        self.send_threads[slot] = TheSender(
-            self.send_queues[slot],
-            self.threads_to_watch,
-            f"send_{slot}")
-        self.send_threads[slot].start()
+            time.sleep(2)
+            for i, sender in enumerate(self.send_threads):
+                if sender.is_alive():
+                    continue
+                logger.warn(
+                    f"THREAD IS DEAD: send_{i}, restarting on the shared queue")
+                self.send_threads[i] = TheSender(
+                    self.main_queue, self.threads_to_watch, f"send_{i}")
+                self.send_threads[i].start()
 
 
 def process_input(input_data) -> bool | None:
@@ -113,45 +90,49 @@ class TheSender(threading.Thread):
                 logger.err(f"{self.thread_num} failed serving a request, continuing:", e)
 
     def _serve(self, input_data: HandleInThreadParams):
-        logger.log(f"Hello from {self.thread_num}")
+        logger.log(
+            'Incoming task...' + str(datetime.datetime.now()),
+            f"{self.thread_num} user {incoming_user_id(input_data)}")
 
         if input_data['data'] is None:  # The action is filtered
             return
 
-        # Check threads
+        with incoming_gate.hold(incoming_user_id(input_data)):
+            self._serve_locked(input_data)
+
+        logger.log("Served\n\n")
+
+    def _serve_locked(self, input_data: HandleInThreadParams):
         check_threads(self.threads_to_watch)
 
-        # Actions in the bot
         if 'message' in input_data['data'] and 'callback' in input_data['data']:
-            controller_params: ControllerParams = typing.cast(ControllerParams, input_data['data'])
-            log_incoming_data(controller_params['callback'], controller_params['message'])
+            controller_params: ControllerParams = typing.cast(
+                ControllerParams, input_data['data'])
+            log_incoming_data(
+                controller_params['callback'], controller_params['message'])
 
-            # Set user
             input_data['data']['user'] = get_user(input_data['data']['chat_id'])
 
             start_related_params = self._action(input_data)
             analytics_serving(
                 controller_params, input_data['data']['user'],
-                start_related_params['is_new_user'], start_related_params['is_by_refer'],
+                start_related_params['is_new_user'],
+                start_related_params['is_by_refer'],
                 start_related_params['action'])
 
-        # Inline query
         elif 'inline' in input_data['data']:
             log_incoming_inline(input_data['data']['inline'])
 
-            # Set user
-            input_data['data']['user'] = get_user(input_data['data']['inline'].user_id)
+            input_data['data']['user'] = get_user(
+                input_data['data']['inline'].user_id)
 
             process_input(input_data)
-            analytics_serving_inline(input_data['data'], input_data['data']['user'])
-
-        logger.log("Served\n\n")
+            analytics_serving_inline(
+                input_data['data'], input_data['data']['user'])
 
     def _action(self, input_data):
         if not config.server:  # Inline don't have chat_id
             logger.log("Routes before:", storage.get_user_states(input_data['data']['chat_id']))
-
-        # TODO! Check that all stuff below is working properly
 
         # Start – is a special message
         # Start-related processing
