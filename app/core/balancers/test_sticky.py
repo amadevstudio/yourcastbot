@@ -5,6 +5,8 @@ Run from the repo root: python app/core/balancers/test_sticky.py
 """
 import os
 import sys
+import threading
+import time
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
@@ -12,7 +14,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from app.core.balancers.sticky import (  # noqa: E402
-    StickySlotAssigner, incoming_user_id)
+    StickySlotAssigner, UserGate, incoming_user_id)
 
 
 def _assert_eq(got, expected, label):
@@ -64,11 +66,59 @@ def test_release_idle_allows_rebalance():
     _assert_eq(slot in (0, 1), True, "original slot was valid")
 
 
+def test_other_user_is_not_blocked():
+    gate = UserGate()
+    a_started = threading.Event()
+    b_done = threading.Event()
+
+    def user_a():
+        with gate.hold(1):
+            a_started.set()
+            time.sleep(0.4)
+
+    def user_b():
+        a_started.wait(1)
+        with gate.hold(2):
+            b_done.set()
+
+    threading.Thread(target=user_a, daemon=True).start()
+    threading.Thread(target=user_b, daemon=True).start()
+    _assert_eq(
+        b_done.wait(0.2), True,
+        "other user must not wait on a slow neighbor")
+
+
+def test_same_user_is_serialized():
+    gate = UserGate()
+    order = []
+    first_inside = threading.Event()
+
+    def first():
+        with gate.hold(9):
+            first_inside.set()
+            time.sleep(0.15)
+            order.append("first")
+
+    def second():
+        first_inside.wait(1)
+        with gate.hold(9):
+            order.append("second")
+
+    threading.Thread(target=first, daemon=True).start()
+    threading.Thread(target=second, daemon=True).start()
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and order != ["first", "second"]:
+        time.sleep(0.01)
+    _assert_eq(order, ["first", "second"], "same user stays serialized")
+
+
 def main():
     test_incoming_user_id()
     test_same_user_stays_on_slot()
     test_tie_rotates_off_slot_zero()
     test_release_idle_allows_rebalance()
+    test_other_user_is_not_blocked()
+    test_same_user_is_serialized()
     print("all sticky checks passed")
 
 

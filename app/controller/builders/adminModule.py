@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import threading
+import time
 from typing import Literal
 
 import config
@@ -48,24 +50,65 @@ def format_users_count_message(
     )
 
 
-def send_users_count_to_creator(data: ControllerParams):
+_users_count_lock = threading.Lock()
+_users_count_running = False
+
+
+def compute_users_count_text() -> str:
+    started = time.monotonic()
     db_users = SQLighter(config.db_path)
-    total = db_users.count_users()
-    with_subs = db_users.count_users(True)
-    with_bot_sub = db_users.count_users(payed=True)
-    receive_episodes = db_users.count_users(receive_episodes=True)
-    digest_reminder = db_users.count_users(digest_reminder=True)
-    blocked = db_users.count_users(deleted=True)
-    last_channel_row = db_users.get_last_channel_id()
-    max_channel_id = int(last_channel_row['id']) if last_channel_row else 0
-    db_users.close()
-    render_messages(data['chat_id'], [{
-        'type': 'text',
-        'text': format_users_count_message(
-            total, with_subs, with_bot_sub, receive_episodes, digest_reminder,
-            blocked, storage.get_last_channel_id(), max_channel_id),
-        'reply_markup': go_back_inline_markup(data['language_code'])
-    }])
+    try:
+        total = db_users.count_users()
+        with_subs = db_users.count_users(True)
+        with_bot_sub = db_users.count_users(payed=True)
+        receive_episodes = db_users.count_users(receive_episodes=True)
+        digest_reminder = db_users.count_users(digest_reminder=True)
+        blocked = db_users.count_users(deleted=True)
+        last_channel_row = db_users.get_last_channel_id()
+        max_channel_id = int(last_channel_row['id']) if last_channel_row else 0
+    finally:
+        db_users.close()
+    text = format_users_count_message(
+        total, with_subs, with_bot_sub, receive_episodes, digest_reminder,
+        blocked, storage.get_last_channel_id(), max_channel_id)
+    logger.log(
+        "usersCount computed in %.2fs" % (time.monotonic() - started,))
+    return text
+
+
+def send_users_count_to_creator(data: ControllerParams):
+    # Off the incoming worker so this chat's next message is not queued
+    # behind the COUNT, and extra /usersCount is dropped.
+    global _users_count_running
+    chat_id = data['chat_id']
+    language_code = data['language_code']
+
+    with _users_count_lock:
+        if _users_count_running:
+            return
+        _users_count_running = True
+
+    def work():
+        global _users_count_running
+        try:
+            text = compute_users_count_text()
+        except Exception as e:
+            logger.err("usersCount failed:", e)
+            text = "Не получилось посчитать: %s" % e
+        try:
+            storage.set_user_resend_flag(chat_id)
+            render_messages(chat_id, [{
+                'type': 'text',
+                'text': text,
+                'reply_markup': go_back_inline_markup(language_code)
+            }])
+        except Exception as e:
+            logger.err("usersCount reply failed:", e)
+        finally:
+            with _users_count_lock:
+                _users_count_running = False
+
+    threading.Thread(target=work, name="usersCount", daemon=True).start()
 
 
 def add_to_balance(data: ControllerParams):

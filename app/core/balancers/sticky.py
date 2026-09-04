@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Sticky least-loaded slot assignment for incoming and outgoing workers.
+"""Per-user serialization for incoming handlers.
 
-Same user stays on the same worker so FSM/shelve mutations for one chat do
-not interleave. New users go to a least-loaded slot; ties rotate so work
-does not pile onto slot 0.
+FSM/shelve must not interleave for one chat. That is a lock on the user,
+not a pin onto one worker: pinning puts every other chat booked on that
+slot behind a slow request.
+
+StickySlotAssigner is kept for tests/history; incoming workers share one
+queue and take UserGate.
 """
+import threading
+from contextlib import contextmanager
 
 
 def incoming_user_id(input_data):
@@ -20,6 +25,34 @@ def incoming_user_id(input_data):
             return getattr(inline, 'user_id', None)
         return None
     return input_data.get('user_id')
+
+
+class UserGate:
+    """One lock per user_id. Another user's request never waits on it."""
+
+    def __init__(self):
+        self._guard = threading.Lock()
+        self._locks = {}
+        self._anon = threading.Lock()
+
+    def _lock_for(self, user_id):
+        if user_id is None:
+            return self._anon
+        with self._guard:
+            lock = self._locks.get(user_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._locks[user_id] = lock
+            return lock
+
+    @contextmanager
+    def hold(self, user_id):
+        lock = self._lock_for(user_id)
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
 
 
 class StickySlotAssigner:
