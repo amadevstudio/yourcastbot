@@ -169,6 +169,39 @@ def test_old_two_column_table_gains_lease(db_path):
     _assert_eq(row["status"], "leased", "legacy row leased")
 
 
+def test_parallel_ensure_on_legacy_table(db_path):
+    _fresh(db_path)
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE digest_outbox ("
+        "user_telegram_id INTEGER PRIMARY KEY, "
+        "created_at TEXT NOT NULL)")
+    conn.commit()
+    conn.close()
+    errors = []
+
+    def worker():
+        try:
+            digest_outbox.clear_ready_for_tests()
+            digest_outbox.enqueue(5100 + threading.get_ident() % 100,
+                                  database=db_path)
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+        if thread.is_alive():
+            raise AssertionError("ensure thread did not finish")
+    _assert_eq(errors, [], "parallel ensure does not raise")
+    _assert_true(
+        digest_outbox.pending_count(database=db_path) >= 1,
+        "legacy table accepted enqueues")
+
+
 def test_crash_after_lease_reclaim(db_path):
     _fresh(db_path)
     digest_outbox.enqueue(6006, database=db_path)
@@ -300,6 +333,7 @@ def main():
         test_storage_flag_enqueues,
         test_sqlighter_creates_digest_outbox,
         test_old_two_column_table_gains_lease,
+        test_parallel_ensure_on_legacy_table,
         test_crash_after_lease_reclaim,
         test_fail_or_retry_uses_telegram_retry_after,
         test_claim_is_exclusive,

@@ -46,6 +46,7 @@ CREATE INDEX IF NOT EXISTS digest_outbox_claim_idx
 """
 
 _ready = set()
+_ready_lock = threading.Lock()
 _in_flight_lock = threading.Lock()
 _in_flight = set()
 
@@ -81,23 +82,35 @@ def _table_columns(connection):
         connection.execute("PRAGMA table_info(digest_outbox)").fetchall()]
 
 
+def _add_column(connection, sql):
+    try:
+        connection.execute(sql)
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
+
+
 def _ensure_lease_columns(connection):
     columns = _table_columns(connection)
     if not columns:
         return
     if "status" not in columns:
-        connection.execute(
+        _add_column(
+            connection,
             "ALTER TABLE digest_outbox ADD COLUMN "
             "status TEXT NOT NULL DEFAULT 'pending'")
     if "attempts" not in columns:
-        connection.execute(
+        _add_column(
+            connection,
             "ALTER TABLE digest_outbox ADD COLUMN "
             "attempts INTEGER NOT NULL DEFAULT 0")
     if "leased_until" not in columns:
-        connection.execute(
+        _add_column(
+            connection,
             "ALTER TABLE digest_outbox ADD COLUMN leased_until TEXT NULL")
     if "available_at" not in columns:
-        connection.execute(
+        _add_column(
+            connection,
             "ALTER TABLE digest_outbox ADD COLUMN available_at TEXT")
     connection.execute(
         "UPDATE digest_outbox SET available_at = created_at "
@@ -109,14 +122,17 @@ def ensure_table(connection, database=None):
     key = database
     if key is not None and key in _ready:
         return
-    connection.execute(CREATE_TABLE_SQL)
-    _ensure_lease_columns(connection)
-    try:
-        connection.commit()
-    except sqlite3.OperationalError:
-        pass
-    if key is not None:
-        _ready.add(key)
+    with _ready_lock:
+        if key is not None and key in _ready:
+            return
+        connection.execute(CREATE_TABLE_SQL)
+        _ensure_lease_columns(connection)
+        try:
+            connection.commit()
+        except sqlite3.OperationalError:
+            pass
+        if key is not None:
+            _ready.add(key)
 
 
 def _connect(database):
