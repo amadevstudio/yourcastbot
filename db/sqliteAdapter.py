@@ -167,7 +167,34 @@ def ensure_digest_outbox_table(connection: sqlite3.Connection, database=None) ->
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS digest_outbox ("
                 "user_telegram_id INTEGER PRIMARY KEY, "
-                "created_at TEXT NOT NULL)")
+                "created_at TEXT NOT NULL, "
+                "status TEXT NOT NULL DEFAULT 'pending', "
+                "attempts INTEGER NOT NULL DEFAULT 0, "
+                "leased_until TEXT NULL, "
+                "available_at TEXT NOT NULL)")
+            columns = [
+                row[1] for row in
+                connection.execute("PRAGMA table_info(digest_outbox)").fetchall()]
+            if "status" not in columns:
+                connection.execute(
+                    "ALTER TABLE digest_outbox ADD COLUMN "
+                    "status TEXT NOT NULL DEFAULT 'pending'")
+            if "attempts" not in columns:
+                connection.execute(
+                    "ALTER TABLE digest_outbox ADD COLUMN "
+                    "attempts INTEGER NOT NULL DEFAULT 0")
+            if "leased_until" not in columns:
+                connection.execute(
+                    "ALTER TABLE digest_outbox ADD COLUMN leased_until TEXT NULL")
+            if "available_at" not in columns:
+                connection.execute(
+                    "ALTER TABLE digest_outbox ADD COLUMN available_at TEXT")
+            connection.execute(
+                "UPDATE digest_outbox SET available_at = created_at "
+                "WHERE available_at IS NULL")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS digest_outbox_claim_idx "
+                "ON digest_outbox (status, available_at, user_telegram_id)")
             connection.commit()
             if key is not None:
                 _digest_outbox_ready.add(key)

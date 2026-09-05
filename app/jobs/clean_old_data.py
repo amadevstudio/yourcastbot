@@ -27,12 +27,15 @@ def clean_old_logs():
 
 
 def clean_old_outbox(database=None):
-    """Drop old done/failed send_outbox rows. Does not VACUUM."""
+    """Drop old done/failed outbox rows. Does not VACUUM."""
     from app.core.sender import outbox
+    from app.jobs import digest_outbox
     counts = outbox.purge_old(database=database)
+    digest_counts = digest_outbox.purge_old(database=database)
     logger.log(
-        "send_outbox purge done=%s failed=%s" % (
-            counts['done'], counts['failed']))
+        "send_outbox purge done=%s failed=%s digest done=%s failed=%s" % (
+            counts['done'], counts['failed'],
+            digest_counts['done'], digest_counts['failed']))
     return counts
 
 

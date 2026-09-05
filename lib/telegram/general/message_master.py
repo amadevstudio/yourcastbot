@@ -255,7 +255,10 @@ def render_messages(chat_id: int,
 
 
 # For messages not included in state system: promo, podcast upload statuses etc...
-def outer_sender(chat_id: int, message_structures: list[MessageStructuresInterface]) \
+def outer_sender(
+        chat_id: int,
+        message_structures: list[MessageStructuresInterface],
+        on_flood: Literal['return_empty', 'raise'] = 'return_empty') \
         -> list[ResultMessageStructuresInterface]:
     try:
         result = message_master(bot, chat_id, resending=True, message_structures=message_structures)
@@ -266,7 +269,9 @@ def outer_sender(chat_id: int, message_structures: list[MessageStructuresInterfa
         pause = get_timeout_from_error_bot(e)
 
         if pause:
-            # TODO: Schedule resending?
+            if on_flood == 'raise':
+                from app.core.sender.outbox import OutboxRetryableError
+                raise OutboxRetryableError(e)
             return []
         if bot_blocked_reaction(e, chat_id):
             return []
