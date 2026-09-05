@@ -300,15 +300,8 @@ def reset_channel_feed_failures(channel_id):
 
 
 def set_new_podcast_available_flag(user_id):
-    try:
-        flags = json.loads(
-            runtime_kv.get_kv("new_podcast_available_flag") or "[]")
-    except Exception:
-        flags = []
-    if user_id not in flags:
-        flags.append(user_id)
-        runtime_kv.set_kv(
-            "new_podcast_available_flag", json.dumps(flags))
+    from app.jobs.digest_outbox import enqueue
+    enqueue(user_id)
 
 
 def get_new_podcast_available_flags():

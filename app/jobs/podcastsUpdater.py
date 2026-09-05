@@ -25,9 +25,9 @@ import lib.tools.time_tools.general
 from app.controller.builders.adminModule import send_message_to_creator
 from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message
+from app.jobs.digest_outbox import pending_count
 from app.jobs.nosub_digest import (
-    DIGEST_MUTE_ACTION, for_each_digest_user, latest_episode_id,
-    nosub_users_behind, should_send_nosub_digest, should_skip_item_parse)
+    latest_episode_id, nosub_users_behind, should_skip_item_parse)
 from app.repository.storage import storage
 from config import (
     db_path, std_bitrate, server,
@@ -152,8 +152,8 @@ def main(interval=120):
                 "Circle finished #circle_finished; luci: "
                 + str(storage.get_last_channel_id()),
                 level='info')
-
-            send_nosub_new_episode_digest()
+            logger.log(
+                "Circle finished, digest pending:", pending_count())
         except Exception as e:
             logger.err("podcastsUpdater/circle: ", e)
 
@@ -752,53 +752,6 @@ def flag_nosubs_for_digest(
     finally:
         if own_db:
             db_users.close()
-
-
-def send_nosub_new_episode_digest():
-    flag_no_sub_users = storage.get_new_podcast_available_flags()
-    if not flag_no_sub_users:
-        return
-    logger.log(
-        "Sending 'new episodes available' message to "
-        + str(len(flag_no_sub_users)) + " flagged users")
-    sent_count = [0]
-
-    def handle_user(user_tg_id):
-        db_users = SQLighter(db_path)
-        try:
-            user = db_users.get_user_by_tg(user_tg_id)
-            if not should_send_nosub_digest(user):
-                return
-            user_language = app.service.user.language.user_language(user['lang'])
-            sent = outer_sender(user['telegramId'], [{
-                'type': 'text',
-                'text': (
-                    get_message("youHaveNewEpisodes", user_language)
-                    + " t.me/" + botName + "?start=" + str(user['telegramId'])),
-                'reply_markup': [[{
-                    'text': get_message("nosubDigestMuteButton", user_language),
-                    'callback_data': {'tp': DIGEST_MUTE_ACTION},
-                }]],
-            }])
-            if sent:
-                db_users.mark_nosub_digest_sent(user_tg_id)
-                sent_count[0] += 1
-                time.sleep(1)
-        finally:
-            db_users.close()
-
-    def on_error(user_tg_id, e):
-        logger.err(
-            "podcastsUpdater/send_nosub_new_episode_digest:", user_tg_id, e)
-
-    try:
-        for_each_digest_user(
-            flag_no_sub_users, handle_user, on_error=on_error)
-        logger.log(
-            "nosub digest sent=%s flagged=%s" % (
-                sent_count[0], len(flag_no_sub_users)))
-    finally:
-        storage.clear_new_podcast_available_flags()
 
 
 def update_feed(data: ControllerParams):
