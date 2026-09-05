@@ -6,6 +6,7 @@ source of truth across process restarts.
 
 Lease is short (~5 min). The worker must touch() the row while it downloads
 or sends. done is Telegram ACK; a 429 goes back to pending with available_at.
+Old done/failed rows are deleted by purge_old(); pending and leased stay.
 """
 import datetime
 import json
@@ -25,6 +26,10 @@ HEARTBEAT_SECONDS = 30
 TOUCH_MIN_INTERVAL_SECONDS = 15
 MAX_ATTEMPTS = 8
 MAX_BACKOFF_SECONDS = 5 * 60
+# Finished rows stay for a short window (debug / future idempotency), then go.
+# pending and leased are never deleted.
+DONE_KEEP_DAYS = 7
+FAILED_KEEP_DAYS = 14
 ACTIONS = ('rec', 'update')
 
 
@@ -631,5 +636,59 @@ def get_row(outbox_id, database=None):
             "SELECT * FROM send_outbox WHERE id = ?", (outbox_id,)
         ).fetchone()
         return dict(row) if row is not None else None
+    finally:
+        conn.close()
+
+
+def _keep_days(value, default):
+    days = default if value is None else int(value)
+    if days < 1:
+        raise ValueError("outbox keep days must be at least 1")
+    return days
+
+
+def iso_before(days):
+    delta = datetime.timedelta(days=max(int(days), 0))
+    when = datetime.datetime.now(datetime.timezone.utc) - delta
+    return when.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def purge_old(
+        database=None, done_after_days=None, failed_after_days=None):
+    """Delete old done/failed rows. Never touches pending or leased.
+
+    Does not VACUUM: that needs ~2x disk. SQLite reuses the freed pages.
+    """
+    database = _database(database)
+    done_days = _keep_days(done_after_days, DONE_KEEP_DAYS)
+    failed_days = _keep_days(failed_after_days, FAILED_KEEP_DAYS)
+    done_cutoff = iso_before(done_days)
+    failed_cutoff = iso_before(failed_days)
+    conn = _connect(database)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "DELETE FROM send_outbox "
+                "WHERE status = 'done' AND created_at IS NOT NULL "
+                "AND created_at < ?",
+                (done_cutoff,),
+            )
+            done_deleted = conn.execute("SELECT changes()").fetchone()[0]
+            conn.execute(
+                "DELETE FROM send_outbox "
+                "WHERE status = 'failed' AND created_at IS NOT NULL "
+                "AND created_at < ?",
+                (failed_cutoff,),
+            )
+            failed_deleted = conn.execute("SELECT changes()").fetchone()[0]
+            conn.execute("COMMIT")
+            return {
+                'done': int(done_deleted),
+                'failed': int(failed_deleted),
+            }
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
     finally:
         conn.close()
