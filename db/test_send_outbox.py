@@ -144,6 +144,28 @@ def test_claim_done_not_claimed_again(db_path):
     _assert_eq(third, None, "done row is not claimed again")
 
 
+def test_fail_or_retry_skips_done_row(db_path):
+    """Crash after Telegram ACK but during file delete must not resend."""
+    outbox_id = outbox.enqueue(
+        _rec_job(chat_id=2102), database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, outbox_id=outbox_id)
+    outbox.mark_done(
+        claimed['outbox_id'], database=db_path,
+        attempts=claimed['outbox_attempts'])
+    outcome = outbox.fail_or_retry(
+        claimed['outbox_id'], error=RuntimeError("cleanup"),
+        database=db_path, attempts=claimed['outbox_attempts'], dispatch=False)
+    _assert_eq(outcome, 'skipped', "fail_or_retry ignores a done receipt")
+    row = outbox.get_row(outbox_id, database=db_path)
+    _assert_eq(row['status'], 'done', "stays done after cleanup crash")
+    _assert_eq(outbox.claim(database=db_path), None, "done is not claimed")
+    outbox.mark_done(
+        claimed['outbox_id'], database=db_path,
+        attempts=claimed['outbox_attempts'])
+    row = outbox.get_row(outbox_id, database=db_path)
+    _assert_eq(row['status'], 'done', "second mark_done is a no-op")
+
+
 def test_crash_after_lease_reclaim(db_path):
     outbox_id = outbox.enqueue(
         _rec_job(chat_id=3003), database=db_path, dispatch=False)
@@ -359,6 +381,7 @@ def main():
         test_sqlighter_creates_table,
         test_enqueue_survives_restart,
         test_claim_done_not_claimed_again,
+        test_fail_or_retry_skips_done_row,
         test_crash_after_lease_reclaim,
         test_heartbeat_renews_in_flight_lease,
         test_payload_json_round_trip,

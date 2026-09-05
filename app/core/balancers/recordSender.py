@@ -222,12 +222,17 @@ class RecordSender(threading.Thread):
         try:
             if input_data['action'] == 'rec':
                 recsModule.send_record_thread(input_data, thonbot)
+                # Helper already marked done after Telegram ACK. This is
+                # a no-op unless that write failed; then the receipt is
+                # still recorded after cleanup.
+                if outbox_id is not None:
+                    outbox.mark_done(outbox_id, attempts=attempts)
             elif input_data['action'] == 'update':
                 podcastsUpdater.update_feed_thread(input_data, thonbot)
+                if outbox_id is not None:
+                    outbox.mark_done(outbox_id, attempts=attempts)
             else:
                 return
-            if outbox_id is not None:
-                outbox.mark_done(outbox_id, attempts=attempts)
         except Exception as e:
             if outbox_id is not None:
                 try:

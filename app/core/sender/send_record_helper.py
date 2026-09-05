@@ -15,6 +15,7 @@ from agent.bot_telebot import bot
 from app.controller.builders.adminModule import send_message_to_creator
 from app.controller.builders.channelModule import bot_removed_from_channel_reaction
 from app.controller.types_helpers.recs import rec_callback_data_identifier
+from app.core.sender import outbox
 from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage, telegram_cache
 from app.service.podcast.podcast import prepare_podcast_update_time
@@ -104,7 +105,7 @@ class ChatParamsType(TypedDict, total=False):
 class Sender:
 
     def __init__(self, thonbot, link, chats: dict[int, ChatParamsType], lang_codes_by_utg, bitrates_tg, podcast_info,
-                 with_status_message=True):
+                 with_status_message=True, outbox_id=None, outbox_attempts=None):
         # link — link to file
         # chats — users with params
         # lang_codes_by_utg — tg id to language: {123: 'en'}
@@ -138,6 +139,8 @@ class Sender:
         self.bitrates_tg = bitrates_tg
         self.podcast_info = podcast_info
         self.withStatusMessage = with_status_message
+        self.outbox_id = outbox_id
+        self.outbox_attempts = outbox_attempts
 
         self.successfully_sent_to = []
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
@@ -404,6 +407,11 @@ class Sender:
         except Exception as e:
             self.logger.err(e)
 
+        # Telegram already has the audio (or the send attempt finished).
+        # Receipt before local cleanup: leftover mp3 is ok, a restart
+        # must not send the same job again.
+        self._mark_outbox_done_after_send()
+
         # Удаляем файл
         try:
             if self.fname is not None and self.fname != '':
@@ -428,6 +436,14 @@ class Sender:
         self.logger.log("Exit sending: ", datetime.datetime.now(), "\n\n\n")
 
         return self.successfully_sent_to
+
+    def _mark_outbox_done_after_send(self):
+        if self.outbox_id is None:
+            return
+        try:
+            outbox.mark_done(self.outbox_id, attempts=self.outbox_attempts)
+        except Exception as e:
+            self.logger.err("outbox mark_done after send:", e)
 
     def __get_annex(self):
         if self.recordSizeMb > 50:
