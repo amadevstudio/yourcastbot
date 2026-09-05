@@ -3,6 +3,9 @@
 
 In-memory queue.Queue is still used for in-process dispatch. The table is the
 source of truth across process restarts.
+
+Lease is short (~5 min). The worker must touch() the row while it downloads
+or sends. done is Telegram ACK; a 429 goes back to pending with available_at.
 """
 import datetime
 import json
@@ -15,11 +18,29 @@ from config import db_path
 from db.connection import connect_sqlite
 from lib.tools.logger import logger
 
-LEASE_SECONDS = 30 * 60
-HEARTBEAT_SECONDS = 60
+# Short lease: the worker must touch() while downloading/sending.
+# A dead worker then frees the row in minutes, not half an hour.
+LEASE_SECONDS = 5 * 60
+HEARTBEAT_SECONDS = 30
+TOUCH_MIN_INTERVAL_SECONDS = 15
 MAX_ATTEMPTS = 8
 MAX_BACKOFF_SECONDS = 5 * 60
 ACTIONS = ('rec', 'update')
+
+
+class OutboxRetryableError(Exception):
+    """Release the lease and retry later. Do not mark the job done.
+
+    Used for Telegram 429 / FloodWait on a rec job: the row stays in sqlite
+    with available_at, the worker does not sleep holding the lease.
+    """
+
+    def __init__(self, cause=None):
+        self.cause = cause
+        if cause is None:
+            super().__init__("outbox retry")
+        else:
+            super().__init__(str(cause))
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS send_outbox (
@@ -222,15 +243,26 @@ def job_from_row(row):
     }
 
 
+def flood_wait_seconds(error):
+    """Telegram retry-after, or None if this is not a flood error."""
+    if error is None:
+        return None
+    if isinstance(error, OutboxRetryableError) and error.cause is not None:
+        error = error.cause
+    from lib.telegram.general.errors import (
+        get_timeout_from_error_bot, get_timeout_from_error_client)
+    pause = get_timeout_from_error_bot(error)
+    if not pause:
+        pause = get_timeout_from_error_client(error)
+    if pause:
+        return int(pause)
+    return None
+
+
 def _retry_delay(attempts, error):
-    if error is not None:
-        from lib.telegram.general.errors import (
-            get_timeout_from_error_bot, get_timeout_from_error_client)
-        pause = get_timeout_from_error_bot(error)
-        if not pause:
-            pause = get_timeout_from_error_client(error)
-        if pause:
-            return int(pause)
+    pause = flood_wait_seconds(error)
+    if pause:
+        return pause
     return min(MAX_BACKOFF_SECONDS, 2 ** max(int(attempts), 1))
 
 
@@ -306,7 +338,11 @@ def enqueue(job, database=None, dispatch=True):
 
 
 def heartbeat(database=None):
-    """Renew leased_until for jobs this process is still working on."""
+    """Renew leased_until for jobs this process is still working on.
+
+    Belt for work that is not calling touch() itself. The download/send
+    path should touch the one outbox_id it holds.
+    """
     database = _database(database)
     ids = _inflight_ids(database)
     if not ids:
@@ -322,6 +358,38 @@ def heartbeat(database=None):
                 "WHERE status = 'leased' AND id IN (%s)" % placeholders,
                 [leased_until] + ids,
             )
+            count = conn.execute("SELECT changes()").fetchone()[0]
+            conn.execute("COMMIT")
+            return count
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+
+
+def touch(outbox_id, database=None, attempts=None):
+    """Renew the lease of one in-progress job. Safe no-op if already done."""
+    if outbox_id is None:
+        return 0
+    database = _database(database)
+    leased_until = iso_after(LEASE_SECONDS)
+    conn = _connect(database)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if attempts is None:
+                conn.execute(
+                    "UPDATE send_outbox SET leased_until = ? "
+                    "WHERE id = ? AND status = 'leased'",
+                    (leased_until, int(outbox_id)),
+                )
+            else:
+                conn.execute(
+                    "UPDATE send_outbox SET leased_until = ? "
+                    "WHERE id = ? AND status = 'leased' AND attempts = ?",
+                    (leased_until, int(outbox_id), int(attempts)),
+                )
             count = conn.execute("SELECT changes()").fetchone()[0]
             conn.execute("COMMIT")
             return count

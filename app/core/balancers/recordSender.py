@@ -51,9 +51,7 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
                 self.threads[action][i].start()
 
     def run(self):
-        heartbeat = threading.Thread(
-            target=self._heartbeat_loop, name="Outbox heartbeat", daemon=True)
-        heartbeat.start()
+        self._ensure_heartbeat()
         try:
             outbox.reclaim(force=True)
             self._drain_outbox()
@@ -62,6 +60,7 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         self.outbox_ready = True
 
         while True:
+            self._ensure_heartbeat()
             try:
                 input_data = self.main_queue.get(timeout=15)
             except queue.Empty:
@@ -83,6 +82,14 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
                     self.main_queue.task_done()
                 except ValueError:
                     pass
+
+    def _ensure_heartbeat(self):
+        thread = getattr(self, '_heartbeat_thread', None)
+        if thread is not None and thread.is_alive():
+            return
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop, name="Outbox heartbeat", daemon=True)
+        self._heartbeat_thread.start()
 
     def _heartbeat_loop(self):
         while True:
@@ -222,9 +229,8 @@ class RecordSender(threading.Thread):
         try:
             if input_data['action'] == 'rec':
                 recsModule.send_record_thread(input_data, thonbot)
-                # Helper already marked done after Telegram ACK. This is
-                # a no-op unless that write failed; then the receipt is
-                # still recorded after cleanup.
+                # Helper marks done only after Telegram ACK. This second
+                # write is a no-op unless that one failed after ACK.
                 if outbox_id is not None:
                     outbox.mark_done(outbox_id, attempts=attempts)
             elif input_data['action'] == 'update':

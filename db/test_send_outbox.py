@@ -363,6 +363,91 @@ def test_heartbeat_extends_lease(db_path):
     outbox.mark_done(outbox_id, database=db_path, attempts=claimed['outbox_attempts'])
 
 
+def test_lease_is_short(_db_path=None):
+    _assert_true(
+        outbox.LEASE_SECONDS <= 5 * 60, "lease is at most 5 minutes")
+    _assert_true(
+        outbox.HEARTBEAT_SECONDS < outbox.LEASE_SECONDS,
+        "heartbeat is faster than the lease")
+    _assert_true(
+        outbox.TOUCH_MIN_INTERVAL_SECONDS < outbox.HEARTBEAT_SECONDS,
+        "touch from the worker is at least as frequent as the belt loop")
+
+
+def test_flood_wait_seconds(_db_path=None):
+    _assert_eq(
+        outbox.flood_wait_seconds(
+            RuntimeError("Too Many Requests: retry after 37")),
+        38, "bot api retry-after plus one")
+    _assert_eq(
+        outbox.flood_wait_seconds(
+            RuntimeError("A wait of 10 seconds is required")),
+        11, "telethon flood wait plus one")
+    wrapped = outbox.OutboxRetryableError(
+        RuntimeError("Too Many Requests: retry after 12"))
+    _assert_eq(
+        outbox.flood_wait_seconds(wrapped), 13,
+        "OutboxRetryableError unwraps cause")
+    _assert_eq(
+        outbox.flood_wait_seconds(RuntimeError("chat not found")),
+        None, "non-flood is None")
+
+
+def test_touch_renews_one_lease(db_path):
+    first_id = outbox.enqueue(
+        _rec_job(chat_id=9101), database=db_path, dispatch=False)
+    second_id = outbox.enqueue(
+        _rec_job(chat_id=9102), database=db_path, dispatch=False)
+    first = outbox.claim(database=db_path, outbox_id=first_id)
+    second = outbox.claim(database=db_path, outbox_id=second_id)
+    db = SQLighter(db_path)
+    try:
+        db.cursor.execute(
+            "UPDATE send_outbox SET leased_until = ? WHERE id IN (?, ?)",
+            ("2000-01-01T00:00:00Z", first_id, second_id))
+        db.connection.commit()
+    finally:
+        db.close()
+    n = outbox.touch(
+        first_id, database=db_path, attempts=first['outbox_attempts'])
+    _assert_eq(n, 1, "touch updated one row")
+    first_row = outbox.get_row(first_id, database=db_path)
+    second_row = outbox.get_row(second_id, database=db_path)
+    _assert_true(
+        first_row['leased_until'] > "2000-01-01T00:00:00Z",
+        "touched row moved into the future")
+    _assert_eq(
+        second_row['leased_until'], "2000-01-01T00:00:00Z",
+        "untouched row stayed expired")
+    outbox.mark_done(
+        first_id, database=db_path, attempts=first['outbox_attempts'])
+    n = outbox.touch(
+        first_id, database=db_path, attempts=first['outbox_attempts'])
+    _assert_eq(n, 0, "touch of a done row is a no-op")
+    outbox.mark_done(
+        second_id, database=db_path, attempts=second['outbox_attempts'])
+
+
+def test_fail_or_retry_uses_telegram_retry_after(db_path):
+    outbox_id = outbox.enqueue(
+        _rec_job(chat_id=9202), database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, outbox_id=outbox_id)
+    before = outbox.now_iso()
+    outcome = outbox.fail_or_retry(
+        outbox_id,
+        error=RuntimeError("Too Many Requests: retry after 37"),
+        database=db_path, attempts=claimed['outbox_attempts'],
+        dispatch=False)
+    _assert_eq(outcome, 'pending', "429 goes back to pending")
+    row = outbox.get_row(outbox_id, database=db_path)
+    _assert_eq(row['status'], 'pending', "row is pending")
+    _assert_true(
+        row['available_at'] > before,
+        "available_at is in the future")
+    claimed_early = outbox.claim(database=db_path, outbox_id=outbox_id)
+    _assert_eq(claimed_early, None, "not claimable before retry-after")
+
+
 def test_force_reclaim_after_restart(db_path):
     outbox_id = outbox.enqueue(
         _rec_job(chat_id=9010), database=db_path, dispatch=False)
@@ -389,6 +474,10 @@ def main():
         test_claim_is_exclusive,
         test_max_attempts_marks_failed,
         test_heartbeat_extends_lease,
+        test_lease_is_short,
+        test_flood_wait_seconds,
+        test_touch_renews_one_lease,
+        test_fail_or_retry_uses_telegram_retry_after,
         test_force_reclaim_after_restart,
     )
     for index, case in enumerate(cases):

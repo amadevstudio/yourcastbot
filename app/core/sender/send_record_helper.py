@@ -141,6 +141,7 @@ class Sender:
         self.withStatusMessage = with_status_message
         self.outbox_id = outbox_id
         self.outbox_attempts = outbox_attempts
+        self._last_outbox_touch = None
 
         self.successfully_sent_to = []
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
@@ -214,6 +215,45 @@ class Sender:
         #     logger.log("Internal memory usage (obj, number, mem):\n", debug.memory_usage('pympler'))
         #     logger.log("Internal memory usage:\n", debug.memory_usage('tracemalloc'))
         #     # compare_to, traceback.format, get_traced_memory
+
+    def _touch_outbox(self):
+        if self.outbox_id is None:
+            return
+        now = datetime.datetime.now()
+        if self._last_outbox_touch is not None:
+            elapsed = (now - self._last_outbox_touch).total_seconds()
+            if elapsed < outbox.TOUCH_MIN_INTERVAL_SECONDS:
+                return
+        self._last_outbox_touch = now
+        try:
+            outbox.touch(self.outbox_id, attempts=self.outbox_attempts)
+        except Exception as e:
+            self.logger.err("outbox touch:", e)
+
+    def _sleep_or_release_flood(self, error):
+        """Live-notify sleeps; a rec outbox job releases the lease instead."""
+        pause = get_timeout_from_error_bot(error)
+        if not pause:
+            pause = get_timeout_from_error_client(error)
+        if not pause:
+            return False
+        if self.outbox_id is not None:
+            raise outbox.OutboxRetryableError(error)
+        time.sleep(pause)
+        return True
+
+    def _outbox_job_complete(self):
+        if self.outbox_id is None:
+            return True
+        if self.__too_big_record:
+            return True
+        for chat_id in self.chats:
+            if (
+                    chat_id not in self.successfully_sent_to
+                    and chat_id not in self.blocked_chats
+            ):
+                return False
+        return True
 
     def __chat_is_silent(self, chat_id):
         if 'silent' not in self.chats[chat_id] \
@@ -351,6 +391,8 @@ class Sender:
     def send_record(self):
         self.logger.log(f"Begin sending {self.link} to {','.join(map(str, self.chats.keys()))}")
 
+        retryable = None
+        self._touch_outbox()
         try:
 
             # iTunes
@@ -388,6 +430,8 @@ class Sender:
                                 successfully_via_download = self.send_via_agent(cant_sent_to)
                                 self.successfully_sent_to.extend(successfully_via_download)
 
+                    except outbox.OutboxRetryableError:
+                        raise
                     except Exception as e:
                         self.logger.err(e)
 
@@ -403,14 +447,19 @@ class Sender:
                     except Exception as e:
                         self.logger.err(e)
 
+        except outbox.OutboxRetryableError as e:
+            retryable = e
         # All services error
         except Exception as e:
             self.logger.err(e)
+            if self.outbox_id is not None:
+                retryable = e
 
-        # Telegram already has the audio (or the send attempt finished).
-        # Receipt before local cleanup: leftover mp3 is ok, a restart
-        # must not send the same job again.
-        self._mark_outbox_done_after_send()
+        complete = self._outbox_job_complete()
+        # Receipt only after Telegram ACK (or a terminal outcome: too big /
+        # blocked chat). A 429 must not be done — leftover mp3 is ok.
+        if complete:
+            self._mark_outbox_done_after_send()
 
         # Удаляем файл
         try:
@@ -421,12 +470,13 @@ class Sender:
 
         self.__delete_status_messages()
 
-        # Отвечаем, если и кому не получилось отправить
+        # Don't tell the user "unavailable" if the outbox will retry.
+        will_retry = self.outbox_id is not None and not complete
         try:
             if self.__too_big_record:
                 self.__send_too_big_record()
 
-            else:
+            elif not will_retry:
                 for chat_id in self.chats:
                     if chat_id not in self.successfully_sent_to:
                         self.__send_record_unavailable(targets=[chat_id])
@@ -434,6 +484,11 @@ class Sender:
             self.logger.warn(e)
 
         self.logger.log("Exit sending: ", datetime.datetime.now(), "\n\n\n")
+
+        if will_retry:
+            if retryable is not None:
+                raise retryable
+            raise RuntimeError("rec send failed")
 
         return self.successfully_sent_to
 
@@ -477,6 +532,7 @@ class Sender:
             self.percent_step = 2
 
     def __file_progress(self, mode, done, size: int | None):
+        self._touch_outbox()
         if mode not in ["up", "down"]:
             return
 
@@ -631,11 +687,9 @@ class Sender:
                         continue
 
                     # для юзера, если много отправлений, пытаемся ещё раз
-                    pause = get_timeout_from_error_client(e)
-                    if pause:
+                    if self._sleep_or_release_flood(e):
                         # вторая попытка не должна ронять рассылку остальным получателям
                         try:
-                            time.sleep(pause)
                             send_uploaded()
                         except Exception as retry_e:
                             self.logger.err(retry_e)
@@ -692,9 +746,7 @@ class Sender:
                             continue
 
                         # попытка 2, если проблема в паузе
-                        pause = get_timeout_from_error_bot(e)
-                        if pause:
-                            time.sleep(pause)
+                        if self._sleep_or_release_flood(e):
                             try:
                                 new_file_id = self.send_audio(
                                     chat_id,
@@ -739,9 +791,7 @@ class Sender:
                     continue
 
                 # попытка 2, если проблема в паузе
-                pause = get_timeout_from_error_bot(e)
-                if pause:
-                    time.sleep(pause)
+                if self._sleep_or_release_flood(e):
                     try:
                         self.send_audio(chat_id, self.link, record_message_text)
                         successfully_sent_to.append(chat_id)
