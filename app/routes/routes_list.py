@@ -14,6 +14,7 @@ AvailableRoutes = Literal[
     'bs_stars', 'bs_stars_pay',
     'bs_robokassa', 'bs_robokassa_input',
     'help',
+    'setts',
     'addChByRss', 'addBRss',
     'MyTgChannels', 'addTgChannel', 'myTgChnlList', 'myTgChannel', 'myTgChSubs',
     'topGnrs', 'top_ch',
@@ -32,7 +33,8 @@ AvailableCommands = Literal[
     'search',
     'subscription', 'payment',
     'top',
-    'my_tg_channels'
+    'my_tg_channels',
+    'settings'
 ]
 
 
@@ -41,6 +43,7 @@ AvailableActions = Literal[
     'subscription', 'notifications',
     'rate',
     'rec', 'nrec',
+    'digestMute', 'digestToggle',
     'bs_patrupd',
     'myTgChDel', 'changeTgChActive', 'myTgChDel', 'myTgChSubChActive'
 ]

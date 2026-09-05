@@ -100,8 +100,9 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
 
     b1: InlineButtonData = {'text': get_message("bot_subscription", language_code),
                             'callback_data': "{\"tp\": \"botSub\"}"}
-    # b2 = {'text': get_message("settings", language_code), '#':     callback_data="{\"tp\": \"setts\"}"}
-    menu_keyboard.append([b1])
+    b2: InlineButtonData = {'text': get_message("settings", language_code),
+                            'callback_data': "{\"tp\": \"setts\"}"}
+    menu_keyboard.append([b1, b2])
 
     return [{
         'type': 'text',

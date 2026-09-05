@@ -1,7 +1,7 @@
 from typing import TypedDict, Callable, Literal, Dict, Optional, Required
 
 from app.controller.builders import welcomeModule, menuModule, subsModule, searchModule, podcastModule, recsModule, \
-    helpModule, channelModule, topModule, adminModule
+    helpModule, channelModule, topModule, adminModule, settingsModule
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
@@ -47,7 +47,7 @@ class RouteMap:
         'menu': {
             'method': menuModule.send_menu_message,
             'available_from': ['command', 'call'],
-            'routes': ['subs', 'search', 'another', 'update', 'botSub', 'help', 'addChByRss', 'myTgChannels'],
+            'routes': ['subs', 'search', 'another', 'update', 'botSub', 'help', 'addChByRss', 'myTgChannels', 'setts'],
         },
 
         'search': {
@@ -174,6 +174,22 @@ class RouteMap:
         'help': {
             'method': helpModule.open_help,
             'available_from': ['call', 'command'],
+        },
+
+        'setts': {
+            'method': settingsModule.open_settings,
+            'available_from': ['command', 'call'],
+            'commands': ['settings'],
+            'actions': {
+                'digestMute': {
+                    'method': settingsModule.mute_digest_reminders,
+                    'state_independent': True,
+                },
+                'digestToggle': {
+                    'method': settingsModule.toggle_digest_reminders,
+                    'state_independent': True,
+                }
+            }
         },
 
         'addChByRss': {

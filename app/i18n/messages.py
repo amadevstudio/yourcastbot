@@ -1696,17 +1696,17 @@ messages = {
     },
     "youHaveNewEpisodes": {
         "ru": {
-            "ro_msg": "*У вас есть новые эпизоды!*\n\nПодпишитесь на бота /subscription"
+            "ro_msg": "<b>У вас есть новые эпизоды!</b>\n\nПодпишитесь на бота /subscription"
                       " или пригласите пользователей, чтобы получить аудиозаписи.\n"
                       "Ваша реферальная ссылка:"
         },
         "en": {
-            "ro_msg": "*You have new episodes!*\n\n"
+            "ro_msg": "<b>You have new episodes!</b>\n\n"
                       "Subscribe /subscribe to the bot or invite users to get audio records.\n"
                       "Your referral link:"
         },
         "pt-BR": {
-            "ro_msg": "*Você tem novos episódios!*\n\nInscreva-se no bot enviando "
+            "ro_msg": "<b>Você tem novos episódios!</b>\n\nInscreva-se no bot enviando "
                       "/subscription ou convide usuários para receber arquivos de áudio.\n"
                       "Seu link de convite:"
         }
@@ -1720,6 +1720,126 @@ messages = {
         },
         "pt-BR": {
             "ro_msg": "<b>Você tem novos episódios!</b>"
+        }
+    },
+    "nosubDigestMuteButton": {
+        "ru": {
+            "ro_msg": "Не присылать такие уведомления"
+        },
+        "en": {
+            "ro_msg": "Don't send these notifications"
+        },
+        "pt-BR": {
+            "ro_msg": "Não enviar esses avisos"
+        },
+        "es": {
+            "ro_msg": "No enviar estos avisos"
+        },
+        "de": {
+            "ro_msg": "Solche Hinweise nicht senden"
+        },
+        "he": {
+            "ro_msg": "לא לשלוח התראות כאלה"
+        }
+    },
+    "nosubDigestMutedToast": {
+        "ru": {
+            "ro_msg": "Хорошо. Можете изменить это в Настройках."
+        },
+        "en": {
+            "ro_msg": "Okay. You can change this in Settings."
+        },
+        "pt-BR": {
+            "ro_msg": "Certo. Você pode mudar isso em Configurações."
+        },
+        "es": {
+            "ro_msg": "Vale. Puedes cambiarlo en Ajustes."
+        },
+        "de": {
+            "ro_msg": "Okay. Das kannst du in den Einstellungen ändern."
+        },
+        "he": {
+            "ro_msg": "טוב. אפשר לשנות את זה בהגדרות."
+        }
+    },
+    "nosubDigestRemindersOn": {
+        "ru": {
+            "ro_msg": "Напоминания об эпизодах включены"
+        },
+        "en": {
+            "ro_msg": "Episode reminders on"
+        },
+        "pt-BR": {
+            "ro_msg": "Lembretes de episódios ligados"
+        },
+        "es": {
+            "ro_msg": "Avisos de episodios activados"
+        },
+        "de": {
+            "ro_msg": "Folgen-Erinnerungen an"
+        },
+        "he": {
+            "ro_msg": "תזכורות לפרקים פועלות"
+        }
+    },
+    "nosubDigestRemindersOff": {
+        "ru": {
+            "ro_msg": "Напоминания об эпизодах выключены"
+        },
+        "en": {
+            "ro_msg": "Episode reminders off"
+        },
+        "pt-BR": {
+            "ro_msg": "Lembretes de episódios desligados"
+        },
+        "es": {
+            "ro_msg": "Avisos de episodios desactivados"
+        },
+        "de": {
+            "ro_msg": "Folgen-Erinnerungen aus"
+        },
+        "he": {
+            "ro_msg": "תזכורות לפרקים כבויות"
+        }
+    },
+    "nosubDigestRemindersOnToast": {
+        "ru": {
+            "ro_msg": "Напоминания об эпизодах включены"
+        },
+        "en": {
+            "ro_msg": "Episode reminders are on"
+        },
+        "pt-BR": {
+            "ro_msg": "Lembretes de episódios ligados"
+        },
+        "es": {
+            "ro_msg": "Avisos de episodios activados"
+        },
+        "de": {
+            "ro_msg": "Folgen-Erinnerungen sind an"
+        },
+        "he": {
+            "ro_msg": "תזכורות לפרקים פועלות"
+        }
+    },
+    "nosubDigestRemindersOffToast": {
+        "ru": {
+            "ro_msg": "Напоминания об эпизодах выключены"
+        },
+        "en": {
+            "ro_msg": "Episode reminders are off"
+        },
+        "pt-BR": {
+            "ro_msg": "Lembretes de episódios desligados"
+        },
+        "es": {
+            "ro_msg": "Avisos de episodios desactivados"
+        },
+        "de": {
+            "ro_msg": "Folgen-Erinnerungen sind aus"
+        },
+        "he": {
+            "ro_msg": "תזכורות לפרקים כבויות"
         }
     },
     "noSubs": {

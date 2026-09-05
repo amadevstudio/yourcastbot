@@ -7,3 +7,6 @@ class UserDBType(TypedDict, total=False):
     lang: str
     bitrate: str
     ref_id: int
+    deleted_at: str
+    nosub_digest_enabled: int
+    nosub_digest_sent_at: str
