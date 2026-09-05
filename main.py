@@ -150,6 +150,13 @@ def run_jobs():
     t_balance_watcher.start()
     watched.append(t_balance_watcher)
 
+    from app.jobs.digest_watcher import digest_watcher
+    t_digest_watcher = threading.Thread(target=digest_watcher)
+    t_digest_watcher.daemon = True
+    t_digest_watcher.name = "Digest watcher"
+    t_digest_watcher.start()
+    watched.append(t_digest_watcher)
+
     while True:
         time.sleep(2)
         for t in watched:

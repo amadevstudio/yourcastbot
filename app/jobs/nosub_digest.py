@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""No-tariff digest: 'you have new episodes' after an updater circle.
+"""No-tariff digest: 'you have new episodes' for users without a bot tariff.
 
 Paid users get the audio in send_new_records_by_channel. Users with
-notify=1 but no bot tariff are only flagged here; the updater sends one
-message per user when the circle finishes.
+notify=1 but no bot tariff are only flagged into digest_outbox; the jobs
+process drains that queue so the RSS circle is not blocked.
 
 Last-sent and opt-out are columns on users (durable, like other account
-prefs). runtime_kv only holds the ephemeral per-circle flag list.
+prefs). Leftover runtime_kv flags are migrated once into digest_outbox.
 """
 import datetime
 

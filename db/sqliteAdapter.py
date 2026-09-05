@@ -31,6 +31,9 @@ _runtime_kv_ready = set()
 _users_digest_lock = threading.Lock()
 _users_digest_ready = set()
 
+_digest_outbox_lock = threading.Lock()
+_digest_outbox_ready = set()
+
 
 def _ensure_channel_http_validators_columns(connection: sqlite3.Connection) -> None:
     # db/migrations/00012_channel_http_validators.py adds ETag/Last-Modified
@@ -150,6 +153,28 @@ def ensure_bot_runtime_kv_table(connection: sqlite3.Connection, database=None) -
             logger.err("Could not ensure bot_runtime_kv table:", e)
 
 
+def ensure_digest_outbox_table(connection: sqlite3.Connection, database=None) -> None:
+    # Jobs drain this table; updater only inserts user ids. Created here
+    # because deploy restarts without running migrations by hand.
+    key = database
+    if key is not None and key in _digest_outbox_ready:
+        return
+
+    with _digest_outbox_lock:
+        if key is not None and key in _digest_outbox_ready:
+            return
+        try:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS digest_outbox ("
+                "user_telegram_id INTEGER PRIMARY KEY, "
+                "created_at TEXT NOT NULL)")
+            connection.commit()
+            if key is not None:
+                _digest_outbox_ready.add(key)
+        except Exception as e:
+            logger.err("Could not ensure digest_outbox table:", e)
+
+
 def _pragma_user_columns(connection: sqlite3.Connection) -> list[str]:
     return [
         row[1] for row in
@@ -241,6 +266,7 @@ class SQLighter:
         ensure_users_nosub_digest_columns(self.connection, database)
         ensure_send_outbox_table(self.connection, database)
         ensure_bot_runtime_kv_table(self.connection, database)
+        ensure_digest_outbox_table(self.connection, database)
         ensure_hot_path_indexes(self.connection, database)
 
     def __enter__(self):

@@ -53,6 +53,8 @@ def _simulate_restart(db_path):
     import db.sqliteAdapter as sqlite_adapter
     sqlite_adapter._send_outbox_ready.clear()
     sqlite_adapter._runtime_kv_ready.clear()
+    sqlite_adapter._digest_outbox_ready.clear()
+    sqlite_adapter._users_digest_ready.clear()
     sqlite_adapter._users_deleted_at_checked = False
     sqlite_adapter._channel_http_validators_checked = False
     outbox.clear_in_flight()
@@ -92,6 +94,8 @@ def test_sqlighter_creates_table(db_path):
         _assert_true('send_outbox' in names, "SQLighter creates send_outbox")
         _assert_true(
             'bot_runtime_kv' in names, "SQLighter creates bot_runtime_kv")
+        _assert_true(
+            'digest_outbox' in names, "SQLighter creates digest_outbox")
         columns = [
             row[1] for row in db.connection.execute(
                 "PRAGMA table_info(send_outbox)").fetchall()]
