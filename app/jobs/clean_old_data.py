@@ -3,12 +3,16 @@ import re
 import time
 
 from config import work_dir
+from lib.tools.logger import logger
 
 
 def main(interval=24 * 60):  # minutes
     while True:
-        clean_old_records()
-        clean_old_logs()
+        for step in (clean_old_records, clean_old_logs, clean_old_outbox):
+            try:
+                step()
+            except Exception as e:
+                logger.err("clean_old_data/%s:" % step.__name__, e)
         time.sleep(interval * 60)
 
 
@@ -22,9 +26,21 @@ def clean_old_logs():
     cleaner(log_dir, '.*\.log', 3)
 
 
+def clean_old_outbox(database=None):
+    """Drop old done/failed send_outbox rows. Does not VACUUM."""
+    from app.core.sender import outbox
+    counts = outbox.purge_old(database=database)
+    logger.log(
+        "send_outbox purge done=%s failed=%s" % (
+            counts['done'], counts['failed']))
+    return counts
+
+
 def cleaner(path, pattern=None, older_than_days=1):
     now = time.time()
     print("Cleaning... ", path, pattern)
+    if not os.path.isdir(path):
+        return
     for f in os.listdir(path):
         file_path = os.path.join(path, f)
         if re.match(pattern, f) is not None and os.path.isfile(file_path) \

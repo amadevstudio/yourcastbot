@@ -459,6 +459,126 @@ def test_force_reclaim_after_restart(db_path):
     _assert_eq(claimed['outbox_id'], outbox_id, "restarted job is claimable")
 
 
+def _set_created_at(db_path, outbox_id, created_at):
+    db = SQLighter(db_path)
+    try:
+        db.cursor.execute(
+            "UPDATE send_outbox SET created_at = ? WHERE id = ?",
+            (created_at, outbox_id))
+        db.connection.commit()
+    finally:
+        db.close()
+
+
+def _set_status(db_path, outbox_id, status):
+    db = SQLighter(db_path)
+    try:
+        db.cursor.execute(
+            "UPDATE send_outbox SET status = ? WHERE id = ?",
+            (status, outbox_id))
+        db.connection.commit()
+    finally:
+        db.close()
+
+
+def test_purge_keep_days(_db_path=None):
+    _assert_true(outbox.DONE_KEEP_DAYS >= 1, "done rows kept at least a day")
+    _assert_true(
+        outbox.FAILED_KEEP_DAYS >= outbox.DONE_KEEP_DAYS,
+        "failed rows kept at least as long as done")
+    try:
+        outbox.purge_old(done_after_days=0)
+    except ValueError:
+        print("ok  purge refuses keep days below 1")
+    else:
+        raise AssertionError("keep days 0 must be rejected")
+
+
+def test_purge_keeps_failed_longer(db_path):
+    ten_days_ago = outbox.iso_before(10)
+    done_id = outbox.enqueue(
+        _rec_job(chat_id=9311), database=db_path, dispatch=False)
+    failed_id = outbox.enqueue(
+        _rec_job(chat_id=9312), database=db_path, dispatch=False)
+    _set_status(db_path, done_id, 'done')
+    _set_status(db_path, failed_id, 'failed')
+    _set_created_at(db_path, done_id, ten_days_ago)
+    _set_created_at(db_path, failed_id, ten_days_ago)
+    counts = outbox.purge_old(database=db_path)
+    _assert_eq(counts['done'], 1, "10-day-old done deleted")
+    _assert_eq(counts['failed'], 0, "10-day-old failed kept")
+    _assert_eq(
+        outbox.get_row(done_id, database=db_path), None, "done gone")
+    _assert_eq(
+        outbox.get_row(failed_id, database=db_path)['status'],
+        'failed', "failed still there")
+
+
+def test_purge_old_leaves_live_rows(db_path):
+    ancient = "2000-01-01T00:00:00Z"
+    recent = outbox.now_iso()
+    old_done = outbox.enqueue(
+        _rec_job(chat_id=9301), database=db_path, dispatch=False)
+    new_done = outbox.enqueue(
+        _rec_job(chat_id=9302), database=db_path, dispatch=False)
+    old_failed = outbox.enqueue(
+        _rec_job(chat_id=9303), database=db_path, dispatch=False)
+    new_failed = outbox.enqueue(
+        _rec_job(chat_id=9304), database=db_path, dispatch=False)
+    old_pending = outbox.enqueue(
+        _rec_job(chat_id=9305), database=db_path, dispatch=False)
+    old_leased = outbox.enqueue(
+        _rec_job(chat_id=9306), database=db_path, dispatch=False)
+    outbox.claim(database=db_path, outbox_id=old_leased)
+
+    _set_status(db_path, old_done, 'done')
+    _set_status(db_path, new_done, 'done')
+    _set_status(db_path, old_failed, 'failed')
+    _set_status(db_path, new_failed, 'failed')
+    _set_created_at(db_path, old_done, ancient)
+    _set_created_at(db_path, old_failed, ancient)
+    _set_created_at(db_path, old_pending, ancient)
+    _set_created_at(db_path, old_leased, ancient)
+    _set_created_at(db_path, new_done, recent)
+    _set_created_at(db_path, new_failed, recent)
+
+    counts = outbox.purge_old(database=db_path)
+    _assert_eq(counts['done'], 1, "one old done row deleted")
+    _assert_eq(counts['failed'], 1, "one old failed row deleted")
+    _assert_eq(
+        outbox.get_row(old_done, database=db_path), None, "old done gone")
+    _assert_eq(
+        outbox.get_row(old_failed, database=db_path), None, "old failed gone")
+    _assert_eq(
+        outbox.get_row(new_done, database=db_path)['status'],
+        'done', "recent done kept")
+    _assert_eq(
+        outbox.get_row(new_failed, database=db_path)['status'],
+        'failed', "recent failed kept")
+    _assert_eq(
+        outbox.get_row(old_pending, database=db_path)['status'],
+        'pending', "ancient pending kept")
+    _assert_eq(
+        outbox.get_row(old_leased, database=db_path)['status'],
+        'leased', "ancient leased kept")
+    claimed = outbox.claim(database=db_path, outbox_id=old_pending)
+    _assert_eq(
+        claimed['outbox_id'], old_pending, "pending still claimable after purge")
+
+
+def test_clean_old_outbox_job(db_path):
+    from app.jobs import clean_old_data
+    old_done = outbox.enqueue(
+        _rec_job(chat_id=9401), database=db_path, dispatch=False)
+    _set_status(db_path, old_done, 'done')
+    _set_created_at(db_path, old_done, "2000-01-01T00:00:00Z")
+    counts = clean_old_data.clean_old_outbox(database=db_path)
+    _assert_eq(counts['done'], 1, "daily job deletes old done")
+    _assert_eq(
+        outbox.get_row(old_done, database=db_path), None,
+        "daily job removed the row")
+
+
 def main():
     tmpdir = tempfile.mkdtemp(prefix="yourcast_send_outbox_")
     cases = (
@@ -479,6 +599,10 @@ def main():
         test_touch_renews_one_lease,
         test_fail_or_retry_uses_telegram_retry_after,
         test_force_reclaim_after_restart,
+        test_purge_keep_days,
+        test_purge_old_leaves_live_rows,
+        test_purge_keeps_failed_longer,
+        test_clean_old_outbox_job,
     )
     for index, case in enumerate(cases):
         path = os.path.join(tmpdir, "case_%d.db" % index)
