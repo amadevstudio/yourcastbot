@@ -644,33 +644,33 @@ def send_new_records_by_channel(
                 + " ___ link: " + str(link)
                 + " ___ (feed: " + str(feed_url) + ")").encode('utf-8'))
 
-        # !!! Функция отправки
-        sender = send_record_helper.Sender(
-            thonbot, link, last_guids_to_users[pgd], utg_langs, bitrates_tg,
-            podcast_info, with_status_message=False)
-        successfully_sent_to = sender.send_record()
+        recipients = last_guids_to_users[pgd]
+        recipient_langs = {
+            uid: utg_langs[uid] for uid in recipients if uid in utg_langs}
+        recipient_bitrates = {
+            uid: bitrates_tg[uid] for uid in recipients if uid in bitrates_tg}
+        outbox.enqueue({
+            'action': 'rec',
+            'user_id': 'c%s' % channel['id'],
+            'func_params': {
+                'link': link,
+                'chat_ids': recipients,
+                'utglangs': recipient_langs,
+                'bitratestg': recipient_bitrates,
+                'podcastInfo': podcast_info,
+                'with_status_message': False,
+                'consume_notify': not manual,
+            },
+        })
 
         if not manual:
-            for user_tg_id in successfully_sent_to:
+            # Same-channel episode cap for this circle. DB notify_count
+            # decreases when Telegram ACKs, not here.
+            for user_tg_id in recipients:
                 if notify_left_tg[user_tg_id] > 0:
-                    db_users = SQLighter(db_path)
-                    db_users.decrease_notify_count(user_tg_id, 1)
-                    db_users.close()
                     notify_left_tg[user_tg_id] -= 1
-                if notify_left_tg[user_tg_id] == 0:
-                    try:
-                        outer_sender(user_tg_id, [{
-                            'type': 'text', 'text': get_message("notificationsEnded", utg_langs[user_tg_id]),
-                            'reply_markup': [[{
-                                'text': get_message("tariffs", utg_langs[user_tg_id]),
-                                'callback_data': {'tp': 'bs_trfs'}
-                            }]]
-                        }])
-                    except Exception as e:
-                        logger.err(
-                            "podcastsUpdater/notificationsEnded:", user_tg_id, e)
 
-        logger.log("SENT AUTOMATICALLY! To: ", successfully_sent_to)
+        logger.log("ENQUEUED AUTOMATICALLY! To: ", list(recipients))
 
     db_users = SQLighter(db_path)
 

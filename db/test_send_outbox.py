@@ -459,6 +459,91 @@ def test_force_reclaim_after_restart(db_path):
     _assert_eq(claimed['outbox_id'], outbox_id, "restarted job is claimable")
 
 
+def test_rec_payload_circle_flags(db_path):
+    outbox_id = outbox.enqueue({
+        'action': 'rec',
+        'user_id': 'c42',
+        'func_params': {
+            'link': 'https://example.com/ep.mp3',
+            'chat_ids': {1001: {'silent': True}, 1002: {}},
+            'utglangs': {1001: 'ru', 1002: 'en'},
+            'bitratestg': {1001: 64, 1002: 128},
+            'podcastInfo': {'id': 42, 'title': 'Ep', 'recordUniqId': 'g1'},
+            'with_status_message': False,
+            'consume_notify': True,
+        },
+    }, database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, outbox_id=outbox_id)
+    params = claimed['func_params']
+    _assert_eq(params['with_status_message'], False, "no status toast")
+    _assert_eq(params['consume_notify'], True, "circle consumes notify")
+    _assert_eq(claimed['user_id'], 'c42', "circle user_id stays a string")
+    _assert_eq(params['chat_ids'][1001]['silent'], True, "chat params kept")
+
+
+def test_old_rec_payload_defaults_to_click(db_path):
+    claimed_params = outbox.func_params_from_storage('rec', {
+        'link': 'https://example.com/ep.mp3',
+        'chat_ids': {'1001': {}},
+        'utglangs': {'1001': 'en'},
+        'bitratestg': {'1001': 64},
+        'podcastInfo': {},
+    })
+    _assert_eq(
+        claimed_params['with_status_message'], True,
+        "legacy rec still shows status")
+    _assert_eq(
+        claimed_params['consume_notify'], False,
+        "legacy rec does not consume notify")
+
+
+def test_update_rec_recipients_shrinks_chats(db_path):
+    outbox_id = outbox.enqueue({
+        'action': 'rec',
+        'user_id': 'c7',
+        'func_params': {
+            'link': 'https://example.com/ep.mp3',
+            'chat_ids': {11: {}, 12: {}, 13: {}},
+            'utglangs': {11: 'en', 12: 'ru', 13: 'en'},
+            'bitratestg': {11: 64, 12: 64, 13: 64},
+            'podcastInfo': {'recordUniqId': 'ep7'},
+            'with_status_message': False,
+            'consume_notify': True,
+        },
+    }, database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, outbox_id=outbox_id)
+    n = outbox.update_rec_recipients(
+        outbox_id,
+        {12: {}, 13: {}},
+        utglangs={12: 'ru', 13: 'en'},
+        bitratestg={12: 64, 13: 64},
+        database=db_path, attempts=claimed['outbox_attempts'])
+    _assert_eq(n, 1, "recipients updated")
+    row = outbox.get_row(outbox_id, database=db_path)
+    payload = json.loads(row['payload_json'])
+    chats = payload['func_params']['chat_ids']
+    _assert_eq(sorted(int(k) for k in chats), [12, 13], "delivered chat dropped")
+    _assert_true('11' not in chats, "ack'd chat gone")
+    outbox.fail_or_retry(
+        outbox_id, error=RuntimeError("Too Many Requests: retry after 1"),
+        database=db_path, attempts=claimed['outbox_attempts'], dispatch=False)
+    db = SQLighter(db_path)
+    try:
+        db.cursor.execute(
+            "UPDATE send_outbox SET available_at = ? WHERE id = ?",
+            ("2000-01-01T00:00:00Z", outbox_id))
+        db.connection.commit()
+    finally:
+        db.close()
+    again = outbox.claim(database=db_path, outbox_id=outbox_id)
+    _assert_eq(
+        sorted(again['func_params']['chat_ids']),
+        [12, 13], "retry loads remaining chats")
+    n = outbox.update_rec_recipients(
+        outbox_id, {12: {}}, database=db_path, attempts=0)
+    _assert_eq(n, 0, "wrong attempts does not shrink")
+
+
 def _set_created_at(db_path, outbox_id, created_at):
     db = SQLighter(db_path)
     try:
@@ -599,6 +684,9 @@ def main():
         test_touch_renews_one_lease,
         test_fail_or_retry_uses_telegram_retry_after,
         test_force_reclaim_after_restart,
+        test_rec_payload_circle_flags,
+        test_old_rec_payload_defaults_to_click,
+        test_update_rec_recipients_shrinks_chats,
         test_purge_keep_days,
         test_purge_old_leaves_live_rows,
         test_purge_keeps_failed_longer,
