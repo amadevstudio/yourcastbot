@@ -175,20 +175,27 @@ def ensure_digest_outbox_table(connection: sqlite3.Connection, database=None) ->
             columns = [
                 row[1] for row in
                 connection.execute("PRAGMA table_info(digest_outbox)").fetchall()]
+            alters = []
             if "status" not in columns:
-                connection.execute(
+                alters.append(
                     "ALTER TABLE digest_outbox ADD COLUMN "
                     "status TEXT NOT NULL DEFAULT 'pending'")
             if "attempts" not in columns:
-                connection.execute(
+                alters.append(
                     "ALTER TABLE digest_outbox ADD COLUMN "
                     "attempts INTEGER NOT NULL DEFAULT 0")
             if "leased_until" not in columns:
-                connection.execute(
+                alters.append(
                     "ALTER TABLE digest_outbox ADD COLUMN leased_until TEXT NULL")
             if "available_at" not in columns:
-                connection.execute(
+                alters.append(
                     "ALTER TABLE digest_outbox ADD COLUMN available_at TEXT")
+            for sql in alters:
+                try:
+                    connection.execute(sql)
+                except sqlite3.OperationalError as e:
+                    if "duplicate column" not in str(e).lower():
+                        raise
             connection.execute(
                 "UPDATE digest_outbox SET available_at = created_at "
                 "WHERE available_at IS NULL")
