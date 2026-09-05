@@ -1762,6 +1762,26 @@ messages = {
             "ro_msg": "טוב. אפשר לשנות את זה בהגדרות."
         }
     },
+    "nosubDigestRemindersHelp": {
+        "ru": {
+            "ro_msg": "Раз в неделю напоминаем, что вышли новые выпуски. Только без подписки на бота: с подпиской выпуски приходят файлом."
+        },
+        "en": {
+            "ro_msg": "Once a week we remind you that new episodes are out. Only without a bot subscription: subscribers get the audio files."
+        },
+        "pt-BR": {
+            "ro_msg": "Uma vez por semana lembramos que saíram episódios novos. Só sem assinatura do bot: com assinatura os episódios chegam em áudio."
+        },
+        "es": {
+            "ro_msg": "Una vez a la semana avisamos de que hay episodios nuevos. Solo sin suscripción al bot: con suscripción los episodios llegan en audio."
+        },
+        "de": {
+            "ro_msg": "Einmal pro Woche erinnern wir daran, dass neue Folgen da sind. Nur ohne Bot-Abo: mit Abo kommen die Folgen als Datei."
+        },
+        "he": {
+            "ro_msg": "פעם בשבוע מזכירים שפרקים חדשים יצאו. רק בלי מנוי לבוט: עם מנוי הפרקים מגיעים כקובץ."
+        }
+    },
     "nosubDigestRemindersOn": {
         "ru": {
             "ro_msg": "Напоминания об эпизодах включены"

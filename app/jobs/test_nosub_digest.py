@@ -139,10 +139,18 @@ def main():
     _assert_eq(digest_enabled({"nosub_digest_enabled": 0}), False, "disabled")
     _assert_eq(digest_enabled({}), True, "missing flag defaults on")
 
+    from app.controller.builders.settingsModule import (  # noqa: E402
+        show_digest_reminder_settings)
+    _assert_eq(
+        show_digest_reminder_settings(False), True, "free user sees toggle")
+    _assert_eq(
+        show_digest_reminder_settings(True), False, "subscriber hides toggle")
+
     langs = ("ru", "en", "pt", "es", "de", "he")
     for lang in langs:
         mute = get_message("nosubDigestMuteButton", lang)
         toast = get_message("nosubDigestMutedToast", lang)
+        help_text = get_message("nosubDigestRemindersHelp", lang)
         on_label = (
             emojiCodes["whiteHeavyCheckMark"] + " "
             + get_message("nosubDigestRemindersOn", lang))
@@ -160,6 +168,8 @@ def main():
                 lang, len(off_label), off_label))
         if len(toast) > 200:
             raise AssertionError("%s toast is %s chars" % (lang, len(toast)))
+        if not help_text:
+            raise AssertionError("%s help missing" % lang)
         print("ok  %s mute=%s on=%s off=%s" % (
             lang, len(mute), len(on_label), len(off_label)))
 

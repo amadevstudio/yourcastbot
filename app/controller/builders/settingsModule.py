@@ -17,6 +17,11 @@ def reminders_button_text(language_code, enabled: bool) -> str:
     return mark + " " + get_message(key, language_code)
 
 
+def show_digest_reminder_settings(has_bot_subscription: bool) -> bool:
+    # Paid users already get the audio; the weekly text is nosub-only.
+    return not bool(has_bot_subscription)
+
+
 def open_settings(data: ControllerParams):
     render_messages(
         data['chat_id'],
@@ -27,18 +32,23 @@ def construct_settings_message(language_code, chat_id) -> list[MessageStructures
     db_users = SQLighter(db_path)
     try:
         user = db_users.get_user_by_tg(chat_id)
+        has_bot_subscription = db_users.is_user_have_bot_subscription(chat_id)
     finally:
         db_users.close()
-    enabled = digest_enabled(user)
-    toggle_text = reminders_button_text(language_code, enabled)
-    toggle_button: InlineButtonData = {
-        'text': toggle_text,
-        'callback_data': {'tp': DIGEST_TOGGLE_ACTION},
-    }
-    keyboard = [[toggle_button]] + go_back_inline_markup(language_code)
+
+    text = "<b>" + get_message("bot_settings", language_code) + "</b>"
+    keyboard: list[list[InlineButtonData]] = []
+    if show_digest_reminder_settings(has_bot_subscription):
+        text += "\n\n" + get_message("nosubDigestRemindersHelp", language_code)
+        toggle_button: InlineButtonData = {
+            'text': reminders_button_text(language_code, digest_enabled(user)),
+            'callback_data': {'tp': DIGEST_TOGGLE_ACTION},
+        }
+        keyboard.append([toggle_button])
+    keyboard += go_back_inline_markup(language_code)
     return [{
         'type': 'text',
-        'text': "<b>" + get_message("bot_settings", language_code) + "</b>",
+        'text': text,
         'reply_markup': keyboard,
         'disable_web_page_preview': True,
     }]

@@ -57,6 +57,7 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
     # есть ли новые эпизоды
     db_users = SQLighter(db_path)
     have_new_eps = db_users.is_user_have_new_episodes(chat_id)
+    has_bot_subscription = db_users.is_user_have_bot_subscription(chat_id)
     db_users.close()
 
     if have_new_eps:
@@ -102,7 +103,10 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
                             'callback_data': "{\"tp\": \"botSub\"}"}
     b2: InlineButtonData = {'text': get_message("settings", language_code),
                             'callback_data': "{\"tp\": \"setts\"}"}
-    menu_keyboard.append([b1, b2])
+    settings_row = [b1]
+    if not has_bot_subscription:
+        settings_row.append(b2)
+    menu_keyboard.append(settings_row)
 
     return [{
         'type': 'text',
