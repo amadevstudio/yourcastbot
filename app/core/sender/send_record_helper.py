@@ -20,7 +20,7 @@ from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage, telegram_cache
 from app.service.podcast.podcast import prepare_podcast_update_time
 from app.service.record.caption import prepare_message_text
-from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen
+from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path
 from lib.markup.cleaner import html_mrkd_cleaner
 # from tools.audio_processing import compress_audio
 from lib.requests import requesterModule
@@ -105,7 +105,8 @@ class ChatParamsType(TypedDict, total=False):
 class Sender:
 
     def __init__(self, thonbot, link, chats: dict[int, ChatParamsType], lang_codes_by_utg, bitrates_tg, podcast_info,
-                 with_status_message=True, outbox_id=None, outbox_attempts=None):
+                 with_status_message=True, consume_notify=False,
+                 outbox_id=None, outbox_attempts=None):
         # link — link to file
         # chats — users with params
         # lang_codes_by_utg — tg id to language: {123: 'en'}
@@ -139,9 +140,11 @@ class Sender:
         self.bitrates_tg = bitrates_tg
         self.podcast_info = podcast_info
         self.withStatusMessage = with_status_message
+        self.consume_notify = bool(consume_notify)
         self.outbox_id = outbox_id
         self.outbox_attempts = outbox_attempts
         self._last_outbox_touch = None
+        self._quota_charged = set()
 
         self.successfully_sent_to = []
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
@@ -231,7 +234,7 @@ class Sender:
             self.logger.err("outbox touch:", e)
 
     def _sleep_or_release_flood(self, error):
-        """Live-notify sleeps; a rec outbox job releases the lease instead."""
+        """Without an outbox id, sleep. A queued rec job releases the lease."""
         pause = get_timeout_from_error_bot(error)
         if not pause:
             pause = get_timeout_from_error_client(error)
@@ -241,6 +244,83 @@ class Sender:
             raise outbox.OutboxRetryableError(error)
         time.sleep(pause)
         return True
+
+    def _remaining_chats(self):
+        remaining = {}
+        for chat_id, params in self.chats.items():
+            if chat_id in self.successfully_sent_to:
+                continue
+            if chat_id in self.blocked_chats:
+                continue
+            remaining[chat_id] = params
+        return remaining
+
+    def _sync_outbox_recipients(self):
+        """Drop delivered chats from the payload, then charge notify_count."""
+        remaining = self._remaining_chats()
+        persisted = self.outbox_id is None
+        if self.outbox_id is not None:
+            remaining_langs = {
+                chat_id: self.lang_codes_by_utg[chat_id]
+                for chat_id in remaining
+                if chat_id in self.lang_codes_by_utg
+            }
+            remaining_bitrates = {
+                chat_id: self.bitrates_tg[chat_id]
+                for chat_id in remaining
+                if chat_id in self.bitrates_tg
+            }
+            try:
+                persisted = outbox.update_rec_recipients(
+                    self.outbox_id, remaining,
+                    utglangs=remaining_langs, bitratestg=remaining_bitrates,
+                    attempts=self.outbox_attempts) == 1
+            except Exception as e:
+                self.logger.err("outbox update_rec_recipients:", e)
+                persisted = False
+        if not self.consume_notify or not persisted:
+            return
+        for chat_id in list(self.successfully_sent_to):
+            self._charge_circle_notify(chat_id)
+
+    def _charge_circle_notify(self, chat_id):
+        if chat_id in self._quota_charged:
+            return
+        if chat_id in self.blocked_chats:
+            return
+        self._quota_charged.add(chat_id)
+        from db.sqliteAdapter import SQLighter
+        left = None
+        db_users = SQLighter(db_path)
+        try:
+            db_users.decrease_notify_count(chat_id, 1)
+            subscription = db_users.getUserSubscriptionByTg(chat_id)
+            if subscription is not None:
+                try:
+                    left = int(subscription['notify_count'])
+                except (TypeError, ValueError, KeyError):
+                    left = None
+        except Exception as e:
+            self.logger.err("circle notify_count:", chat_id, e)
+            return
+        finally:
+            db_users.close()
+        if left != 0:
+            return
+        lang = self.lang_codes_by_utg.get(chat_id)
+        if not lang:
+            return
+        try:
+            outer_sender(chat_id, [{
+                'type': 'text',
+                'text': get_message("notificationsEnded", lang),
+                'reply_markup': [[{
+                    'text': get_message("tariffs", lang),
+                    'callback_data': {'tp': 'bs_trfs'},
+                }]],
+            }])
+        except Exception as e:
+            self.logger.err("notificationsEnded:", chat_id, e)
 
     def _outbox_job_complete(self):
         if self.outbox_id is None:
@@ -455,6 +535,7 @@ class Sender:
             if self.outbox_id is not None:
                 retryable = e
 
+        self._sync_outbox_recipients()
         complete = self._outbox_job_complete()
         # Receipt only after Telegram ACK (or a terminal outcome: too big /
         # blocked chat). A 429 must not be done — leftover mp3 is ok.

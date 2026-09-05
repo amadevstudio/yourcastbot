@@ -673,13 +673,16 @@ def send_record_direct(
 
 
 def send_record_thread(input_data, thonbot):
+    func_params = input_data['func_params']
     sender = send_record_helper.Sender(
         thonbot,
-        input_data['func_params']['link'],
-        input_data['func_params']['chat_ids'],
-        input_data['func_params']['utglangs'],
-        input_data['func_params']['bitratestg'],
-        input_data['func_params']['podcastInfo'],
+        func_params['link'],
+        func_params['chat_ids'],
+        func_params['utglangs'],
+        func_params['bitratestg'],
+        func_params['podcastInfo'],
+        with_status_message=bool(func_params.get('with_status_message', True)),
+        consume_notify=bool(func_params.get('consume_notify', False)),
         outbox_id=input_data.get('outbox_id'),
         outbox_attempts=input_data.get('outbox_attempts'))
     sender.send_record()

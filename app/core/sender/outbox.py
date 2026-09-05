@@ -176,6 +176,9 @@ def payload_for_storage(job):
             'utglangs': _jsonable(func_params.get('utglangs') or {}),
             'bitratestg': _jsonable(func_params.get('bitratestg') or {}),
             'podcastInfo': _jsonable(func_params.get('podcastInfo') or {}),
+            'with_status_message': bool(
+                func_params.get('with_status_message', True)),
+            'consume_notify': bool(func_params.get('consume_notify', False)),
         }
     else:
         data = func_params.get('data')
@@ -216,6 +219,9 @@ def func_params_from_storage(action, stored_params):
             'utglangs': _restore_id_map(stored_params.get('utglangs')),
             'bitratestg': _restore_id_map(stored_params.get('bitratestg')),
             'podcastInfo': stored_params.get('podcastInfo') or {},
+            'with_status_message': bool(
+                stored_params.get('with_status_message', True)),
+            'consume_notify': bool(stored_params.get('consume_notify', False)),
         }
 
     chat_id = _maybe_int(stored_params.get('chat_id'))
@@ -540,6 +546,54 @@ def mark_done(outbox_id, database=None, attempts=None):
         conn.close()
     if changed:
         _inflight_discard(database, outbox_id)
+
+
+def update_rec_recipients(
+        outbox_id, chat_ids, utglangs=None, bitratestg=None,
+        database=None, attempts=None):
+    """Rewrite remaining rec recipients on a leased row.
+
+    Call after a partial Telegram ACK so a retry does not resend to chats
+    that already got the episode.
+    """
+    if outbox_id is None:
+        return 0
+    database = _database(database)
+    conn = _connect(database)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT * FROM send_outbox WHERE id = ?",
+                (int(outbox_id),),
+            ).fetchone()
+            if row is None or row['status'] != 'leased' or row['action'] != 'rec':
+                conn.execute("COMMIT")
+                return 0
+            if attempts is not None and int(row['attempts']) != int(attempts):
+                conn.execute("COMMIT")
+                return 0
+            payload = json.loads(row['payload_json'])
+            func_params = payload.get('func_params') or {}
+            func_params['chat_ids'] = _jsonable(chat_ids or {})
+            if utglangs is not None:
+                func_params['utglangs'] = _jsonable(utglangs)
+            if bitratestg is not None:
+                func_params['bitratestg'] = _jsonable(bitratestg)
+            payload['func_params'] = func_params
+            conn.execute(
+                "UPDATE send_outbox SET payload_json = ? WHERE id = ? "
+                "AND status = 'leased'",
+                (json.dumps(payload, ensure_ascii=False), int(outbox_id)),
+            )
+            changed = conn.execute("SELECT changes()").fetchone()[0]
+            conn.execute("COMMIT")
+            return int(changed)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
 
 
 def _notify_permanently_failed(outbox_id, row, error):
