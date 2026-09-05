@@ -28,6 +28,9 @@ _send_outbox_ready = set()
 _runtime_kv_lock = threading.Lock()
 _runtime_kv_ready = set()
 
+_users_digest_lock = threading.Lock()
+_users_digest_ready = set()
+
 
 def _ensure_channel_http_validators_columns(connection: sqlite3.Connection) -> None:
     # db/migrations/00012_channel_http_validators.py adds ETag/Last-Modified
@@ -147,6 +150,75 @@ def ensure_bot_runtime_kv_table(connection: sqlite3.Connection, database=None) -
             logger.err("Could not ensure bot_runtime_kv table:", e)
 
 
+def _pragma_user_columns(connection: sqlite3.Connection) -> list[str]:
+    return [
+        row[1] for row in
+        connection.execute("PRAGMA table_info(users)").fetchall()]
+
+
+def _add_users_column(connection: sqlite3.Connection, sql: str) -> bool:
+    try:
+        connection.execute(sql)
+        connection.commit()
+        return True
+    except sqlite3.OperationalError as e:
+        if "duplicate column" in str(e).lower():
+            return False
+        raise
+
+
+def ensure_users_nosub_digest_columns(connection: sqlite3.Connection, database=None) -> None:
+    # Per-user digest opt-out and last-sent live on users, not in Redis/runtime_kv:
+    # they must survive restarts and be readable from bot, updater, and jobs.
+    # Deploy git-pulls and restarts without running migrations, so the columns
+    # are created here as well. Existing rows are stamped with now so the first
+    # digest waits a week.
+    key = database
+    if key is not None and key in _users_digest_ready:
+        return
+
+    with _users_digest_lock:
+        if key is not None and key in _users_digest_ready:
+            return
+        try:
+            columns = _pragma_user_columns(connection)
+            if not columns:
+                return
+            if 'nosub_digest_enabled' not in columns:
+                if _add_users_column(
+                        connection,
+                        "ALTER TABLE users ADD COLUMN "
+                        "nosub_digest_enabled INTEGER NOT NULL DEFAULT 1"):
+                    logger.warn(
+                        "users.nosub_digest_enabled was missing "
+                        "and has been created")
+            if 'nosub_digest_sent_at' not in columns:
+                if _add_users_column(
+                        connection,
+                        "ALTER TABLE users ADD COLUMN "
+                        "nosub_digest_sent_at TEXT"):
+                    logger.warn(
+                        "users.nosub_digest_sent_at was missing "
+                        "and has been created")
+            # ALTER cannot use datetime('now') as a default on this SQLite.
+            # Existing rows stay NULL until the UPDATE below stamps them.
+            if 'nosub_digest_sent_at' in _pragma_user_columns(connection):
+                has_null = connection.execute(
+                    "SELECT 1 FROM users WHERE nosub_digest_sent_at IS NULL "
+                    "LIMIT 1").fetchone()
+                if has_null is not None:
+                    connection.execute(
+                        "UPDATE users SET nosub_digest_sent_at = datetime('now') "
+                        "WHERE nosub_digest_sent_at IS NULL")
+                    connection.commit()
+                    logger.warn(
+                        "users.nosub_digest_sent_at NULLs backfilled to now")
+            if key is not None:
+                _users_digest_ready.add(key)
+        except Exception as e:
+            logger.err("Could not ensure users nosub digest columns:", e)
+
+
 def helper_remove_proto_from_link(link):
     link_tester = re.compile(r'(?:https?)?:\/\/((?:[a-z0-9-_\.]+)*\/.*)')
     reg_result = link_tester.match(link)
@@ -166,6 +238,7 @@ class SQLighter:
         self.cursor = self.connection.cursor()
         _ensure_users_deleted_at_column(self.connection)
         _ensure_channel_http_validators_columns(self.connection)
+        ensure_users_nosub_digest_columns(self.connection, database)
         ensure_send_outbox_table(self.connection, database)
         ensure_bot_runtime_kv_table(self.connection, database)
         ensure_hot_path_indexes(self.connection, database)
@@ -942,14 +1015,14 @@ class SQLighter:
                 new_user = True
                 if refer_id is not None:
                     self.cursor.execute(
-                        'INSERT INTO users (telegramId, lang, ref_id) \
-                        VALUES (?, ?, ?)',
+                        'INSERT INTO users (telegramId, lang, ref_id, '
+                        'nosub_digest_sent_at) VALUES (?, ?, ?, datetime(\'now\'))',
                         (str(telegram_id), str(user_lang), str(refer_id),))
                     by_refer = True
                 else:
                     self.cursor.execute(
-                        'INSERT INTO users (telegramId, lang) \
-                        VALUES (?, ?)',
+                        'INSERT INTO users (telegramId, lang, '
+                        'nosub_digest_sent_at) VALUES (?, ?, datetime(\'now\'))',
                         (str(telegram_id), str(user_lang),))
             else:
                 new_user = False
@@ -971,6 +1044,26 @@ class SQLighter:
             self.cursor.execute(
                 'UPDATE users SET bitrate = ? WHERE telegramId = ?',
                 (str(bitrate) if bitrate is not None else None, str(telegramId),))
+            self.connection.commit()
+
+    def set_nosub_digest_enabled(self, telegramId, enabled: bool) -> None:
+        with self.connection:
+            self.cursor.execute(
+                "UPDATE users SET nosub_digest_enabled = ? WHERE telegramId = ?",
+                (1 if enabled else 0, str(telegramId)))
+            self.connection.commit()
+
+    def mark_nosub_digest_sent(self, telegramId, when=None) -> None:
+        if when is None:
+            stamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        elif isinstance(when, datetime.datetime):
+            stamp = when.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            stamp = str(when)
+        with self.connection:
+            self.cursor.execute(
+                "UPDATE users SET nosub_digest_sent_at = ? WHERE telegramId = ?",
+                (stamp, str(telegramId)))
             self.connection.commit()
 
     def get_all_users(
@@ -1003,7 +1096,8 @@ class SQLighter:
                     (str(telegramId),))
                 self.connection.commit()
                 self.cursor.execute(
-                    'INSERT INTO users (telegramId) VALUES (?)',
+                    'INSERT INTO users (telegramId, nosub_digest_sent_at) '
+                    'VALUES (?, datetime(\'now\'))',
                     (str(telegramId),))
                 self.connection.commit()
                 return self.cursor.execute(

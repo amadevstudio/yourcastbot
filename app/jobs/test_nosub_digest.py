@@ -8,8 +8,11 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from app.jobs.nosub_digest import (  # noqa: E402
-    for_each_digest_user, latest_episode_id, nosub_users_behind,
-    should_skip_item_parse)
+    DIGEST_COOLDOWN, digest_enabled, digest_is_due, for_each_digest_user,
+    latest_episode_id, nosub_users_behind, parse_digest_sent_at,
+    should_send_nosub_digest, should_skip_item_parse)
+from app.i18n.messages import emojiCodes, get_message  # noqa: E402
+from datetime import datetime  # noqa: E402
 
 
 def _assert_eq(got, expected, label):
@@ -87,6 +90,79 @@ def main():
     _assert_eq(sent, [1, 3], "digest continues after one send error")
     _assert_eq(errors, [2], "failed digest user is reported")
     _assert_eq(pauses, [1, 1, 1], "pause still runs after a failure")
+
+    now = datetime(2026, 9, 5, 3, 0, 0)
+    _assert_eq(parse_digest_sent_at(None), None, "missing sent_at")
+    _assert_eq(
+        parse_digest_sent_at("2026-09-05 03:00:00"),
+        datetime(2026, 9, 5, 3, 0, 0),
+        "sqlite datetime")
+    _assert_eq(
+        digest_is_due("2026-09-05 03:00:00", now=now),
+        False,
+        "just sent is not due")
+    _assert_eq(
+        digest_is_due(
+            "2026-08-29 02:59:59", now=now, cooldown=DIGEST_COOLDOWN),
+        True,
+        "week plus a second is due")
+    _assert_eq(
+        digest_is_due("2026-08-29 03:00:00", now=now),
+        True,
+        "exactly a week is due")
+    _assert_eq(
+        digest_is_due("2026-08-29 03:00:01", now=now),
+        False,
+        "one second under a week is not due")
+    _assert_eq(digest_is_due(None, now=now), True, "never sent is due")
+
+    due_user = {
+        "deleted_at": None,
+        "nosub_digest_enabled": 1,
+        "nosub_digest_sent_at": "2026-01-01 00:00:00",
+    }
+    _assert_eq(
+        should_send_nosub_digest(due_user, now=now), True, "eligible user")
+    _assert_eq(
+        should_send_nosub_digest(
+            {**due_user, "nosub_digest_enabled": 0}, now=now),
+        False, "opted out")
+    _assert_eq(
+        should_send_nosub_digest(
+            {**due_user, "deleted_at": "2026-09-01 00:00:00"}, now=now),
+        False, "deleted user")
+    _assert_eq(
+        should_send_nosub_digest(
+            {**due_user, "nosub_digest_sent_at": "2026-09-05 00:00:00"},
+            now=now),
+        False, "sent this week")
+    _assert_eq(digest_enabled({"nosub_digest_enabled": 0}), False, "disabled")
+    _assert_eq(digest_enabled({}), True, "missing flag defaults on")
+
+    langs = ("ru", "en", "pt", "es", "de", "he")
+    for lang in langs:
+        mute = get_message("nosubDigestMuteButton", lang)
+        toast = get_message("nosubDigestMutedToast", lang)
+        on_label = (
+            emojiCodes["whiteHeavyCheckMark"] + " "
+            + get_message("nosubDigestRemindersOn", lang))
+        off_label = (
+            emojiCodes["crossMark"] + " "
+            + get_message("nosubDigestRemindersOff", lang))
+        if len(mute) > 64:
+            raise AssertionError("%s mute button is %s chars: %r" % (
+                lang, len(mute), mute))
+        if len(on_label) > 64:
+            raise AssertionError("%s on button is %s chars: %r" % (
+                lang, len(on_label), on_label))
+        if len(off_label) > 64:
+            raise AssertionError("%s off button is %s chars: %r" % (
+                lang, len(off_label), off_label))
+        if len(toast) > 200:
+            raise AssertionError("%s toast is %s chars" % (lang, len(toast)))
+        print("ok  %s mute=%s on=%s off=%s" % (
+            lang, len(mute), len(on_label), len(off_label)))
+
     print("all nosub_digest checks passed")
 
 
