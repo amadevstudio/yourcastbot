@@ -36,25 +36,26 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         self.count_threads: Dict[str, int] = {}
         self.queues: Dict[str, List[queue.Queue]] = {}
         self.threads: Dict[str, List[RecordSender]] = {}
-        self.user_threads: Dict[str, Dict[str, int]] = {}
 
         for action in self.actions:
             self.count_threads[action] = threads_config[action]
             self.queues[action] = []
             self.threads[action] = []
-            self.user_threads[action] = {}
 
             for i in range(0, self.count_threads[action]):
                 self.queues[action].append(queue.Queue())
                 self.threads[action].append(
-                    RecordSender(self.queues[action][i], f"{action}_{i}"))
+                    RecordSender(
+                        self.queues[action][i], f"{action}_{i}",
+                        on_idle=self._on_sender_idle))
                 self.threads[action][i].start()
 
     def run(self):
         self._ensure_heartbeat()
         try:
             outbox.reclaim(force=True)
-            self._drain_outbox()
+            outbox.fail_exhausted()
+            self._fill_idle()
         except Exception as e:
             logger.err("Send balancer failed to restore outbox:", e)
         self.outbox_ready = True
@@ -65,9 +66,9 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
                 input_data = self.main_queue.get(timeout=15)
             except queue.Empty:
                 try:
-                    self._drain_outbox()
+                    self._fill_idle()
                 except Exception as e:
-                    logger.err("Send balancer failed to drain outbox:", e)
+                    logger.err("Send balancer failed to fill idle senders:", e)
                 continue
             except Exception as e:
                 logger.err("Send balancer failed to read queue:", e)
@@ -99,40 +100,60 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
             except Exception as e:
                 logger.err("Send balancer outbox heartbeat failed:", e)
 
-    def _drain_outbox(self):
+    def _on_sender_idle(self):
+        try:
+            self.main_queue.put({'action': 'drain'})
+        except Exception as e:
+            logger.err("Send balancer idle nudge failed:", e)
+
+    def _slot_idle(self, action, index):
+        return (
+            self.queues[action][index].empty()
+            and self.threads[action][index].paused)
+
+    def _fill_idle(self):
+        """Claim at most one job per idle worker. Backlog stays in sqlite."""
         outbox.reclaim(force=False)
-        while True:
-            job = outbox.claim()
-            if job is None:
-                return
-            self._dispatch(job)
+        try:
+            outbox.fail_exhausted()
+        except Exception as e:
+            logger.err("Send balancer fail_exhausted:", e)
+        for action in self.actions:
+            for index in range(self.count_threads[action]):
+                if not self._slot_idle(action, index):
+                    continue
+                job = outbox.claim(action=action)
+                if job is None:
+                    break
+                self._ensure_sender_alive(action, index)
+                self.threads[action][index].resume()
+                self.queues[action][index].put(job)
+                logger.log(
+                    f"For user {job['user_id']} thread {index} is chosen")
 
     def _dispatch(self, input_data):
         logger.log("Received new sending task")
 
         action = input_data['action']
         if action == 'drain':
-            self._drain_outbox()
+            self._fill_idle()
             return
         if action not in self.actions:
             logger.warn(f"Unknown sender action {action!r}, skipping")
             return
 
-        self.cancel_threads_booking()
-
-        logger.log(f"Sender threads state for {action}",
-                   [f"Is alive: {t.is_alive()}, {t.name}" for t in self.threads[action]], "\n",
-                   "Pending queues", [q.qsize() for q in self.queues[action]], "\n",
-                   "User bookings", self.user_threads[action])
-
-        # бронирован ли поток?
-        current_user_thread = self.user_threads[action].get(input_data['user_id'], None)
-        if current_user_thread is None:  # у пользователя нет занятых потоков
+        # A claimed job on the main queue (legacy wake). Prefer an idle
+        # slot; if every worker is busy, still dispatch so the lease is
+        # not stranded, but that is the old pile-up path.
+        current_thread_index = None
+        for index in range(self.count_threads[action]):
+            if self._slot_idle(action, index):
+                current_thread_index = index
+                break
+        if current_thread_index is None:
             current_thread_index = self.less_loaded_thread_index(action)
-        else:  # пользователь уже занял поток
-            current_thread_index = current_user_thread
-        # бронируем поток под пользователя
-        self.user_threads[action][input_data['user_id']] = current_thread_index
+            logger.warn(
+                f"No idle {action} sender, queueing behind in-flight work")
 
         logger.log(f"For user {input_data['user_id']} thread {current_thread_index} is chosen")
 
@@ -148,7 +169,8 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         logger.log(f"Thread {action}:{current_thread_index} is dead, restarting")
         self.threads[action][current_thread_index] = RecordSender(
             self.queues[action][current_thread_index],
-            f"{action}_{current_thread_index}")
+            f"{action}_{current_thread_index}",
+            on_idle=self._on_sender_idle)
         self.threads[action][current_thread_index].start()
         logger.log(
             f"Thread {action}:{current_thread_index} is started, current is alive is "
@@ -165,17 +187,11 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
                 minimum_index = i
         return minimum_index
 
-    # user_threads: {'rec': {1: []}} -> {'rec': {}} after thread taken in the job
-    def cancel_threads_booking(self):
-        for action in self.actions:
-            for user_id in list(self.user_threads[action].keys()):
-                if self.queues[action][self.user_threads[action][user_id]].empty():
-                    self.user_threads[action].pop(user_id)
-
 
 class RecordSender(threading.Thread):
 
-    def __init__(self, thread_queue, thread_num, args=(), kwargs=None):
+    def __init__(
+            self, thread_queue, thread_num, on_idle=None, args=(), kwargs=None):
 
         threading.Thread.__init__(self, args=(), kwargs=None)
         self.daemon = True
@@ -185,6 +201,7 @@ class RecordSender(threading.Thread):
 
         self.thread_queue = thread_queue
         self.thread_num = thread_num
+        self.on_idle = on_idle
 
     def pause(self):
         with self.state:
@@ -222,6 +239,8 @@ class RecordSender(threading.Thread):
                 self.thread_queue.task_done()
                 if self.thread_queue.empty():
                     self.pause()
+                    if self.on_idle is not None:
+                        self.on_idle()
 
     def process_input(self, input_data, thonbot):
         outbox_id = input_data.get('outbox_id')

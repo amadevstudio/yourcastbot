@@ -697,6 +697,70 @@ def test_audio_error_classification(_db_path=None):
         False, "empty-file 400 is not 413")
 
 
+def test_claim_prefers_fresh_user_over_circle_and_old(db_path):
+    circle_id = outbox.enqueue({
+        'action': 'rec',
+        'user_id': 'c99',
+        'func_params': {
+            'link': 'https://example.com/c.mp3',
+            'chat_ids': {1: {}},
+            'utglangs': {1: 'en'},
+            'bitratestg': {1: 64},
+            'podcastInfo': {},
+            'with_status_message': False,
+        },
+    }, database=db_path, dispatch=False)
+    old_id = outbox.enqueue(
+        _rec_job(chat_id=11), database=db_path, dispatch=False)
+    _set_created_at(db_path, old_id, "2020-01-01T00:00:00Z")
+    _set_created_at(db_path, circle_id, "2020-01-01T00:00:01Z")
+    fresh_id = outbox.enqueue(
+        _rec_job(chat_id=22), database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path)
+    _assert_eq(claimed['outbox_id'], fresh_id, "fresh click first")
+    claimed = outbox.claim(database=db_path)
+    _assert_eq(claimed['outbox_id'], old_id, "old click before circle")
+    claimed = outbox.claim(database=db_path)
+    _assert_eq(claimed['outbox_id'], circle_id, "circle last")
+
+
+def test_claim_action_filter(db_path):
+    rec_id = outbox.enqueue(
+        _rec_job(chat_id=31), database=db_path, dispatch=False)
+    upd_id = outbox.enqueue({
+        'action': 'update',
+        'user_id': 31,
+        'func_params': {'chat_id': 31, 'language_code': 'en'},
+    }, database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, action='update')
+    _assert_eq(claimed['outbox_id'], upd_id, "update claim skips rec")
+    claimed = outbox.claim(database=db_path, action='rec')
+    _assert_eq(claimed['outbox_id'], rec_id, "rec claim skips update")
+
+
+def test_claim_skips_exhausted(db_path):
+    dead_id = outbox.enqueue(
+        _rec_job(chat_id=41), database=db_path, dispatch=False)
+    live_id = outbox.enqueue(
+        _rec_job(chat_id=42), database=db_path, dispatch=False)
+    db = SQLighter(db_path)
+    try:
+        db.cursor.execute(
+            "UPDATE send_outbox SET attempts = ? WHERE id = ?",
+            (outbox.MAX_ATTEMPTS, dead_id))
+        db.connection.commit()
+    finally:
+        db.close()
+    _set_created_at(db_path, live_id, "2020-01-01T00:00:00Z")
+    claimed = outbox.claim(database=db_path)
+    _assert_eq(claimed['outbox_id'], live_id, "exhausted not claimed")
+    n = outbox.fail_exhausted(database=db_path)
+    _assert_eq(n, 1, "one exhausted failed")
+    _assert_eq(
+        outbox.get_row(dead_id, database=db_path)['status'],
+        'failed', "dead is failed")
+
+
 def test_clean_old_outbox_job(db_path):
     from app.jobs import clean_old_data
     old_done = outbox.enqueue(
@@ -738,6 +802,9 @@ def main():
         test_purge_keep_days,
         test_purge_old_leaves_live_rows,
         test_purge_keeps_failed_longer,
+        test_claim_prefers_fresh_user_over_circle_and_old,
+        test_claim_action_filter,
+        test_claim_skips_exhausted,
         test_clean_old_outbox_job,
     )
     for index, case in enumerate(cases):
