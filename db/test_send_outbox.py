@@ -651,6 +651,52 @@ def test_purge_old_leaves_live_rows(db_path):
         claimed['outbox_id'], old_pending, "pending still claimable after purge")
 
 
+def test_rec_recipient_chat_ids_for_circle_job(db_path):
+    outbox_id = outbox.enqueue({
+        'action': 'rec',
+        'user_id': 'c11019',
+        'func_params': {
+            'link': 'https://example.com/ep.mp3',
+            'chat_ids': {878025719: {}},
+            'utglangs': {878025719: 'ru'},
+            'bitratestg': {878025719: 64},
+            'podcastInfo': {
+                'id': 11019,
+                'title': 'Episode',
+                'chName': 'Show',
+                'channelLink': 'https://example.com/show',
+            },
+            'with_status_message': False,
+            'consume_notify': True,
+        },
+    }, database=db_path, dispatch=False)
+    row = outbox.get_row(outbox_id, database=db_path)
+    _assert_eq(
+        outbox.rec_recipient_chat_ids(row), [878025719],
+        "circle job listeners, not c11019")
+
+
+def test_audio_error_classification(_db_path=None):
+    from lib.telegram.general.errors import (
+        audio_source_gone, request_entity_too_large)
+    _assert_true(
+        audio_source_gone(RuntimeError(
+            "404 Client Error: Not Found for url: https://x/a.mp3")),
+        "http 404 is gone")
+    _assert_true(
+        audio_source_gone(RuntimeError(
+            "Bad Request: failed to get HTTP URL content")),
+        "telegram url fetch fail is gone")
+    _assert_true(
+        request_entity_too_large(RuntimeError(
+            "Error code: 413. Description: Request Entity Too Large")),
+        "bot api 413 is too large")
+    _assert_eq(
+        request_entity_too_large(RuntimeError(
+            "Bad Request: file must be non-empty")),
+        False, "empty-file 400 is not 413")
+
+
 def test_clean_old_outbox_job(db_path):
     from app.jobs import clean_old_data
     old_done = outbox.enqueue(
@@ -687,6 +733,8 @@ def main():
         test_rec_payload_circle_flags,
         test_old_rec_payload_defaults_to_click,
         test_update_rec_recipients_shrinks_chats,
+        test_rec_recipient_chat_ids_for_circle_job,
+        test_audio_error_classification,
         test_purge_keep_days,
         test_purge_old_leaves_live_rows,
         test_purge_keeps_failed_longer,

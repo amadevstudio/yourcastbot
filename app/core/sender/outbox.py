@@ -152,6 +152,29 @@ def _jsonable(value):
     return str(value)
 
 
+def rec_recipient_chat_ids(row):
+    """Listener chats still on a rec job (not the synthetic c123 user_id)."""
+    if not row:
+        return []
+    try:
+        payload = json.loads(row.get('payload_json') or '{}')
+    except (TypeError, ValueError):
+        return []
+    chats = (payload.get('func_params') or {}).get('chat_ids') or {}
+    if isinstance(chats, dict):
+        keys = chats.keys()
+    elif isinstance(chats, list):
+        keys = chats
+    else:
+        return []
+    result = []
+    for key in keys:
+        chat_id = _maybe_int(key)
+        if isinstance(chat_id, int):
+            result.append(chat_id)
+    return result
+
+
 def _restore_id_map(value):
     if not isinstance(value, dict):
         return {}
@@ -614,6 +637,9 @@ def _notify_permanently_failed(outbox_id, row, error):
             level="error")
     except Exception as notify_e:
         logger.err("outbox failed to alert creator:", notify_e)
+    if action == 'rec':
+        _notify_rec_unavailable(row)
+        return
     try:
         from agent.bot_telebot import bot
         bot.send_message(
@@ -621,6 +647,34 @@ def _notify_permanently_failed(outbox_id, row, error):
             "Не получилось отправить. Попробуйте ещё раз позже.")
     except Exception as user_e:
         logger.err("outbox failed to alert user:", user_e)
+
+
+def _notify_rec_unavailable(row):
+    """Tell remaining listeners the file is gone; never int('c123')."""
+    try:
+        payload = json.loads(row.get('payload_json') or '{}')
+    except (TypeError, ValueError):
+        return
+    func_params = payload.get('func_params') or {}
+    info = func_params.get('podcastInfo') or {}
+    link = func_params.get('link') or ''
+    channel_link = info.get('channelLink') or info.get('itunesLink') or ''
+    langs = _restore_id_map(func_params.get('utglangs') or {})
+    try:
+        from app.i18n.messages import get_message
+        from lib.telegram.general.message_master import outer_sender
+    except Exception as import_e:
+        logger.err("outbox rec unavailable imports:", import_e)
+        return
+    for chat_id in rec_recipient_chat_ids(row):
+        lang = langs.get(chat_id) or 'en'
+        try:
+            text = (
+                get_message("recordUnavaliable", lang) % channel_link + "\n"
+                + get_message("recordUnavaliable2", lang) % str(link))
+            outer_sender(chat_id, [{'type': 'text', 'text': text}])
+        except Exception as user_e:
+            logger.err("outbox failed to alert rec chat:", chat_id, user_e)
 
 
 def fail_or_retry(

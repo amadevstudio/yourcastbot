@@ -26,7 +26,7 @@ from lib.markup.cleaner import html_mrkd_cleaner
 from lib.requests import requesterModule
 from lib.system import space
 from lib.telegram.general.errors import get_timeout_from_error_client, get_timeout_from_error_bot, bot_blocked_reaction, \
-    user_unavailable_error, message_to_edit_not_found
+    user_unavailable_error, message_to_edit_not_found, audio_source_gone, request_entity_too_large
 from lib.telegram.general.message_master import outer_sender, message_editor, message_deleter, message_master, \
     render_messages
 from lib.tools.logger import Logger
@@ -161,6 +161,8 @@ class Sender:
         self.statusTemplate = ""
 
         self.__too_big_record = False
+        self.__record_gone = False
+        self.__bot_api_too_large = False
 
         self.prepare()
 
@@ -171,8 +173,8 @@ class Sender:
         self.logger.log("Start sending: ", datetime.datetime.now())
 
         for chat_id in self.chats:
+            self.outcome_messages.setdefault(chat_id, {})
             if not self.__chat_is_silent(chat_id) and self.withStatusMessage:
-                self.outcome_messages[chat_id] = {}
                 send_result = outer_sender(chat_id, [{
                     'type': 'text', 'text': get_message("needTimeToLoad", self.lang_codes_by_utg[chat_id])}])
                 if len(send_result) > 0:
@@ -325,7 +327,11 @@ class Sender:
     def _outbox_job_complete(self):
         if self.outbox_id is None:
             return True
-        if self.__too_big_record:
+        # User was told (too big / file gone): this row is finished work,
+        # not a flood retry.
+        if self.__too_big_record or self.__record_gone:
+            return True
+        if (self.outbox_attempts or 0) >= outbox.MAX_ATTEMPTS:
             return True
         for chat_id in self.chats:
             if (
@@ -483,13 +489,7 @@ class Sender:
                 elif self.recordSizeMb > 20:
                     self.fname = self.specify_file()
                     self.download_file()
-
-                    if self.recordSizeMb > 50:
-                        successfully_via_download = self.send_via_agent()
-                    else:
-                        successfully_via_download = self.send()
-
-                    self.successfully_sent_to.extend(successfully_via_download)
+                    self._send_local_file()
 
                 else:
                     try:
@@ -501,19 +501,12 @@ class Sender:
                         if cant_sent_to:
                             self.fname = self.specify_file()
                             self.download_file()
-
-                            successfully_via_download = self.send(cant_sent_to)
-                            self.successfully_sent_to.extend(successfully_via_download)
-
-                            cant_sent_to = self.get_cant_send_to(successfully_via_download)
-                            if cant_sent_to:
-                                successfully_via_download = self.send_via_agent(cant_sent_to)
-                                self.successfully_sent_to.extend(successfully_via_download)
+                            self._send_local_file(cant_sent_to)
 
                     except outbox.OutboxRetryableError:
                         raise
                     except Exception as e:
-                        self.logger.err(e)
+                        self._note_send_exception(e)
 
             # RSS
             elif self.podcast_info['service_name'] == 'rss':
@@ -525,14 +518,17 @@ class Sender:
                     try:
                         self.successfully_sent_to.extend(successfully_via_link)
                     except Exception as e:
-                        self.logger.err(e)
+                        self._note_send_exception(e)
+                    leftover = self.get_cant_send_to(self.successfully_sent_to)
+                    if leftover and not self.__too_big_record:
+                        self.__record_gone = True
 
         except outbox.OutboxRetryableError as e:
             retryable = e
         # All services error
         except Exception as e:
-            self.logger.err(e)
-            if self.outbox_id is not None:
+            self._note_send_exception(e)
+            if self.outbox_id is not None and not self.__record_gone and not self.__too_big_record:
                 retryable = e
 
         self._sync_outbox_recipients()
@@ -551,7 +547,7 @@ class Sender:
 
         self.__delete_status_messages()
 
-        # Don't tell the user "unavailable" if the outbox will retry.
+        # Don't tell the user "unavailable" if the outbox will retry (429).
         will_retry = self.outbox_id is not None and not complete
         try:
             if self.__too_big_record:
@@ -559,7 +555,10 @@ class Sender:
 
             elif not will_retry:
                 for chat_id in self.chats:
-                    if chat_id not in self.successfully_sent_to:
+                    if (
+                            chat_id not in self.successfully_sent_to
+                            and chat_id not in self.blocked_chats
+                    ):
                         self.__send_record_unavailable(targets=[chat_id])
         except Exception as e:
             self.logger.warn(e)
@@ -659,6 +658,65 @@ class Sender:
             self.link, self.fname, chunk_size=32769,  # 1024 * 32
             # callback=partial(self.__download_file_callback, self))
             callback=self.__download_file_callback)
+        self._refresh_size_from_disk()
+
+    def _refresh_size_from_disk(self):
+        if not self.fname or not os.path.isfile(self.fname):
+            return
+        size = os.path.getsize(self.fname)
+        if size <= 0:
+            return
+        self.recordSize = size
+        self.recordSizeMb = size / MB_NUMBER
+        self.logger.log("File size on disk (mb): ", self.recordSizeMb)
+
+    def _note_send_exception(self, error):
+        self.logger.err(error)
+        if audio_source_gone(error):
+            self.__record_gone = True
+        if request_entity_too_large(error):
+            self.__bot_api_too_large = True
+
+    def _send_local_file(self, specific_chat_ids: Optional[list[int]] = None):
+        """Send a downloaded mp3: Bot API under 50 MB, Telethon up to ~2 GB.
+
+        HEAD Content-Length is often a lie. After download we re-read the
+        size on disk. A Bot API 413 falls through to the agent instead of
+        giving up.
+        """
+        self._refresh_size_from_disk()
+        if self.recordSizeMb > 2000:
+            self.__too_big_record = True
+            return
+
+        used_bot_api = self.recordSizeMb <= 50
+        if used_bot_api:
+            sent = self.send(specific_chat_ids)
+        else:
+            sent = self.send_via_agent(specific_chat_ids)
+        self.successfully_sent_to.extend(sent)
+
+        leftover = specific_chat_ids
+        if leftover is None:
+            leftover = self.get_cant_send_to(self.successfully_sent_to)
+        else:
+            leftover = [
+                chat_id for chat_id in leftover
+                if chat_id not in self.successfully_sent_to
+                and chat_id not in self.blocked_chats]
+        if leftover and used_bot_api and not self.__too_big_record:
+            self.logger.log("Falling back to Telethon agent for", leftover)
+            sent = self.send_via_agent(leftover)
+            self.successfully_sent_to.extend(sent)
+            leftover = [
+                chat_id for chat_id in leftover
+                if chat_id not in self.successfully_sent_to
+                and chat_id not in self.blocked_chats]
+        if leftover:
+            if self.__bot_api_too_large or self.recordSizeMb > 50:
+                self.__too_big_record = True
+            else:
+                self.__record_gone = True
 
     def send_via_agent(self, specific_chat_ids: Optional[list[int]] = None):
         chats = self.chats
@@ -820,10 +878,13 @@ class Sender:
                         self.__set_resend_status(chat_id)
 
                     except (ApiException, ApiTelegramException) as e:
+                        self._note_send_exception(e)
                         self.logger.err(e, f"File id is {file_id}")
                         self.print_failure_message_stack(chat_id)
 
                         if self.error_reactions(e, chat_id):
+                            continue
+                        if request_entity_too_large(e) or audio_source_gone(e):
                             continue
 
                         # попытка 2, если проблема в паузе
@@ -844,7 +905,7 @@ class Sender:
                                 self.logger.err(e)
 
                     except Exception as e:
-                        self.logger.err(e)
+                        self._note_send_exception(e)
                         self.print_failure_message_stack(chat_id)
                 finally:
                     if type(file) is BufferedReader:
@@ -865,10 +926,12 @@ class Sender:
                 self.__set_resend_status(chat_id)
 
             except (ApiException, ApiTelegramException) as e:
-                self.logger.err(e)
+                self._note_send_exception(e)
                 self.print_failure_message_stack(chat_id)
 
                 if self.error_reactions(e, chat_id):
+                    continue
+                if audio_source_gone(e) or request_entity_too_large(e):
                     continue
 
                 # попытка 2, если проблема в паузе
@@ -882,7 +945,7 @@ class Sender:
                         self.logger.err(e)
 
             except Exception as e:
-                self.logger.err(e)
+                self._note_send_exception(e)
 
         return successfully_sent_to
 
@@ -911,8 +974,16 @@ class Sender:
         except Exception as e:  # telebot.apihelper.ApiTelegramException, ?
             if user_unavailable_error(e):
                 raise e
+            if request_entity_too_large(e) or audio_source_gone(e):
+                self._note_send_exception(e)
+                raise
 
             self.logger.err(e, "Fail to send with caption")
+            if hasattr(audio, 'seek'):
+                try:
+                    audio.seek(0)
+                except Exception:
+                    pass
             message = self.bot.send_audio(
                 chat_id=chat_id, audio=audio,
                 duration=self.podcast_info['duration_sec'],
@@ -946,7 +1017,7 @@ class Sender:
 
     def __too_big_record_sender(self, chat_id):
         lang_code = self.lang_codes_by_utg[chat_id]
-        outcome_message_id = self.outcome_messages[chat_id].get('message_id', None)
+        outcome_message_id = self.outcome_messages.get(chat_id, {}).get('message_id')
 
         message_text = self.prepare_record_text(
             chat_id, mode='short', on_error=True) + "\n\n" + get_message(
@@ -999,7 +1070,10 @@ class Sender:
                 + get_message("recordUnavaliable2", lang_code) % str(self.link))
 
         try:
-            self.__make_update_status_message(chat_id, error_text)
+            if self.outcome_messages.get(chat_id, {}).get('message_id') is not None:
+                self.__make_update_status_message(chat_id, error_text)
+            else:
+                outer_sender(chat_id, [{'type': 'text', 'text': error_text}])
         except Exception:
             outer_sender(chat_id, [{'type': 'text', 'text': error_text}])
 
