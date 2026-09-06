@@ -78,3 +78,21 @@ def media_fetch_failed(e):
 			or "WEBPAGE_MEDIA_EMPTY" in error_text \
 			or "MEDIA_EMPTY" in error_text \
 			or "Bad Request: PHOTO_EXT_INVALID" in error_text
+
+
+def audio_source_gone(error):
+	"""Enclosure is dead: HTTP 404/410 or Telegram could not fetch the URL."""
+	text = str(error)
+	if "failed to get HTTP URL content" in text:
+		return True
+	if "404 Client Error" in text or "404 Not Found" in text:
+		return True
+	if "410 Client Error" in text or "410 Gone" in text:
+		return True
+	return False
+
+
+def request_entity_too_large(error):
+	"""Bot API rejected the upload (typically over the ~50 MB bot limit)."""
+	text = str(error)
+	return "413" in text or "Request Entity Too Large" in text or "FILE_TOO_BIG" in text
