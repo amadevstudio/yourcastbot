@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Durable SQLite outbox for user-triggered rec/update send jobs.
 
-In-memory queue.Queue is still used for in-process dispatch. The table is the
-source of truth across process restarts.
+The table is the source of truth. Workers claim one row when they are idle;
+the in-memory queue must not hold the whole backlog. Fresh user clicks are
+claimed before circle jobs (`c123`) and older pending rows.
 
 Lease is short (~5 min). The worker must touch() the row while it downloads
 or sends. done is Telegram ACK; a 429 goes back to pending with available_at.
@@ -313,20 +314,24 @@ def _balancer_ready():
         balancer is not None and getattr(balancer, 'outbox_ready', False))
 
 
-def _wake(job):
+def _nudge():
+    """Ask the balancer to claim into idle workers. Do not claim here."""
     recs_module = _recs_module()
     if recs_module is None:
-        logger.warn("outbox: sender module is not loaded, job stays in sqlite")
         return
-    recs_module.t_podcast_sender.main_queue.put(job)
+    balancer = getattr(recs_module, 't_podcast_sender', None)
+    if balancer is None:
+        return
+    try:
+        balancer.main_queue.put({'action': 'drain'})
+    except Exception as e:
+        logger.err("outbox nudge failed:", e)
 
 
 def _schedule_retry(outbox_id, delay, database):
     def _run():
         try:
-            job = claim(database=database, outbox_id=outbox_id)
-            if job is not None:
-                _wake(job)
+            _nudge()
         except Exception as e:
             logger.err("outbox scheduled retry failed:", e)
 
@@ -339,7 +344,7 @@ def _schedule_retry(outbox_id, delay, database):
 
 
 def enqueue(job, database=None, dispatch=True):
-    """Insert a pending row and, in-process, claim it onto the memory queue."""
+    """Insert a pending row. Idle workers claim it; do not pile the queue."""
     database = _database(database)
     payload_json = payload_for_storage(job)
     action = job['action']
@@ -365,9 +370,7 @@ def enqueue(job, database=None, dispatch=True):
         conn.close()
 
     if dispatch and _balancer_ready():
-        claimed = claim(database=database, outbox_id=outbox_id)
-        if claimed is not None:
-            _wake(claimed)
+        _nudge()
     return outbox_id
 
 
@@ -492,8 +495,53 @@ def reclaim(database=None, force=False):
         conn.close()
 
 
-def claim(database=None, outbox_id=None):
-    """Claim one available pending row. Returns a memory-queue job or None."""
+def fail_exhausted(database=None):
+    """Mark rows that already used MAX_ATTEMPTS as failed.
+
+    Skip ids this process still holds: a worker may be on attempt 8.
+    Does not alert the creator — these are leftovers, not a new failure.
+    """
+    database = _database(database)
+    skip_ids = _inflight_ids(database)
+    conn = _connect(database)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            where = (
+                "status IN ('pending', 'leased') AND attempts >= ?")
+            params = [MAX_ATTEMPTS]
+            if skip_ids:
+                placeholders = ",".join("?" * len(skip_ids))
+                where += " AND id NOT IN (%s)" % placeholders
+                params.extend(skip_ids)
+            rows = conn.execute(
+                "SELECT id FROM send_outbox WHERE " + where, params,
+            ).fetchall()
+            if rows:
+                conn.execute(
+                    "UPDATE send_outbox "
+                    "SET status = 'failed', leased_until = NULL "
+                    "WHERE " + where,
+                    params,
+                )
+                logger.warn(
+                    "outbox failed %s exhausted jobs (attempts>=%s)" % (
+                        len(rows), MAX_ATTEMPTS))
+            conn.execute("COMMIT")
+            return len(rows)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+
+
+def claim(database=None, outbox_id=None, action=None):
+    """Claim one available pending row. Returns a memory-queue job or None.
+
+    Without outbox_id: user clicks before circle (`c*`), newest first.
+    Rows at MAX_ATTEMPTS are skipped (fail_exhausted marks them failed).
+    """
     database = _database(database)
     now = now_iso()
     leased_until = iso_after(LEASE_SECONDS)
@@ -508,11 +556,18 @@ def claim(database=None, outbox_id=None):
                     (outbox_id, now),
                 ).fetchone()
             else:
+                params = [now, MAX_ATTEMPTS]
+                action_sql = ""
+                if action is not None:
+                    action_sql = "AND action = ? "
+                    params.append(action)
                 row = conn.execute(
                     "SELECT * FROM send_outbox "
                     "WHERE status = 'pending' AND available_at <= ? "
-                    "ORDER BY id LIMIT 1",
-                    (now,),
+                    "AND attempts < ? " + action_sql +
+                    "ORDER BY CASE WHEN user_id GLOB 'c*' THEN 1 ELSE 0 END, "
+                    "created_at DESC, id DESC LIMIT 1",
+                    params,
                 ).fetchone()
             if row is None:
                 conn.execute("COMMIT")
