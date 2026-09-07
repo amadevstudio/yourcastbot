@@ -54,6 +54,9 @@ Rules:
   `/usersCount` stall). This does **not** apply to rec/circle/update.
 - Hung HTTP on a rec worker must fail fast (timeouts, no long urllib3
   retry storms). A dead CDN must not hold a lease indefinitely.
+- **Admin broadcasts** are `admin_mail_jobs` processed by a jobs-role
+  thread. Do not dump mailings onto rec/circle/send workers. The admin
+  HTTP API is a fourth supervisor role (`admin`) bound to localhost.
 
 ## Tests
 

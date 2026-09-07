@@ -16,7 +16,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence
 
 from lib.tools.logger import logger
 
-ROLES: tuple[str, ...] = ("bot", "updater", "jobs")
+ROLES: tuple[str, ...] = ("bot", "updater", "jobs", "admin")
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MAIN_PY = os.path.join(_REPO_ROOT, "main.py")
