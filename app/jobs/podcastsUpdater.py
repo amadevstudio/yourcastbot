@@ -650,7 +650,7 @@ def send_new_records_by_channel(
         recipient_bitrates = {
             uid: bitrates_tg[uid] for uid in recipients if uid in bitrates_tg}
         outbox.enqueue({
-            'action': 'rec',
+            'action': 'circle',
             'user_id': 'c%s' % channel['id'],
             'func_params': {
                 'link': link,

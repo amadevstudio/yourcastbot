@@ -31,17 +31,16 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         self.main_queue = main_queue
         self.outbox_ready = False
 
-        self.actions = ['rec', 'update']
+        self.actions = ['rec', 'circle', 'update']
 
         self.count_threads: Dict[str, int] = {}
         self.queues: Dict[str, List[queue.Queue]] = {}
         self.threads: Dict[str, List[RecordSender]] = {}
 
         for action in self.actions:
-            self.count_threads[action] = threads_config[action]
+            self.count_threads[action] = int(threads_config.get(action) or 0)
             self.queues[action] = []
             self.threads[action] = []
-
             for i in range(0, self.count_threads[action]):
                 self.queues[action].append(queue.Queue())
                 self.threads[action].append(
@@ -112,16 +111,20 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
             and self.threads[action][index].paused)
 
     def _fill_idle(self):
-        """Claim at most one job per idle worker. Backlog stays in sqlite."""
+        """Claim at most one job per idle worker. Backlog stays in sqlite.
+
+        rec, circle and update have separate pools and do not steal slots.
+        """
         outbox.reclaim(force=False)
         try:
             outbox.fail_exhausted()
         except Exception as e:
             logger.err("Send balancer fail_exhausted:", e)
         for action in self.actions:
-            for index in range(self.count_threads[action]):
-                if not self._slot_idle(action, index):
-                    continue
+            idle = [
+                index for index in range(self.count_threads[action])
+                if self._slot_idle(action, index)]
+            for index in idle:
                 job = outbox.claim(action=action)
                 if job is None:
                     break
@@ -132,35 +135,19 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
                     f"For user {job['user_id']} thread {index} is chosen")
 
     def _dispatch(self, input_data):
-        logger.log("Received new sending task")
-
-        action = input_data['action']
+        action = input_data.get('action')
         if action == 'drain':
             self._fill_idle()
             return
-        if action not in self.actions:
-            logger.warn(f"Unknown sender action {action!r}, skipping")
-            return
-
-        # A claimed job on the main queue (legacy wake). Prefer an idle
-        # slot; if every worker is busy, still dispatch so the lease is
-        # not stranded, but that is the old pile-up path.
-        current_thread_index = None
-        for index in range(self.count_threads[action]):
-            if self._slot_idle(action, index):
-                current_thread_index = index
-                break
-        if current_thread_index is None:
-            current_thread_index = self.less_loaded_thread_index(action)
+        if action in self.actions:
+            # enqueue() only puts drain on this queue. A leftover rec/update
+            # payload must not sit behind an in-flight upload: sqlite holds
+            # pending rows until a worker is idle.
             logger.warn(
-                f"No idle {action} sender, queueing behind in-flight work")
-
-        logger.log(f"For user {input_data['user_id']} thread {current_thread_index} is chosen")
-
-        self._ensure_sender_alive(action, current_thread_index)
-
-        self.threads[action][current_thread_index].resume()
-        self.queues[action][current_thread_index].put(input_data)
+                f"Ignoring in-memory {action} dispatch; claiming from sqlite")
+            self._fill_idle()
+            return
+        logger.warn(f"Unknown sender action {action!r}, skipping")
 
     def _ensure_sender_alive(self, action, current_thread_index):
         if self.threads[action][current_thread_index].is_alive():
@@ -175,17 +162,6 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         logger.log(
             f"Thread {action}:{current_thread_index} is started, current is alive is "
             f"{self.threads[action][current_thread_index].is_alive()}")
-
-    def less_loaded_thread_index(self, action):
-        minimum = -1
-        minimum_index = int()
-        for i in range(len(self.queues[action])):
-            pending_queue = self.queues[action][i]
-            qsize = pending_queue.qsize()
-            if qsize < minimum or minimum == -1:
-                minimum = qsize
-                minimum_index = i
-        return minimum_index
 
 
 class RecordSender(threading.Thread):
@@ -246,7 +222,7 @@ class RecordSender(threading.Thread):
         outbox_id = input_data.get('outbox_id')
         attempts = input_data.get('outbox_attempts')
         try:
-            if input_data['action'] == 'rec':
+            if input_data['action'] in ('rec', 'circle'):
                 recsModule.send_record_thread(input_data, thonbot)
                 # Helper marks done only after Telegram ACK. This second
                 # write is a no-op unless that one failed after ACK.

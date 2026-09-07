@@ -30,7 +30,7 @@ def _assert_true(got, label):
     print("ok  %s" % label)
 
 
-def _rec_job(chat_id=1001, link="https://example.com/ep.mp3"):
+def _rec_job(chat_id=1001, link="https://example.com/ep.mp3", record_uniq_id='ep1'):
     return {
         'action': 'rec',
         'user_id': chat_id,
@@ -43,7 +43,33 @@ def _rec_job(chat_id=1001, link="https://example.com/ep.mp3"):
                 'id': 7,
                 'title': 'Episode',
                 'chName': 'Show',
+                'recordUniqId': record_uniq_id,
             },
+        },
+    }
+
+
+def _circle_job(channel_id=99, chat_ids=None, record_uniq_id='ep1'):
+    if chat_ids is None:
+        chat_ids = {1001: {}, 1002: {}}
+    langs = {chat_id: 'en' for chat_id in chat_ids}
+    bitrates = {chat_id: 64 for chat_id in chat_ids}
+    return {
+        'action': 'circle',
+        'user_id': 'c%s' % channel_id,
+        'func_params': {
+            'link': 'https://example.com/c.mp3',
+            'chat_ids': chat_ids,
+            'utglangs': langs,
+            'bitratestg': bitrates,
+            'podcastInfo': {
+                'id': channel_id,
+                'title': 'Episode',
+                'chName': 'Show',
+                'recordUniqId': record_uniq_id,
+            },
+            'with_status_message': False,
+            'consume_notify': True,
         },
     }
 
@@ -698,18 +724,9 @@ def test_audio_error_classification(_db_path=None):
 
 
 def test_claim_prefers_fresh_user_over_circle_and_old(db_path):
-    circle_id = outbox.enqueue({
-        'action': 'rec',
-        'user_id': 'c99',
-        'func_params': {
-            'link': 'https://example.com/c.mp3',
-            'chat_ids': {1: {}},
-            'utglangs': {1: 'en'},
-            'bitratestg': {1: 64},
-            'podcastInfo': {},
-            'with_status_message': False,
-        },
-    }, database=db_path, dispatch=False)
+    circle_id = outbox.enqueue(
+        _circle_job(channel_id=99, chat_ids={1: {}}, record_uniq_id='c-old'),
+        database=db_path, dispatch=False)
     old_id = outbox.enqueue(
         _rec_job(chat_id=11), database=db_path, dispatch=False)
     _set_created_at(db_path, old_id, "2020-01-01T00:00:00Z")
@@ -736,6 +753,13 @@ def test_claim_action_filter(db_path):
     _assert_eq(claimed['outbox_id'], upd_id, "update claim skips rec")
     claimed = outbox.claim(database=db_path, action='rec')
     _assert_eq(claimed['outbox_id'], rec_id, "rec claim skips update")
+    circle_id = outbox.enqueue(
+        _circle_job(channel_id=31, chat_ids={31: {}}, record_uniq_id='c31'),
+        database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, action='rec')
+    _assert_eq(claimed, None, "rec pool does not take circle")
+    claimed = outbox.claim(database=db_path, action='circle')
+    _assert_eq(claimed['outbox_id'], circle_id, "circle pool takes circle")
 
 
 def test_claim_skips_exhausted(db_path):
@@ -774,6 +798,101 @@ def test_clean_old_outbox_job(db_path):
         "daily job removed the row")
 
 
+def test_claim_rec_pool_skips_circle(db_path):
+    circle_id = outbox.enqueue(
+        _circle_job(channel_id=5, chat_ids={9: {}}, record_uniq_id='c-ep'),
+        database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, action='rec')
+    _assert_eq(claimed, None, "rec workers skip circle jobs")
+    user_id = outbox.enqueue(
+        _rec_job(chat_id=9, record_uniq_id='c-ep'),
+        database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, action='rec')
+    _assert_eq(claimed['outbox_id'], user_id, "rec workers take the click")
+    _assert_eq(
+        outbox.get_row(circle_id, database=db_path)['status'],
+        'pending', "circle stayed pending for its own pool")
+
+
+def test_legacy_c_star_rec_migrates_to_circle(db_path):
+    conn = outbox._connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO send_outbox "
+            "(created_at, action, user_id, payload_json, status, attempts, "
+            "leased_until, available_at) "
+            "VALUES ('2020-01-01T00:00:00Z', 'rec', 'c88', '{}', "
+            "'pending', 0, NULL, '2020-01-01T00:00:00Z')")
+    finally:
+        conn.close()
+    row = outbox.get_row(1, database=db_path)
+    _assert_eq(row['action'], 'circle', "legacy c* rec becomes circle")
+    claimed = outbox.claim(database=db_path, action='rec')
+    _assert_eq(claimed, None, "migrated row is not in rec pool")
+    claimed = outbox.claim(database=db_path, action='circle')
+    _assert_eq(claimed['outbox_id'], 1, "migrated row is in circle pool")
+
+
+def test_enqueue_user_rec_reuses_pending_not_done(db_path):
+    first = outbox.enqueue_user_rec(
+        _rec_job(chat_id=501, record_uniq_id='same-ep'),
+        database=db_path, dispatch=False)
+    second = outbox.enqueue_user_rec(
+        _rec_job(chat_id=501, record_uniq_id='same-ep'),
+        database=db_path, dispatch=False)
+    _assert_eq(second, first, "pending click is not duplicated")
+    claimed = outbox.claim(database=db_path, outbox_id=first)
+    leased = outbox.enqueue_user_rec(
+        _rec_job(chat_id=501, record_uniq_id='same-ep'),
+        database=db_path, dispatch=False)
+    _assert_eq(leased, first, "leased click is not duplicated")
+    outbox.mark_done(
+        first, database=db_path, attempts=claimed['outbox_attempts'])
+    again = outbox.enqueue_user_rec(
+        _rec_job(chat_id=501, record_uniq_id='same-ep'),
+        database=db_path, dispatch=False)
+    _assert_true(again != first, "done click can download again")
+    _assert_eq(
+        outbox.get_row(again, database=db_path)['status'],
+        'pending', "re-download is a new pending row")
+
+
+def test_enqueue_user_rec_after_failed(db_path):
+    first = outbox.enqueue_user_rec(
+        _rec_job(chat_id=502, record_uniq_id='fail-ep'),
+        database=db_path, dispatch=False)
+    _set_status(db_path, first, 'failed')
+    again = outbox.enqueue_user_rec(
+        _rec_job(chat_id=502, record_uniq_id='fail-ep'),
+        database=db_path, dispatch=False)
+    _assert_true(again != first, "failed click can download again")
+    _assert_eq(
+        outbox.get_row(again, database=db_path)['status'],
+        'pending', "retry after failed is pending")
+
+
+def test_enqueue_user_rec_drops_circle_recipient(db_path):
+    circle_id = outbox.enqueue(
+        _circle_job(
+            channel_id=8, chat_ids={601: {}, 602: {}}, record_uniq_id='live-ep'),
+        database=db_path, dispatch=False)
+    user_id = outbox.enqueue_user_rec(
+        _rec_job(chat_id=601, record_uniq_id='live-ep'),
+        database=db_path, dispatch=False)
+    row = outbox.get_row(circle_id, database=db_path)
+    chats = outbox.rec_recipient_chat_ids(row)
+    _assert_eq(chats, [602], "click removed from pending circle")
+    _assert_eq(row['status'], 'pending', "circle still has another chat")
+    other = outbox.enqueue_user_rec(
+        _rec_job(chat_id=602, record_uniq_id='live-ep'),
+        database=db_path, dispatch=False)
+    row = outbox.get_row(circle_id, database=db_path)
+    _assert_eq(row['status'], 'done', "empty circle job is done")
+    _assert_eq(
+        outbox.rec_recipient_chat_ids(row), [], "no listeners left")
+    _assert_true(user_id != other, "two listeners get two user jobs")
+
+
 def main():
     tmpdir = tempfile.mkdtemp(prefix="yourcast_send_outbox_")
     cases = (
@@ -806,6 +925,11 @@ def main():
         test_claim_action_filter,
         test_claim_skips_exhausted,
         test_clean_old_outbox_job,
+        test_claim_rec_pool_skips_circle,
+        test_legacy_c_star_rec_migrates_to_circle,
+        test_enqueue_user_rec_reuses_pending_not_done,
+        test_enqueue_user_rec_after_failed,
+        test_enqueue_user_rec_drops_circle_recipient,
     )
     for index, case in enumerate(cases):
         path = os.path.join(tmpdir, "case_%d.db" % index)

@@ -663,7 +663,7 @@ def send_record_direct(
         'recordUniqId': record_uniq_id
     }
 
-    outbox.enqueue(
+    outbox.enqueue_user_rec(
         {
             'action': 'rec', 'user_id': chat_id,
             'func_params': {
