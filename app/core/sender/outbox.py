@@ -3,7 +3,12 @@
 
 The table is the source of truth. Workers claim one row when they are idle;
 the in-memory queue must not hold the whole backlog. Fresh user clicks are
-claimed before circle jobs (`c123`) and older pending rows.
+claimed before circle jobs (`c123`) and older pending rows. At least one rec
+worker stays free for a click while circle fills the rest.
+
+User rec is keyed by outbox status, not a forever "already sent" flag:
+pending/leased for the same chat+episode is the in-flight click (do not
+enqueue a second); done/failed means they may tap download again.
 
 Lease is short (~5 min). The worker must touch() the row while it downloads
 or sends. done is Telegram ACK; a 429 goes back to pending with available_at.
@@ -150,6 +155,32 @@ def _jsonable(value):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(item) for item in value]
+    return str(value)
+
+
+def is_circle_user_id(user_id):
+    """Circle rec jobs use synthetic user_id `c{channelId}`."""
+    return str(user_id).startswith('c')
+
+
+def rec_idle_slot_allows_circle(idle_count, fill_index, rec_thread_count):
+    """Last idle rec worker is reserved for a user click.
+
+    With one rec thread there is nothing to reserve: that worker must
+    still drain circle or circle never sends.
+    """
+    if rec_thread_count < 2:
+        return True
+    remaining_including_this = int(idle_count) - int(fill_index)
+    return remaining_including_this > 1
+
+
+def _record_uniq_id_from_payload(payload):
+    func_params = (payload or {}).get('func_params') or {}
+    podcast_info = func_params.get('podcastInfo') or {}
+    value = podcast_info.get('recordUniqId')
+    if value in (None, '', 'None'):
+        return None
     return str(value)
 
 
@@ -374,6 +405,123 @@ def enqueue(job, database=None, dispatch=True):
     return outbox_id
 
 
+def find_open_user_rec(user_id, record_uniq_id, database=None):
+    """Id of a pending/leased user click for this chat+episode, else None.
+
+    done/failed are ignored so a later tap can download again.
+    """
+    if record_uniq_id in (None, '', 'None') or user_id is None:
+        return None
+    if is_circle_user_id(user_id):
+        return None
+    database = _database(database)
+    wanted = str(record_uniq_id)
+    conn = _connect(database)
+    try:
+        rows = conn.execute(
+            "SELECT id, payload_json FROM send_outbox "
+            "WHERE action = 'rec' AND status IN ('pending', 'leased') "
+            "AND user_id = ? AND user_id NOT GLOB 'c*'",
+            (str(user_id),),
+        ).fetchall()
+    finally:
+        conn.close()
+    for row in rows:
+        try:
+            payload = json.loads(row['payload_json'] or '{}')
+        except (TypeError, ValueError):
+            continue
+        if _record_uniq_id_from_payload(payload) == wanted:
+            return int(row['id'])
+    return None
+
+
+def drop_circle_recipient(chat_id, record_uniq_id, database=None):
+    """Take a chat off pending/leased circle recs for this episode.
+
+    A user click should not wait for circle, and circle should not send
+    the same file again after that click. Empty circle rows become done.
+    """
+    if record_uniq_id in (None, '', 'None') or chat_id is None:
+        return 0
+    database = _database(database)
+    wanted = str(record_uniq_id)
+    chat_id = _maybe_int(chat_id)
+    dropped = 0
+    conn = _connect(database)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            rows = conn.execute(
+                "SELECT * FROM send_outbox "
+                "WHERE action = 'rec' AND status IN ('pending', 'leased') "
+                "AND user_id GLOB 'c*'",
+            ).fetchall()
+            for row in rows:
+                try:
+                    payload = json.loads(row['payload_json'] or '{}')
+                except (TypeError, ValueError):
+                    continue
+                if _record_uniq_id_from_payload(payload) != wanted:
+                    continue
+                func_params = payload.get('func_params') or {}
+                chats = _restore_id_map(func_params.get('chat_ids'))
+                if chat_id not in chats:
+                    continue
+                chats.pop(chat_id, None)
+                langs = _restore_id_map(func_params.get('utglangs'))
+                langs.pop(chat_id, None)
+                bitrates = _restore_id_map(func_params.get('bitratestg'))
+                bitrates.pop(chat_id, None)
+                func_params['chat_ids'] = _jsonable(chats)
+                func_params['utglangs'] = _jsonable(langs)
+                func_params['bitratestg'] = _jsonable(bitrates)
+                payload['func_params'] = func_params
+                payload_json = json.dumps(payload, ensure_ascii=False)
+                if chats:
+                    conn.execute(
+                        "UPDATE send_outbox SET payload_json = ? "
+                        "WHERE id = ? AND status IN ('pending', 'leased')",
+                        (payload_json, row['id']),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE send_outbox "
+                        "SET payload_json = ?, status = 'done', "
+                        "leased_until = NULL "
+                        "WHERE id = ? AND status IN ('pending', 'leased')",
+                        (payload_json, row['id']),
+                    )
+                    _inflight_discard(database, row['id'])
+                dropped += 1
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+    return dropped
+
+
+def enqueue_user_rec(job, database=None, dispatch=True):
+    """Enqueue a user click, or reuse pending/leased for the same episode.
+
+    done/failed are not reused. Circle recipients for this episode are
+    dropped so the click is not followed by a second circle send.
+    """
+    func_params = job.get('func_params') or {}
+    podcast_info = func_params.get('podcastInfo') or {}
+    record_uniq_id = podcast_info.get('recordUniqId')
+    user_id = job.get('user_id')
+    drop_circle_recipient(user_id, record_uniq_id, database=database)
+    existing = find_open_user_rec(user_id, record_uniq_id, database=database)
+    if existing is not None:
+        if dispatch:
+            _nudge()
+        return existing
+    return enqueue(job, database=database, dispatch=dispatch)
+
+
 def heartbeat(database=None):
     """Renew leased_until for jobs this process is still working on.
 
@@ -536,10 +684,11 @@ def fail_exhausted(database=None):
         conn.close()
 
 
-def claim(database=None, outbox_id=None, action=None):
+def claim(database=None, outbox_id=None, action=None, allow_circle=True):
     """Claim one available pending row. Returns a memory-queue job or None.
 
     Without outbox_id: user clicks before circle (`c*`), newest first.
+    allow_circle=False skips `c*` so a reserved rec slot waits for a click.
     Rows at MAX_ATTEMPTS are skipped (fail_exhausted marks them failed).
     """
     database = _database(database)
@@ -561,10 +710,13 @@ def claim(database=None, outbox_id=None, action=None):
                 if action is not None:
                     action_sql = "AND action = ? "
                     params.append(action)
+                circle_sql = ""
+                if not allow_circle:
+                    circle_sql = "AND user_id NOT GLOB 'c*' "
                 row = conn.execute(
                     "SELECT * FROM send_outbox "
                     "WHERE status = 'pending' AND available_at <= ? "
-                    "AND attempts < ? " + action_sql +
+                    "AND attempts < ? " + action_sql + circle_sql +
                     "ORDER BY CASE WHEN user_id GLOB 'c*' THEN 1 ELSE 0 END, "
                     "created_at DESC, id DESC LIMIT 1",
                     params,
