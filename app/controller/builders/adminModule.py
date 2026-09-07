@@ -35,8 +35,9 @@ def is_admin(data: ControllerParams) -> bool:
 def format_users_count_message(
         total: int, with_subs: int, with_bot_sub: int,
         receive_episodes: int, digest_reminder: int, blocked: int,
-        updater_channel_id: int, max_channel_id: int) -> str:
-    return (
+        updater_channel_id: int, max_channel_id: int,
+        extra_status_lines: str = '') -> str:
+    text = (
         "Всего: " + str(total)
         + "\nС подписками на каналы: " + str(with_subs)
         + "\nС подпиской на бота: " + str(with_bot_sub)
@@ -48,6 +49,9 @@ def format_users_count_message(
         + "\nОбход подкастов: "
         + str(updater_channel_id) + " / " + str(max_channel_id)
     )
+    if extra_status_lines:
+        text += "\n" + extra_status_lines
+    return text
 
 
 _users_count_lock = threading.Lock()
@@ -68,9 +72,16 @@ def compute_users_count_text() -> str:
         max_channel_id = int(last_channel_row['id']) if last_channel_row else 0
     finally:
         db_users.close()
+    extra = ''
+    try:
+        from app.jobs.circle_health import format_status_lines
+        extra = format_status_lines(database=config.db_path)
+    except Exception as e:
+        logger.err("usersCount circle status:", e)
     text = format_users_count_message(
         total, with_subs, with_bot_sub, receive_episodes, digest_reminder,
-        blocked, storage.get_last_channel_id(), max_channel_id)
+        blocked, storage.get_last_channel_id(), max_channel_id,
+        extra_status_lines=extra)
     logger.log(
         "usersCount computed in %.2fs" % (time.monotonic() - started,))
     return text

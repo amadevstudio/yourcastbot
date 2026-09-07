@@ -25,6 +25,7 @@ import lib.tools.time_tools.general
 from app.controller.builders.adminModule import send_message_to_creator
 from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message
+from app.jobs.circle_health import mark_circle_finished, mark_circle_started
 from app.jobs.digest_outbox import pending_count
 from app.jobs.nosub_digest import (
     latest_episode_id, nosub_users_behind, should_skip_item_parse)
@@ -85,9 +86,10 @@ def main(interval=120):
                 send_message_to_creator("#restarted", level='warning')
 
             logger.log("New circle, luci: ", last_updated_channel_id, "| ", time.ctime())
-            send_message_to_creator(
-                "New cirlce #new_circle; luci: " + str(last_updated_channel_id),
-                level='info')
+            # Telegram #new_circle every pass was noise: a full round is ~hourly
+            # and luci is 1 except after a crash. Completion is a daily heartbeat;
+            # live numbers are on /usersCount.
+            mark_circle_started()
 
             db_users = SQLighter(db_path)
             # только каналы, по которым есть кому слать (notify=1, живой юзер
@@ -148,12 +150,17 @@ def main(interval=120):
             storage.set_last_channel_id(1)
             storage.set_last_channel_restarted(False)
 
-            send_message_to_creator(
-                "Circle finished #circle_finished; luci: "
-                + str(storage.get_last_channel_id()),
-                level='info')
+            circle_result = mark_circle_finished()
             logger.log(
-                "Circle finished, digest pending:", pending_count())
+                "Circle finished, digest pending:", pending_count(),
+                "; duration_sec:", circle_result['duration_sec'],
+                "; circles_today:", circle_result['circles_today'],
+                "; notify:", circle_result['notify'])
+            if circle_result['notify']:
+                send_message_to_creator(
+                    "Circle finished #circle_finished; "
+                    + circle_result['summary'],
+                    level='info')
         except Exception as e:
             logger.err("podcastsUpdater/circle: ", e)
 
