@@ -32,42 +32,35 @@ jobs:
           script_stop: true
           command_timeout: 20m
           script: |
-            # Pulling
-            cd ${{ secrets.PROJECT_PATH }}
-            git pull
+            set -euo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+            cd "${{ secrets.PROJECT_PATH }}"
+            git fetch origin
+            git reset --hard origin/main
 
-            # Building
             python3 -V
             if [ ! -d venv ]; then python3 -m venv venv; fi
             source venv/bin/activate
             python -m pip install -r requirements.txt
 
-            # Admin SPA (React). Node is only used at build time.
             if ! command -v node >/dev/null 2>&1; then
               curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
               apt-get install -y nodejs
             fi
-            cd ${{ secrets.PROJECT_PATH }}/admin/web
+            cd "${{ secrets.PROJECT_PATH }}/admin/web"
             npm ci
             npm run build
-            cd ${{ secrets.PROJECT_PATH }}
+            cd "${{ secrets.PROJECT_PATH }}"
 
-            # Nginx: proxy /app and /api to the localhost admin role.
-            # Payment PHP under /payment stays on php-fpm.
             mkdir -p /etc/nginx/snippets
             cp deploy/nginx-yourcast-admin.conf /etc/nginx/snippets/yourcast-admin.conf
             python3 deploy/ensure_nginx_admin.py
             nginx -t
             systemctl reload nginx
 
-            # Configuring
             cat supervisor.conf > /etc/supervisor/conf.d/yourcast.conf
             supervisorctl reread
             supervisorctl update
 
-            # Restarting
-            cd ../
+            cd /home/yourcast
             supervisorctl restart yourcast
-
-            echo "" > err.log
-            echo "" > out.log
