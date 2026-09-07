@@ -2,10 +2,10 @@
 """Durable SQLite outbox for user-triggered rec/update send jobs.
 
 The table is the source of truth. Workers claim one row when they are idle;
-the in-memory queue must not hold the whole backlog. Fresh user clicks are
-claimed before circle jobs (`c123`) and older pending rows. Circle may use
-every rec worker while nobody is waiting; a click still goes first on the
-next claim, and an in-flight circle yields between recipients.
+the in-memory queue must not hold the whole backlog. User clicks (`rec`) and
+RSS circle (`circle`) are separate actions with separate worker pools, so
+they scale independently. Fresh clicks are still claimed before leftover
+legacy `c*` rows if any mixed `rec` jobs remain.
 
 User rec is keyed by outbox status, not a forever "already sent" flag:
 pending/leased for the same chat+episode is the in-flight click (do not
@@ -37,7 +37,8 @@ MAX_BACKOFF_SECONDS = 5 * 60
 # pending and leased are never deleted.
 DONE_KEEP_DAYS = 7
 FAILED_KEEP_DAYS = 14
-ACTIONS = ('rec', 'update')
+ACTIONS = ('rec', 'circle', 'update')
+REC_SEND_ACTIONS = ('rec', 'circle')
 
 
 class OutboxRetryableError(Exception):
@@ -54,16 +55,6 @@ class OutboxRetryableError(Exception):
         else:
             super().__init__(str(cause))
 
-
-class OutboxYieldToUser(Exception):
-    """Circle rec stops between recipients so a pending click can start.
-
-    Not a failure: remaining chats stay pending, this claim does not count
-    against MAX_ATTEMPTS.
-    """
-
-    def __init__(self):
-        super().__init__("circle yielded to user rec")
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS send_outbox (
@@ -132,6 +123,11 @@ def clear_in_flight():
 def ensure_table(connection, database=None):
     connection.execute(CREATE_TABLE_SQL)
     connection.execute(CREATE_INDEX_SQL)
+    # Pre-split circle jobs lived as rec + synthetic c{channelId}.
+    connection.execute(
+        "UPDATE send_outbox SET action = 'circle' "
+        "WHERE action = 'rec' AND user_id GLOB 'c*'"
+    )
     try:
         connection.commit()
     except sqlite3.OperationalError:
@@ -217,14 +213,14 @@ def payload_for_storage(job):
     """JSON object stored in send_outbox.payload_json (no Telegram objects)."""
     action = job.get('action')
     if action not in ACTIONS:
-        raise ValueError("outbox action must be 'rec' or 'update', got %r" % (
+        raise ValueError("outbox action must be 'rec', 'circle' or 'update', got %r" % (
             action,))
     user_id = job.get('user_id')
     if user_id is None:
         raise ValueError("outbox job is missing user_id")
 
     func_params = job.get('func_params') or {}
-    if action == 'rec':
+    if action in REC_SEND_ACTIONS:
         stored_params = {
             'link': func_params.get('link'),
             'chat_ids': _jsonable(func_params.get('chat_ids') or {}),
@@ -267,7 +263,7 @@ def payload_for_storage(job):
 
 def func_params_from_storage(action, stored_params):
     stored_params = stored_params or {}
-    if action == 'rec':
+    if action in REC_SEND_ACTIONS:
         return {
             'link': stored_params.get('link'),
             'chat_ids': _restore_id_map(stored_params.get('chat_ids')),
@@ -454,7 +450,8 @@ def drop_circle_recipient(chat_id, record_uniq_id, database=None):
         try:
             rows = conn.execute(
                 "SELECT * FROM send_outbox "
-                "WHERE action = 'rec' AND status IN ('pending', 'leased') "
+                "WHERE action IN ('circle', 'rec') "
+                "AND status IN ('pending', 'leased') "
                 "AND user_id GLOB 'c*'",
             ).fetchall()
             for row in rows:
@@ -520,71 +517,6 @@ def enqueue_user_rec(job, database=None, dispatch=True):
             _nudge()
         return existing
     return enqueue(job, database=database, dispatch=dispatch)
-
-
-def has_pending_user_rec(database=None):
-    """True if a user click is waiting for a worker (not a circle job)."""
-    database = _database(database)
-    now = now_iso()
-    conn = _connect(database)
-    try:
-        row = conn.execute(
-            "SELECT id FROM send_outbox "
-            "WHERE action = 'rec' AND status = 'pending' AND available_at <= ? "
-            "AND attempts < ? AND user_id NOT GLOB 'c*' LIMIT 1",
-            (now, MAX_ATTEMPTS),
-        ).fetchone()
-        return row is not None
-    finally:
-        conn.close()
-
-
-def yield_for_user_click(outbox_id, attempts=None, database=None, dispatch=True):
-    """Put a leased circle row back to pending without burning attempts.
-
-    Remaining recipients must already be in payload_json (update_rec_recipients).
-    """
-    if outbox_id is None:
-        return 0
-    database = _database(database)
-    now = now_iso()
-    conn = _connect(database)
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            row = conn.execute(
-                "SELECT attempts FROM send_outbox "
-                "WHERE id = ? AND status = 'leased'",
-                (int(outbox_id),),
-            ).fetchone()
-            if row is None:
-                conn.execute("COMMIT")
-                return 0
-            current = int(row['attempts'])
-            if attempts is not None and current != int(attempts):
-                conn.execute("COMMIT")
-                return 0
-            undone = current - 1 if current > 0 else 0
-            conn.execute(
-                "UPDATE send_outbox "
-                "SET status = 'pending', leased_until = NULL, "
-                "available_at = ?, attempts = ? "
-                "WHERE id = ? AND status = 'leased'",
-                (now, undone, int(outbox_id)),
-            )
-            changed = conn.execute("SELECT changes()").fetchone()[0]
-            conn.execute("COMMIT")
-        except Exception:
-            conn.execute("ROLLBACK")
-            raise
-    finally:
-        conn.close()
-    if changed:
-        _inflight_discard(database, outbox_id)
-        if dispatch:
-            _nudge()
-        logger.log("outbox circle yielded to user rec id=%s" % outbox_id)
-    return int(changed)
 
 
 def heartbeat(database=None):
@@ -749,11 +681,10 @@ def fail_exhausted(database=None):
         conn.close()
 
 
-def claim(database=None, outbox_id=None, action=None, allow_circle=True):
+def claim(database=None, outbox_id=None, action=None):
     """Claim one available pending row. Returns a memory-queue job or None.
 
-    Without outbox_id: user clicks before circle (`c*`), newest first.
-    allow_circle=False skips `c*` so a reserved rec slot waits for a click.
+    Without outbox_id: user rec before circle, newest first.
     Rows at MAX_ATTEMPTS are skipped (fail_exhausted marks them failed).
     """
     database = _database(database)
@@ -775,14 +706,12 @@ def claim(database=None, outbox_id=None, action=None, allow_circle=True):
                 if action is not None:
                     action_sql = "AND action = ? "
                     params.append(action)
-                circle_sql = ""
-                if not allow_circle:
-                    circle_sql = "AND user_id NOT GLOB 'c*' "
                 row = conn.execute(
                     "SELECT * FROM send_outbox "
                     "WHERE status = 'pending' AND available_at <= ? "
-                    "AND attempts < ? " + action_sql + circle_sql +
-                    "ORDER BY CASE WHEN user_id GLOB 'c*' THEN 1 ELSE 0 END, "
+                    "AND attempts < ? " + action_sql +
+                    "ORDER BY CASE WHEN action = 'circle' "
+                    "OR user_id GLOB 'c*' THEN 1 ELSE 0 END, "
                     "created_at DESC, id DESC LIMIT 1",
                     params,
                 ).fetchone()
@@ -862,7 +791,10 @@ def update_rec_recipients(
                 "SELECT * FROM send_outbox WHERE id = ?",
                 (int(outbox_id),),
             ).fetchone()
-            if row is None or row['status'] != 'leased' or row['action'] != 'rec':
+            if (
+                    row is None or row['status'] != 'leased'
+                    or row['action'] not in REC_SEND_ACTIONS
+            ):
                 conn.execute("COMMIT")
                 return 0
             if attempts is not None and int(row['attempts']) != int(attempts):
@@ -909,7 +841,7 @@ def _notify_permanently_failed(outbox_id, row, error):
             level="error")
     except Exception as notify_e:
         logger.err("outbox failed to alert creator:", notify_e)
-    if action == 'rec':
+    if action in REC_SEND_ACTIONS:
         _notify_rec_unavailable(row)
         return
     try:

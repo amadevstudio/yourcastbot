@@ -39,7 +39,10 @@ test = constants.isTest
 
 threads_config = {
     'send': 4,
+    # User download taps. Independent of RSS fanout.
     'rec': 4,
+    # Automatic circle sends. Raise this if notify lags; does not steal rec.
+    'circle': 2,
     'update': 2
 }
 

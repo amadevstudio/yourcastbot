@@ -31,17 +31,16 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         self.main_queue = main_queue
         self.outbox_ready = False
 
-        self.actions = ['rec', 'update']
+        self.actions = ['rec', 'circle', 'update']
 
         self.count_threads: Dict[str, int] = {}
         self.queues: Dict[str, List[queue.Queue]] = {}
         self.threads: Dict[str, List[RecordSender]] = {}
 
         for action in self.actions:
-            self.count_threads[action] = threads_config[action]
+            self.count_threads[action] = int(threads_config.get(action) or 0)
             self.queues[action] = []
             self.threads[action] = []
-
             for i in range(0, self.count_threads[action]):
                 self.queues[action].append(queue.Queue())
                 self.threads[action].append(
@@ -114,8 +113,7 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
     def _fill_idle(self):
         """Claim at most one job per idle worker. Backlog stays in sqlite.
 
-        Claim already prefers user clicks over circle. Idle leftovers take
-        circle so rec capacity is not parked empty.
+        rec, circle and update have separate pools and do not steal slots.
         """
         outbox.reclaim(force=False)
         try:
@@ -224,7 +222,7 @@ class RecordSender(threading.Thread):
         outbox_id = input_data.get('outbox_id')
         attempts = input_data.get('outbox_attempts')
         try:
-            if input_data['action'] == 'rec':
+            if input_data['action'] in ('rec', 'circle'):
                 recsModule.send_record_thread(input_data, thonbot)
                 # Helper marks done only after Telegram ACK. This second
                 # write is a no-op unless that one failed after ACK.
@@ -236,14 +234,6 @@ class RecordSender(threading.Thread):
                     outbox.mark_done(outbox_id, attempts=attempts)
             else:
                 return
-        except outbox.OutboxYieldToUser:
-            if outbox_id is not None:
-                try:
-                    outbox.yield_for_user_click(
-                        outbox_id, attempts=attempts)
-                except Exception as mark_e:
-                    logger.err("Failed to yield circle outbox:", mark_e)
-            return
         except Exception as e:
             if outbox_id is not None:
                 try:
