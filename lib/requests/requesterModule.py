@@ -60,10 +60,12 @@ class Requester:
 
     def download_chunked(
             self, url_base, destination, verify=False, stream=True, headers=None,
-            callback=None, chunk_size=1024):
+            callback=None, chunk_size=1024, timeout=None):
 
-        #  giving a server 30 seconds before answer and 2 minutes before sending data
-        timeout = (30, 120)
+        # Connect vs stall-between-chunks. A dead CDN must not occupy a rec
+        # worker for minutes: urllib3 Retry(total=10) * 120s was 20+ minutes.
+        if timeout is None:
+            timeout = (10, 30)
 
         session_headers = self.__decide_request_headers(headers)
 
@@ -94,14 +96,17 @@ class Requester:
                     callback(downloaded, file_size)
         r.close()
 
-    def get_headers(self, link, verify=False, headers=None):
-        # req = urllib.request.Request(link)
-        # req.add_header('User-Agent', headers['User-Agent'])
-        # site = urllib.request.urlopen(req)
-        # meta = site.info()
+    def get_headers(self, link, verify=False, headers=None, timeout=None):
+        # HEAD with no timeout hangs a rec worker forever: heartbeat keeps the
+        # lease, new clicks stay pending, and the user never gets a status
+        # message (that is sent only after prepare() returns).
+        if timeout is None:
+            timeout = (10, 10)
         session = self.__get_session()
         session_headers = self.__decide_request_headers(headers)
-        response = session.head(link, verify=verify, allow_redirects=True, headers=session_headers)
+        response = session.head(
+            link, verify=verify, allow_redirects=True,
+            headers=session_headers, timeout=timeout)
         return response.headers
 
     def get_headers_with_pre_download(self, link, verify=False, headers=None):
