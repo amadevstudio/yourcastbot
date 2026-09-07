@@ -34,7 +34,11 @@ from tools.audio_processing import compress_audio
 
 headers = requesterModule.STD_REQUEST_HEADERS
 
-requester = requesterModule.Requester()
+# No urllib3 retries: a hung CDN must fail this attempt and free the rec
+# slot. Outbox fail_or_retry already backs off the row; newest clicks are
+# claimed first. Default Retry(total=10) * download timeout occupied all
+# four rec workers for tens of minutes (firstory HEAD/read).
+requester = requesterModule.Requester(attempts=0, total_attempts=0)
 
 logger = Logger(file="sender")
 
