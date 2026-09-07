@@ -114,6 +114,7 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         """Claim at most one job per idle worker. Backlog stays in sqlite.
 
         rec, circle and update have separate pools and do not steal slots.
+        claim() also keeps one user on one worker of that pool.
         """
         outbox.reclaim(force=False)
         try:
