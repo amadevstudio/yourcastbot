@@ -21,11 +21,8 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v2
-      
-      
+      - uses: actions/checkout@v4
 
-      # Runs a set of commands using the runners shell
       - name: Push to production server and restart
         uses: appleboy/ssh-action@master
         with:
@@ -33,6 +30,7 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script_stop: true
+          command_timeout: 20m
           script: |
             # Pulling
             cd ${{ secrets.PROJECT_PATH }}
@@ -43,6 +41,24 @@ jobs:
             if [ ! -d venv ]; then python3 -m venv venv; fi
             source venv/bin/activate
             python -m pip install -r requirements.txt
+
+            # Admin SPA (React). Node is only used at build time.
+            if ! command -v node >/dev/null 2>&1; then
+              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+              apt-get install -y nodejs
+            fi
+            cd ${{ secrets.PROJECT_PATH }}/admin/web
+            npm ci
+            npm run build
+            cd ${{ secrets.PROJECT_PATH }}
+
+            # Nginx: proxy /app and /api to the localhost admin role.
+            # Payment PHP under /payment stays on php-fpm.
+            mkdir -p /etc/nginx/snippets
+            cp deploy/nginx-yourcast-admin.conf /etc/nginx/snippets/yourcast-admin.conf
+            python3 deploy/ensure_nginx_admin.py
+            nginx -t
+            systemctl reload nginx
 
             # Configuring
             cat supervisor.conf > /etc/supervisor/conf.d/yourcast.conf

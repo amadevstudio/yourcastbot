@@ -10,7 +10,7 @@ and restarts a crashed role without taking the others down.
 
 Production deploy is still one command: supervisorctl restart yourcast
 
-Debug a single role: python main.py --role bot|updater|jobs
+Debug a single role: python main.py --role bot|updater|jobs|admin
 """
 
 import argparse
@@ -119,6 +119,13 @@ def run_updater():
     podcastsUpdater.main(10)
 
 
+def run_admin():
+    _install_shutdown()
+    _announce_restart_if_needed()
+    from app.admin_web.server import serve
+    serve()
+
+
 def run_jobs():
     _install_shutdown()
     _announce_restart_if_needed()
@@ -157,6 +164,15 @@ def run_jobs():
     t_digest_watcher.start()
     watched.append(t_digest_watcher)
 
+    from app.admin_web.mail_jobs import ensure_table as ensure_mail_table
+    from app.admin_web.mailer import mailer_loop
+    ensure_mail_table()
+    t_admin_mailer = threading.Thread(target=mailer_loop)
+    t_admin_mailer.daemon = True
+    t_admin_mailer.name = "Admin mailer"
+    t_admin_mailer.start()
+    watched.append(t_admin_mailer)
+
     while True:
         time.sleep(2)
         for t in watched:
@@ -192,6 +208,8 @@ def main(argv=None):
         run_updater()
     elif args.role == "jobs":
         run_jobs()
+    elif args.role == "admin":
+        run_admin()
     else:
         raise SystemExit("unknown role %s" % args.role)
 
