@@ -257,6 +257,26 @@ class Sender:
             remaining[chat_id] = params
         return remaining
 
+    def _remember_sent(self, chat_id):
+        if chat_id not in self.successfully_sent_to:
+            self.successfully_sent_to.append(chat_id)
+
+    def _yield_circle_if_user_waiting(self):
+        """Stop a circle rec between recipients when a click is pending.
+
+        User jobs do not yield (finish the mp3 they already started).
+        """
+        if not self.consume_notify or self.outbox_id is None:
+            return
+        if not outbox.has_pending_user_rec():
+            return
+        if not self._remaining_chats():
+            return
+        self._sync_outbox_recipients()
+        if not self._remaining_chats():
+            return
+        raise outbox.OutboxYieldToUser()
+
     def _sync_outbox_recipients(self):
         """Drop delivered chats from the payload, then charge notify_count."""
         remaining = self._remaining_chats()
@@ -480,6 +500,7 @@ class Sender:
         retryable = None
         self._touch_outbox()
         try:
+            self._yield_circle_if_user_waiting()
 
             # iTunes
             if self.podcast_info['service_name'] == 'itunes':
@@ -523,6 +544,16 @@ class Sender:
                     if leftover and not self.__too_big_record:
                         self.__record_gone = True
 
+        except outbox.OutboxYieldToUser:
+            self._sync_outbox_recipients()
+            try:
+                if self.fname is not None and self.fname != '':
+                    os.remove(self.fname)
+            except Exception as e:
+                self.logger.err(e, f"Can't delete file #{self.fname}")
+            self.__delete_status_messages()
+            self.logger.log("Circle yielded to user rec: ", datetime.datetime.now())
+            raise
         except outbox.OutboxRetryableError as e:
             retryable = e
         # All services error
@@ -776,6 +807,7 @@ class Sender:
                             self.cached_file_id,
                             record_message_text)
                         successfully_sent_to.append(chat_id)
+                        self._remember_sent(chat_id)
                         self.logger.log(chat_id, "success_l ", str(self.podcast_info['id']))
                         self.__set_resend_status(chat_id)
                         return
@@ -812,12 +844,16 @@ class Sender:
                                                    self.cache_expiration_date)
 
                     successfully_sent_to.append(chat_id)
+                    self._remember_sent(chat_id)
                     self.logger.log(chat_id, "success_l ", str(self.podcast_info['id']))
                     self.__set_resend_status(chat_id)
 
                 try:
                     send_uploaded()
+                    self._yield_circle_if_user_waiting()
 
+                except outbox.OutboxYieldToUser:
+                    raise
                 except (ApiException, ValueError, ApiTelegramException) as e:
                     self.logger.err(e)
                     self.print_failure_message_stack(chat_id)
@@ -830,9 +866,14 @@ class Sender:
                         # вторая попытка не должна ронять рассылку остальным получателям
                         try:
                             send_uploaded()
+                            self._yield_circle_if_user_waiting()
+                        except outbox.OutboxYieldToUser:
+                            raise
                         except Exception as retry_e:
                             self.logger.err(retry_e)
 
+                except outbox.OutboxYieldToUser:
+                    raise
                 except Exception as e:
                     self.logger.err(e)
                     self.print_failure_message_stack(chat_id)
@@ -874,8 +915,10 @@ class Sender:
                             file_id = new_file_id
 
                         successfully_sent_to.append(chat_id)
+                        self._remember_sent(chat_id)
                         self.logger.log(chat_id, "success_m ", str(self.podcast_info['id']))
                         self.__set_resend_status(chat_id)
+                        self._yield_circle_if_user_waiting()
 
                     except (ApiException, ApiTelegramException) as e:
                         self._note_send_exception(e)
@@ -899,11 +942,17 @@ class Sender:
                                     file_id = new_file_id
 
                                 successfully_sent_to.append(chat_id)
+                                self._remember_sent(chat_id)
                                 self.logger.log(chat_id, "success_m ", str(self.podcast_info['id']))
                                 self.__set_resend_status(chat_id)
+                                self._yield_circle_if_user_waiting()
+                            except outbox.OutboxYieldToUser:
+                                raise
                             except Exception as e:
                                 self.logger.err(e)
 
+                    except outbox.OutboxYieldToUser:
+                        raise
                     except Exception as e:
                         self._note_send_exception(e)
                         self.print_failure_message_stack(chat_id)
@@ -922,8 +971,10 @@ class Sender:
             try:
                 self.send_audio(chat_id, self.link, record_message_text)
                 successfully_sent_to.append(chat_id)
+                self._remember_sent(chat_id)
                 self.logger.log(chat_id, "success_s ", str(self.podcast_info['id']))
                 self.__set_resend_status(chat_id)
+                self._yield_circle_if_user_waiting()
 
             except (ApiException, ApiTelegramException) as e:
                 self._note_send_exception(e)
@@ -939,11 +990,17 @@ class Sender:
                     try:
                         self.send_audio(chat_id, self.link, record_message_text)
                         successfully_sent_to.append(chat_id)
+                        self._remember_sent(chat_id)
                         self.logger.log(chat_id, "success_s ", str(self.podcast_info['id']))
                         self.__set_resend_status(chat_id)
+                        self._yield_circle_if_user_waiting()
+                    except outbox.OutboxYieldToUser:
+                        raise
                     except Exception as e:
                         self.logger.err(e)
 
+            except outbox.OutboxYieldToUser:
+                raise
             except Exception as e:
                 self._note_send_exception(e)
 

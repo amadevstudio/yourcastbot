@@ -10,7 +10,6 @@ from telethon.sessions import StringSession
 from agent.bot_telethon import thobot_session_handler
 from app.controller.builders import recsModule
 from app.core.sender import outbox
-from app.core.sender.outbox import rec_idle_slot_allows_circle
 from app.jobs import podcastsUpdater
 from config import app_api_id, app_api_hash, token, threads_config
 from lib.python.singletonBase import Singleton
@@ -115,8 +114,8 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
     def _fill_idle(self):
         """Claim at most one job per idle worker. Backlog stays in sqlite.
 
-        The last idle rec slot does not take a circle job, so a click can
-        start downloading without waiting for someone else's mp3.
+        Claim already prefers user clicks over circle. Idle leftovers take
+        circle so rec capacity is not parked empty.
         """
         outbox.reclaim(force=False)
         try:
@@ -127,15 +126,9 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
             idle = [
                 index for index in range(self.count_threads[action])
                 if self._slot_idle(action, index)]
-            for fill_index, index in enumerate(idle):
-                allow_circle = True
-                if action == 'rec':
-                    allow_circle = rec_idle_slot_allows_circle(
-                        len(idle), fill_index, self.count_threads[action])
-                job = outbox.claim(action=action, allow_circle=allow_circle)
+            for index in idle:
+                job = outbox.claim(action=action)
                 if job is None:
-                    if not allow_circle:
-                        continue
                     break
                 self._ensure_sender_alive(action, index)
                 self.threads[action][index].resume()
@@ -243,6 +236,14 @@ class RecordSender(threading.Thread):
                     outbox.mark_done(outbox_id, attempts=attempts)
             else:
                 return
+        except outbox.OutboxYieldToUser:
+            if outbox_id is not None:
+                try:
+                    outbox.yield_for_user_click(
+                        outbox_id, attempts=attempts)
+                except Exception as mark_e:
+                    logger.err("Failed to yield circle outbox:", mark_e)
+            return
         except Exception as e:
             if outbox_id is not None:
                 try:

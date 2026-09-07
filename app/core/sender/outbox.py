@@ -3,8 +3,9 @@
 
 The table is the source of truth. Workers claim one row when they are idle;
 the in-memory queue must not hold the whole backlog. Fresh user clicks are
-claimed before circle jobs (`c123`) and older pending rows. At least one rec
-worker stays free for a click while circle fills the rest.
+claimed before circle jobs (`c123`) and older pending rows. Circle may use
+every rec worker while nobody is waiting; a click still goes first on the
+next claim, and an in-flight circle yields between recipients.
 
 User rec is keyed by outbox status, not a forever "already sent" flag:
 pending/leased for the same chat+episode is the in-flight click (do not
@@ -52,6 +53,17 @@ class OutboxRetryableError(Exception):
             super().__init__("outbox retry")
         else:
             super().__init__(str(cause))
+
+
+class OutboxYieldToUser(Exception):
+    """Circle rec stops between recipients so a pending click can start.
+
+    Not a failure: remaining chats stay pending, this claim does not count
+    against MAX_ATTEMPTS.
+    """
+
+    def __init__(self):
+        super().__init__("circle yielded to user rec")
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS send_outbox (
@@ -161,18 +173,6 @@ def _jsonable(value):
 def is_circle_user_id(user_id):
     """Circle rec jobs use synthetic user_id `c{channelId}`."""
     return str(user_id).startswith('c')
-
-
-def rec_idle_slot_allows_circle(idle_count, fill_index, rec_thread_count):
-    """Last idle rec worker is reserved for a user click.
-
-    With one rec thread there is nothing to reserve: that worker must
-    still drain circle or circle never sends.
-    """
-    if rec_thread_count < 2:
-        return True
-    remaining_including_this = int(idle_count) - int(fill_index)
-    return remaining_including_this > 1
 
 
 def _record_uniq_id_from_payload(payload):
@@ -520,6 +520,71 @@ def enqueue_user_rec(job, database=None, dispatch=True):
             _nudge()
         return existing
     return enqueue(job, database=database, dispatch=dispatch)
+
+
+def has_pending_user_rec(database=None):
+    """True if a user click is waiting for a worker (not a circle job)."""
+    database = _database(database)
+    now = now_iso()
+    conn = _connect(database)
+    try:
+        row = conn.execute(
+            "SELECT id FROM send_outbox "
+            "WHERE action = 'rec' AND status = 'pending' AND available_at <= ? "
+            "AND attempts < ? AND user_id NOT GLOB 'c*' LIMIT 1",
+            (now, MAX_ATTEMPTS),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def yield_for_user_click(outbox_id, attempts=None, database=None, dispatch=True):
+    """Put a leased circle row back to pending without burning attempts.
+
+    Remaining recipients must already be in payload_json (update_rec_recipients).
+    """
+    if outbox_id is None:
+        return 0
+    database = _database(database)
+    now = now_iso()
+    conn = _connect(database)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT attempts FROM send_outbox "
+                "WHERE id = ? AND status = 'leased'",
+                (int(outbox_id),),
+            ).fetchone()
+            if row is None:
+                conn.execute("COMMIT")
+                return 0
+            current = int(row['attempts'])
+            if attempts is not None and current != int(attempts):
+                conn.execute("COMMIT")
+                return 0
+            undone = current - 1 if current > 0 else 0
+            conn.execute(
+                "UPDATE send_outbox "
+                "SET status = 'pending', leased_until = NULL, "
+                "available_at = ?, attempts = ? "
+                "WHERE id = ? AND status = 'leased'",
+                (now, undone, int(outbox_id)),
+            )
+            changed = conn.execute("SELECT changes()").fetchone()[0]
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+    if changed:
+        _inflight_discard(database, outbox_id)
+        if dispatch:
+            _nudge()
+        logger.log("outbox circle yielded to user rec id=%s" % outbox_id)
+    return int(changed)
 
 
 def heartbeat(database=None):
