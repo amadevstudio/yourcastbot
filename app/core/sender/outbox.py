@@ -11,6 +11,10 @@ User rec is keyed by outbox status, not a forever "already sent" flag:
 pending/leased for the same chat+episode is the in-flight click (do not
 enqueue a second); done/failed means they may tap download again.
 
+One user occupies at most one worker per action (the old user_threads
+booking). Extra clicks from the same chat wait; they must not fill the
+whole rec pool.
+
 Lease is short (~5 min). The worker must touch() the row while it downloads
 or sends. done is Telegram ACK; a 429 goes back to pending with available_at.
 Old done/failed rows are deleted by purge_old(); pending and leased stay.
@@ -685,6 +689,8 @@ def claim(database=None, outbox_id=None, action=None):
     """Claim one available pending row. Returns a memory-queue job or None.
 
     Without outbox_id: user rec before circle, newest first.
+    Skip a user who already has a leased row of the same action — one
+    clicker cannot occupy every rec worker.
     Rows at MAX_ATTEMPTS are skipped (fail_exhausted marks them failed).
     """
     database = _database(database)
@@ -710,6 +716,11 @@ def claim(database=None, outbox_id=None, action=None):
                     "SELECT * FROM send_outbox "
                     "WHERE status = 'pending' AND available_at <= ? "
                     "AND attempts < ? " + action_sql +
+                    "AND NOT EXISTS ("
+                    "SELECT 1 FROM send_outbox AS busy "
+                    "WHERE busy.status = 'leased' "
+                    "AND busy.user_id = send_outbox.user_id "
+                    "AND busy.action = send_outbox.action) "
                     "ORDER BY CASE WHEN action = 'circle' "
                     "OR user_id GLOB 'c*' THEN 1 ELSE 0 END, "
                     "created_at DESC, id DESC LIMIT 1",

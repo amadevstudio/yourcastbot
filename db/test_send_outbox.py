@@ -798,6 +798,40 @@ def test_clean_old_outbox_job(db_path):
         "daily job removed the row")
 
 
+def test_claim_one_lease_per_user(db_path):
+    busy = outbox.enqueue(
+        _rec_job(chat_id=801, record_uniq_id='a-new'),
+        database=db_path, dispatch=False)
+    waiting = outbox.enqueue(
+        _rec_job(chat_id=801, record_uniq_id='a-old'),
+        database=db_path, dispatch=False)
+    other = outbox.enqueue(
+        _rec_job(chat_id=802, record_uniq_id='b'),
+        database=db_path, dispatch=False)
+    _set_created_at(db_path, waiting, "2020-01-01T00:00:00Z")
+    _set_created_at(db_path, other, "2021-01-01T00:00:00Z")
+    _set_created_at(db_path, busy, "2022-01-01T00:00:00Z")
+    first = outbox.claim(database=db_path, action='rec')
+    _assert_eq(first['outbox_id'], busy, "newest click for user 801")
+    second = outbox.claim(database=db_path, action='rec')
+    _assert_eq(second['outbox_id'], other, "other user, not 801's second file")
+    third = outbox.claim(database=db_path, action='rec')
+    _assert_eq(third, None, "801 still holds the rec slot")
+    outbox.mark_done(
+        busy, database=db_path, attempts=first['outbox_attempts'])
+    third = outbox.claim(database=db_path, action='rec')
+    _assert_eq(third['outbox_id'], waiting, "801's next file after slot frees")
+    upd_id = outbox.enqueue({
+        'action': 'update',
+        'user_id': 801,
+        'func_params': {'chat_id': 801, 'language_code': 'en'},
+    }, database=db_path, dispatch=False)
+    claimed_upd = outbox.claim(database=db_path, action='update')
+    _assert_eq(
+        claimed_upd['outbox_id'], upd_id,
+        "rec lease does not block that user's update")
+
+
 def test_claim_rec_pool_skips_circle(db_path):
     circle_id = outbox.enqueue(
         _circle_job(channel_id=5, chat_ids={9: {}}, record_uniq_id='c-ep'),
@@ -925,6 +959,7 @@ def main():
         test_claim_action_filter,
         test_claim_skips_exhausted,
         test_clean_old_outbox_job,
+        test_claim_one_lease_per_user,
         test_claim_rec_pool_skips_circle,
         test_legacy_c_star_rec_migrates_to_circle,
         test_enqueue_user_rec_reuses_pending_not_done,
