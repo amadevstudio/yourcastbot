@@ -9,6 +9,10 @@ log/*
 
 constants.py
 constant_texts.py
+*.bak
+.env
+.env.*
+CLAUDE.local.md
 
 webhook_cert.pem
 webhook_pkey.pem
@@ -23,6 +27,7 @@ telethon_sessions/*
 *.session*
 
 backup/*
+!backup/.keep
 
 .idea
 .DS_Store
