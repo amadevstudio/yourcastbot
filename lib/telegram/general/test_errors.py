@@ -11,7 +11,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from lib.telegram.general.errors import user_unavailable_error  # noqa: E402
+from lib.telegram.general.errors import (  # noqa: E402
+    message_to_edit_not_found, user_unavailable_error)
 
 
 def _assert_eq(got, expected, label):
@@ -44,6 +45,20 @@ def main():
     ]
     for text in still_alive:
         _assert_eq(user_unavailable_error(text), False, text[:48])
+
+    stale_edit = [
+        "Bad Request: message to edit not found",
+        "Bad Request: MESSAGE_ID_INVALID",
+        "A request to the Telegram API was unsuccessful. Error code: 400. "
+        "Description: Bad Request: MESSAGE_ID_INVALID",
+        "message identifier is not specified",
+    ]
+    for text in stale_edit:
+        _assert_eq(message_to_edit_not_found(text), True, text[:48])
+        _assert_eq(user_unavailable_error(text), False, "not blocked: " + text[:32])
+    _assert_eq(
+        message_to_edit_not_found("Too Many Requests: retry after 3"),
+        False, "flood is not a stale edit")
     print("all error classification checks passed")
 
 

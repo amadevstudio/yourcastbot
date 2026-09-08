@@ -6,7 +6,7 @@ require __DIR__ . '/../../config.php';
 error_reporting(0);
 ini_set('display_errors', '0');
 
-$get_b64 = base64_encode(json_encode($_GET));
+$get_b64 = base64_encode(json_encode($_GET, JSON_FORCE_OBJECT));
 
 $python = $bot_path . '/venv/bin/python';
 $script = $bot_path . '/scripts/payment/subscription_income.py';

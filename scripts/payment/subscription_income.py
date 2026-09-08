@@ -13,7 +13,6 @@
 from telethon import TelegramClient  # , events
 from telethon.tl.custom import Button
 
-import json
 import hashlib
 import hmac
 import os
@@ -35,6 +34,7 @@ import app.service.user.language
 from app.i18n.messages import get_message
 
 from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, giveAward
+from scripts.payment.webhook_input import robokassa_result
 
 getps = base64.b64decode(sys.argv[1]).decode('utf-8')
 
@@ -50,9 +50,13 @@ async def error_to_user(tgid, language_code):
 
 payment_log_path = f"{config.BASE_DIR}/log/payment.log"
 
+params = robokassa_result(getps)
+if params is None:
+	print("bad sign\n", flush=True)
+	sys.exit(0)
+
 try:
 
-	params = json.loads(getps)
 	out_sum = params['OutSum']
 	inv_id = params['InvId']
 	crc = params['SignatureValue']

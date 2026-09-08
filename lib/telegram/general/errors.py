@@ -62,7 +62,12 @@ def bot_blocked_reaction(e, user_id):
 		return False
 
 def message_to_edit_not_found(e):
-	return "message to edit not found" in str(e)
+	text = str(e)
+	return (
+		"message to edit not found" in text
+		or "MESSAGE_ID_INVALID" in text
+		or "message identifier is not specified" in text
+	)
 
 
 # Telegram could not download the media we handed it: dead/blocked host, broken url,

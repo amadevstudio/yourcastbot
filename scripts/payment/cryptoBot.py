@@ -35,6 +35,7 @@ from app.i18n.messages import get_message
 
 from lib.api.payment.cryptoBotApi import CryptoBotApi
 from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, giveAward
+from scripts.payment.webhook_input import crypto_invoice
 
 # TODO: refactor the file, make some tests
 
@@ -196,25 +197,12 @@ def income_processing():
 		# storage.set_user_last_text(refer_id, message.id)
 
 	try:
-
-		app_id = config.app_api_id
-		api_hash = config.app_api_hash
-		bot_token = config.token
-
-		bot = TelegramClient(
-			'www-data', app_id, api_hash).start(bot_token=bot_token)
-
-		# data = json.loads(getps)
-		# params = data['body']
-		# headers = data['headers']
-
-		params = json.loads(paramsString)
-		headers = json.loads(headersString)
-		if not isinstance(headers, dict):
-			headers = {}
+		parsed = crypto_invoice(paramsString, headersString)
+		if parsed is None:
+			return
+		params, headers = parsed
 
 		signature = headers.get('Crypto-Pay-Api-Signature', '') or ''
-
 		customPayload = json.loads(params["payload"]["payload"])
 
 		if "net" in customPayload and customPayload["net"] == "testnet":
@@ -228,9 +216,15 @@ def income_processing():
 			cryptoBotApi = CryptoBotApi(config.crypto_bot_api_key)
 
 		queryVerified = cryptoBotApi.isDataSignatureCorrect(paramsString, signature)
-
 		if not queryVerified:
 			return
+
+		app_id = config.app_api_id
+		api_hash = config.app_api_hash
+		bot_token = config.token
+
+		bot = TelegramClient(
+			'www-data', app_id, api_hash).start(bot_token=bot_token)
 
 		invoice_id = params["payload"]["invoice_id"]
 		invoice_hash = params["payload"]["hash"]
