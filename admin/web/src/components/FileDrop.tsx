@@ -87,7 +87,7 @@ export function FileDrop({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -104,7 +104,7 @@ export function FileDrop({
           over ? "border-brand ring-2 ring-brand/40" : "border-line",
         )}
       >
-        <div className="flex items-center gap-2 p-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 p-1.5">
           <Button
             type="button"
             variant="outline"
@@ -114,7 +114,7 @@ export function FileDrop({
             <Upload size={14} />
             Выбрать
           </Button>
-          <div className="min-w-0 flex-1 truncate text-sm text-zinc-400">
+          <div className="min-w-0 flex-1 basis-40 truncate text-sm text-zinc-400">
             {files.length
               ? `${files.length} файл(ов) · ${formatBytes(total)}`
               : "Перетащите сюда или нажмите «Выбрать»"}
@@ -146,7 +146,7 @@ export function FileDrop({
             return (
               <li
                 key={`${file.name}-${file.size}-${file.lastModified}`}
-                className="flex items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2"
+                className="flex min-w-0 items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2"
               >
                 {previews[index] ? (
                   <img
