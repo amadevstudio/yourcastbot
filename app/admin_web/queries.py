@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Admin reads/writes. Same numbers as the PHP pages, without N+1 user loops."""
+"""Admin reads/writes for the operator UI."""
 from __future__ import annotations
 
 from typing import Any, Optional

@@ -2,39 +2,59 @@ import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, MailJob } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { FileDrop, type AttachmentKind } from "@/components/FileDrop";
 import {
   Badge,
   Card,
+  Field,
+  Hint,
   Input,
-  Label,
   Progress,
   Textarea,
 } from "@/components/ui/primitives";
+import { formatWhen } from "@/lib/utils";
+
+const STATUS: Record<
+  string,
+  { label: string; tone: "default" | "ok" | "warn" | "mute" }
+> = {
+  queued: { label: "в очереди", tone: "default" },
+  running: { label: "идёт отправка", tone: "default" },
+  done: { label: "готово", tone: "ok" },
+  failed: { label: "ошибка", tone: "warn" },
+  cancelled: { label: "остановлено", tone: "mute" },
+  cancel_requested: { label: "останавливаем…", tone: "mute" },
+};
+
+function statusOf(value: string) {
+  return STATUS[value] || { label: value, tone: "default" as const };
+}
 
 function JobCard({ job }: { job: MailJob }) {
   const cancel = useMutation({ mutationFn: () => api.cancelMail(job.id) });
   const live = job.status === "queued" || job.status === "running";
+  const status = statusOf(job.status);
   return (
     <Card className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-semibold">Задача #{job.id}</div>
-        <Badge
-          tone={
-            job.status === "done"
-              ? "ok"
-              : job.status === "failed" || job.status === "cancelled"
-                ? "warn"
-                : "default"
-          }
-        >
-          {job.status}
-        </Badge>
+        <Badge tone={status.tone}>{status.label}</Badge>
       </div>
       <Progress value={job.progress} />
       <div className="text-sm text-zinc-400">
-        {job.sent}/{job.total || "?"} отправлено · failed {job.failed} · skipped{" "}
-        {job.skipped}
+        {job.sent}/{job.total || "?"} отправлено · ошибок {job.failed} ·
+        пропущено {job.skipped}
       </div>
+      <Hint>
+        {job.to_creator_only
+          ? "Тест только создателю"
+          : job.recipients_text
+            ? `Список: ${job.recipients_text}`
+            : "Всем, кого набрала очередь"}
+        {job.language ? ` · язык ${job.language}` : ""}
+        {job.created_by ? ` · ${job.created_by}` : ""}
+        {job.created_at ? ` · ${formatWhen(job.created_at)}` : ""}
+      </Hint>
       {job.last_error ? (
         <div className="text-sm text-red-400">{job.last_error}</div>
       ) : null}
@@ -81,6 +101,8 @@ export default function Send() {
   });
 
   const [toCreator, setToCreator] = useState(true);
+  const [files, setFiles] = useState<File[]>([]);
+  const [kind, setKind] = useState<AttachmentKind>("image");
   const [error, setError] = useState("");
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -94,8 +116,18 @@ export default function Send() {
       if (!ok) return;
     }
     form.set("to_creator_only", toCreator ? "true" : "false");
+    form.delete("attachments");
+    for (const file of files) {
+      form.append("attachments", file);
+    }
+    if (files.length) {
+      form.set("attachment_type", kind);
+    } else {
+      form.set("attachment_type", "");
+    }
     try {
       await send.mutateAsync(form);
+      setFiles([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не отправилось");
     }
@@ -110,90 +142,110 @@ export default function Send() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
       <div className="space-y-4">
-        <div>
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold">Рассылка</h1>
-          <p className="text-sm text-zinc-500">
-            Больше не скрипт до падения: задача встаёт в очередь jobs-воркера,
-            прогресс обновляется здесь.
-          </p>
+          <Hint>
+            Сообщение встаёт в очередь фонового воркера. Прогресс справа
+            обновляется сам. Рассылка не занимает слоты скачивания выпусков.
+          </Hint>
         </div>
         <Card>
           <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="space-y-1">
-              <Label>Сообщение</Label>
+            <Field
+              label="Сообщение"
+              hint="Текст, который уйдёт в Telegram. Если есть файл — это подпись к первому вложению."
+            >
               <Textarea name="message" required />
-            </div>
-            <div className="flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2">
-                <input type="radio" name="parse_mode" value="html" defaultChecked />
-                HTML
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="parse_mode" value="mrkd" />
-                Markdown
-              </label>
-            </div>
-            <div className="space-y-1">
-              <Label>Файл</Label>
-              <Input type="file" name="attachments" multiple />
-            </div>
-            <div className="flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="attachment_type"
-                  value="image"
-                  defaultChecked
-                />
-                Изображение
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="attachment_type" value="audio" />
-                Аудио
-              </label>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
+            </Field>
+            <Field
+              label="Разметка"
+              hint="HTML: <b>, <i>, <a href>, <code>, <pre>. Markdown: *жирный*, _курсив_, `код`. Сломанные теги Telegram не отправит."
+            >
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="parse_mode"
+                    value="html"
+                    defaultChecked
+                  />
+                  HTML
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="parse_mode" value="mrkd" />
+                  Markdown
+                </label>
+              </div>
+            </Field>
+            <Field label="Файлы">
+              <FileDrop
+                files={files}
+                onChange={setFiles}
+                kind={kind}
+                onKindChange={setKind}
+              />
+            </Field>
+            <label className="flex items-start gap-2 text-sm">
               <input
+                className="mt-1"
                 type="checkbox"
                 checked={toCreator}
                 onChange={(e) => setToCreator(e.target.checked)}
               />
-              Только создателю (безопасный тест)
+              <span>
+                Только создателю
+                <Hint>
+                  Безопасный тест: сообщение уйдёт вам, очередь и вложения
+                  проверятся, рассылки по базе не будет.
+                </Hint>
+              </span>
             </label>
-            <div className="space-y-1">
-              <Label>Telegram id через запятую (пусто — всем)</Label>
+            <Field
+              label="Кому ещё"
+              hint={
+                toCreator
+                  ? "Пока включён тест создателю, этот список не используется."
+                  : "Telegram id через запятую. Пусто — всем живым пользователям (с фильтром языка, если задан)."
+              }
+            >
               <Textarea
                 name="recipients_identifiers"
                 className="min-h-[70px]"
-                placeholder="123,456"
+                placeholder="123456789, 987654321"
+                disabled={toCreator}
               />
-            </div>
-            <div className="space-y-1">
-              <Label>Язык (пусто — все)</Label>
-              <Input name="language" placeholder="ru" />
-            </div>
+            </Field>
+            <Field
+              label="Язык"
+              hint="Код из профиля, как на статистике: ru, en. Пусто — без фильтра по языку."
+            >
+              <Input name="language" placeholder="ru" disabled={toCreator} />
+            </Field>
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
             <Button type="submit" disabled={send.isPending}>
               {send.isPending ? "Ставим в очередь…" : "Отправить"}
             </Button>
           </form>
         </Card>
-        <Card className="text-xs leading-5 text-zinc-500">
-          HTML: b, i, a, code, pre. Markdown: *bold*, _italic_, `code`.
-        </Card>
       </div>
       <div className="space-y-4">
-        {current ? <JobCard job={current} /> : null}
+        {current ? <JobCard job={current} /> : (
+          <Hint>После отправки здесь появится прогресс текущей задачи.</Hint>
+        )}
         <div className="text-sm font-semibold text-zinc-400">Недавние</div>
-        {recent.map((job) => (
-          <div
-            key={job.id}
-            className="cursor-pointer"
-            onClick={() => setActiveId(job.id)}
-          >
-            <JobCard job={job} />
-          </div>
-        ))}
+        {recent.length ? (
+          recent.map((job) => (
+            <div
+              key={job.id}
+              className="cursor-pointer"
+              onClick={() => setActiveId(job.id)}
+            >
+              <JobCard job={job} />
+            </div>
+          ))
+        ) : (
+          <Hint>Пока пусто — ни одной рассылки в этой базе.</Hint>
+        )}
       </div>
     </div>
   );

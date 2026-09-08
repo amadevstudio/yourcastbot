@@ -34,7 +34,9 @@ export default function Login() {
         <div className="mb-6 flex flex-col items-center gap-3">
           <img src="/app/YC.png" alt="Yourcast" className="h-16 w-16 rounded-2xl" />
           <h1 className="text-xl font-bold">Вход в админку</h1>
-          <p className="text-sm text-zinc-500">Yourcast · только для операторов</p>
+          <p className="text-sm text-zinc-500">
+            Yourcast · почта из таблицы операторов
+          </p>
         </div>
         <form className="space-y-4" onSubmit={onSubmit}>
           <div className="space-y-1">
