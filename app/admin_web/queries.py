@@ -9,7 +9,7 @@ from app.admin_web import auth
 from app.admin_web.dbutil import connect, row_to_dict
 from app.jobs.circle_health import format_status_lines
 from app.repository.storage import storage
-from db.sqliteAdapter import SQLighter
+from db.sqliteAdapter import SQLighter, ensure_users_created_at_column
 
 
 LIVE_BOT_SUB = (
@@ -103,6 +103,7 @@ def list_users(
     offset = (page - 1) * per_page
     conn = connect(database)
     try:
+        ensure_users_created_at_column(conn, _db_path(database))
         if tgid:
             where = "WHERE u.telegramId = ?"
             params: tuple = (str(tgid),)
@@ -182,7 +183,7 @@ def update_tariff(
 
 def _users_select() -> str:
     return (
-        "SELECT u.id, u.telegramId, u.lang, u.deleted_at, "
+        "SELECT u.id, u.telegramId, u.lang, u.deleted_at, u.created_at, "
         "utc.tariff_id, utc.balance, utc.time_left, utc.notify_count, "
         "(SELECT COUNT(*) FROM user_channel_cs ucc "
         "WHERE ucc.user_telegram_id = u.telegramId) AS channels_count "
@@ -203,11 +204,15 @@ def _user_row(row) -> dict[str, Any]:
         and notify_count is not None
         and int(notify_count) != 0
     )
+    created_at = row["created_at"]
+    if created_at is not None:
+        created_at = str(created_at).strip() or None
     return {
         "id": row["id"],
         "telegramId": row["telegramId"],
         "lang": row["lang"],
         "deleted": bool(row["deleted_at"]),
+        "created_at": created_at,
         "channels_count": int(row["channels_count"] or 0),
         "tariff_id": tariff_id,
         "balance": row["balance"],

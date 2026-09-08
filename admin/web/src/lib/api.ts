@@ -28,6 +28,7 @@ export type BotUser = {
   time_left_days: number | null;
   notify_count: number | null;
   receives_episodes: boolean;
+  created_at: string | null;
   subs: Sub[];
 };
 

@@ -31,6 +31,9 @@ _runtime_kv_ready = set()
 _users_digest_lock = threading.Lock()
 _users_digest_ready = set()
 
+_users_created_at_lock = threading.Lock()
+_users_created_at_ready = set()
+
 _digest_outbox_lock = threading.Lock()
 _digest_outbox_ready = set()
 
@@ -278,6 +281,35 @@ def ensure_users_nosub_digest_columns(connection: sqlite3.Connection, database=N
             logger.err("Could not ensure users nosub digest columns:", e)
 
 
+def ensure_users_created_at_column(
+        connection: sqlite3.Connection, database=None) -> None:
+    # Registration time was never stored. Deploy git-pulls and restarts
+    # without running migrations, so the column is created here as well.
+    # Existing rows stay NULL: do not stamp them with now, that is not
+    # when they registered.
+    key = database
+    if key is not None and key in _users_created_at_ready:
+        return
+
+    with _users_created_at_lock:
+        if key is not None and key in _users_created_at_ready:
+            return
+        try:
+            columns = _pragma_user_columns(connection)
+            if not columns:
+                return
+            if 'created_at' not in columns:
+                if _add_users_column(
+                        connection,
+                        "ALTER TABLE users ADD COLUMN created_at TEXT"):
+                    logger.warn(
+                        "users.created_at was missing and has been created")
+            if key is not None:
+                _users_created_at_ready.add(key)
+        except Exception as e:
+            logger.err("Could not ensure users.created_at column:", e)
+
+
 def helper_remove_proto_from_link(link):
     link_tester = re.compile(r'(?:https?)?:\/\/((?:[a-z0-9-_\.]+)*\/.*)')
     reg_result = link_tester.match(link)
@@ -298,6 +330,7 @@ class SQLighter:
         _ensure_users_deleted_at_column(self.connection)
         _ensure_channel_http_validators_columns(self.connection)
         ensure_users_nosub_digest_columns(self.connection, database)
+        ensure_users_created_at_column(self.connection, database)
         ensure_send_outbox_table(self.connection, database)
         ensure_bot_runtime_kv_table(self.connection, database)
         ensure_digest_outbox_table(self.connection, database)
@@ -1076,13 +1109,15 @@ class SQLighter:
                 if refer_id is not None:
                     self.cursor.execute(
                         'INSERT INTO users (telegramId, lang, ref_id, '
-                        'nosub_digest_sent_at) VALUES (?, ?, ?, datetime(\'now\'))',
+                        'nosub_digest_sent_at, created_at) '
+                        'VALUES (?, ?, ?, datetime(\'now\'), datetime(\'now\'))',
                         (str(telegram_id), str(user_lang), str(refer_id),))
                     by_refer = True
                 else:
                     self.cursor.execute(
                         'INSERT INTO users (telegramId, lang, '
-                        'nosub_digest_sent_at) VALUES (?, ?, datetime(\'now\'))',
+                        'nosub_digest_sent_at, created_at) '
+                        'VALUES (?, ?, datetime(\'now\'), datetime(\'now\'))',
                         (str(telegram_id), str(user_lang),))
             else:
                 new_user = False
@@ -1156,8 +1191,8 @@ class SQLighter:
                     (str(telegramId),))
                 self.connection.commit()
                 self.cursor.execute(
-                    'INSERT INTO users (telegramId, nosub_digest_sent_at) '
-                    'VALUES (?, datetime(\'now\'))',
+                    'INSERT INTO users (telegramId, nosub_digest_sent_at, '
+                    'created_at) VALUES (?, datetime(\'now\'), datetime(\'now\'))',
                     (str(telegramId),))
                 self.connection.commit()
                 return self.cursor.execute(
