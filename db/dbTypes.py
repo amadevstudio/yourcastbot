@@ -10,3 +10,4 @@ class UserDBType(TypedDict, total=False):
     deleted_at: str
     nosub_digest_enabled: int
     nosub_digest_sent_at: str
+    created_at: str

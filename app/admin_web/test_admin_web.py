@@ -36,7 +36,8 @@ def _schema(conn):
             lang char(15),
             bitrate char(7),
             ref_id INTEGER,
-            deleted_at TEXT
+            deleted_at TEXT,
+            created_at TEXT
         );
         CREATE TABLE channels (
             id INTEGER PRIMARY KEY,
@@ -76,7 +77,8 @@ def _schema(conn):
         ("ops@yourcast.test", hashlib.sha256(b"secret").hexdigest()),
     )
     conn.execute(
-        "INSERT INTO users (telegramId, lang) VALUES (1001, 'ru')")
+        "INSERT INTO users (telegramId, lang, created_at) "
+        "VALUES (1001, 'ru', '2024-03-15 10:30:00')")
     conn.execute(
         "INSERT INTO users (telegramId, lang) VALUES (1002, 'en')")
     conn.execute(
@@ -159,6 +161,10 @@ def test_queries_and_mailer(path):
         listing = queries.list_users(database=path)
         first = listing["users"][0]
         _assert_eq(first["telegramId"], 1001, "paid user first")
+        _assert_eq(
+            first["created_at"], "2024-03-15 10:30:00", "known registration")
+        by_tg = {u["telegramId"]: u for u in listing["users"]}
+        _assert_eq(by_tg[1002]["created_at"], None, "unknown registration")
         names = sorted(s["name"] for s in first["subs"])
         _assert_eq(names, ["Alpha", "Beta"], "subs in one query")
         updated = queries.update_tariff(1, 1, 250, 20, 1, 1, database=path)
@@ -251,6 +257,10 @@ def test_http(path):
         users = client.get("/api/users")
         _assert_eq(users.status_code, 200, "users list")
         _assert_eq(len(users.json()["users"][0]["subs"]), 2, "no N+1 payload")
+        _assert_eq(
+            users.json()["users"][0]["created_at"],
+            "2024-03-15 10:30:00",
+            "http registration date")
         job = client.post(
             "/api/mail",
             data={

@@ -23,6 +23,22 @@ export function formatWhen(value: string | null | undefined) {
   });
 }
 
+export function formatRegisteredAt(value: string | null | undefined) {
+  if (!value) return "дата неизвестна";
+  const trimmed = value.trim();
+  const hasTz = /Z$/i.test(trimmed) || /[+-]\d{2}:?\d{2}$/.test(trimmed);
+  const iso = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
+  const date = new Date(hasTz ? iso : `${iso}Z`);
+  if (Number.isNaN(date.getTime())) return "дата неизвестна";
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function centsToUsd(cents: number) {
   return (Number(cents || 0) / 100).toFixed(2);
 }

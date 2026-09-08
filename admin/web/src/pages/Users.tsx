@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { api, BotUser, Sub } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, Hint, Input, Skeleton } from "@/components/ui/primitives";
+import { formatRegisteredAt } from "@/lib/utils";
 
 function SubList({ subs }: { subs: Sub[] }) {
   if (!subs.length) return <Hint>Подкастов в списке нет.</Hint>;
@@ -61,6 +62,18 @@ function UserCard({
             {user.receives_episodes ? (
               <Badge tone="warn">получает выпуски</Badge>
             ) : null}
+          </div>
+          <div className="text-xs text-zinc-400">
+            Регистрация{" "}
+            <span
+              title={
+                user.created_at
+                  ? "Когда человек впервые написал боту"
+                  : "Колонку начали писать позже, у старых записей даты нет"
+              }
+            >
+              {formatRegisteredAt(user.created_at)}
+            </span>
           </div>
           <div className="text-xs text-zinc-400">
             Тариф {user.tariff_id ?? "нет"}
