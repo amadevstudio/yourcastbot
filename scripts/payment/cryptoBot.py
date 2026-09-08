@@ -26,7 +26,6 @@ bot_path = str(sys.argv[1])
 sys.path.insert(1, bot_path)
 os.chdir(bot_path)
 
-from db.connection import connect_sqlite
 from db.sqliteAdapter import SQLighter
 # import storage
 import config
@@ -211,8 +210,10 @@ def income_processing():
 
 		params = json.loads(paramsString)
 		headers = json.loads(headersString)
+		if not isinstance(headers, dict):
+			headers = {}
 
-		signature = headers.get('Crypto-Pay-Api-Signature', '')
+		signature = headers.get('Crypto-Pay-Api-Signature', '') or ''
 
 		customPayload = json.loads(params["payload"]["payload"])
 
@@ -273,7 +274,9 @@ def income_processing():
 
 					if config.server:
 						with open(payment_log_path, 'a+') as psl:
-							psl.write(paramsString + '\n\n')
+							psl.write(
+								"cryptoBot paid invoice=%s tgid=%s amount=%s\n"
+								% (invoice_id, chat_tg_id, amountCents))
 
 				if user['ref_id'] is not None:
 					message = giveAward(user['ref_id'], user['telegramId'], 'replenished')
@@ -292,8 +295,9 @@ def income_processing():
 					with open(payment_log_path, 'a+') as pfl:
 						pfl.write(
 							str(e) + " : "
-							+ str(exc_type) + ' ' + str(fename) + ' ' + str(exc_tb.tb_lineno) + ": "
-							+ paramsString + '\n\n')
+							+ str(exc_type) + ' ' + str(fename) + ' '
+							+ str(exc_tb.tb_lineno)
+							+ ": invoice notify failed tgid=%s\n\n" % chat_tg_id)
 				else:
 					print(e, exc_type, fename, exc_tb.tb_lineno, flush=True)
 
@@ -301,25 +305,18 @@ def income_processing():
 
 	except Exception as e:
 		exc_type, exc_obj, exc_tb = sys.exc_info()
-		fename = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+		fename = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1] if exc_tb else "?"
 		if config.server:
-			with open(payment_log_path, 'a+') as pfl:
-				import sqlite3
-				connection = connect_sqlite(config.db_path)
-				pfl.write("Connection open\n")
-				connection.row_factory = sqlite3.Row
-				cursor = connection.cursor()
-				cursor.execute("update user_channel_cs set notify = 0 where id = 1")
-				pfl.write("Executed\n")
-				connection.commit()
-				pfl.write("Commited\n")
-				connection.close()
-				pfl.write(
-					str(e) + " : "
-					+ str(exc_type) + ' ' + str(fename) + ' ' + str(exc_tb.tb_lineno) + ": "
-					+ paramsString + ' ' + headersString + '\n\n')
+			try:
+				with open(payment_log_path, 'a+') as pfl:
+					pfl.write(
+						"%s : %s %s %s: cryptoBot webhook error\n\n"
+						% (e, exc_type, fename,
+						   getattr(exc_tb, "tb_lineno", "")))
+			except Exception:
+				pass
 		else:
-			print(e, exc_type, fename, exc_tb.tb_lineno, flush=True)
+			print(e, exc_type, fename, getattr(exc_tb, "tb_lineno", ""), flush=True)
 
 
 income_processing()

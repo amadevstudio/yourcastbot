@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, Response,
@@ -57,6 +58,27 @@ class _NoCacheHTML(BaseHTTPMiddleware):
         return response
 
 
+def _csrf_ok(request: Request) -> bool:
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return True
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    origin = request.headers.get("origin")
+    if origin:
+        return (urlparse(origin).hostname or "").lower() == host
+    referer = request.headers.get("referer")
+    if referer:
+        return (urlparse(referer).hostname or "").lower() == host
+    return host in {"testserver", "127.0.0.1", "localhost"}
+
+
+class _Csrf(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/") and not _csrf_ok(request):
+            return JSONResponse({"detail": "bad origin"}, status_code=403)
+        return await call_next(request)
+
+
+app.add_middleware(_Csrf)
 app.add_middleware(_NoCacheHTML)
 
 
@@ -156,6 +178,16 @@ def mail_cancel(job_id: int, _admin: dict = Depends(current_admin)):
     return job
 
 
+@api.post("/mail/{job_id}/resume")
+def mail_resume(job_id: int, _admin: dict = Depends(current_admin)):
+    job = mail_jobs.resume(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if not job.get("can_resume") and job.get("status") != mail_jobs.STATUS_QUEUED:
+        raise HTTPException(status_code=409, detail="cannot resume")
+    return job
+
+
 @api.post("/mail")
 async def mail_create(
         request: Request,
@@ -181,12 +213,16 @@ async def mail_create(
     )
     saved = []
     files = [f for f in attachments if f is not None and f.filename]
+    if len(files) > 8:
+        raise HTTPException(status_code=400, detail="too many files")
     if files:
         folder = mail_jobs.attachments_dir(job["id"], config.work_dir)
         for upload in files:
             name = _safe_filename(upload.filename or "file")
             path = os.path.join(folder, name)
             data = await upload.read()
+            if len(data) > 15 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="file too large")
             with open(path, "wb") as fh:
                 fh.write(data)
             saved.append({"path": path, "filename": name})

@@ -23,6 +23,7 @@ const STATUS: Record<
   done: { label: "готово", tone: "ok" },
   failed: { label: "ошибка", tone: "warn" },
   cancelled: { label: "остановлено", tone: "mute" },
+  paused: { label: "на паузе", tone: "mute" },
   cancel_requested: { label: "останавливаем…", tone: "mute" },
 };
 
@@ -31,7 +32,15 @@ function statusOf(value: string) {
 }
 
 function JobCard({ job }: { job: MailJob }) {
-  const cancel = useMutation({ mutationFn: () => api.cancelMail(job.id) });
+  const queryClient = useQueryClient();
+  const cancel = useMutation({
+    mutationFn: () => api.cancelMail(job.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mail"] }),
+  });
+  const resume = useMutation({
+    mutationFn: () => api.resumeMail(job.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mail"] }),
+  });
   const live = job.status === "queued" || job.status === "running";
   const status = statusOf(job.status);
   return (
@@ -41,9 +50,11 @@ function JobCard({ job }: { job: MailJob }) {
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
       <Progress value={job.progress} />
-      <div className="text-sm text-zinc-400">
-        {job.sent}/{job.total || "?"} отправлено · ошибок {job.failed} ·
-        пропущено {job.skipped}
+      <div className="text-sm text-zinc-300">
+        отправлено {job.sent} · ошибок {job.failed} · пропущено {job.skipped}
+        {" · "}
+        осталось {job.remaining ?? Math.max((job.total || 0) - job.sent, 0)} из{" "}
+        {job.total || "?"}
       </div>
       <Hint>
         {job.to_creator_only
@@ -58,19 +69,42 @@ function JobCard({ job }: { job: MailJob }) {
       {job.last_error ? (
         <div className="text-sm text-red-400">{job.last_error}</div>
       ) : null}
-      {live ? (
-        <Button
-          variant="danger"
-          size="sm"
-          disabled={cancel.isPending}
-          onClick={(e) => {
-            e.stopPropagation();
-            cancel.mutate();
-          }}
-        >
-          Остановить
-        </Button>
+      {job.recent_errors?.length ? (
+        <div className="space-y-1 text-xs text-zinc-500">
+          {job.recent_errors.map((row, i) => (
+            <div key={`${row.tgid}-${i}`}>
+              {row.tgid}: {row.error || "ошибка"}
+            </div>
+          ))}
+        </div>
       ) : null}
+      <div className="flex flex-wrap gap-2">
+        {live ? (
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={cancel.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              cancel.mutate();
+            }}
+          >
+            Остановить
+          </Button>
+        ) : null}
+        {job.can_resume ? (
+          <Button
+            size="sm"
+            disabled={resume.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              resume.mutate();
+            }}
+          >
+            Продолжить
+          </Button>
+        ) : null}
+      </div>
     </Card>
   );
 }

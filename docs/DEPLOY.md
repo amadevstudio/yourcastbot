@@ -59,7 +59,7 @@ Python: проверка подписи, sqlite, сообщение в Telegram
 | Robokassa Result | `payment/robokassa/result.php` | `scripts/payment/subscription_income.py $get_b64 $bot_path` |
 | Robokassa Success/Fail | `success.php` / `fail.php` | нет — редирект на `https://t.me/yourcastbot` |
 
-PHP **не** импортирует бота и **не** ходит в sqlite. Он только принимает HTTP и запускает короткий Python. Это не один из четырёх долгоживущих процессов (`bot` / `updater` / `jobs` / `admin`): php-fpm свой, Python живёт на время запроса.
+PHP **не** импортирует бота и **не** ходит в sqlite. Он только принимает HTTP и запускает короткий Python через `proc_open` (без shell, без `testfile.txt`). Это не один из четырёх долгоживущих процессов. CD копирует актуальные `listener.php` / `result.php` из `deploy/payment/`.
 
 На проде listener вызывает `venv/bin/python` **без sudo**. Пользователь php-fpm (`www-data`) должен уметь:
 
@@ -67,7 +67,7 @@ PHP **не** импортирует бота и **не** ходит в sqlite. �
 - прочитать код бота и `constants.py`
 - писать в `db/yourcast.db` и `log/payment.log`
 
-В `/etc/sudoers` ещё висят NOPASSWD на `cryptoBot.py` и `send_message.py` — это старый путь. Текущие `listener.php` / `result.php` sudo не вызывают. Если переписываете PHP, не добавляйте sudo «на всякий случай»: либо прямой venv (как сейчас), либо явный visudo на конкретный скрипт.
+В `/etc/sudoers` ещё висят NOPASSWD на `cryptoBot.py` и `send_message.py` — это старый путь, его лучше вычистить. Текущие `listener.php` / `result.php` sudo не вызывают.
 
 Stars и Patreon через PHP **не** ходят. Stars — апдейт внутри процесса `bot`. Patreon — поллер в процессе `jobs`.
 
@@ -115,7 +115,7 @@ Stars и Patreon через PHP **не** ходят. Stars — апдейт вн
 9. Проверки:
    - `curl -fsS https://wrkt.ru/api/health` → `{"ok":true,"role":"admin"}`
    - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/app/` → `200`
-   - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/payment/crypto-bot/listener.php` → `200`
+   - `curl -o /dev/null -w '%{http_code}\n' -X POST https://wrkt.ru/payment/crypto-bot/listener.php` → не 5xx (мусорный POST без подписи = 400, это нормально)
    - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/payment/robokassa/result.php` → `200`
 
 Логины админки — таблица `admins`.
@@ -127,10 +127,10 @@ Stars и Patreon через PHP **не** ходят. Stars — апдейт вн
 1. `git fetch` + `git reset --hard origin/main`
 2. `pip install -r requirements.txt`
 3. сборка `admin/web`
-4. `deploy/ensure_nginx_admin.py` и `nginx -t`
+4. nginx-сниппет админки, `deploy/install_payment_php.py` (копирует hardened `listener.php` / `result.php` в дерево лендинга), `nginx -t`
 5. `supervisorctl restart yourcast`
 
-Лендинг (`/home/yourcast/server`) этим воркфлоу **не** обновляется.
+Лендинг целиком этим воркфлоу не обновляется — только платёжные PHP из `deploy/payment/`. Уберите из visudo `scripts/send_message.py`, если он ещё есть: старая PHP-админка больше не шлёт рассылку.
 
 Секреты Actions: `SERVER_IP`, `SERVER_USERNAME`, `SERVER_PASSWORD`, `PROJECT_PATH` (= `/home/yourcast/yourcast`). Пароли бота и админки туда не кладутся.
 

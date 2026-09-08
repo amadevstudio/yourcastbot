@@ -55,6 +55,7 @@ jobs:
             mkdir -p /etc/nginx/snippets
             cp deploy/nginx-yourcast-admin.conf /etc/nginx/snippets/yourcast-admin.conf
             python3 deploy/ensure_nginx_admin.py
+            python3 deploy/install_payment_php.py
             nginx -t
             systemctl reload nginx
 
