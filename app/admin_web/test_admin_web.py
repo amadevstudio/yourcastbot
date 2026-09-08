@@ -308,6 +308,13 @@ def test_payment_scripts_no_debug_side_effects():
     _assert_eq("testfile.txt" in listener, False, "no testfile in listener")
     _assert_eq("shell_exec" in listener, False, "no shell_exec in listener")
     _assert_eq("proc_open" in listener, True, "listener uses proc_open")
+    robo_php = open(
+        os.path.join(root, "deploy/payment/robokassa/result.php"),
+        encoding="utf-8",
+    ).read()
+    _assert_eq(
+        "JSON_FORCE_OBJECT" in robo_php, True,
+        "empty GET must encode as object not []")
 
 
 def main():

@@ -42,10 +42,23 @@ def _close_open_storage():
     telegram_cache.close_storage()
 
 
+_shutting_down = False
+
+
 def _install_shutdown():
     def shutdown(signum, _frame):
+        # Supervisor sends SIGTERM to the whole group, then again while
+        # atexit (urllib3) is already running. A second sys.exit from
+        # inside that callback is the "Exception ignored in atexit" noise.
+        global _shutting_down
+        if _shutting_down:
+            return
+        _shutting_down = True
         logger.log(f"Received signal {signum}, shutting down...")
-        _close_open_storage()
+        try:
+            _close_open_storage()
+        except Exception as e:
+            logger.err("Shutdown close storage:", e)
         logger.log("Shutdown complete")
         sys.exit(0)
 
