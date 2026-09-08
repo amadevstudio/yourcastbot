@@ -2,7 +2,7 @@
 
 Telegram-бот для подкастов.
 
-Как поднять сервер, nginx, роли процессов и платежные вебхуки: [docs/DEPLOY.md](docs/DEPLOY.md).
+Как поднять сервер и как PHP (лендинг, вебхуки оплаты) связан с Python (бот): [docs/DEPLOY.md](docs/DEPLOY.md).
 
 Админка операторов: `https://wrkt.ru/app/`.
 

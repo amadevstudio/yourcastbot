@@ -1,86 +1,148 @@
 # Как развернуть Yourcast
 
-Два дерева на сервере:
+- [Два дерева](#два-дерева)
+- [Как связаны PHP и Python](#как-связаны-php-и-python)
+- [Процессы бота](#процессы-бота)
+- [Nginx](#nginx)
+- [Первый запуск](#первый-запуск-на-чистой-машине)
+- [Обычный деплой](#обычный-деплой-бота)
+- [Платежи](#платежи)
+
+Публичный сайт — `https://wrkt.ru`. Админка — `https://wrkt.ru/app/`. Бот слушает Telegram long polling, наружу его порт не открывается.
+
+## Два дерева
 
 | Путь | Репозиторий | Зачем |
 |---|---|---|
-| `/home/yourcast/yourcast` | этот репозиторий (бот) | Python: Telegram-бот, апдейтер кругов, фоновые джобы, админка |
-| `/home/yourcast/server` | отдельный репозиторий лендинга | PHP-лендинг `wrkt.ru` и HTTP-вход платёжных вебхуков |
+| `/home/yourcast/yourcast` | **этот** репозиторий | Python: Telegram-бот, апдейтер, джобы, админка |
+| `/home/yourcast/server` | отдельный репозиторий лендинга | PHP: сайт `wrkt.ru` и HTTP-вход платёжных вебхуков |
 
-Публичный сайт — `https://wrkt.ru`. Бот слушает Telegram long polling, наружу его порт не открывается.
+Это не «бот на двух языках». Python — вся логика. PHP — лендинг плюс тонкий вход с публичного HTTPS, потому что Crypto Pay и Robokassa умеют только POST на URL. Процессы бота снаружи не торчат.
 
-## Процессы
+Секреты бота — `constants.py` и `constant_texts.py` (в git не кладутся, список полей в `how-to.txt`). У лендинга `config.php` — только два пути:
 
-Один systemd/supervisor-юнит `yourcast` запускает `python main.py`. Он поднимает четыре роли:
+```php
+$bot_path = '/home/yourcast/yourcast';
+$site_path = '/home/yourcast/server';
+```
+
+SQLite — `db/yourcast.db`. Логи юнита: `/home/yourcast/out.log`, `/home/yourcast/err.log`. Платёжный лог: `log/payment.log`.
+
+## Как связаны PHP и Python
+
+Админка на PHP **больше не живёт**. Старые `/login.php` и `/pages/*` редиректят в `/app/`. PHP остался для лендинга и оплаты.
+
+```
+Crypto Pay / Robokassa
+    │  HTTPS POST
+    ▼
+nginx (корень /home/yourcast/server)
+    │  location ~ \.php$
+    ▼
+php-fpm 7.4 (www-data)
+    │  payment/crypto-bot/listener.php
+    │  или payment/robokassa/result.php
+    │  читает config.php → $bot_path
+    │  тело/GET + заголовки в base64
+    ▼
+shell_exec: cd $bot_path && venv/bin/python scripts/payment/…
+    │  argv: путь бота + payload
+    ▼
+Python: проверка подписи, sqlite, сообщение в Telegram
+```
+
+Контракт скриптов (они в **этом** репозитории):
+
+| Вебхук | PHP (репозиторий лендинга) | Python |
+|---|---|---|
+| Crypto Pay | `payment/crypto-bot/listener.php` | `scripts/payment/cryptoBot.py $bot_path $body_b64 $headers_b64` |
+| Robokassa Result | `payment/robokassa/result.php` | `scripts/payment/subscription_income.py $get_b64 $bot_path` |
+| Robokassa Success/Fail | `success.php` / `fail.php` | нет — редирект на `https://t.me/yourcastbot` |
+
+PHP **не** импортирует бота и **не** ходит в sqlite. Он только принимает HTTP и запускает короткий Python. Это не один из четырёх долгоживущих процессов (`bot` / `updater` / `jobs` / `admin`): php-fpm свой, Python живёт на время запроса.
+
+На проде listener вызывает `venv/bin/python` **без sudo**. Пользователь php-fpm (`www-data`) должен уметь:
+
+- запустить `/home/yourcast/yourcast/venv/bin/python`
+- прочитать код бота и `constants.py`
+- писать в `db/yourcast.db` и `log/payment.log`
+
+В `/etc/sudoers` ещё висят NOPASSWD на `cryptoBot.py` и `send_message.py` — это старый путь. Текущие `listener.php` / `result.php` sudo не вызывают. Если переписываете PHP, не добавляйте sudo «на всякий случай»: либо прямой venv (как сейчас), либо явный visudo на конкретный скрипт.
+
+Stars и Patreon через PHP **не** ходят. Stars — апдейт внутри процесса `bot`. Patreon — поллер в процессе `jobs`.
+
+Долгосрочно вебхук логичнее принять FastAPI на localhost (как админка), без argv и php-fpm. **Не трогайте этот путь, пока не собрались явно мигрировать оплату.**
+
+## Процессы бота
+
+Один supervisor-юнит `yourcast` запускает `python main.py`. Этот процесс — родитель, он поднимает детей:
 
 | Роль | Что делает |
 |---|---|
 | `bot` | входящие апдейты Telegram |
-| `updater` | круги / rec |
-| `jobs` | Patreon-поллинг, бэкапы, **очередь рассылок админки** |
-| `admin` | FastAPI на `127.0.0.1:8765` — API и раздача SPA `/app/` |
+| `updater` | круги RSS / rec |
+| `jobs` | Patreon, бэкапы, **очередь рассылок админки** (поток, не пятый процесс) |
+| `admin` | FastAPI на `127.0.0.1:8765` — API и SPA `/app/` |
 
-Рассылки админки **не** идут через пулы rec/circle/send. Их крутит отдельный поток внутри `jobs`.
+Рассылки админки не идут через пулы rec/circle/send.
 
-Секреты бота — в `constants.py` и `constant_texts.py` (в git не кладутся, список полей в `how-to.txt`). У лендинга — `config.php` с путями `$bot_path` / `$site_path`. SQLite — `db/yourcast.db`. Логи юнита: `/home/yourcast/out.log` и `/home/yourcast/err.log`.
+Отладка одной роли: `python main.py --role admin` (или `bot` / `updater` / `jobs`). В проде так не запускают.
 
 ## Nginx
 
-Сайт отдаёт `/home/yourcast/server`. PHP-FPM обрабатывает `*.php` — так работают вебхуки Crypto Pay и Robokassa.
+Сайт отдаёт `/home/yourcast/server`. PHP-FPM: `location ~ \.php$` → `unix:/run/php/php7.4-fpm.sock`.
 
-Админка подключается сниппетом `deploy/nginx-yourcast-admin.conf` (ставится `deploy/ensure_nginx_admin.py`):
+Админка — сниппет `deploy/nginx-yourcast-admin.conf` (ставит `deploy/ensure_nginx_admin.py`):
 
-- `/app/` — SPA (сборка `admin/web/dist`)
+- `/app/` — SPA (`admin/web/dist`)
 - `/api/` — прокси на FastAPI
-- старые `/login.php` и `/pages/*` редиректят в `/app/`
+- `/login.php` и `/pages/*` → `/app/`
 
-**Не** вешайте `location ^~ /payment/` без FastCGI: это перехватит вебхуки раньше PHP и сломает оплату.
+**Не** вешайте `location ^~ /payment/` без FastCGI: это перехватит вебхуки раньше PHP.
 
-После правки nginx: `nginx -t && systemctl reload nginx`.
+После правки: `nginx -t && systemctl reload nginx`.
 
 ## Первый запуск на чистой машине
 
-1. Пользователь `yourcast`, каталоги выше, Python 3.11+, Node 20+, nginx, php-fpm, supervisor/systemd.
+1. Каталоги выше, Python 3.11+, Node 20+, nginx, php-fpm 7.4, supervisor.
 2. Клонировать бот в `/home/yourcast/yourcast`, лендинг в `/home/yourcast/server`.
 3. Положить секреты (`constants.py`, `constant_texts.py`, `config.php`). Не коммитить.
-4. Python-venv в каталоге бота, `pip install -r requirements.txt`. Юнит supervisor смотрит на `/home/yourcast/yourcast/venv/bin/python` (см. `supervisor.conf`).
-5. `cd admin/web && npm ci && npm run build` — `dist/` в git не хранится, собирается на сервере.
-6. Подключить nginx (лендинг + сниппет админки). TLS как обычно (certbot).
-7. Если PHP вызывает платёжные скрипты через sudo, в visudo должны быть NOPASSWD-строки на эти скрипты (исторически `www-data` → `scripts/payment/subscription_income.py`). Без этого Result URL Robokassa примет POST и тихо не зачислит.
-8. Запустить юнит `yourcast` (`supervisorctl start yourcast`).
+4. Venv в каталоге бота, `pip install -r requirements.txt`. Юнит смотрит на `/home/yourcast/yourcast/venv/bin/python` (`supervisor.conf`).
+5. `cd admin/web && npm ci && npm run build` — `dist/` в git нет, собирается на сервере.
+6. Nginx: корень лендинга + сниппет админки. TLS — certbot.
+7. php-fpm user должен запускать venv python и писать sqlite/лог (см. [связку](#как-связаны-php-и-python)).
+8. `supervisorctl start yourcast`.
 9. Проверки:
    - `curl -fsS https://wrkt.ru/api/health` → `{"ok":true,"role":"admin"}`
    - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/app/` → `200`
    - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/payment/crypto-bot/listener.php` → `200`
    - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/payment/robokassa/result.php` → `200`
 
-Админка: `https://wrkt.ru/app/`. Логины те же, таблица `admins`.
+Логины админки — таблица `admins`.
 
 ## Обычный деплой бота
 
 Пуш в `main` → GitHub Actions «Continous deployment»:
 
-1. `git fetch` + `git reset --hard origin/main` (локальный мусор на сервере не блокирует выкладку)
+1. `git fetch` + `git reset --hard origin/main`
 2. `pip install -r requirements.txt`
 3. сборка `admin/web`
 4. `deploy/ensure_nginx_admin.py` и `nginx -t`
 5. `supervisorctl restart yourcast`
 
-Лендинг (`/home/yourcast/server`) этим воркфлоу **не** обновляется — его деплоят отдельно.
+Лендинг (`/home/yourcast/server`) этим воркфлоу **не** обновляется.
 
-Секреты GitHub Actions (репозиторий бота): `SERVER_IP`, `SERVER_USERNAME`, `SERVER_PASSWORD`, `PROJECT_PATH` (= `/home/yourcast/yourcast`). Пароли бота и админки туда не кладутся.
+Секреты Actions: `SERVER_IP`, `SERVER_USERNAME`, `SERVER_PASSWORD`, `PROJECT_PATH` (= `/home/yourcast/yourcast`). Пароли бота и админки туда не кладутся.
 
 ## Платежи
 
 | Способ | Как деньги приходят | URL / канал |
 |---|---|---|
-| Telegram Stars | апдейт `successful_payment` внутри бота | URL нет, всё в long polling |
-| Patreon | джоба в `jobs` периодически опрашивает API | webhook не нужен |
-| Crypto Pay (@CryptoBot) | HTTPS → PHP → `scripts/payment/cryptoBot.py` | `https://wrkt.ru/payment/crypto-bot/listener.php` |
-| Robokassa | HTTPS → PHP → `scripts/payment/subscription_income.py` | Result URL: `https://wrkt.ru/payment/robokassa/result.php`. Success/Fail редиректят в `https://t.me/yourcastbot` |
+| Telegram Stars | апдейт `successful_payment` внутри `bot` | URL нет |
+| Patreon | поллер в `jobs` | webhook не нужен |
+| Crypto Pay | PHP → `scripts/payment/cryptoBot.py` | `https://wrkt.ru/payment/crypto-bot/listener.php` |
+| Robokassa | PHP → `scripts/payment/subscription_income.py` | Result: `https://wrkt.ru/payment/robokassa/result.php` |
 
-Кнопка Robokassa в боте сейчас открыта только создателю (остальным закомментирована). Stars — основной живой канал.
+Кнопка Robokassa в боте открыта только создателю. Stars — основной живой канал.
 
-Входящий HTTPS-вебхук — нормальный вход для Crypto/Robokassa. PHP-слой сейчас только прокладка: принимает POST и через `shell_exec` вызывает Python. Это работает, но долгосрочно правильнее принять вебхук тем же FastAPI на localhost (как админка), без argv и php-fpm. **Не трогайте этот путь, пока не собрались явно мигрировать оплату.**
-
-В кабинете Crypto Pay / Robokassa URL-ы должны совпадать с таблицей выше. После смены домена или nginx проверьте, что `*.php` под `/payment/` по-прежнему уходит в php-fpm.
+В кабинетах Crypto Pay / Robokassa URL-ы должны совпадать с таблицей. После смены домена или nginx проверьте, что `*.php` под `/payment/` уходит в php-fpm.

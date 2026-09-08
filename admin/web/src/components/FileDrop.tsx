@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileAudio, Image as ImageIcon, Upload, X } from "lucide-react";
-import { Hint } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/button";
+import { Badge, Hint } from "@/components/ui/primitives";
 import { cn, formatBytes } from "@/lib/utils";
 
 export type AttachmentKind = "image" | "audio";
@@ -40,7 +41,20 @@ export function FileDrop({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  const [previews, setPreviews] = useState<string[]>([]);
   const total = files.reduce((sum, file) => sum + file.size, 0);
+
+  useEffect(() => {
+    const urls = files.map((file) =>
+      isImageFile(file) ? URL.createObjectURL(file) : "",
+    );
+    setPreviews(urls);
+    return () => {
+      urls.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    };
+  }, [files]);
 
   function add(list: FileList | File[]) {
     const incoming = Array.from(list);
@@ -74,7 +88,7 @@ export function FileDrop({
 
   return (
     <div className="space-y-3">
-      <label
+      <div
         onDragOver={(e) => {
           e.preventDefault();
           setOver(true);
@@ -86,92 +100,117 @@ export function FileDrop({
           add(e.dataTransfer.files);
         }}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors",
-          over
-            ? "border-brand bg-brand/10 text-brand"
-            : "border-line bg-ink text-zinc-400 hover:border-brand/50 hover:bg-white/[0.03]",
+          "rounded-lg border bg-ink transition-colors",
+          over ? "border-brand ring-2 ring-brand/40" : "border-line",
         )}
       >
-        <Upload size={22} />
-        <div className="text-sm font-medium text-zinc-200">
-          Перетащите файлы сюда или нажмите, чтобы выбрать
+        <div className="flex items-center gap-2 p-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload size={14} />
+            Выбрать
+          </Button>
+          <div className="min-w-0 flex-1 truncate text-sm text-zinc-400">
+            {files.length
+              ? `${files.length} файл(ов) · ${formatBytes(total)}`
+              : "Перетащите сюда или нажмите «Выбрать»"}
+          </div>
+          {files.length ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onChange([])}
+            >
+              Очистить
+            </Button>
+          ) : null}
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept="image/*,audio/*"
+            className="sr-only"
+            onChange={(e) => add(e.target.files || [])}
+          />
         </div>
-        <Hint className="max-w-md">
-          Картинка уйдёт как фото, звук — как аудио. Несколько файлов
-          отправляются одним типом на всю пачку. Nginx режет тело запроса
-          на 20 МБ.
-        </Hint>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept="image/*,audio/*"
-          className="sr-only"
-          onChange={(e) => add(e.target.files || [])}
-        />
-      </label>
+      </div>
       {files.length ? (
         <ul className="space-y-2">
           {files.map((file, index) => {
             const audio = isAudioFile(file);
-            const Icon = audio ? FileAudio : ImageIcon;
             return (
               <li
                 key={`${file.name}-${file.size}-${file.lastModified}`}
-                className="flex items-center gap-3 rounded-lg border border-line bg-ink px-3 py-2"
+                className="flex items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2"
               >
-                <Icon size={16} className="shrink-0 text-brand" />
+                {previews[index] ? (
+                  <img
+                    src={previews[index]}
+                    alt=""
+                    className="h-12 w-12 shrink-0 rounded-md object-cover"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-white/5 text-brand">
+                    {audio ? <FileAudio size={18} /> : <ImageIcon size={18} />}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{file.name}</div>
-                  <div className="text-xs text-zinc-500">
-                    {formatBytes(file.size)}
-                    {audio ? " · аудио" : " · изображение"}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-zinc-500">
+                      {formatBytes(file.size)}
+                    </span>
+                    <Badge tone="mute">{audio ? "аудио" : "фото"}</Badge>
                   </div>
                 </div>
-                <button
+                <Button
                   type="button"
-                  className="rounded-md p-1 text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => removeAt(index)}
                   aria-label={`Убрать ${file.name}`}
                 >
-                  <X size={16} />
-                </button>
+                  <X size={14} />
+                </Button>
               </li>
             );
           })}
         </ul>
       ) : null}
-      {files.length ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
-          <span>
-            {files.length} файл(ов) · {formatBytes(total)}
-            {total > 18 * 1024 * 1024
-              ? " — слишком много, разбейте на несколько рассылок"
-              : ""}
-          </span>
-        </div>
+      {total > 18 * 1024 * 1024 ? (
+        <Hint className="text-red-400">
+          Сумма больше 18 МБ — nginx, скорее всего, обрежет запрос. Разбейте
+          на несколько рассылок.
+        </Hint>
       ) : null}
-      <div className="flex flex-wrap gap-4 text-sm">
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            checked={kind === "image"}
-            onChange={() => onKindChange("image")}
-          />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={kind === "image" ? "default" : "outline"}
+          onClick={() => onKindChange("image")}
+        >
+          <ImageIcon size={14} />
           Как фото
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            checked={kind === "audio"}
-            onChange={() => onKindChange("audio")}
-          />
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={kind === "audio" ? "default" : "outline"}
+          onClick={() => onKindChange("audio")}
+        >
+          <FileAudio size={14} />
           Как аудио
-        </label>
+        </Button>
       </div>
       <Hint>
-        Тип можно поправить вручную, если расширение не угадалось. Без файла
-        уйдёт обычный текст.
+        Telegram шлёт всю пачку одним типом. Без файла уйдёт обычный текст.
+        Лимит тела запроса — 20 МБ.
       </Hint>
     </div>
   );
