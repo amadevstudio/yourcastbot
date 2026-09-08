@@ -20,16 +20,18 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      # checkout@v5 runs on Node 24. v4 still targets Node 20, which GitHub
+      # now warns about and will drop from hosted runners.
+      - uses: actions/checkout@v5
 
       - name: Push to production server and restart
-        uses: appleboy/ssh-action@master
+        # Pin the tag: @master dropped script_stop and would keep surprising us.
+        # Stop-on-error is set -euo pipefail in the remote script instead.
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USERNAME }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          script_stop: true
           command_timeout: 20m
           script: |
             set -euo pipefail
