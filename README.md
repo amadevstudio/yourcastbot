@@ -1,6 +1,10 @@
-# Yourcastbot – listen podcasts. A tg podcasts bot.
+# Yourcastbot
 
-Initial commit: Fri Jun 28 14:54:56 2019 +0300
+Telegram-бот для подкастов.
+
+Как поднять сервер и как PHP (лендинг, вебхуки оплаты) связан с Python (бот): [docs/DEPLOY.md](docs/DEPLOY.md).
+
+Админка операторов: `https://wrkt.ru/app/`.
 
 ## License
 

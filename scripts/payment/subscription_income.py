@@ -15,10 +15,9 @@ from telethon.tl.custom import Button
 
 import json
 import hashlib
-
+import hmac
 import os
 import sys
-
 import base64
 
 # bot_path = os.getcwd().split('/yourcast')[0]
@@ -79,14 +78,30 @@ try:
 		out_sum + ':' + inv_id + ':' + payment_p2 + ":"
 		+ shp_summ_cr + ':' + shp_uid_cr)
 	hash_object = hashlib.md5(res.encode())
-	signature = hash_object.hexdigest()
-	signature = signature.upper()
-
+	signature = hash_object.hexdigest().upper()
+	crc_norm = str(crc).upper()
 	app_id = config.app_api_id
 	api_hash = config.app_api_hash
 	bot_token = config.token
 
-	if signature == crc:
+	if len(signature) != len(crc_norm) or not hmac.compare_digest(signature, crc_norm):
+		output = "bad sign\n"
+		bot = TelegramClient(
+			'yourcastbot', app_id, api_hash).start(bot_token=bot_token)
+
+		db = SQLighter(config.db_path)
+		user = db.get_user_by_tg(params['Shp_uid'])
+		db.close()
+		user_language = app.service.user.language.user_language(user['lang'])
+
+		with bot:
+			bot.loop.run_until_complete(error_to_user(
+				params['Shp_uid'], user_language))
+			message = "Bad robokassa crc uid=%s inv=%s is_test=%s" % (
+				params['Shp_uid'], inv_id, is_test)
+			bot.loop.run_until_complete(send_to_creator(message,))
+
+	else:
 		isOk = True
 		output = "OK" + inv_id + "\n"
 
@@ -173,37 +188,14 @@ try:
 				result_mode = 0
 		db.close()
 
-	else:
-
-		output = "bad sign\n"
-		bot = TelegramClient(
-			'yourcastbot', app_id, api_hash).start(bot_token=bot_token)
-
-		db = SQLighter(config.db_path)
-		user = db.get_user_by_tg(params['Shp_uid'])
-		db.close()
-		user_language = app.service.user.language.user_language(user['lang'])
-
-		with bot:
-			bot.loop.run_until_complete(error_to_user(
-				params['Shp_uid'], user_language))
-			message = "Bad crc: " + signature + " != " + crc + "; " \
-				+ "uid: " + params['Shp_uid'] + ' sum: ' + params['OutSum'] \
-				+ ' Payload:\n' + getps + '\n\n' \
-				+ 'Key: ' + payment_p2 + '; is_test: ' + str(is_test)
-			bot.loop.run_until_complete(send_to_creator(message,))
-		# что-то пошло не так. если деньги ушли,
-		# а в боте их нет — свяжитесь с администрацией
-
 except Exception as e:
 	exc_type, exc_obj, exc_tb = sys.exc_info()
 	fename = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
 	if config.server:
 		with open(payment_log_path, 'a+') as pfl:
 			pfl.write(
-				str(e) + " : "
-				+ exc_type + ' ' + fename + ' ' + exc_tb.tb_lineno + " : "
-				+ getps + '\n\n')
+				"%s : %s %s %s : robokassa webhook error\n\n"
+				% (e, exc_type, fename, exc_tb.tb_lineno))
 	else:
 		print(e, exc_type, fename, exc_tb.tb_lineno, flush=True)
 
@@ -257,9 +249,8 @@ if isOk:
 		bot = TelegramClient(
 			'yourcastbot', app_id, api_hash).start(bot_token=bot_token)
 
-		message = crc + '\n'
-		message += signature + '\n\n'
-		message += getps
+		message = "New robokassa income uid=%s inv=%s" % (
+			params.get("Shp_uid"), inv_id)
 
 		with bot:
 			try:
@@ -272,7 +263,9 @@ if isOk:
 
 			if config.server:
 				with open(payment_log_path, 'a+') as psl:
-					psl.write(getps + '\n\n')
+					psl.write(
+						"robokassa paid uid=%s inv=%s\n" % (
+							params.get("Shp_uid"), inv_id))
 		if user['ref_id'] is not None:
 			message = giveAward(user['ref_id'], user['telegramId'], 'replenished')
 			if message is not None:
@@ -285,9 +278,8 @@ if isOk:
 		if config.server:
 			with open(payment_log_path, 'a+') as pfl:
 				pfl.write(
-					str(e) + " : "
-					+ exc_type + ' ' + fename + ' ' + exc_tb.tb_lineno + " : "
-					+ getps + '\n\n')
+					"%s : %s %s %s : robokassa notify error\n\n"
+					% (e, exc_type, fename, exc_tb.tb_lineno))
 		else:
 			print(e, exc_type, fename, exc_tb.tb_lineno, flush=True)
 

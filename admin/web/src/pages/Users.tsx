@@ -1,9 +1,109 @@
 import { FormEvent, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { api } from "@/lib/api";
+import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { api, BotUser, Sub } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Badge, Card, Input, Skeleton } from "@/components/ui/primitives";
+import { Badge, Card, Hint, Input, Skeleton } from "@/components/ui/primitives";
+
+function SubList({ subs }: { subs: Sub[] }) {
+  if (!subs.length) return <Hint>Подкастов в списке нет.</Hint>;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {subs.map((sub, index) => (
+          <span
+            key={`${sub.name}-${index}`}
+            title={
+              sub.notify
+                ? "Notify включён — новые выпуски этого подкаста"
+                : "Подкаст в списке, уведомления выключены"
+            }
+            className={`rounded px-2 py-1 text-xs text-black ${
+              sub.notify ? "bg-brand" : "bg-yellow-200/80"
+            }`}
+          >
+            {sub.name}
+          </span>
+        ))}
+      </div>
+      <Hint>
+        Оранжевый — notify включён, бледно-жёлтый — подкаст просто в списке.
+      </Hint>
+    </div>
+  );
+}
+
+function UserCard({
+  user,
+  onFilter,
+}: {
+  user: BotUser;
+  onFilter: (tgid: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const count = user.channels_count || user.subs.length;
+  return (
+    <Card className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <button
+              type="button"
+              className="font-mono text-brand hover:underline"
+              title="Показать только этого человека"
+              onClick={() => onFilter(String(user.telegramId))}
+            >
+              #{user.id} · {user.telegramId}
+            </button>
+            <Badge>{user.lang || "язык не задан"}</Badge>
+            {user.deleted ? <Badge tone="mute">заблокировал бота</Badge> : null}
+            {user.receives_episodes ? (
+              <Badge tone="warn">получает выпуски</Badge>
+            ) : null}
+          </div>
+          <div className="text-xs text-zinc-400">
+            Тариф {user.tariff_id ?? "нет"}
+            {user.time_left_days != null
+              ? ` · осталось ${user.time_left_days.toFixed(1)} дн.`
+              : ""}
+            {user.notify_count != null
+              ? ` · лимит notify ${
+                  user.notify_count === -1 ? "без ограничения" : user.notify_count
+                }`
+              : ""}
+            {user.balance != null ? ` · баланс ${user.balance}` : ""}
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={count === 0}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {count === 0
+            ? "Нет подкастов"
+            : open
+              ? "Скрыть подкасты"
+              : `${count} подкастов`}
+        </Button>
+      </div>
+      {open ? (
+        <>
+          {user.receives_episodes ? (
+            <Hint>
+              Живой тариф и notify хотя бы на одном подкасте — бот шлёт этому
+              человеку новые аудиовыпуски.
+            </Hint>
+          ) : null}
+          <SubList subs={user.subs} />
+        </>
+      ) : null}
+    </Card>
+  );
+}
 
 export default function Users() {
   const [params, setParams] = useSearchParams();
@@ -34,18 +134,40 @@ export default function Users() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="max-w-xl space-y-1">
           <h1 className="text-2xl font-bold">Пользователи</h1>
-          <p className="text-sm text-zinc-500">
-            Подписки грузятся одним запросом на страницу, без N+1.
-          </p>
+          <Hint>
+            Сначала те, у кого живой тариф и много подкастов. Список подкастов
+            скрыт — откроется по кнопке с числом.
+          </Hint>
         </div>
         <form className="flex gap-2" onSubmit={onSearch}>
-          <Input
-            placeholder="telegram id"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <div className="relative">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+            />
+            <Input
+              className="w-56 pl-8 pr-8"
+              placeholder="Telegram ID"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              inputMode="numeric"
+            />
+            {search ? (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200"
+                onClick={() => {
+                  setSearch("");
+                  go({ tgid: "" });
+                }}
+                aria-label="Сбросить поиск"
+              >
+                <X size={14} />
+              </button>
+            ) : null}
+          </div>
           <Button type="submit">Найти</Button>
         </form>
       </div>
@@ -57,60 +179,24 @@ export default function Users() {
         </div>
       ) : (
         <>
-          <div className="text-sm text-zinc-500">
-            {data.total} чел. · страница {data.page} / {data.pages}
-          </div>
+          <Hint>
+            {data.total} чел. · страница {data.page} / {data.pages} · по{" "}
+            {data.per_page} на странице.
+          </Hint>
           <div className="space-y-4">
             {data.users.map((user) => (
-              <Card key={user.id} className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <button
-                    className="font-mono text-brand hover:underline"
-                    onClick={() => go({ tgid: String(user.telegramId) })}
-                  >
-                    {user.id} · {user.telegramId}
-                  </button>
-                  <Badge>{user.lang || "—"}</Badge>
-                  {user.deleted ? <Badge tone="mute">blocked</Badge> : null}
-                  {user.receives_episodes ? (
-                    <Badge tone="warn">получает выпуски</Badge>
-                  ) : null}
-                  <span className="text-zinc-500">
-                    подписок: {user.channels_count}
-                  </span>
-                </div>
-                <div className="text-xs text-zinc-400">
-                  Tariff {user.tariff_id ?? "—"} · balance {user.balance ?? "—"} ·
-                  time {user.time_left ?? "—"}
-                  {user.time_left_days != null
-                    ? ` (${user.time_left_days.toFixed(1)} дн.)`
-                    : ""}{" "}
-                  · notify {user.notify_count ?? "—"}
-                </div>
-                {user.receives_episodes ? (
-                  <div className="rounded-lg bg-red-600/80 px-3 py-2 text-sm font-medium">
-                    Получает уведомления
-                  </div>
-                ) : null}
-                {user.subs.length ? (
-                  <div className="flex flex-wrap gap-1">
-                    {user.subs.map((sub) => (
-                      <span
-                        key={sub.name}
-                        className={`rounded px-2 py-1 text-xs text-black ${
-                          sub.notify ? "bg-brand" : "bg-yellow-200/80"
-                        }`}
-                      >
-                        {sub.name}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </Card>
+              <UserCard
+                key={user.id}
+                user={user}
+                onFilter={(id) => {
+                  setSearch(id);
+                  go({ tgid: id });
+                }}
+              />
             ))}
           </div>
           {data.pages > 1 && !tgid ? (
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 disabled={page <= 1}
@@ -118,6 +204,9 @@ export default function Users() {
               >
                 Назад
               </Button>
+              <span className="text-sm text-zinc-400">
+                {page} / {data.pages}
+              </span>
               <Button
                 variant="outline"
                 disabled={page >= data.pages}
@@ -127,7 +216,13 @@ export default function Users() {
               </Button>
             </div>
           ) : tgid ? (
-            <Button variant="outline" onClick={() => go({ tgid: "" })}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearch("");
+                go({ tgid: "" });
+              }}
+            >
               Все пользователи
             </Button>
           ) : null}

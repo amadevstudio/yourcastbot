@@ -1,8 +1,36 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, Tariff } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, Input, Skeleton } from "@/components/ui/primitives";
+import { Card, Hint, Input, Skeleton } from "@/components/ui/primitives";
+import { centsToUsd } from "@/lib/utils";
 import { useState } from "react";
+
+const columns: {
+  key: "price" | "notify_count" | "compression" | "channel_control";
+  label: string;
+  hint: string;
+}[] = [
+  {
+    key: "price",
+    label: "Цена, центы",
+    hint: "В базе хранится в центах: 199 = $1.99. Бот делит на 100 перед оплатой.",
+  },
+  {
+    key: "notify_count",
+    label: "Лимит notify",
+    hint: "Сколько выпусков можно получить по тарифу. −1 — без ограничения. 0 — тариф «живой» не считается.",
+  },
+  {
+    key: "compression",
+    label: "Compression",
+    hint: "Служебный флаг тарифа (0/1). В меню оплаты сейчас не показывается.",
+  },
+  {
+    key: "channel_control",
+    label: "Каналы",
+    hint: "1 — человеку доступно управление своими каналами в боте. 0 — нет.",
+  },
+];
 
 function Row({ row }: { row: Tariff }) {
   const queryClient = useQueryClient();
@@ -14,27 +42,36 @@ function Row({ row }: { row: Tariff }) {
   return (
     <tr className="border-t border-line">
       <td className="px-3 py-2 text-zinc-400">{row.id}</td>
-      <td className="px-3 py-2">{row.level}</td>
-      {(["price", "notify_count", "compression", "channel_control"] as const).map(
-        (key) => (
-          <td key={key} className="px-2 py-2">
-            <Input
-              type="number"
-              value={draft[key] ?? 0}
-              onChange={(e) =>
-                setDraft({ ...draft, [key]: Number(e.target.value) })
-              }
-            />
-          </td>
-        ),
-      )}
+      <td className="px-3 py-2">
+        <div>{row.level}</div>
+        <div className="text-[11px] text-zinc-500">уровень в боте</div>
+      </td>
+      {columns.map((col) => (
+        <td key={col.key} className="px-2 py-2 align-top">
+          <Input
+            type="number"
+            value={draft[col.key] ?? 0}
+            onChange={(e) =>
+              setDraft({ ...draft, [col.key]: Number(e.target.value) })
+            }
+          />
+          {col.key === "price" ? (
+            <div className="mt-1 text-[11px] text-zinc-500">
+              = ${centsToUsd(draft.price)}
+            </div>
+          ) : null}
+          {col.key === "notify_count" && draft.notify_count === -1 ? (
+            <div className="mt-1 text-[11px] text-zinc-500">без лимита</div>
+          ) : null}
+        </td>
+      ))}
       <td className="px-2 py-2">
         <Button
           size="sm"
           disabled={save.isPending}
           onClick={() => save.mutate(draft)}
         >
-          {save.isPending ? "…" : "Изменить"}
+          {save.isPending ? "…" : "Сохранить"}
         </Button>
       </td>
     </tr>
@@ -48,9 +85,20 @@ export default function Tariffs() {
   });
   return (
     <div className="space-y-5">
-      <div>
+      <div className="space-y-1">
         <h1 className="text-2xl font-bold">Тарифы</h1>
-        <p className="text-sm text-zinc-500">Те же поля, что в PHP-таблице.</p>
+        <Hint>
+          Планы подписки на бота. Id и уровень не меняются здесь — только цена
+          и флаги. Правка сразу попадает в sqlite, с которой читает бот.
+        </Hint>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {columns.map((col) => (
+          <Card key={col.key} className="space-y-1 p-4">
+            <div className="text-sm font-medium">{col.label}</div>
+            <Hint>{col.hint}</Hint>
+          </Card>
+        ))}
       </div>
       <Card className="overflow-x-auto p-0">
         {isLoading || !data ? (
@@ -64,10 +112,11 @@ export default function Tariffs() {
               <tr>
                 <th className="px-3 py-3">id</th>
                 <th className="px-3 py-3">level</th>
-                <th className="px-3 py-3">price (cent)</th>
-                <th className="px-3 py-3">notify</th>
-                <th className="px-3 py-3">compression</th>
-                <th className="px-3 py-3">channel_control</th>
+                {columns.map((col) => (
+                  <th key={col.key} className="px-3 py-3" title={col.hint}>
+                    {col.label}
+                  </th>
+                ))}
                 <th className="px-3 py-3"></th>
               </tr>
             </thead>

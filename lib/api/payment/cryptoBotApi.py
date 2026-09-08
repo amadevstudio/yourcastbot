@@ -125,5 +125,6 @@ class CryptoBotApi:
 		code = hmac.new(
 			cryptoBotApiSha256, body_string.encode(),
 			hashlib.sha256).hexdigest()
-
-		return code == signature
+		if not isinstance(signature, str) or len(code) != len(signature):
+			return False
+		return hmac.compare_digest(code, signature)

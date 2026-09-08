@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Admin reads/writes. Same numbers as the PHP pages, without N+1 user loops."""
+"""Admin reads/writes for the operator UI."""
 from __future__ import annotations
 
 from typing import Any, Optional
 
 import config
-from app.admin_web.auth import hash_password
+from app.admin_web import auth
 from app.admin_web.dbutil import connect, row_to_dict
 from app.jobs.circle_health import format_status_lines
 from app.repository.storage import storage
@@ -25,10 +25,21 @@ def find_admin(mail: str, password: str, database: Optional[str] = None):
     conn = connect(database)
     try:
         row = conn.execute(
-            "SELECT id, mail FROM admins WHERE mail = ? AND password = ?",
-            (mail, hash_password(password)),
+            "SELECT id, mail, password FROM admins WHERE mail = ?",
+            (mail,),
         ).fetchone()
-        return row_to_dict(row)
+        if row is None:
+            return None
+        ok, upgraded = auth.verify_password(password, row["password"] or "")
+        if not ok:
+            return None
+        if upgraded:
+            conn.execute(
+                "UPDATE admins SET password = ? WHERE id = ?",
+                (upgraded, row["id"]),
+            )
+            conn.commit()
+        return {"id": row["id"], "mail": row["mail"]}
     finally:
         conn.close()
 

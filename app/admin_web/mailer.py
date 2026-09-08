@@ -2,6 +2,7 @@
 """Admin broadcast worker. Own thread in the jobs role — not rec/circle/send."""
 from __future__ import annotations
 
+import json
 import time
 from typing import Callable, Optional
 
@@ -12,7 +13,7 @@ from lib.tools.logger import logger
 
 SEND_BATCH_SIZE = 50
 SEND_BATCH_SLEEP_SECONDS = 1
-PROGRESS_EVERY = 25
+FLOOD_RETRIES = 5
 
 SendFn = Callable[[int, str, str, list, str], tuple[bool, Optional[str]]]
 
@@ -29,6 +30,7 @@ def is_channel_identifier(tgid) -> bool:
 
 
 def mailer_loop(database=None, send_fn: Optional[SendFn] = None, stop_after: int = 0):
+    mail_jobs.recover_interrupted(database=database)
     processed = 0
     while True:
         try:
@@ -52,51 +54,66 @@ def mailer_loop(database=None, send_fn: Optional[SendFn] = None, stop_after: int
 def process_job(job: dict, database=None, send_fn: Optional[SendFn] = None):
     job_id = int(job["id"])
     send = send_fn or telegram_send
-    recipients = _recipients(job, database=database)
+    recipients = _frozen_recipients(job, database=database)
     mail_jobs.update_progress(job_id, total=len(recipients), database=database)
     parse_mode = job.get("parse_mode") or ""
     attachment_type = job.get("attachment_type") or ""
     attachments = job.get("attachments") or []
     message = job.get("message") or ""
+    cursor = int(job.get("cursor_index") or 0)
+    sent = int(job.get("sent") or 0)
+    failed = int(job.get("failed") or 0)
+    skipped = int(job.get("skipped") or 0)
 
-    send(config.creatorId, "Start sending messages to %s" % len(recipients),
-         "", [], "")
+    if cursor <= 0:
+        send(config.creatorId, "Start sending messages to %s" % len(recipients),
+             "", [], "")
 
-    sent = failed = skipped = 0
-    for index, tgid in enumerate(recipients, start=1):
+    file_ids = []
+    if send_fn is None and attachments and attachment_type:
+        file_ids = _cache_file_ids(attachments, attachment_type)
+
+    i = cursor
+    while i < len(recipients):
         if mail_jobs.is_cancel_requested(job_id, database=database):
             mail_jobs.update_progress(
                 job_id, sent=sent, failed=failed, skipped=skipped,
-                last_error="cancelled", database=database)
+                cursor_index=i, last_error="paused", database=database)
             mail_jobs.finish(
-                job_id, mail_jobs.STATUS_CANCELLED, "cancelled",
-                database=database)
-            send(
-                config.creatorId,
-                "Mailing cancelled. Sent: %s. Failed: %s. Skipped: %s."
-                % (sent, failed, skipped),
-                "", [], "")
+                job_id, mail_jobs.STATUS_PAUSED, "paused", database=database)
             return
-        if index % SEND_BATCH_SIZE == 0:
+        if (i + 1) % SEND_BATCH_SIZE == 0:
             time.sleep(SEND_BATCH_SLEEP_SECONDS)
+        tgid = recipients[i]
         if is_channel_identifier(tgid):
             skipped += 1
-            continue
-        ok, error = send(
-            int(tgid), message, parse_mode, attachments, attachment_type)
-        if ok:
-            sent += 1
+            mail_jobs.record_event(
+                job_id, tgid, "skipped", database=database)
         else:
-            failed += 1
-            mail_jobs.update_progress(
-                job_id, last_error=error, database=database)
-        if index % PROGRESS_EVERY == 0 or index == len(recipients):
-            mail_jobs.update_progress(
-                job_id, sent=sent, failed=failed, skipped=skipped,
-                database=database)
+            if send_fn is None and file_ids:
+                ok, error = telegram_send(
+                    int(tgid), message, parse_mode, attachments,
+                    attachment_type, file_ids=file_ids)
+            else:
+                ok, error = send(
+                    int(tgid), message, parse_mode, attachments, attachment_type)
+            if ok:
+                sent += 1
+                mail_jobs.record_event(job_id, tgid, "sent", database=database)
+            else:
+                failed += 1
+                mail_jobs.record_event(
+                    job_id, tgid, "failed", error, database=database)
+                mail_jobs.update_progress(
+                    job_id, last_error=error, database=database)
+        i += 1
+        mail_jobs.update_progress(
+            job_id, sent=sent, failed=failed, skipped=skipped,
+            cursor_index=i, database=database)
 
     mail_jobs.update_progress(
-        job_id, sent=sent, failed=failed, skipped=skipped, database=database)
+        job_id, sent=sent, failed=failed, skipped=skipped,
+        cursor_index=i, database=database)
     mail_jobs.finish(job_id, mail_jobs.STATUS_DONE, database=database)
     send(
         config.creatorId,
@@ -106,6 +123,21 @@ def process_job(job: dict, database=None, send_fn: Optional[SendFn] = None):
     logger.log(
         "admin mail job", job_id, "done sent", sent, "failed", failed,
         "skipped", skipped)
+
+
+def _frozen_recipients(job: dict, database=None) -> list:
+    raw = job.get("recipients_json") or "[]"
+    if not isinstance(raw, str):
+        raw = json.dumps(raw)
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        items = []
+    if items:
+        return [str(x) for x in items]
+    built = _recipients(job, database=database)
+    mail_jobs.set_recipients(job["id"], built, database=database)
+    return [str(x) for x in built]
 
 
 def _recipients(job: dict, database=None) -> list:
@@ -130,15 +162,50 @@ def _recipients(job: dict, database=None) -> list:
     return [u["telegramId"] for u in users]
 
 
+def _cache_file_ids(attachments: list, attachment_type: str) -> list:
+    ids = []
+    bot = _bot()
+    for item in attachments:
+        path = item["path"] if isinstance(item, dict) else item
+        try:
+            with open(path, "rb") as fh:
+                if attachment_type == "audio":
+                    msg = bot.send_audio(config.creatorId, fh)
+                    audio = getattr(msg, "audio", None)
+                    fid = getattr(audio, "file_id", None)
+                else:
+                    msg = bot.send_photo(config.creatorId, fh)
+                    photos = getattr(msg, "photo", None) or []
+                    fid = photos[-1].file_id if photos else None
+            if fid:
+                ids.append(fid)
+        except Exception as e:
+            logger.err("admin mail cache file_id:", e)
+            return []
+    return ids
+
+
 def telegram_send(
         tgid: int, message: str, parse_mode: str, attachments: list,
-        attachment_type: str, retries: int = 1) -> tuple[bool, Optional[str]]:
+        attachment_type: str, retries: int = FLOOD_RETRIES,
+        file_ids: Optional[list] = None) -> tuple[bool, Optional[str]]:
     try:
         bot = _bot()
         mode = _parse_mode(parse_mode)
         kwargs = {}
         if mode:
             kwargs["parse_mode"] = mode
+        if file_ids:
+            caption = message or None
+            for index, fid in enumerate(file_ids):
+                extra = dict(kwargs)
+                if index == 0 and caption:
+                    extra["caption"] = caption
+                if attachment_type == "audio":
+                    bot.send_audio(tgid, fid, **extra)
+                else:
+                    bot.send_photo(tgid, fid, **extra)
+            return True, None
         if not attachments or not attachment_type:
             bot.send_message(tgid, message, **kwargs)
             return True, None
@@ -160,7 +227,7 @@ def telegram_send(
             time.sleep(int(wait) + 1)
             return telegram_send(
                 tgid, message, parse_mode, attachments, attachment_type,
-                retries=retries - 1)
+                retries=retries - 1, file_ids=file_ids)
         return False, "%s: %s" % (type(e).__name__, e)
 
 

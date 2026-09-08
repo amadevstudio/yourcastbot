@@ -61,6 +61,10 @@ export type MailJob = {
   sent: number;
   failed: number;
   skipped: number;
+  cursor_index: number;
+  remaining: number;
+  can_resume: boolean;
+  recent_errors: { tgid: string; error: string | null; created_at: string }[];
   last_error: string | null;
   created_at: string;
   started_at: string | null;
@@ -116,6 +120,8 @@ export const api = {
   mailJob: (id: number) => request<MailJob>(`/api/mail/${id}`),
   cancelMail: (id: number) =>
     request<MailJob>(`/api/mail/${id}/cancel`, { method: "POST" }),
+  resumeMail: (id: number) =>
+    request<MailJob>(`/api/mail/${id}/resume`, { method: "POST" }),
   sendMail: (form: FormData) =>
     request<MailJob>("/api/mail", { method: "POST", body: form }),
 };

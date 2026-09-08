@@ -121,6 +121,14 @@ def test_auth_roundtrip():
     _assert_eq(expired, None, "expired session")
     tampered = token[:-2] + ("ab" if token[-2:] != "ab" else "cd")
     _assert_eq(auth.read_session(tampered, now=1_000_001), None, "bad sig")
+    ok, upgraded = auth.verify_password("secret", hashlib.sha256(b"secret").hexdigest())
+    _assert_eq(ok, True, "legacy sha256")
+    _assert_eq(upgraded.startswith(auth.PBKDF2_PREFIX), True, "upgrade hash")
+    ok2, again = auth.verify_password("secret", upgraded)
+    _assert_eq(ok2, True, "pbkdf2 login")
+    _assert_eq(again, None, "no rehash")
+    bad, _ = auth.verify_password("nope", upgraded)
+    _assert_eq(bad, False, "pbkdf2 reject")
 
 
 def test_login_rate_limit():
@@ -173,6 +181,47 @@ def test_queries_and_mailer(path):
         _assert_eq(done["sent"], 2, "two users sent")
         _assert_eq(done["skipped"], 1, "channel skipped")
         _assert_eq(config.creatorId in sent, True, "creator start/end ping")
+
+        sent2 = []
+        job2 = mail_jobs.enqueue(
+            message="hello2", to_creator_only=False,
+            recipients_text="1001,1002,1003",
+            created_by="ops@yourcast.test", database=path)
+
+        def fake_send_pause(tgid, message, parse_mode, attachments, attachment_type):
+            sent2.append(tgid)
+            if tgid == 1001:
+                mail_jobs.request_cancel(job2["id"], database=path)
+            return True, None
+
+        mailer.mailer_loop(
+            database=path, send_fn=fake_send_pause, stop_after=1)
+        paused = mail_jobs.get_job(job2["id"], database=path)
+        _assert_eq(paused["status"], "paused", "paused after stop")
+        _assert_eq(paused["sent"], 1, "one real send before pause")
+        _assert_eq(paused["can_resume"], True, "can resume")
+        _assert_eq(paused["remaining"] > 0, True, "remaining after pause")
+        resumed = mail_jobs.resume(job2["id"], database=path)
+        _assert_eq(resumed["status"], "queued", "resume queues")
+        mailer.mailer_loop(
+            database=path, send_fn=fake_send_pause, stop_after=1)
+        done2 = mail_jobs.get_job(job2["id"], database=path)
+        _assert_eq(done2["status"], "done", "finished after resume")
+        _assert_eq(done2["sent"], 3, "all three sent once")
+        real = [x for x in sent2 if x in (1001, 1002, 1003)]
+        _assert_eq(real, [1001, 1002, 1003], "no double send")
+
+        job3 = mail_jobs.enqueue(
+            message="stale", to_creator_only=True, database=path)
+        conn = __import__("app.admin_web.dbutil", fromlist=["connect"]).connect(path)
+        conn.execute(
+            "UPDATE admin_mail_jobs SET status = 'running' WHERE id = ?",
+            (job3["id"],))
+        conn.commit()
+        conn.close()
+        mail_jobs.recover_interrupted(database=path)
+        recovered = mail_jobs.get_job(job3["id"], database=path)
+        _assert_eq(recovered["status"], "queued", "stale running requeued")
     finally:
         config.db_path = original
 
@@ -214,14 +263,47 @@ def test_http(path):
         _assert_eq(job.json()["status"], "queued", "mail queued")
         listed = client.get("/api/mail")
         _assert_eq(listed.json()["jobs"][0]["id"], job.json()["id"], "mail list")
+        stopped = client.post("/api/mail/%s/cancel" % job.json()["id"])
+        _assert_eq(stopped.status_code, 200, "pause queued job")
+        _assert_eq(stopped.json()["status"], "paused", "queued becomes paused")
+        again = client.post("/api/mail/%s/resume" % job.json()["id"])
+        _assert_eq(again.status_code, 200, "resume")
+        _assert_eq(again.json()["status"], "queued", "back to queue")
     finally:
         config.db_path = original
         config.server = original_server
 
 
+def test_payment_scripts_no_debug_side_effects():
+    root = _ROOT
+    crypto = open(
+        os.path.join(root, "scripts/payment/cryptoBot.py"), encoding="utf-8"
+    ).read()
+    robo = open(
+        os.path.join(root, "scripts/payment/subscription_income.py"),
+        encoding="utf-8",
+    ).read()
+    _assert_eq(
+        "notify = 0 where id = 1" in crypto.lower(),
+        False,
+        "cryptoBot must not flip notify on webhook error")
+    _assert_eq(
+        "'Key: ' + payment_p2" in robo,
+        False,
+        "robokassa must not telegram the merchant key")
+    listener = open(
+        os.path.join(root, "deploy/payment/crypto-bot/listener.php"),
+        encoding="utf-8",
+    ).read()
+    _assert_eq("testfile.txt" in listener, False, "no testfile in listener")
+    _assert_eq("shell_exec" in listener, False, "no shell_exec in listener")
+    _assert_eq("proc_open" in listener, True, "listener uses proc_open")
+
+
 def main():
     test_auth_roundtrip()
     test_login_rate_limit()
+    test_payment_scripts_no_debug_side_effects()
     tmpdir = tempfile.mkdtemp(prefix="yourcast_admin_web_")
     path = os.path.join(tmpdir, "admin.db")
     _prepare(path)

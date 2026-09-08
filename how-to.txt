@@ -1,3 +1,8 @@
+Полная инструкция: docs/DEPLOY.md (два дерева, PHP→Python для оплаты, роли, nginx, CD).
+
+Ниже — поля constants.py (файл в git не кладётся) и старые заметки по php-fpm.
+
+
 1. setup constants.py
 
 creatorId = int
