@@ -6,28 +6,12 @@ import { api, BotUser, Sub } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, Hint, Input, Skeleton } from "@/components/ui/primitives";
 
-const SUB_PREVIEW = 8;
-
-function SubChips({
-  subs,
-  expanded,
-  onToggle,
-  globalOpen,
-}: {
-  subs: Sub[];
-  expanded: boolean;
-  onToggle: () => void;
-  globalOpen: boolean;
-}) {
-  const visible = expanded ? subs : subs.slice(0, SUB_PREVIEW);
-  const hidden = Math.max(subs.length - SUB_PREVIEW, 0);
-  if (!subs.length) {
-    return <Hint>Подкастов в списке нет.</Hint>;
-  }
+function SubList({ subs }: { subs: Sub[] }) {
+  if (!subs.length) return <Hint>Подкастов в списке нет.</Hint>;
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1">
-        {visible.map((sub, index) => (
+        {subs.map((sub, index) => (
           <span
             key={`${sub.name}-${index}`}
             title={
@@ -43,17 +27,9 @@ function SubChips({
           </span>
         ))}
       </div>
-      {hidden > 0 && !globalOpen ? (
-        <button
-          type="button"
-          className="text-xs font-medium text-brand hover:underline"
-          onClick={onToggle}
-        >
-          {expanded
-            ? "Свернуть список подкастов"
-            : `Показать все ${subs.length} · ещё ${hidden}`}
-        </button>
-      ) : null}
+      <Hint>
+        Оранжевый — notify включён, бледно-жёлтый — подкаст просто в списке.
+      </Hint>
     </div>
   );
 }
@@ -61,17 +37,12 @@ function SubChips({
 function UserCard({
   user,
   onFilter,
-  defaultOpen,
-  forceSubsOpen,
 }: {
   user: BotUser;
   onFilter: (tgid: string) => void;
-  defaultOpen: boolean;
-  forceSubsOpen: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const expanded = forceSubsOpen || open;
-  const longList = user.subs.length > SUB_PREVIEW;
+  const [open, setOpen] = useState(false);
+  const count = user.channels_count || user.subs.length;
   return (
     <Card className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -90,9 +61,6 @@ function UserCard({
             {user.receives_episodes ? (
               <Badge tone="warn">получает выпуски</Badge>
             ) : null}
-            <span className="text-zinc-500">
-              подкастов: {user.channels_count}
-            </span>
           </div>
           <div className="text-xs text-zinc-400">
             Тариф {user.tariff_id ?? "нет"}
@@ -107,30 +75,32 @@ function UserCard({
             {user.balance != null ? ` · баланс ${user.balance}` : ""}
           </div>
         </div>
-        {!forceSubsOpen && (longList || user.receives_episodes) ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setOpen((v) => !v)}
-          >
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {expanded ? "Свернуть" : "Подробнее"}
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={count === 0}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {count === 0
+            ? "Нет подкастов"
+            : open
+              ? "Скрыть подкасты"
+              : `${count} подкастов`}
+        </Button>
       </div>
-      {expanded && user.receives_episodes ? (
-        <Hint>
-          Живой тариф и notify хотя бы на одном подкасте — бот шлёт этому
-          человеку новые аудиовыпуски.
-        </Hint>
+      {open ? (
+        <>
+          {user.receives_episodes ? (
+            <Hint>
+              Живой тариф и notify хотя бы на одном подкасте — бот шлёт этому
+              человеку новые аудиовыпуски.
+            </Hint>
+          ) : null}
+          <SubList subs={user.subs} />
+        </>
       ) : null}
-      <SubChips
-        subs={user.subs}
-        expanded={expanded}
-        globalOpen={forceSubsOpen}
-        onToggle={() => setOpen((v) => !v)}
-      />
     </Card>
   );
 }
@@ -140,7 +110,6 @@ export default function Users() {
   const page = Number(params.get("page") || "1");
   const tgid = params.get("tgid") || "";
   const [search, setSearch] = useState(tgid);
-  const [expandAll, setExpandAll] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: ["users", page, tgid],
     queryFn: () => api.users(page, tgid || undefined),
@@ -162,17 +131,14 @@ export default function Users() {
     go({ tgid: search.trim() });
   }
 
-  const longLists =
-    data?.users.filter((user) => user.subs.length > SUB_PREVIEW).length || 0;
-
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="max-w-xl space-y-1">
           <h1 className="text-2xl font-bold">Пользователи</h1>
           <Hint>
-            Сначала те, у кого живой тариф и много подкастов. Оранжевый чип —
-            notify включён, бледно-жёлтый — подкаст просто в списке.
+            Сначала те, у кого живой тариф и много подкастов. Список подкастов
+            скрыт — откроется по кнопке с числом.
           </Hint>
         </div>
         <form className="flex gap-2" onSubmit={onSearch}>
@@ -213,31 +179,15 @@ export default function Users() {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Hint>
-              {data.total} чел. · страница {data.page} / {data.pages} · по{" "}
-              {data.per_page} на странице. Длинные списки подкастов свёрнуты.
-            </Hint>
-            {longLists > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setExpandAll((v) => !v)}
-              >
-                {expandAll
-                  ? "Свернуть все списки"
-                  : `Развернуть длинные списки (${longLists})`}
-              </Button>
-            ) : null}
-          </div>
+          <Hint>
+            {data.total} чел. · страница {data.page} / {data.pages} · по{" "}
+            {data.per_page} на странице.
+          </Hint>
           <div className="space-y-4">
             {data.users.map((user) => (
               <UserCard
                 key={user.id}
                 user={user}
-                defaultOpen={!!tgid}
-                forceSubsOpen={expandAll}
                 onFilter={(id) => {
                   setSearch(id);
                   go({ tgid: id });

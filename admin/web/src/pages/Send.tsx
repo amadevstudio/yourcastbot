@@ -100,18 +100,50 @@ export default function Send() {
     },
   });
 
+  const stats = useQuery({
+    queryKey: ["stats"],
+    queryFn: api.stats,
+  });
+
   const [toCreator, setToCreator] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
   const [kind, setKind] = useState<AttachmentKind>("image");
+  const [language, setLanguage] = useState("");
+  const [recipients, setRecipients] = useState("");
   const [error, setError] = useState("");
+
+  const allCount = useMemo(() => {
+    if (!stats.data) return null;
+    const lang = language.trim();
+    if (lang) {
+      const row = stats.data.by_lang.find((item) => item.lang === lang);
+      return row ? row.count : 0;
+    }
+    return stats.data.total;
+  }, [stats.data, language]);
+
+  const listCount = recipients
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean).length;
+
+  const targetCount = toCreator
+    ? 1
+    : listCount
+      ? listCount
+      : allCount;
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     const form = new FormData(e.currentTarget);
     if (!toCreator && !String(form.get("recipients_identifiers") || "").trim()) {
+      const n = allCount != null ? String(allCount) : "всем живым";
       const ok = window.confirm(
-        "Отправить всем пользователям? Это не тест создателю.",
+        `Отправить ${n} живым пользователям?\n\n` +
+          "Это не тест создателю. Сообщения идут тем же бот-токеном, что и выпуски: " +
+          "Telegram может притормозить и рассылку, и выдачу эпизодов. " +
+          "Остановить можно на карточке задачи.",
       );
       if (!ok) return;
     }
@@ -205,7 +237,7 @@ export default function Send() {
               hint={
                 toCreator
                   ? "Пока включён тест создателю, этот список не используется."
-                  : "Telegram id через запятую. Пусто — всем живым пользователям (с фильтром языка, если задан)."
+                  : "Telegram id через запятую. Пусто — все живые (не заблокировали бота), с фильтром языка если задан. Не только платники."
               }
             >
               <Textarea
@@ -213,14 +245,35 @@ export default function Send() {
                 className="min-h-[70px]"
                 placeholder="123456789, 987654321"
                 disabled={toCreator}
+                value={recipients}
+                onChange={(e) => setRecipients(e.target.value)}
               />
             </Field>
             <Field
               label="Язык"
               hint="Код из профиля, как на статистике: ru, en. Пусто — без фильтра по языку."
             >
-              <Input name="language" placeholder="ru" disabled={toCreator} />
+              <Input
+                name="language"
+                placeholder="ru"
+                disabled={toCreator}
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+              />
             </Field>
+            {!toCreator ? (
+              <Hint>
+                Уйдёт примерно {targetCount ?? "…"} сообщений
+                {listCount
+                  ? " по списку id."
+                  : language.trim()
+                    ? ` с языком «${language.trim()}».`
+                    : " всем живым."}{" "}
+                Пауза 1 с каждые 50 штук. FloodWait повторяется один раз, дальше
+                человек считается ошибкой. Лимит Bot API общий с выдачей выпусков.
+                Сначала прогоните тест создателю.
+              </Hint>
+            ) : null}
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
             <Button type="submit" disabled={send.isPending}>
               {send.isPending ? "Ставим в очередь…" : "Отправить"}
