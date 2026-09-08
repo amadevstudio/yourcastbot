@@ -58,7 +58,7 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Статистика</h1>
         <Hint>
@@ -66,7 +66,7 @@ export default function Dashboard() {
           людей, их нельзя складывать.
         </Hint>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <Card key={card.key} className="flex flex-col gap-2">
             <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -83,7 +83,7 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <Card>
           <h2 className="mb-1 font-semibold">Круг апдейтера</h2>
           <Hint className="mb-4">
@@ -97,7 +97,7 @@ export default function Dashboard() {
               <Skeleton className="h-4 w-1/2" />
             </div>
           ) : (
-            <div className="space-y-1 text-sm text-zinc-300">
+            <div className="space-y-1 text-sm text-zinc-300 [overflow-wrap:anywhere]">
               <div>
                 Обход: {data.updater_channel_id} / {data.max_channel_id}
               </div>
@@ -128,9 +128,9 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-2">
               {data.by_lang.map((row) => (
-                <div key={row.lang} className="flex items-center gap-3 text-sm">
-                  <div className="w-10 text-zinc-400">{row.lang}</div>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                <div key={row.lang} className="flex min-w-0 items-center gap-3 text-sm">
+                  <div className="w-10 shrink-0 text-zinc-400">{row.lang}</div>
+                  <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10">
                     <div
                       className="h-full bg-brand"
                       style={{
@@ -141,7 +141,7 @@ export default function Dashboard() {
                       }}
                     />
                   </div>
-                  <div className="w-14 text-right text-zinc-300">{row.count}</div>
+                  <div className="w-14 shrink-0 text-right text-zinc-300">{row.count}</div>
                 </div>
               ))}
             </div>

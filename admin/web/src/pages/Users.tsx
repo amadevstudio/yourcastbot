@@ -44,13 +44,13 @@ function UserCard({
   const [open, setOpen] = useState(false);
   const count = user.channels_count || user.subs.length;
   return (
-    <Card className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
+    <Card className="min-w-0 space-y-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 space-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <button
               type="button"
-              className="font-mono text-brand hover:underline"
+              className="font-mono text-brand hover:underline [overflow-wrap:anywhere]"
               title="Показать только этого человека"
               onClick={() => onFilter(String(user.telegramId))}
             >
@@ -132,23 +132,23 @@ export default function Users() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="max-w-xl space-y-1">
+    <div className="min-w-0 space-y-5">
+      <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
+        <div className="max-w-xl min-w-0 space-y-1">
           <h1 className="text-2xl font-bold">Пользователи</h1>
           <Hint>
             Сначала те, у кого живой тариф и много подкастов. Список подкастов
             скрыт — откроется по кнопке с числом.
           </Hint>
         </div>
-        <form className="flex gap-2" onSubmit={onSearch}>
-          <div className="relative">
+        <form className="flex w-full min-w-0 max-w-full gap-2 sm:w-auto" onSubmit={onSearch}>
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <Search
               size={14}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
             />
             <Input
-              className="w-56 pl-8 pr-8"
+              className="w-full min-w-0 pl-8 pr-8 sm:w-56"
               placeholder="Telegram ID"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -168,7 +168,7 @@ export default function Users() {
               </button>
             ) : null}
           </div>
-          <Button type="submit">Найти</Button>
+          <Button type="submit" className="shrink-0">Найти</Button>
         </form>
       </div>
       {isLoading || !data ? (

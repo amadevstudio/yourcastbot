@@ -29,7 +29,7 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex min-h-screen min-w-0 items-center justify-center px-4 py-6">
       <Card className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center gap-3">
           <img src="/app/YC.png" alt="Yourcast" className="h-16 w-16 rounded-2xl" />

@@ -84,7 +84,7 @@ export default function Tariffs() {
     queryFn: api.tariffs,
   });
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <div className="space-y-1">
         <h1 className="text-2xl font-bold">Тарифы</h1>
         <Hint>
@@ -92,7 +92,7 @@ export default function Tariffs() {
           и флаги. Правка сразу попадает в sqlite, с которой читает бот.
         </Hint>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         {columns.map((col) => (
           <Card key={col.key} className="space-y-1 p-4">
             <div className="text-sm font-medium">{col.label}</div>
@@ -100,7 +100,7 @@ export default function Tariffs() {
           </Card>
         ))}
       </div>
-      <Card className="overflow-x-auto p-0">
+      <Card className="max-w-full overflow-x-auto p-0">
         {isLoading || !data ? (
           <div className="space-y-3 p-5">
             <Skeleton className="h-10 w-full" />

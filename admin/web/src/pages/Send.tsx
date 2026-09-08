@@ -50,7 +50,7 @@ function JobCard({ job }: { job: MailJob }) {
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
       <Progress value={job.progress} />
-      <div className="text-sm text-zinc-300">
+      <div className="text-sm text-zinc-300 [overflow-wrap:anywhere]">
         отправлено {job.sent} · ошибок {job.failed} · пропущено {job.skipped}
         {" · "}
         осталось {job.remaining ?? Math.max((job.total || 0) - job.sent, 0)} из{" "}
@@ -67,10 +67,10 @@ function JobCard({ job }: { job: MailJob }) {
         {job.created_at ? ` · ${formatWhen(job.created_at)}` : ""}
       </Hint>
       {job.last_error ? (
-        <div className="text-sm text-red-400">{job.last_error}</div>
+        <div className="text-sm text-red-400 [overflow-wrap:anywhere]">{job.last_error}</div>
       ) : null}
       {job.recent_errors?.length ? (
-        <div className="space-y-1 text-xs text-zinc-500">
+        <div className="space-y-1 text-xs text-zinc-500 [overflow-wrap:anywhere]">
           {job.recent_errors.map((row, i) => (
             <div key={`${row.tgid}-${i}`}>
               {row.tgid}: {row.error || "ошибка"}
@@ -206,8 +206,8 @@ export default function Send() {
   );
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
-      <div className="space-y-4">
+    <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)]">
+      <div className="min-w-0 space-y-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold">Рассылка</h1>
           <Hint>
@@ -315,7 +315,7 @@ export default function Send() {
           </form>
         </Card>
       </div>
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         {current ? <JobCard job={current} /> : (
           <Hint>После отправки здесь появится прогресс текущей задачи.</Hint>
         )}

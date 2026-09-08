@@ -6,12 +6,21 @@ html,
 body,
 #root {
   min-height: 100%;
+  max-width: 100%;
+}
+
+html {
+  overflow-x: hidden;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   background: #0b0b0c;
   color: #f4f1ea;
+  overflow-wrap: anywhere;
 }
 
 ::selection {
