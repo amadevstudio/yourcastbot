@@ -8,7 +8,7 @@ from app.i18n.messages import get_message
 from app.jobs import digest_outbox
 from app.jobs.digest_outbox import migrate_from_kv, pending_count
 from app.jobs.nosub_digest import DIGEST_MUTE_ACTION, should_send_nosub_digest
-from config import botName, db_path
+from config import db_path
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import outer_sender
 from lib.tools.logger import logger
@@ -31,10 +31,11 @@ def send_digest_to_user(user_tg_id, database=None):
         user_language = app.service.user.language.user_language(user['lang'])
         sent = outer_sender(user['telegramId'], [{
             'type': 'text',
-            'text': (
-                get_message("youHaveNewEpisodes", user_language)
-                + " t.me/" + botName + "?start=" + str(user['telegramId'])),
+            'text': get_message("youHaveNewEpisodes", user_language),
             'reply_markup': [[{
+                'text': get_message("relayEnableButton", user_language),
+                'callback_data': {'tp': 'bs_stars'},
+            }], [{
                 'text': get_message("nosubDigestMuteButton", user_language),
                 'callback_data': {'tp': DIGEST_MUTE_ACTION},
             }]],

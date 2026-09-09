@@ -22,6 +22,7 @@ from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_description_and_button_text)
 from app.service.payment.paymentSafeModule import (
     get_tariff_info_message, get_tariff_params_by_tg, giveAward, prepare_price)
+from app.service.payment.storefront import tariffs_for_storefront
 from config import db_path
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import InlineButtonData, outer_sender, render_messages
@@ -198,7 +199,7 @@ def get_sub_message(
     tariffs = db_users.getTariffs()
     db_users.close()
 
-    for tariff in tariffs:
+    for tariff in tariffs_for_storefront(tariffs, tariff_id):
         tariff_texts = get_tariff_description_and_button_text(
             tariff, {'id': tariff_id}, language_code)
         message_text += tariff_texts["text"] + "\n\n"

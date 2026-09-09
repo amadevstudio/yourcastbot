@@ -1739,6 +1739,20 @@ class SQLighter:
             """
             return self.cursor.execute(sql).fetchall()
 
+    def get_users_nearing_expiry(self, max_hours):
+        with self.connection:
+            sql = """
+                SELECT utc.time_left, u.telegramId, u.lang
+                FROM user_tariff_cs utc
+                INNER JOIN tariffs t ON t.id = utc.tariff_id
+                INNER JOIN users u ON u.id = utc.uid
+                WHERE utc.time_left > 0 AND utc.time_left <= ?
+                    AND utc.tariff_id != 0
+                    AND u.deleted_at IS NULL
+                ORDER BY utc.time_left ASC
+            """
+            return self.cursor.execute(sql, (int(max_hours),)).fetchall()
+
     def prolong_users(self, tariff_period):
         # Помеченного удалённым не продлеваем: списывать с баланса за выпуски,
         # которые ему всё равно не отправляются, нельзя. Тот же фильтр стоит в

@@ -66,7 +66,11 @@ def referral_processing(data: ControllerParams, refer_id: int | None, action_mod
     if welcome_message is not None:
         render_messages(data['chat_id'], [{
             'type': 'text',
-            'text': welcome_message
+            'text': welcome_message,
+            'reply_markup': [[{
+                'text': get_message("goToSearch", data['language_code']),
+                'callback_data': {'tp': 'search'},
+            }]]
         }], True)
 
     return is_new_user, is_by_refer

@@ -1738,19 +1738,34 @@ messages = {
     },
     "youHaveNewEpisodes": {
         "ru": {
-            "ro_msg": "<b>У вас есть новые эпизоды!</b>\n\nПодпишитесь на бота /subscription"
-                      " или пригласите пользователей, чтобы получить аудиозаписи.\n"
-                      "Ваша реферальная ссылка:"
+            "ro_msg": "<b>Вышли новые выпуски.</b>\n\n"
+                      "Без Relay мы только напоминаем. С Relay — следующий выпуск прилетит файлом сюда.\n"
+                      "$5/мес · оплата Stars в Telegram"
         },
         "en": {
-            "ro_msg": "<b>You have new episodes!</b>\n\n"
-                      "Subscribe /subscribe to the bot or invite users to get audio records.\n"
-                      "Your referral link:"
+            "ro_msg": "<b>New episodes are out.</b>\n\n"
+                      "Without Relay we only remind you. With Relay, the next episode lands here as a file.\n"
+                      "$5/mo · pay with Stars in Telegram"
         },
         "pt-BR": {
-            "ro_msg": "<b>Você tem novos episódios!</b>\n\nInscreva-se no bot enviando "
-                      "/subscription ou convide usuários para receber arquivos de áudio.\n"
-                      "Seu link de convite:"
+            "ro_msg": "<b>Há episódios novos.</b>\n\n"
+                      "Sem Relay só lembramos. Com Relay, o próximo episódio chega aqui como arquivo.\n"
+                      "US$5/mês · pague com Stars no Telegram"
+        },
+        "es": {
+            "ro_msg": "<b>Hay episodios nuevos.</b>\n\n"
+                      "Sin Relay solo recordamos. Con Relay, el siguiente episodio llega aquí como archivo.\n"
+                      "$5/mes · paga con Stars en Telegram"
+        },
+        "de": {
+            "ro_msg": "<b>Neue Folgen sind da.</b>\n\n"
+                      "Ohne Relay nur eine Erinnerung. Mit Relay landet die nächste Folge hier als Datei.\n"
+                      "$5/Monat · Zahlung mit Stars in Telegram"
+        },
+        "he": {
+            "ro_msg": "<b>יצאו פרקים חדשים.</b>\n\n"
+                      "בלי Relay זו רק תזכורת. עם Relay הפרק הבא מגיע לכאן כקובץ.\n"
+                      "$5 לחודש · תשלום ב-Stars בטלגרם"
         }
     },
     "youHaveNewEpisodesShort": {
@@ -1926,56 +1941,54 @@ messages = {
     },
     "withoutTariffSubscriptionsLimited": {
         "ru": {
-            "ro_msg": "Без тарифа количество подписок ограничено. Вы достигли"
-                      " предела. Отпишитесь от другого подкаста или подпишитесь на бота"
-                      " /subscription."
+            "ro_msg": "Лимит бесплатно — 15 подкастов.\n\n"
+                      "Relay ($5/мес): безлимит подписок + файлы в чат + автопост в ваш канал.\n"
+                      "/subscription"
         },
         "en": {
-            "ro_msg": "Without tariff, the number of subscriptions is limited."
-                      " You have now reached the limit. Unsubscribe from another podcast"
-                      " or upgrade to any tariff /subscription."
+            "ro_msg": "Free limit: 15 podcasts.\n\n"
+                      "Relay ($5/mo): unlimited shows + audio files in chat + auto-post to your channel.\n"
+                      "/subscription"
         },
         "pt-BR": {
-            "ro_msg": "Sem um plano, o número de assinaturas é limitado. "
-                      "Você agora atingiu o limite. Cancele a assinatura de outro podcast "
-                      "ou atualize para qualquer plano enviando /subscription."
+            "ro_msg": "Limite grátis: 15 podcasts.\n\n"
+                      "Relay (US$5/mês): shows ilimitados + arquivos no chat + autopost no canal.\n"
+                      "/subscription"
         },
         "es": {
-            "ro_msg": "Sin tarifa, el número de suscripciones es limitado. "
-                      "Ahora ha alcanzado el límite. Cancele la suscripción a otro podcast "
-                      "o actualice a cualquier tarifa /subscription."
+            "ro_msg": "Límite gratis: 15 podcasts.\n\n"
+                      "Relay ($5/mes): shows ilimitados + archivos en el chat + autopost en tu canal.\n"
+                      "/subscription"
         },
         "de": {
-            "ro_msg": "Ohne Tarif ist die Anzahl der Abonnements begrenzt. "
-                      "Sie haben jetzt das Limit erreicht. Melden Sie sich von einem anderen "
-                      "Podcast ab oder aktualisieren Sie auf einen Tarif /subscription."
+            "ro_msg": "Kostenloses Limit: 15 Podcasts.\n\n"
+                      "Relay ($5/Monat): unbegrenzt Shows + Dateien im Chat + Autopost in deinen Kanal.\n"
+                      "/subscription"
         },
         "he": {
-            "ro_msg": "ללא תעריף, מספר המנויים מוגבל. עכשיו הגעת לגבול. "
-                      "בטל את הרישום לפודקאסט אחר או שדרג לתעריף כלשהו /subscription"
+            "ro_msg": "מגבלת חינם: 15 פודקאסטים.\n\n"
+                      "Relay ($5 לחודש): ללא הגבלה + קבצים בצ'אט + פרסום לערוץ.\n"
+                      "/subscription"
         }
     },
     "withoutTariffUpdateLimited": {
         "ru": {
-            "ro_msg": "Без тарифа количество подкастов при ручном обновлении ограничено"
-                      " " + str(max_subscriptions_without_tariff) + \
-                      ". Перейдите на другой тариф /subscription \n\n"
-                      "Вы можете помочь боту с развитием! /donate или пожертвуйте на"
-                      " [Patreon.com](%s)" % donate_link
+            "ro_msg": "Без Relay ручное обновление ограничено "
+                      + str(max_subscriptions_without_tariff)
+                      + " подкастами. Relay — /subscription\n\n"
+                      "Можно также поддержать бота: /donate или [Patreon.com](%s)" % donate_link
         },
         "en": {
-            "ro_msg": "Without tariff, the number of podcasts with manual update is "
-                      "limited to " + str(max_subscriptions_without_tariff) + \
-                      ". Upgrade to any tariff /subscription\n\n"
-                      "You can support this bot with a donation! /donate or"
-                      " [Patreon.com](%s)" % donate_link
+            "ro_msg": "Without Relay, manual update is limited to "
+                      + str(max_subscriptions_without_tariff)
+                      + " podcasts. Relay: /subscription\n\n"
+                      "You can also support this bot: /donate or [Patreon.com](%s)" % donate_link
         },
         "pt-BR": {
-            "ro_msg": "Sem plano, o número de podcasts com atualização manual é "
-                      "limitado a " + str(max_subscriptions_without_tariff) + \
-                      ". Atualize para qualquer plano usando /subscription\n\n"
-                      "Você pode apoiar este bot com uma doação! Envie /donate ou"
-                      "acesse [Patreon.com](%s)" % donate_link
+            "ro_msg": "Sem Relay, a atualização manual é limitada a "
+                      + str(max_subscriptions_without_tariff)
+                      + " podcasts. Relay: /subscription\n\n"
+                      "Você também pode apoiar o bot: /donate ou [Patreon.com](%s)" % donate_link
         }
     },
     "withoutTariffCantChooseBitrate": {
@@ -2373,19 +2386,22 @@ messages = {
     },
     "bot_sub_page_header": {
         "ru": {
-            "ro_msg": emojiCodes.get('creditCard') + " Подписка на бота"
+            "ro_msg": emojiCodes.get('creditCard') + " Yourcast Relay"
         },
         "en": {
-            "ro_msg": emojiCodes.get('creditCard') + " Bot subscription"
+            "ro_msg": emojiCodes.get('creditCard') + " Yourcast Relay"
         },
         "pt-BR": {
-            "ro_msg": emojiCodes.get('creditCard') + " Assinatura do bot"
+            "ro_msg": emojiCodes.get('creditCard') + " Yourcast Relay"
         },
         "he": {
-            "ro_msg": emojiCodes.get('creditCard') + " מנויים לרובוט"
+            "ro_msg": emojiCodes.get('creditCard') + " Yourcast Relay"
         },
         "de": {
-            "ro_msg": emojiCodes.get('creditCard') + " Bot-Abonnement"
+            "ro_msg": emojiCodes.get('creditCard') + " Yourcast Relay"
+        },
+        "es": {
+            "ro_msg": emojiCodes.get('creditCard') + " Yourcast Relay"
         }
     },
     "pay": {
@@ -2443,6 +2459,146 @@ messages = {
         # 	"drücke „Konto aufladen”!"
         # }
     },
+    "relay_sub_page_body": {
+        "ru": {
+            "ro_msg": "Новый выпуск сам падает вам в Telegram — файлом в личку и постом в ваш канал.\n\n"
+                      "✓ Безлимит подписок на подкасты\n"
+                      "✓ Аудиофайл при каждом новом выпуске\n"
+                      "✓ Автопост в ваши Telegram-каналы\n"
+                      "✗ Не плеер и не облако — только доставка\n\n"
+                      "Relay — $5 / 30 дней\n\n"
+                      "Оплата Stars — в два тапа, без выхода из Telegram."
+        },
+        "en": {
+            "ro_msg": "New episodes drop into Telegram — as a file in this chat and a post in your channel.\n\n"
+                      "✓ Unlimited podcast subscriptions\n"
+                      "✓ Audio file on every new episode\n"
+                      "✓ Auto-post to your Telegram channels\n"
+                      "✗ Not a player or cloud storage — delivery only\n\n"
+                      "Relay — $5 / 30 days\n\n"
+                      "Pay with Stars in two taps, without leaving Telegram."
+        },
+        "pt-BR": {
+            "ro_msg": "Novos episódios chegam no Telegram — como arquivo neste chat e post no seu canal.\n\n"
+                      "✓ Assinaturas ilimitadas de podcasts\n"
+                      "✓ Arquivo de áudio a cada episódio novo\n"
+                      "✓ Autopost nos seus canais do Telegram\n"
+                      "✗ Não é player nem nuvem — só entrega\n\n"
+                      "Relay — US$5 / 30 dias\n\n"
+                      "Pague com Stars em dois toques, sem sair do Telegram."
+        },
+        "es": {
+            "ro_msg": "Los episodios nuevos llegan a Telegram: archivo en este chat y publicación en tu canal.\n\n"
+                      "✓ Podcasts ilimitados\n"
+                      "✓ Archivo de audio en cada episodio nuevo\n"
+                      "✓ Autopublicación en tus canales de Telegram\n"
+                      "✗ No es un reproductor ni la nube — solo entrega\n\n"
+                      "Relay — $5 / 30 días\n\n"
+                      "Paga con Stars en dos toques, sin salir de Telegram."
+        },
+        "de": {
+            "ro_msg": "Neue Folgen landen in Telegram — als Datei in diesem Chat und als Post in deinem Kanal.\n\n"
+                      "✓ Unbegrenzte Podcast-Abos\n"
+                      "✓ Audiodatei bei jeder neuen Folge\n"
+                      "✓ Autopost in deine Telegram-Kanäle\n"
+                      "✗ Kein Player und keine Cloud — nur Zustellung\n\n"
+                      "Relay — $5 / 30 Tage\n\n"
+                      "Zahlung mit Stars in zwei Taps, ohne Telegram zu verlassen."
+        },
+        "he": {
+            "ro_msg": "פרקים חדשים נוחתים בטלגרם — כקובץ בצ'אט הזה וכפוסט בערוץ שלך.\n\n"
+                      "✓ מנויים ללא הגבלה\n"
+                      "✓ קובץ אודיו בכל פרק חדש\n"
+                      "✓ פרסום אוטומטי לערוצי הטלגרם שלך\n"
+                      "✗ לא נגן ולא ענן — רק משלוח\n\n"
+                      "Relay — $5 / 30 יום\n\n"
+                      "תשלום ב-Stars בשני הקשות, בלי לצאת מטלגרם."
+        }
+    },
+    "relay_sub_page_footnote": {
+        "ru": {
+            "ro_msg": "Пополнение баланса оформляется как поддержка проекта (пожертвование). "
+                      "Доступ Relay включается по правилам баланса."
+        },
+        "en": {
+            "ro_msg": "Top-ups are processed as project support (donation). "
+                      "Relay access follows the balance rules."
+        },
+        "pt-BR": {
+            "ro_msg": "Recargas são processadas como apoio ao projeto (doação). "
+                      "O acesso ao Relay segue as regras do saldo."
+        },
+        "es": {
+            "ro_msg": "Las recargas se procesan como apoyo al proyecto (donación). "
+                      "El acceso a Relay sigue las reglas del saldo."
+        },
+        "de": {
+            "ro_msg": "Aufladungen gelten als Projektunterstützung (Spende). "
+                      "Relay folgt den Kontostand-Regeln."
+        },
+        "he": {
+            "ro_msg": "הטענות מטופלות כתמיכה בפרויקט (תרומה). "
+                      "הגישה ל-Relay לפי כללי היתרה."
+        }
+    },
+    "relayEnableButton": {
+        "ru": {
+            "ro_msg": "⭐ Включить Relay"
+        },
+        "en": {
+            "ro_msg": "⭐ Turn on Relay"
+        },
+        "pt-BR": {
+            "ro_msg": "⭐ Ativar Relay"
+        },
+        "es": {
+            "ro_msg": "⭐ Activar Relay"
+        },
+        "de": {
+            "ro_msg": "⭐ Relay aktivieren"
+        },
+        "he": {
+            "ro_msg": "⭐ להפעיל Relay"
+        }
+    },
+    "relay_trial_ending": {
+        "ru": {
+            "ro_msg": "⏳ Relay заканчивается через %s дн.\n\n"
+                      "После этого новые выпуски перестанут приходить файлом — "
+                      "останутся только текстовые напоминания раз в неделю.\n\n"
+                      "Сохранить автодоставку: $5/мес, оплата в Telegram за 2 тапа."
+        },
+        "en": {
+            "ro_msg": "⏳ Relay ends in %s days.\n\n"
+                      "After that, new episodes won't arrive as files — "
+                      "only a weekly text reminder.\n\n"
+                      "Keep auto-delivery: $5/mo, pay inside Telegram in 2 taps."
+        },
+        "pt-BR": {
+            "ro_msg": "⏳ O Relay termina em %s dia(s).\n\n"
+                      "Depois disso, os episódios não chegam mais como arquivo — "
+                      "só um lembrete semanal em texto.\n\n"
+                      "Manter a entrega: US$5/mês, pague no Telegram em 2 toques."
+        },
+        "es": {
+            "ro_msg": "⏳ Relay termina en %s día(s).\n\n"
+                      "Después, los episodios ya no llegarán como archivo — "
+                      "solo un recordatorio semanal.\n\n"
+                      "Mantén la entrega: $5/mes, paga en Telegram en 2 toques."
+        },
+        "de": {
+            "ro_msg": "⏳ Relay endet in %s Tag(en).\n\n"
+                      "Danach kommen neue Folgen nicht mehr als Datei — "
+                      "nur eine wöchentliche Text-Erinnerung.\n\n"
+                      "Auto-Zustellung behalten: $5/Monat, Zahlung in Telegram in 2 Taps."
+        },
+        "he": {
+            "ro_msg": "⏳ Relay מסתיים בעוד %s ימים.\n\n"
+                      "אחרי זה פרקים חדשים לא יגיעו כקובץ — "
+                      "רק תזכורת טקסט שבועית.\n\n"
+                      "להשאיר משלוח אוטומטי: $5 לחודש, תשלום בטלגרם בשתי הקשות."
+        }
+    },
     "payViaCryptoBot": {
         "ru": {
             "ro_msg": "Пополнить с помощью Crypto Bot"
@@ -2456,55 +2612,88 @@ messages = {
     },
     "payViaTelegramStars": {
         "ru": {
-            "ro_msg": "Пополнить через Telegram Stars ⭐"
+            "ro_msg": "⭐ Оплатить Relay — Telegram Stars"
         },
         "en": {
-            "ro_msg": "Top up with Telegram Stars ⭐"
+            "ro_msg": "⭐ Pay Relay with Telegram Stars"
         },
         "pt-BR": {
-            "ro_msg": "Recarregar com Telegram Stars ⭐"
+            "ro_msg": "⭐ Pagar Relay com Telegram Stars"
+        },
+        "es": {
+            "ro_msg": "⭐ Pagar Relay con Telegram Stars"
+        },
+        "de": {
+            "ro_msg": "⭐ Relay mit Telegram Stars zahlen"
+        },
+        "he": {
+            "ro_msg": "⭐ לשלם על Relay ב-Telegram Stars"
         }
     },
     "bot_sub_stars_page_body": {
         "ru": {
-            "ro_msg": "Выберите сумму пополнения баланса через Telegram Stars.\n"
-                      "Кнопки ниже пополняют USD-баланс на стоимость соответствующего тарифа. "
-                      "Текущий тариф затем активируется или продлевается по обычным правилам баланса.\n"
+            "ro_msg": "Relay — $5 / 30 дней. Кнопка ниже выставляет счёт Stars на месяц автодоставки.\n"
                       "Курс Telegram: 1000 ⭐ ≈ {rate}$."
         },
         "en": {
-            "ro_msg": "Choose a balance top-up amount via Telegram Stars.\n"
-                      "The buttons below top up the USD balance by the corresponding tariff price. "
-                      "Your current tariff is then activated or renewed by the usual balance rules.\n"
+            "ro_msg": "Relay — $5 / 30 days. The button below opens a Stars invoice for one month of auto-delivery.\n"
                       "Telegram rate: 1000 ⭐ ≈ ${rate}."
         },
         "pt-BR": {
-            "ro_msg": "Escolha um valor de recarga do saldo via Telegram Stars.\n"
-                      "Os botões abaixo recarregam o saldo USD pelo preço do plano correspondente. "
-                      "Seu plano atual é ativado ou renovado pelas regras normais do saldo.\n"
+            "ro_msg": "Relay — US$5 / 30 dias. O botão abaixo abre a fatura Stars de um mês de entrega.\n"
                       "Taxa do Telegram: 1000 ⭐ ≈ US${rate}."
+        },
+        "es": {
+            "ro_msg": "Relay — $5 / 30 días. El botón abre la factura Stars de un mes de entrega.\n"
+                      "Tipo de Telegram: 1000 ⭐ ≈ ${rate}."
+        },
+        "de": {
+            "ro_msg": "Relay — $5 / 30 Tage. Der Button öffnet eine Stars-Rechnung für einen Monat Zustellung.\n"
+                      "Telegram-Kurs: 1000 ⭐ ≈ ${rate}."
+        },
+        "he": {
+            "ro_msg": "Relay — $5 / 30 יום. הכפתור פותח חשבונית Stars לחודש משלוח.\n"
+                      "שער טלגרם: 1000 ⭐ ≈ ${rate}."
         }
     },
     "telegram_stars_invoice_title": {
         "ru": {
-            "ro_msg": "Пополнение баланса"
+            "ro_msg": "Yourcast Relay — 1 месяц"
         },
         "en": {
-            "ro_msg": "Balance top-up"
+            "ro_msg": "Yourcast Relay — 1 month"
         },
         "pt-BR": {
-            "ro_msg": "Recarga de saldo"
+            "ro_msg": "Yourcast Relay — 1 mês"
+        },
+        "es": {
+            "ro_msg": "Yourcast Relay — 1 mes"
+        },
+        "de": {
+            "ro_msg": "Yourcast Relay — 1 Monat"
+        },
+        "he": {
+            "ro_msg": "Yourcast Relay — חודש אחד"
         }
     },
     "telegram_stars_invoice_description": {
         "ru": {
-            "ro_msg": "Пополнение баланса на {balance}$ за {stars} ⭐. Курс: 1000 ⭐ ≈ {rate}$."
+            "ro_msg": "Автодоставка выпусков в чат и в канал. {stars} ⭐"
         },
         "en": {
-            "ro_msg": "Top up balance by ${balance} for {stars} ⭐. Rate: 1000 ⭐ ≈ ${rate}."
+            "ro_msg": "Auto-deliver episodes to chat and channel. {stars} ⭐"
         },
         "pt-BR": {
-            "ro_msg": "Recarregar saldo em US${balance} por {stars} ⭐. Taxa: 1000 ⭐ ≈ US${rate}."
+            "ro_msg": "Entrega automática de episódios no chat e no canal. {stars} ⭐"
+        },
+        "es": {
+            "ro_msg": "Entrega automática de episodios al chat y al canal. {stars} ⭐"
+        },
+        "de": {
+            "ro_msg": "Folgen automatisch in Chat und Kanal. {stars} ⭐"
+        },
+        "he": {
+            "ro_msg": "משלוח אוטומטי של פרקים לצ'אט ולערוץ. {stars} ⭐"
         }
     },
     "telegram_stars_invoice_error": {
@@ -2778,19 +2967,22 @@ messages = {
     },
     "curr_tariff": {
         "ru": {
-            "ro_msg": "Текущий тариф"
+            "ro_msg": "План"
         },
         "en": {
-            "ro_msg": "Current tariff"
+            "ro_msg": "Plan"
         },
         "pt-BR": {
-            "ro_msg": "Plano atual"
+            "ro_msg": "Plano"
         },
         "he": {
-            "ro_msg": "מסלול נוכחי"
+            "ro_msg": "תוכנית"
         },
         "de": {
-            "ro_msg": "Aktuelle Preisklasse"
+            "ro_msg": "Plan"
+        },
+        "es": {
+            "ro_msg": "Plan"
         }
     },
     "you_cant_recieve_notifications": {
@@ -2835,64 +3027,46 @@ messages = {
     },
     "bot_sub_trfs_page": {
         "ru": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Тарифы</b>\n\n"
-                                                          "Здесь вы можете выбрать подходящий тариф. Внимательно ознакомьтесь"
-                                                          " с доступными вариантами, а затем нажмите на кнопку нужного тарифа\n\n"
-                                                          "Тариф не активируется, пока вы не пополните ваш счёт."
-                                                          "<b>Внимание! Пополнение счёта также считается безвозмездным пожертвованием!</b>"
-                                                          "\n\nЕсли вы решите перейти на более дорогой тариф, то сразу же спишется "
-                                                          "часть разницы между тарифами за оставшиеся дни\n<b>Но если решите перейти "
-                                                          "на более дешёвый, то баланс увеличится на половину стоимости за оставшиеся"
-                                                          " дни, кроме текущего!</b>\n\n"
-                                                          "Кроме того, если вы не подписаны на тариф, то вы не сможете подписаться"
-                                                          " более чем на " + str(
-                max_subscriptions_without_tariff) + " подкастов."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
+                      "Один план: автодоставка файлов в чат и посты в ваши каналы, $5 / 30 дней.\n"
+                      "Без Relay — не больше "
+                      + str(max_subscriptions_without_tariff) + " подкастов.\n\n"
+                      "Пополнение — поддержка проекта (пожертвование); доступ включается по балансу."
         },
         "en": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Tariffs</b>\n\n"
-                                                          "Here you can choose a suitable tariff. Please read carefully"
-                                                          " with available options, and then click on the button for the desired "
-                                                          "tariff\n\nThe tariff is not activated until you fund your account."
-                                                          "<b>Attention! Account funding is also considered a donation!</b>"
-                                                          "\n\nIf you decide to switch to a more expensive tariff, then part of the "
-                                                          "difference between the tariffs for the remaining days will be debited "
-                                                          "immediately\n<b>But if you decide to switch to a cheaper one, the balance "
-                                                          "will increase by half the cost for the remaining days, except for the "
-                                                          "current one!</b>\n\n"
-                                                          "In addition, if you are not subscribed to the tariff, then you will not be"
-                                                          " able to subscribe to more than " \
-                      + str(max_subscriptions_without_tariff) + " podcasts."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
+                      "One plan: auto-deliver files to this chat and posts to your channels, $5 / 30 days.\n"
+                      "Without Relay — at most "
+                      + str(max_subscriptions_without_tariff) + " podcasts.\n\n"
+                      "Top-ups are project support (donation); access follows the balance rules."
         },
         "pt-BR": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Planos</b>\n\n"
-                                                          "Aqui você pode escolher um plano. Por favor, leia atentamente"
-                                                          " as opções disponíveis e, a seguir, clique no botão do plano "
-                                                          "escolhido.\n\nO plano somente será ativado quando você realizar uma "
-                                                          "recarga na conta. <b>Atenção! Qualquer recarga na conta será considerada uma"
-                                                          " doação!</b> \n\nSe você decidir mudar para um plano mais caro, parte do "
-                                                          "diferença entre os planos para os dias restantes será debitado "
-                                                          "imediatamente.\n<b>Mas, se decidir mudar para um mais barato, o saldo "
-                                                          "será aumentado pela metade do valor para os dias restantes, exceto "
-                                                          "o dia atual!</b>\n\n"
-                                                          "Além disso, se você não estiver inscrito em um plano, você não será"
-                                                          " capaz de se inscrever em mais de " \
-                      + str(max_subscriptions_without_tariff) + " podcasts."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
+                      "Um plano: entrega de arquivos neste chat e posts nos canais, US$5 / 30 dias.\n"
+                      "Sem Relay — no máximo "
+                      + str(max_subscriptions_without_tariff) + " podcasts.\n\n"
+                      "Recargas são apoio ao projeto (doação); o acesso segue o saldo."
         },
         "de": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Preisklassen</b>\n\n"
-                                                          "Hier kannst Du eine für Dich passende Preisklasse wählen. Lies Dir "
-                                                          "die verfügbaren Optionen aufmerksam durch! Dann drücke auf die gewünschte "
-                                                          "Preisklasse!\n\nDein Abonnement wird nicht freigeschaltet, bis Du Deinen "
-                                                          "Kontostand auflädst. <b>Beachte: Deinen Kontostand aufzuladen wird auch als "
-                                                          "Spende gesehen!</b>"
-                                                          "\n\nWenn Du Dich entscheidest, in eine teurere Preisklasse zu wechseln, "
-                                                          "wird ein Teil der Preisdifferenz für die verbleibende Laufzeit des "
-                                                          "Abonnements sofort abgebucht.\n<b>Wenn Du aber entscheidest in eine "
-                                                          "günstigere Preisklasse zu wechseln, wird Dein Kontostand um die Hälfte der"
-                                                          " Kosten für die verbleibende Laufzeit erhöht, ausgenommen dem Tag des "
-                                                          "Wechsels selbst!</b>\n\n"
-                                                          "Wenn Sie den Plan nicht abonniert haben, können Sie nicht mehr als " \
-                      + str(max_subscriptions_without_tariff) + " Podcasts abonnieren."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
+                      "Ein Plan: Dateien in diesen Chat und Posts in deine Kanäle, $5 / 30 Tage.\n"
+                      "Ohne Relay — höchstens "
+                      + str(max_subscriptions_without_tariff) + " Podcasts.\n\n"
+                      "Aufladungen sind Projektunterstützung (Spende); Zugang folgt dem Kontostand."
+        },
+        "es": {
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
+                      "Un plan: archivos en este chat y publicaciones en tus canales, $5 / 30 días.\n"
+                      "Sin Relay — como máximo "
+                      + str(max_subscriptions_without_tariff) + " podcasts.\n\n"
+                      "Las recargas son apoyo al proyecto (donación); el acceso sigue el saldo."
+        },
+        "he": {
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
+                      "תוכנית אחת: קבצים לצ'אט ופוסטים לערוצים, $5 / 30 יום.\n"
+                      "בלי Relay — עד "
+                      + str(max_subscriptions_without_tariff) + " פודקאסטים.\n\n"
+                      "הטענה היא תמיכה בפרויקט (תרומה); הגישה לפי היתרה."
         }
     },
     "tariff_lvl1": {
@@ -2925,43 +3099,54 @@ messages = {
     },
     "tariff_lvl3": {
         "ru": {
-            "ro_msg": emojiCodes.get('gold') + " Золото"
+            "ro_msg": emojiCodes.get('gold') + " Relay"
         },
         "en": {
-            "ro_msg": emojiCodes.get('gold') + " Gold"
+            "ro_msg": emojiCodes.get('gold') + " Relay"
         },
         "pt-BR": {
-            "ro_msg": emojiCodes.get('gold') + " Ouro"
+            "ro_msg": emojiCodes.get('gold') + " Relay"
         },
         "de": {
-            "ro_msg": emojiCodes.get('gold') + " Gold"
+            "ro_msg": emojiCodes.get('gold') + " Relay"
+        },
+        "es": {
+            "ro_msg": emojiCodes.get('gold') + " Relay"
+        },
+        "he": {
+            "ro_msg": emojiCodes.get('gold') + " Relay"
         }
     },
     "trf_descr_tmplt": {
         "ru": {
             "ro_msg": "Стоимость: %s" + emojiCodes.get('dollar') \
-                      + "(долларов) за 30 дней.\nУведомлений (за период, 30 дней): %s\n"
-                      # "Поддержка сжатия: (недоступно на данный момент) %s"
-                        "Управление каналом: %s"
+                      + " за 30 дней.\nАвтодоставка выпусков (30 дней): %s\n"
+                        "Посты в ваши каналы: %s"
         },
         "en": {
             "ro_msg": "Cost: %s" + emojiCodes.get('dollar') \
-                      + "(dollars) for 30 days.\nNotifications (for a period of 30 days): %s\n"
-                      # "Compression support: (not available at the moment) %s"
-                        "Channel management: %s"
+                      + " for 30 days.\nEpisode auto-delivery (30 days): %s\n"
+                        "Posts to your channels: %s"
         },
         "pt-BR": {
-            "ro_msg": "Cost: %s" + emojiCodes.get('dollar') \
-                      + "(dólares) por 30 dias.\nNotificações (por um período de 30 dias): %s\n"
-                      # "Suporte a compressão: (não disponível no momento) %s"
-                        "Channel management: %s"
+            "ro_msg": "Custo: %s" + emojiCodes.get('dollar') \
+                      + " por 30 dias.\nEntrega automática (30 dias): %s\n"
+                        "Posts nos seus canais: %s"
         },
         "de": {
             "ro_msg": "Kosten: %s" + emojiCodes.get('dollar') \
-                      + "(in Dollar) für 30 Tage.\nBenachrichtigungen (über eine Laufzeit von 30"
-                        " Tagen): %s\n"
-                      # "Compression support: (not available at the moment) %s"
-                        "Kanalverwaltung: %s"
+                      + " für 30 Tage.\nAuto-Zustellung (30 Tage): %s\n"
+                        "Posts in deine Kanäle: %s"
+        },
+        "es": {
+            "ro_msg": "Precio: %s" + emojiCodes.get('dollar') \
+                      + " por 30 días.\nEntrega automática (30 días): %s\n"
+                        "Publicaciones en tus canales: %s"
+        },
+        "he": {
+            "ro_msg": "מחיר: %s" + emojiCodes.get('dollar') \
+                      + " ל-30 יום.\nמשלוח אוטומטי (30 יום): %s\n"
+                        "פוסטים לערוצים: %s"
         }
     },
     "days_left": {
@@ -2980,16 +3165,22 @@ messages = {
     },
     "notify_left": {
         "ru": {
-            "ro_msg": "Осталось уведомлений: %s"
+            "ro_msg": "Автодоставка: %s"
         },
         "en": {
-            "ro_msg": "Notifications left: %s"
+            "ro_msg": "Auto-delivery: %s"
         },
         "pt-BR": {
-            "ro_msg": "Notificações restantes: %s"
+            "ro_msg": "Entrega automática: %s"
         },
         "de": {
-            "ro_msg": "Verbleibende Benachrichtigungen: %s"
+            "ro_msg": "Auto-Zustellung: %s"
+        },
+        "es": {
+            "ro_msg": "Entrega automática: %s"
+        },
+        "he": {
+            "ro_msg": "משלוח אוטומטי: %s"
         }
     },
     "curr_balance": {
@@ -3182,20 +3373,34 @@ messages = {
     },
     "tariff_cannot_be_prolonged_by_daemon": {
         "ru": {
-            "ro_msg": "Срок действия тарифа вышел, пополните баланс.\n"
-                      "Текущие условия:"
+            "ro_msg": "Relay остановлен — автодоставка выключена.\n\n"
+                      "Новые выпуски больше не приходят файлом. Раз в неделю можем напомнить текстом.\n"
+                      "Вернуть как было: Relay $5/мес — файлы в чат и посты в канал."
         },
         "en": {
-            "ro_msg": "The tariff has expired, top up the balance.\n"
-                      "Current conditions:"
+            "ro_msg": "Relay is off — auto-delivery stopped.\n\n"
+                      "New episodes no longer arrive as files. We may send a weekly text reminder.\n"
+                      "Turn it back on: Relay $5/mo — files in chat and posts to your channel."
         },
         "pt-BR": {
-            "ro_msg": "O plano expirou, complete o saldo.\n"
-                      "Condições atuais:"
+            "ro_msg": "Relay desligado — a entrega automática parou.\n\n"
+                      "Os episódios não chegam mais como arquivo. Podemos lembrar por texto uma vez por semana.\n"
+                      "Ligar de novo: Relay US$5/mês — arquivos no chat e posts no canal."
         },
         "de": {
-            "ro_msg": "Die Preisklasse ist ausgelaufen. Lade Dein Konto auf!\n"
-                      "Aktuelle Konditionen:"
+            "ro_msg": "Relay ist aus — Auto-Zustellung gestoppt.\n\n"
+                      "Neue Folgen kommen nicht mehr als Datei. Wöchentlich kann eine Text-Erinnerung kommen.\n"
+                      "Wieder einschalten: Relay $5/Monat — Dateien im Chat und Posts in deinen Kanal."
+        },
+        "es": {
+            "ro_msg": "Relay está apagado — la entrega automática se detuvo.\n\n"
+                      "Los episodios ya no llegan como archivo. Podemos recordar por texto una vez por semana.\n"
+                      "Volver a activar: Relay $5/mes — archivos en el chat y publicaciones en tu canal."
+        },
+        "he": {
+            "ro_msg": "Relay כבוי — המשלוח האוטומטי נעצר.\n\n"
+                      "פרקים חדשים לא מגיעים כקובץ. אפשר תזכורת טקסט פעם בשבוע.\n"
+                      "להחזיר: Relay $5 לחודש — קבצים בצ'אט ופוסטים לערוץ."
         }
     },
     "your_tariff_description": {
@@ -3305,30 +3510,84 @@ messages = {
     },
     "award_welcome": {
         "ru": {
-            "ro_msg": "Добро пожаловать! В качестве приветственного бонуса попробуйте "
-                      "лучший тариф! Текущие условия:"
+            "ro_msg": "🎧 Добро пожаловать в Yourcast Relay\n\n"
+                      "14 дней бесплатно: новые выпуски ваших подкастов будут приходить файлом прямо в этот чат.\n\n"
+                      "Что сделать сейчас (30 сек):\n"
+                      "1) Нажмите подкаст ниже или найдите свой в Поиске\n"
+                      "2) Включите 🔔 уведомления\n\n"
+                      "Потом можно подключить свой канал — бот будет постить туда новые эпизоды сам."
         },
         "en": {
-            "ro_msg": "Welcome! Try the best tariff as a welcome bonus! "
-                      "Current conditions:"
+            "ro_msg": "🎧 Welcome to Yourcast Relay\n\n"
+                      "14 days free: new episodes from your podcasts arrive as audio files right in this chat.\n\n"
+                      "Do this now (30 sec):\n"
+                      "1) Tap a podcast below or find yours in Search\n"
+                      "2) Turn on 🔔 notifications\n\n"
+                      "Then connect your channel — the bot will post new episodes for you."
         },
         "pt-BR": {
-            "ro_msg": "Bem-vindo! Experimente o melhor plano como um bônus de "
-                      "boas-vindas! Condições atuais:"
+            "ro_msg": "🎧 Bem-vindo ao Yourcast Relay\n\n"
+                      "14 dias grátis: episódios novos chegam como arquivo neste chat.\n\n"
+                      "Faça agora (30 seg):\n"
+                      "1) Toque num podcast abaixo ou busque o seu\n"
+                      "2) Ligue o 🔔\n\n"
+                      "Depois conecte seu canal — o bot posta os episódios por você."
+        },
+        "es": {
+            "ro_msg": "🎧 Bienvenido a Yourcast Relay\n\n"
+                      "14 días gratis: los episodios nuevos llegan como archivo a este chat.\n\n"
+                      "Haz esto ahora (30 s):\n"
+                      "1) Toca un podcast abajo o búscalo\n"
+                      "2) Activa 🔔\n\n"
+                      "Luego conecta tu canal — el bot publicará los episodios."
+        },
+        "de": {
+            "ro_msg": "🎧 Willkommen bei Yourcast Relay\n\n"
+                      "14 Tage kostenlos: neue Folgen kommen als Datei in diesen Chat.\n\n"
+                      "Jetzt (30 Sek.):\n"
+                      "1) Tippe unten auf einen Podcast oder suche deinen\n"
+                      "2) Schalte 🔔 ein\n\n"
+                      "Danach kannst du deinen Kanal verbinden — der Bot postet die Folgen."
+        },
+        "he": {
+            "ro_msg": "🎧 ברוכים הבאים ל-Yourcast Relay\n\n"
+                      "14 ימים בחינם: פרקים חדשים מגיעים כקובץ לצ'אט הזה.\n\n"
+                      "מה לעשות עכשיו (30 שנ'):\n"
+                      "1) לחצו על פודקאסט למטה או חפשו\n"
+                      "2) הפעילו 🔔\n\n"
+                      "אחר כך אפשר לחבר ערוץ — הבוט יפרסם לשם פרקים."
         }
     },
     "secret_award_welcome": {
         "ru": {
-            "ro_msg": "Добро пожаловать! Вы вернулись к началу! В качестве "
-                      "награды попробуйте лучший тариф! Текущие условия:"
+            "ro_msg": "🎧 С возвращением в Yourcast Relay\n\n"
+                      "Снова несколько дней автодоставки файлов в этот чат. "
+                      "Включите 🔔 на подкастах — следующий выпуск прилетит сам."
         },
         "en": {
-            "ro_msg": "Welcome! You are back to the beginning! Try the best tariff as "
-                      "a reward! Current conditions:"
+            "ro_msg": "🎧 Welcome back to Yourcast Relay\n\n"
+                      "You have a few more days of file auto-delivery in this chat. "
+                      "Turn on 🔔 on your shows — the next episode will land here."
         },
         "pt-BR": {
-            "ro_msg": "Bem-vindo! Você está de volta ao começo! Experimente o melhor "
-                      "plano como uma recompensa! Condições atuais:"
+            "ro_msg": "🎧 Bem-vindo de volta ao Yourcast Relay\n\n"
+                      "Mais alguns dias de entrega de arquivos neste chat. "
+                      "Ligue o 🔔 nos programas — o próximo episódio chega aqui."
+        },
+        "es": {
+            "ro_msg": "🎧 Bienvenido de nuevo a Yourcast Relay\n\n"
+                      "Unos días más de entrega de archivos en este chat. "
+                      "Activa 🔔 en tus shows — el siguiente episodio llega aquí."
+        },
+        "de": {
+            "ro_msg": "🎧 Willkommen zurück bei Yourcast Relay\n\n"
+                      "Noch ein paar Tage Datei-Zustellung in diesem Chat. "
+                      "Schalte 🔔 bei deinen Shows ein — die nächste Folge landet hier."
+        },
+        "he": {
+            "ro_msg": "🎧 ברוכים השבים ל-Yourcast Relay\n\n"
+                      "עוד כמה ימים של משלוח קבצים לצ'אט. "
+                      "הפעילו 🔔 בתוכניות — הפרק הבא יגיע לכאן."
         }
     },
     "donation": {

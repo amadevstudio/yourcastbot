@@ -127,6 +127,10 @@ def apply_balance_replenishment(db: SQLighter, user, amount_cents: int) -> Payme
             current_subscription['balance'] = new_user_balance
             result_mode = 0
 
+    if result_mode == 2:
+        from app.jobs.relay_remind import clear_relay_d3_sent
+        clear_relay_d3_sent(chat_tg_id)
+
     return {
         'result_mode': result_mode,
         'current_tariff': current_tariff,

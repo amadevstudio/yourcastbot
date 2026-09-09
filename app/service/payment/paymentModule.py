@@ -19,6 +19,7 @@ from app.routes.message_tools import go_back_inline_markup, go_back_inline_butto
 from app.routes.ptypes import ControllerParams
 from app.service.payment.paymentSafeModule import \
     prepare_price, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
+from app.service.payment.storefront import tariffs_for_storefront, subscription_pay_rows
 from config import botName
 from config import creatorId
 from config import db_path, tariff_period
@@ -118,25 +119,18 @@ def open_subscription_page(data: ControllerParams):
 
 def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, time_left, notify_left):
     message_text = "<b>" + get_message("bot_sub_page_header", language_code) + "</b>\n\n"
-    message_text += get_message("donate_page_body", language_code) + "\n\n"
-    message_text += get_message("donate_page_referral", language_code) + "\n" \
-                    + "t.me/" + botName + "?start=" + str(utgid) + "\n\n"
+    message_text += get_message("relay_sub_page_body", language_code) + "\n\n"
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
     message_text += get_tariff_info_message(
         tariff_str, balance, tariff_price, time_left, notify_left, language_code)
+    message_text += "\n\n" + get_message("relay_sub_page_footnote", language_code)
+    message_text += "\n\n" + get_message("donate_page_referral", language_code) + "\n" \
+                    + "t.me/" + botName + "?start=" + str(utgid)
 
-    menu_keyboard: list[list[InlineButtonData]] = [
-        [{'text': get_message("tariffs", language_code), 'callback_data': {'tp': 'bs_trfs'}}],
-        [{'text': get_message("payViaPatreon", language_code), 'callback_data': {'tp': 'bs_patr'}}],
-        [{'text': get_message("payViaCryptoBot", language_code), 'callback_data': {'tp': 'bs_cryptobot'}}],
-        [{'text': get_message("payViaTelegramStars", language_code), 'callback_data': {'tp': 'bs_stars'}}],
-        # [{'text': get_message("payViaRobokassa", language_code), 'callback_data': {'tp': 'bs_robokassa'}}],
-        [go_back_inline_button(language_code)]]
-
-    if utgid == creatorId:
-        menu_keyboard.append(
-            [{'text': get_message("payViaRobokassa", language_code), 'callback_data': {'tp': 'bs_robokassa'}}])
+    menu_keyboard: list[list[InlineButtonData]] = subscription_pay_rows(
+        language_code, include_robokassa=(utgid == creatorId))
+    menu_keyboard.append([go_back_inline_button(language_code)])
 
     result = {
         "message": message_text,
@@ -174,6 +168,7 @@ def get_tariffs_sub_message(language_code, tariff_id, balance, time_left, notify
             tariff_lvl = tariff['level']
             tariff_price = tariff['price']
 
+    for tariff in tariffs_for_storefront(tariffs, tariff_id):
         tariff_texts = get_tariff_description_and_button_text(
             tariff, {'id': tariff_id}, language_code)
 

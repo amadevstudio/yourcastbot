@@ -170,8 +170,12 @@ def main():
             raise AssertionError("%s toast is %s chars" % (lang, len(toast)))
         if not help_text:
             raise AssertionError("%s help missing" % lang)
-        print("ok  %s mute=%s on=%s off=%s" % (
-            lang, len(mute), len(on_label), len(off_label)))
+        enable = get_message("relayEnableButton", lang)
+        if len(enable) > 64:
+            raise AssertionError("%s relay button is %s chars: %r" % (
+                lang, len(enable), enable))
+        print("ok  %s mute=%s on=%s off=%s relay=%s" % (
+            lang, len(mute), len(on_label), len(off_label), len(enable)))
 
     print("all nosub_digest checks passed")
 
