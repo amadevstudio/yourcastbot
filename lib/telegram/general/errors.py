@@ -1,7 +1,9 @@
 import re
+import sys
 
 from config import db_path
 from db.sqliteAdapter import SQLighter
+from lib.net.enclosure import enclosure_host_fault
 
 
 def get_timeout_from_error_client(error):
@@ -86,7 +88,7 @@ def media_fetch_failed(e):
 
 
 def audio_source_gone(error):
-	"""Enclosure is dead: HTTP 404/410 or Telegram could not fetch the URL."""
+	"""File cannot be sent this attempt: 404/410, Telegram URL fetch, or CDN/DNS."""
 	text = str(error)
 	if "failed to get HTTP URL content" in text:
 		return True
@@ -94,7 +96,39 @@ def audio_source_gone(error):
 		return True
 	if "410 Client Error" in text or "410 Gone" in text:
 		return True
+	return enclosure_host_fault(error)
+
+
+def expected_send_noise(error) -> bool:
+	"""Blocked user, flood, stale edit, dead enclosure — not a process bug."""
+	if error is None:
+		return False
+	if user_unavailable_error(error):
+		return True
+	if message_to_edit_not_found(error):
+		return True
+	if get_timeout_from_error_bot(error) or get_timeout_from_error_client(error):
+		return True
+	if media_fetch_failed(error) or audio_source_gone(error):
+		return True
 	return False
+
+
+def log_caught(logger, *args, error=None):
+	"""From an except block: WARN for expected send noise, ERR otherwise."""
+	err = error if error is not None else sys.exc_info()[1]
+	if expected_send_noise(err):
+		if args:
+			logger.warn(*args, err)
+		else:
+			logger.warn(err)
+		return
+	if args:
+		logger.err(*args)
+	elif err is not None:
+		logger.err(err)
+	else:
+		logger.err()
 
 
 def request_entity_too_large(error):

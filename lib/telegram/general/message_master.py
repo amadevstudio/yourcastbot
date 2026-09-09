@@ -8,7 +8,7 @@ from typing import TypedDict, Literal, Required, Sequence
 
 from app.routes.routes_list import AvailableActions, AvailableRoutes
 from lib.telegram.general.errors import bot_blocked_reaction, get_timeout_from_error_bot, \
-    media_fetch_failed, message_to_edit_not_found
+    media_fetch_failed, message_to_edit_not_found, log_caught
 from lib.telegram.telebot import types as telegram_types
 
 from agent.bot_telebot import bot
@@ -246,11 +246,11 @@ def render_messages(chat_id: int,
             return render_messages(chat_id, message_structures, resending=True, _retry=True)
 
         else:
-            logger.err(e)
+            log_caught(logger, error=e)
             raise e
 
     except Exception as e:
-        logger.err(e)
+        log_caught(logger, error=e)
         raise e
 
 
@@ -276,11 +276,11 @@ def outer_sender(
         if bot_blocked_reaction(e, chat_id):
             return []
         # Fire-and-forget: one dead/migrated chat must not kill updater/jobs.
-        logger.err(e)
+        log_caught(logger, error=e)
         return []
 
     except Exception as e:
-        logger.err(e)
+        log_caught(logger, error=e)
         return []
 
 

@@ -12,7 +12,8 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from lib.telegram.general.errors import (  # noqa: E402
-    message_to_edit_not_found, user_unavailable_error)
+    message_to_edit_not_found, user_unavailable_error,
+    audio_source_gone, expected_send_noise)
 
 
 def _assert_eq(got, expected, label):
@@ -59,6 +60,28 @@ def main():
     _assert_eq(
         message_to_edit_not_found("Too Many Requests: retry after 3"),
         False, "flood is not a stale edit")
+    _assert_eq(
+        expected_send_noise("Forbidden: bot was blocked by the user"),
+        True, "blocked is expected noise")
+    _assert_eq(
+        expected_send_noise("Too Many Requests: retry after 37"),
+        True, "429 is expected noise")
+    _assert_eq(
+        expected_send_noise("Bad Request: MESSAGE_ID_INVALID"),
+        True, "stale edit is expected noise")
+    _assert_eq(
+        expected_send_noise(RuntimeError(
+            "HTTPSConnectionPool(host='x', port=443): Max retries exceeded "
+            "(Caused by ReadTimeoutError(Read timed out.))")),
+        True, "cdn timeout is expected noise")
+    _assert_eq(
+        audio_source_gone(RuntimeError(
+            "HTTPSConnectionPool(host='x', port=443): Max retries exceeded "
+            "(Caused by ReadTimeoutError(Read timed out.))")),
+        True, "cdn timeout is a gone enclosure")
+    _assert_eq(
+        expected_send_noise(RuntimeError("disk I/O error")),
+        False, "unexpected stays unexpected")
     print("all error classification checks passed")
 
 

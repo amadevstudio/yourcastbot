@@ -40,6 +40,28 @@ def get_message(message, lang_code, param=""):
             return message
 
 
+def format_record_unavailable(lang_code, site_url=None, file_url=None) -> str:
+    """User-facing rec failure: site and/or direct file link."""
+    site = (site_url or "").strip()
+    file_link = (file_url or "").strip()
+    if site:
+        text = get_message("recordUnavaliable", lang_code) % site
+    else:
+        text = get_message("recordUnavaliableBare", lang_code)
+    if file_link:
+        text += "\n" + get_message("recordUnavaliable2", lang_code) % file_link
+    return text
+
+
+def format_feed_notice(lang_code, body_key, feed_url=None) -> str:
+    """Feed failure copy plus RSS link when we have one."""
+    text = get_message(body_key, lang_code)
+    url = (feed_url or "").strip()
+    if url:
+        text += "\n\n" + get_message("openFeedLink", lang_code) % url
+    return text
+
+
 def get_message_rtd(message_route, lang_code):
     lang_code = get_language(lang_code)
     curr_route = None
@@ -907,6 +929,26 @@ messages = {
             "ro_msg": "או ב <a href=\"%s\">אתר הפודקאסט</a>"
         }
 
+    },
+    "recordUnavaliableBare": {
+        "ru": {
+            "ro_msg": "К сожалению, файл подкаста недоступен."
+        },
+        "en": {
+            "ro_msg": "Unfortunately, the podcast file is unavailable."
+        },
+        "pt-BR": {
+            "ro_msg": "Infelizmente, o arquivo do podcast não está disponível."
+        },
+        "es": {
+            "ro_msg": "Lamentablemente el fichero del podcast no está disponible."
+        },
+        "de": {
+            "ro_msg": "Leider ist die Datei der Episode nicht verfügbar."
+        },
+        "he": {
+            "ro_msg": "לצערינו, קובץ הפודקאסט לא זמין."
+        }
     },
     "recordUnavaliable": {
         "ru": {
@@ -3493,6 +3535,26 @@ messages = {
     # поэтому текст отличается от notificationsFCDisabled: там следствие — отключили,
     # здесь — оставили включёнными. Не говорим, что подкаст мёртв: 404 тоже бывает
     # разовым, а гасить по кнопке «обновить» нельзя.
+    "openFeedLink": {
+        "ru": {
+            "ro_msg": "Лента: <a href=\"%s\">открыть RSS</a>"
+        },
+        "en": {
+            "ro_msg": "Feed: <a href=\"%s\">open RSS</a>"
+        },
+        "pt-BR": {
+            "ro_msg": "Feed: <a href=\"%s\">abrir RSS</a>"
+        },
+        "es": {
+            "ro_msg": "Feed: <a href=\"%s\">abrir RSS</a>"
+        },
+        "de": {
+            "ro_msg": "Feed: <a href=\"%s\">RSS öffnen</a>"
+        },
+        "he": {
+            "ro_msg": "פיד: <a href=\"%s\">פתח RSS</a>"
+        }
+    },
     "feedTemporarilyUnavailable": {
         "ru": {
             "ro_msg": "Не удалось получить rss ленту прямо сейчас.\n"

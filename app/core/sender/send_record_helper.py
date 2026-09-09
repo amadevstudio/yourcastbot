@@ -16,7 +16,8 @@ from app.controller.builders.adminModule import send_message_to_creator
 from app.controller.builders.channelModule import bot_removed_from_channel_reaction
 from app.controller.types_helpers.recs import rec_callback_data_identifier
 from app.core.sender import outbox
-from app.i18n.messages import get_message, get_message_rtd, emojiCodes
+from app.i18n.messages import (
+    get_message, get_message_rtd, emojiCodes, format_record_unavailable)
 from app.repository.storage import storage, telegram_cache
 from app.service.podcast.podcast import prepare_podcast_update_time
 from app.service.record.caption import prepare_message_text
@@ -25,8 +26,9 @@ from lib.markup.cleaner import html_mrkd_cleaner
 # from tools.audio_processing import compress_audio
 from lib.requests import requesterModule
 from lib.system import space
+from lib.net.enclosure import enclosure_host_fault
 from lib.telegram.general.errors import get_timeout_from_error_client, get_timeout_from_error_bot, bot_blocked_reaction, \
-    user_unavailable_error, message_to_edit_not_found, audio_source_gone, request_entity_too_large
+    user_unavailable_error, message_to_edit_not_found, audio_source_gone, request_entity_too_large, log_caught
 from lib.telegram.general.message_master import outer_sender, message_editor, message_deleter, message_master, \
     render_messages
 from lib.tools.logger import Logger
@@ -201,11 +203,16 @@ class Sender:
         self.__update_status_message("getting_file_size")
 
         try:
-            self.recordSize = get_file_size_HTTP(self.link)
-            self.recordSizeMb = self.recordSize / MB_NUMBER
-            self.__set_percent_step_dynamic()
+            if storage.enclosure_host_is_cool(self.link):
+                self.logger.warn("enclosure host cooling, skip size check")
+            else:
+                self.recordSize = get_file_size_HTTP(self.link)
+                self.recordSizeMb = self.recordSize / MB_NUMBER
+                self.__set_percent_step_dynamic()
         except Exception as e:
-            self.logger.warn(e)
+            log_caught(self.logger, error=e)
+            if enclosure_host_fault(e):
+                storage.mark_enclosure_host_cool(self.link)
 
         self.__prepare_status_template()
 
@@ -401,7 +408,7 @@ class Sender:
                 self.outcome_messages[chat_id]['message_id'] = None
                 return
 
-            self.logger.err(e, status)
+            log_caught(self.logger, status, error=e)
 
     def __set_status_message_pause(self, chat_id, timeout):
         self.outcome_messages[chat_id]['errors']['pause']['timeout'] = timeout
@@ -456,7 +463,7 @@ class Sender:
                     write_thread.start()
             except Exception as e:
                 self.logger.warn(f"Can't set status {text} with error:")
-                self.logger.err(e)
+                log_caught(self.logger, error=e)
 
     def __delete_status_messages(self):
         if not self.withStatusMessage:
@@ -470,7 +477,7 @@ class Sender:
                 if self.outcome_messages[chat_id].get('message_id', None) is not None:
                     message_deleter(chat_id, self.outcome_messages[chat_id]['message_id'])
             except Exception as e:
-                self.logger.err(e)
+                log_caught(self.logger, error=e)
 
     def get_cant_send_to(self, successfully_via_link: list[int]) -> list[int]:
         return [
@@ -484,9 +491,12 @@ class Sender:
         retryable = None
         self._touch_outbox()
         try:
+            if storage.enclosure_host_is_cool(self.link):
+                self.__record_gone = True
+                self.logger.warn("enclosure host cooling, skip download")
 
             # iTunes
-            if self.podcast_info['service_name'] == 'itunes':
+            elif self.podcast_info['service_name'] == 'itunes':
                 if self.recordSizeMb > 2000:
                     self.__too_big_record = True
 
@@ -675,9 +685,11 @@ class Sender:
         self.logger.log("File size on disk (mb): ", self.recordSizeMb)
 
     def _note_send_exception(self, error):
-        self.logger.err(error)
+        log_caught(self.logger, error=error)
         if audio_source_gone(error):
             self.__record_gone = True
+        if enclosure_host_fault(error):
+            storage.mark_enclosure_host_cool(self.link)
         if request_entity_too_large(error):
             self.__bot_api_too_large = True
 
@@ -823,7 +835,7 @@ class Sender:
                     send_uploaded()
 
                 except (ApiException, ValueError, ApiTelegramException) as e:
-                    self.logger.err(e)
+                    log_caught(self.logger, error=e)
                     self.print_failure_message_stack(chat_id)
 
                     if self.error_reactions(e, chat_id):
@@ -835,10 +847,10 @@ class Sender:
                         try:
                             send_uploaded()
                         except Exception as retry_e:
-                            self.logger.err(retry_e)
+                            log_caught(self.logger, error=retry_e)
 
                 except Exception as e:
-                    self.logger.err(e)
+                    log_caught(self.logger, error=e)
                     self.print_failure_message_stack(chat_id)
 
         return successfully_sent_to
@@ -883,7 +895,6 @@ class Sender:
 
                     except (ApiException, ApiTelegramException) as e:
                         self._note_send_exception(e)
-                        self.logger.err(e, f"File id is {file_id}")
                         self.print_failure_message_stack(chat_id)
 
                         if self.error_reactions(e, chat_id):
@@ -906,7 +917,7 @@ class Sender:
                                 self.logger.log(chat_id, "success_m ", str(self.podcast_info['id']))
                                 self.__set_resend_status(chat_id)
                             except Exception as e:
-                                self.logger.err(e)
+                                log_caught(self.logger, error=e)
 
                     except Exception as e:
                         self._note_send_exception(e)
@@ -946,7 +957,7 @@ class Sender:
                         self.logger.log(chat_id, "success_s ", str(self.podcast_info['id']))
                         self.__set_resend_status(chat_id)
                     except Exception as e:
-                        self.logger.err(e)
+                        log_caught(self.logger, error=e)
 
             except Exception as e:
                 self._note_send_exception(e)
@@ -982,7 +993,7 @@ class Sender:
                 self._note_send_exception(e)
                 raise
 
-            self.logger.err(e, "Fail to send with caption")
+            self.logger.warn(e, "Fail to send with caption")
             if hasattr(audio, 'seek'):
                 try:
                     audio.seek(0)
@@ -1070,8 +1081,10 @@ class Sender:
 
         error_text = (
                 self.prepare_record_text(chat_id, mode='short', on_error=True) + "\n\n"
-                + get_message("recordUnavaliable", lang_code) % self.podcast_info['channelLink'] + "\n"
-                + get_message("recordUnavaliable2", lang_code) % str(self.link))
+                + format_record_unavailable(
+                    lang_code,
+                    self.podcast_info.get('channelLink'),
+                    self.link if isinstance(self.link, str) else None))
 
         try:
             if self.outcome_messages.get(chat_id, {}).get('message_id') is not None:

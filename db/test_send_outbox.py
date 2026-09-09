@@ -702,6 +702,25 @@ def test_rec_recipient_chat_ids_for_circle_job(db_path):
         "circle job listeners, not c11019")
 
 
+def test_fail_or_retry_timeout_is_terminal(db_path):
+    outbox_id = outbox.enqueue(
+        _rec_job(chat_id=8008), database=db_path, dispatch=False)
+    claimed = outbox.claim(database=db_path, outbox_id=outbox_id)
+    timeout = RuntimeError(
+        "HTTPSConnectionPool(host='m.cdn.firstory.me', port=443): "
+        "Max retries exceeded with url: /x.mp3 "
+        "(Caused by ReadTimeoutError(Read timed out. (read timeout=30)))")
+    outcome = outbox.fail_or_retry(
+        outbox_id, error=timeout, database=db_path,
+        attempts=claimed['outbox_attempts'], dispatch=False)
+    _assert_eq(outcome, 'failed', "cdn timeout fails the row")
+    row = outbox.get_row(outbox_id, database=db_path)
+    _assert_eq(row['status'], 'failed', "status failed after timeout")
+    _assert_eq(
+        outbox.claim(database=db_path, outbox_id=outbox_id), None,
+        "failed timeout row is not claimed")
+
+
 def test_audio_error_classification(_db_path=None):
     from lib.telegram.general.errors import (
         audio_source_gone, request_entity_too_large)
@@ -709,6 +728,12 @@ def test_audio_error_classification(_db_path=None):
         audio_source_gone(RuntimeError(
             "404 Client Error: Not Found for url: https://x/a.mp3")),
         "http 404 is gone")
+    _assert_true(
+        audio_source_gone(RuntimeError(
+            "HTTPSConnectionPool(host='m.cdn.firstory.me', port=443): "
+            "Max retries exceeded (Caused by ReadTimeoutError("
+            "Read timed out. (read timeout=30)))")),
+        "cdn read timeout is gone")
     _assert_true(
         audio_source_gone(RuntimeError(
             "Bad Request: failed to get HTTP URL content")),
@@ -946,6 +971,7 @@ def main():
         test_flood_wait_seconds,
         test_touch_renews_one_lease,
         test_fail_or_retry_uses_telegram_retry_after,
+        test_fail_or_retry_timeout_is_terminal,
         test_force_reclaim_after_restart,
         test_rec_payload_circle_flags,
         test_old_rec_payload_defaults_to_click,
