@@ -29,6 +29,7 @@ import config
 from config import db_path
 from db.connection import connect_sqlite
 from lib.tools.logger import logger
+from lib.telegram.general.errors import audio_source_gone
 
 # Short lease: the worker must touch() while downloading/sending.
 # A dead worker then frees the row in minutes, not half an hour.
@@ -330,6 +331,11 @@ def _retry_delay(attempts, error):
     if pause:
         return pause
     return min(MAX_BACKOFF_SECONDS, 2 ** max(int(attempts), 1))
+
+
+def _is_terminal_rec_error(error):
+    """Dead enclosure/CDN: fail the row, do not burn MAX_ATTEMPTS."""
+    return audio_source_gone(error)
 
 
 def _recs_module():
@@ -876,7 +882,7 @@ def _notify_rec_unavailable(row):
     channel_link = info.get('channelLink') or info.get('itunesLink') or ''
     langs = _restore_id_map(func_params.get('utglangs') or {})
     try:
-        from app.i18n.messages import get_message
+        from app.i18n.messages import format_record_unavailable
         from lib.telegram.general.message_master import outer_sender
     except Exception as import_e:
         logger.err("outbox rec unavailable imports:", import_e)
@@ -884,9 +890,7 @@ def _notify_rec_unavailable(row):
     for chat_id in rec_recipient_chat_ids(row):
         lang = langs.get(chat_id) or 'en'
         try:
-            text = (
-                get_message("recordUnavaliable", lang) % channel_link + "\n"
-                + get_message("recordUnavaliable2", lang) % str(link))
+            text = format_record_unavailable(lang, channel_link, link)
             outer_sender(chat_id, [{'type': 'text', 'text': text}])
         except Exception as user_e:
             logger.err("outbox failed to alert rec chat:", chat_id, user_e)
@@ -914,7 +918,7 @@ def fail_or_retry(
             if attempts is not None and current_attempts != int(attempts):
                 conn.execute("COMMIT")
                 return outcome
-            if current_attempts >= MAX_ATTEMPTS:
+            if current_attempts >= MAX_ATTEMPTS or _is_terminal_rec_error(error):
                 conn.execute(
                     "UPDATE send_outbox "
                     "SET status = 'failed', leased_until = NULL "

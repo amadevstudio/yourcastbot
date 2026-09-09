@@ -54,6 +54,11 @@ Rules:
   `/usersCount` stall). This does **not** apply to rec/circle/update.
 - Hung HTTP on a rec worker must fail fast (timeouts, no long urllib3
   retry storms). A dead CDN must not hold a lease indefinitely.
+- **Dead enclosure** (timeout, DNS, Telegram could not fetch the URL) is
+  terminal: do not spend `MAX_ATTEMPTS` on it. Cool the host in
+  `bot_runtime_kv`, tell the user with site + file links.
+- Expected Telegram outcomes (blocked user, 429, stale edit) are WARN,
+  not ERR.
 - **Admin broadcasts** are `admin_mail_jobs` processed by a jobs-role
   thread. Do not dump mailings onto rec/circle/send workers. The admin
   HTTP API is a fourth supervisor role (`admin`) bound to localhost.

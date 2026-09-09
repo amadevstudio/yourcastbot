@@ -24,8 +24,10 @@ from lib.telegram.general.message_master import message_master, outer_sender, re
 import lib.tools.time_tools.general
 from app.controller.builders.adminModule import send_message_to_creator
 from app.core.sender import outbox, send_record_helper
-from app.i18n.messages import get_message
+from app.i18n.messages import get_message, format_feed_notice
 from app.jobs.circle_health import mark_circle_finished, mark_circle_started
+from app.jobs.feed_health import (
+    should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold)
 from app.jobs.digest_outbox import pending_count
 from app.jobs.nosub_digest import (
     latest_episode_id, nosub_users_behind, should_skip_item_parse)
@@ -40,13 +42,6 @@ from app.routes.ptypes import ControllerParams
 
 MAX_EPISODES_PER_PODCAST = 3
 
-# Сколько кругов обновления подряд фид должен быть недоступен,
-# прежде чем выключать уведомления подписчикам.
-# Разовый таймаут/503/битый ответ не должен ничего гасить.
-FEED_FAILURES_BEFORE_NOTIFY_OFF = 5
-# Фид ответил 404/410 — его точно больше нет, порог ниже.
-FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF = 3
-
 # skipped — канал без получателей, not_modified — HTTP 304, fetched — качали/парсили
 class ChannelUpdateResult(typing.NamedTuple):
     new_recs: bool = False
@@ -54,6 +49,14 @@ class ChannelUpdateResult(typing.NamedTuple):
 
     def __bool__(self):
         return self.new_recs
+
+
+def _channel_feed_url(channel, pc_info=None) -> str:
+    if pc_info:
+        url = str((pc_info or {}).get("feedUrl") or "").strip()
+        if url:
+            return url
+    return str((channel or {}).get("rss_link") or "").strip()
 
 
 logger = Logger(file="updater")
@@ -187,13 +190,18 @@ def send_new_records_by_channel(
         # updatePodcastLastGuidDate(channel)
         return ChannelUpdateResult(new_recs_flag, 'skipped')
 
+    if should_skip_feed_fetch(channel['id'], manual=manual):
+        logger.log(
+            "Feed dead cooldown, skip fetch for channel", channel['id'])
+        return ChannelUpdateResult(new_recs_flag, 'skipped')
+
     root, pc_info, service_name, service_id = \
         app.service.podcast.podcast.fetch_channel_feed(channel, manual=manual)
 
     if pc_info.get('notModified'):
         # 304: фид живой и не менялся. Не парсим, не шлём, счётчик сбоев не трогаем
         # (сбрасываем — это успех «фид доступен»).
-        storage.reset_channel_feed_failures(channel['id'])
+        note_feed_ok(channel['id'])
         _persist_channel_http_validators(channel, pc_info)
         if nosubs_connections:
             nosub_connections_to_pgd = {}
@@ -239,7 +247,9 @@ def send_new_records_by_channel(
                     user_language = app.service.user.language.user_language(
                         user['lang'] if user is not None else None)
                     title = lib.markup.cleaner.html_mrkd_cleaner(str(podcast_name))
-                    body = get_message('feedTemporarilyUnavailable', user_language)
+                    body = format_feed_notice(
+                        user_language, 'feedTemporarilyUnavailable',
+                        _channel_feed_url(channel, pc_info))
                     text = ("<b>" + title + "</b>\n\n" + body) if title else body
                     outer_sender(connection['user_telegram_id'], [{
                         'type': 'text',
@@ -251,32 +261,31 @@ def send_new_records_by_channel(
 
             return ChannelUpdateResult(new_recs_flag, 'fetched')
 
-        failures = storage.increase_channel_feed_failures(channel['id'])
-        if failure_reason == app.service.podcast.rss.FEED_STATUS_GONE:
-            failures_threshold = FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF
-        else:
-            failures_threshold = FEED_FAILURES_BEFORE_NOTIFY_OFF
-
-        # Недоступность может быть временной — ждём подтверждения
-        # на следующих кругах, уведомления пока не трогаем.
-        if failures < failures_threshold:
+        outcome = note_feed_failure(channel['id'], failure_reason)
+        failures = storage.get_channel_feed_failures(channel['id'])
+        if outcome == 'counting':
             logger.log(
                 "Feed is not available for channel", channel['id'],
                 "; reason:", failure_reason,
-                "; consecutive failures:", failures, "of", failures_threshold,
+                "; consecutive failures:", failures, "of",
+                failures_threshold(failure_reason),
                 "; notifications are left enabled")
             return ChannelUpdateResult(new_recs_flag, 'fetched')
+        if outcome == 'still_dead':
+            logger.log(
+                "Feed still dead for channel", channel['id'],
+                "; reason:", failure_reason,
+                "; cooldown extended")
+            return ChannelUpdateResult(new_recs_flag, 'fetched')
 
-        logger.warn(
+        nosubs_n = 0 if nosubs_connections is None else len(nosubs_connections)
+        log_fn = logger.warn if (connections or nosubs_n) else logger.log
+        log_fn(
             "Feed is stably unavailable for channel", channel['id'],
             "; reason:", failure_reason,
             "; consecutive failures:", failures,
             "; turning notifications off for", len(connections), "subscribers and",
-            (0 if nosubs_connections is None else len(nosubs_connections)),
-            "users without a tariff")
-        # счётчик сброшен: если фид вернётся и пользователь снова
-        # включит уведомления, отсчёт начнётся заново
-        storage.reset_channel_feed_failures(channel['id'])
+            nosubs_n, "users without a tariff")
 
         try:
             if nosubs_connections is not None:
@@ -299,7 +308,9 @@ def send_new_records_by_channel(
 
             try:
                 title = lib.markup.cleaner.html_mrkd_cleaner(str(collection_name))
-                body = get_message('notificationsFCDisabled', user_language)
+                body = format_feed_notice(
+                    user_language, 'notificationsFCDisabled',
+                    _channel_feed_url(channel, pc_info))
                 text = ("<b>" + title + "</b>\n\n" + body) if title else body
                 outer_sender(connection['user_telegram_id'], [{
                     'type': 'text', 'text': text
@@ -320,7 +331,7 @@ def send_new_records_by_channel(
         return ChannelUpdateResult(new_recs_flag, 'fetched')
 
     # фид получен — серия неудач прервана
-    storage.reset_channel_feed_failures(channel['id'])
+    note_feed_ok(channel['id'])
     _persist_channel_http_validators(channel, pc_info)
 
     if service_name == 'itunes':

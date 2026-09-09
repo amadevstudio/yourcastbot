@@ -2,12 +2,14 @@ import json
 import os
 import shelve
 import threading
+import time
 from functools import wraps
 from typing import Mapping, Any, Sequence
 
 from app.routes.routes_list import AvailableRoutes
 from config import shelve_name
 from db import runtime_kv
+from lib.net.enclosure import COOL_SECONDS, host_from_url
 from lib.tools.logger import logger
 
 _thread_lock = threading.RLock()
@@ -284,19 +286,81 @@ def __channel_feed_failures_key(channel_id):
     return "channel_feed_failures_" + str(channel_id)
 
 
-def get_channel_feed_failures(channel_id) -> int:
+def get_channel_feed_failures(channel_id, database=None) -> int:
     try:
-        return int(runtime_kv.get_kv(__channel_feed_failures_key(channel_id)) or 0)
+        return int(runtime_kv.get_kv(
+            __channel_feed_failures_key(channel_id), database=database) or 0)
     except Exception:
         return 0
 
 
-def increase_channel_feed_failures(channel_id) -> int:
-    return runtime_kv.incr_kv(__channel_feed_failures_key(channel_id))
+def increase_channel_feed_failures(channel_id, database=None) -> int:
+    return runtime_kv.incr_kv(
+        __channel_feed_failures_key(channel_id), database=database)
 
 
-def reset_channel_feed_failures(channel_id):
-    runtime_kv.delete_kv(__channel_feed_failures_key(channel_id))
+def reset_channel_feed_failures(channel_id, database=None):
+    runtime_kv.delete_kv(
+        __channel_feed_failures_key(channel_id), database=database)
+
+
+def __channel_feed_dead_key(channel_id):
+    return "channel_feed_dead_until_" + str(channel_id)
+
+
+def get_channel_feed_dead_until(channel_id, database=None) -> float | None:
+    raw = runtime_kv.get_kv(
+        __channel_feed_dead_key(channel_id), database=database)
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def set_channel_feed_dead_until(channel_id, until_ts, database=None):
+    runtime_kv.set_kv(
+        __channel_feed_dead_key(channel_id), str(until_ts), database=database)
+
+
+def clear_channel_feed_dead(channel_id, database=None):
+    runtime_kv.delete_kv(
+        __channel_feed_dead_key(channel_id), database=database)
+    reset_channel_feed_failures(channel_id, database=database)
+
+
+def __enclosure_cool_key(host):
+    return "enclosure_cool_until_" + str(host)
+
+
+def enclosure_host_is_cool(url, now=None, database=None) -> bool:
+    host = host_from_url(url)
+    if not host:
+        return False
+    until = runtime_kv.get_kv(__enclosure_cool_key(host), database=database)
+    if until is None or until == "":
+        return False
+    try:
+        deadline = float(until)
+    except (TypeError, ValueError):
+        return False
+    stamp = time.time() if now is None else float(now)
+    if stamp >= deadline:
+        runtime_kv.delete_kv(__enclosure_cool_key(host), database=database)
+        return False
+    return True
+
+
+def mark_enclosure_host_cool(url, seconds=None, now=None, database=None) -> str | None:
+    host = host_from_url(url)
+    if not host:
+        return None
+    wait = COOL_SECONDS if seconds is None else int(seconds)
+    stamp = time.time() if now is None else float(now)
+    runtime_kv.set_kv(
+        __enclosure_cool_key(host), str(stamp + wait), database=database)
+    return host
 
 
 def set_new_podcast_available_flag(user_id):

@@ -13,6 +13,7 @@ from app.core.sender import outbox
 from app.jobs import podcastsUpdater
 from config import app_api_id, app_api_hash, token, threads_config
 from lib.python.singletonBase import Singleton
+from lib.telegram.general.errors import log_caught
 from lib.tools.logger import Logger
 
 logger = Logger(file="sender")
@@ -211,7 +212,7 @@ class RecordSender(threading.Thread):
                 logger.log(f"Sending in thread #{self.thread_num}")
                 self.process_input(input_data, thonbot)
             except Exception as e:
-                logger.err(f"{self.thread_num} failed sending, continuing:", e)
+                log_caught(logger, f"{self.thread_num} failed sending, continuing:", error=e)
             finally:
                 self.thread_queue.task_done()
                 if self.thread_queue.empty():
