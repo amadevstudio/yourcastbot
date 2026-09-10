@@ -32,6 +32,8 @@ def main():
         "tariff_cannot_be_prolonged_by_daemon",
         "payViaTelegramStars",
         "telegram_stars_invoice_title",
+        "telegram_stars_invoice_description",
+        "bot_sub_stars_page_body",
         "tariff_lvl3",
         "bot_sub_page_header",
         "bot_sub_trfs_page",

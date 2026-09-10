@@ -8,6 +8,7 @@ from app.i18n.messages import get_message
 from app.jobs import digest_outbox
 from app.jobs.digest_outbox import migrate_from_kv, pending_count
 from app.jobs.nosub_digest import DIGEST_MUTE_ACTION, should_send_nosub_digest
+from app.jobs.relay_remind import relay_nudge_markup
 from config import db_path
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import outer_sender
@@ -32,13 +33,10 @@ def send_digest_to_user(user_tg_id, database=None):
         sent = outer_sender(user['telegramId'], [{
             'type': 'text',
             'text': get_message("youHaveNewEpisodes", user_language),
-            'reply_markup': [[{
-                'text': get_message("relayEnableButton", user_language),
-                'callback_data': {'tp': 'bs_stars'},
-            }], [{
+            'reply_markup': relay_nudge_markup(user_language, extra_row=[{
                 'text': get_message("nosubDigestMuteButton", user_language),
                 'callback_data': {'tp': DIGEST_MUTE_ACTION},
-            }]],
+            }]),
         }], on_flood='raise')
         if sent:
             db_users.mark_nosub_digest_sent(user_tg_id)

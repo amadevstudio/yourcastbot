@@ -4,6 +4,7 @@
 Runs from the existing hourly balance_watcher. Does not touch payment apply.
 """
 from app.i18n.messages import get_message
+from app.service.payment.storefront import CHANGE_PLAN_CALLBACK
 from config import db_path
 from db import runtime_kv
 from db.sqliteAdapter import SQLighter
@@ -46,9 +47,13 @@ def clear_relay_d3_sent(telegram_id, database=None):
 
 
 def relay_nudge_markup(language_code, extra_row=None):
+    """Stars first, then change-plan. Do not trap the user on one SKU."""
     rows = [[{
         "text": get_message("relayEnableButton", language_code),
         "callback_data": {"tp": "bs_stars"},
+    }], [{
+        "text": get_message("tariffs", language_code),
+        "callback_data": {"tp": CHANGE_PLAN_CALLBACK},
     }]]
     if extra_row:
         rows.append(extra_row)

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Relay storefront: Stars first, then change plan.
+"""Relay storefront: Stars first, change plan required, every SKU visible.
 
 Run from the repo root: python app/service/payment/test_storefront.py
 """
@@ -37,16 +37,16 @@ def main():
     ]
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(rows)],
-        [3],
-        "Stars invoice is Relay only")
+        [3, 1, 2],
+        "Stars lists every SKU, Relay first")
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(rows, 2)],
-        [2, 3],
-        "legacy Silver still sees their plan on Stars")
+        [3, 2, 1],
+        "current Silver stays visible next to Relay")
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(rows, 0)],
-        [3],
-        "no current tariff still hides bronze/silver on Stars")
+        [3, 1, 2],
+        "no current tariff still shows Bronze/Silver")
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(
             [{"id": 1, "level": 1, "price": 50}])],
@@ -64,9 +64,8 @@ def main():
     _assert_eq(page_types[0], "bs_stars", "Stars is the first button")
     if CHANGE_PLAN_CALLBACK not in page_types:
         raise AssertionError(
-            "bs_trfs missing from /subscription. Hide Bronze/Silver only "
-            "in tariffs_for_storefront (Stars invoices). Change-plan stays "
-            "on the main keyboard — do not encode its absence as a test.")
+            "bs_trfs missing from /subscription. Selling Relay first is "
+            "copy and button order — do not drop change-plan or hide SKUs.")
     _assert_eq(
         page_types[1], CHANGE_PLAN_CALLBACK, "change plan is second")
     _assert_eq(page_types[2], "bs_cryptobot", "Crypto is third")
@@ -85,6 +84,11 @@ def main():
     _assert("Bronze" in change and "Silver" in change,
             "change-plan copy mentions older SKUs")
     _assert("Relay" in change, "change-plan copy still recommends Relay")
+    stars_body = get_message("bot_sub_stars_page_body", "en")
+    _assert("button" in stars_body.lower() or "top" in stars_body.lower(),
+            "Stars page is a top-up chooser")
+    title = get_message("telegram_stars_invoice_title", "en")
+    _assert("Relay" not in title, "Bronze Stars invoice is not labeled Relay")
 
     ru_stars = get_message("payViaTelegramStars", "ru")
     _assert(len(ru_stars) <= 64, "Stars button fits Telegram")

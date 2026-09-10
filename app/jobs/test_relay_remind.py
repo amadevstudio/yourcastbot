@@ -86,7 +86,7 @@ def main():
     sent = []
 
     def fake_sender(chat_id, messages, **_kwargs):
-        sent.append((chat_id, messages[0]["text"]))
+        sent.append((chat_id, messages[0]["text"], messages[0].get("reply_markup")))
         return True
 
     relay_remind._send = fake_sender
@@ -110,6 +110,9 @@ def main():
         _assert("Relay" in sent[0][1] or "ends" in sent[0][1].lower()
                 or "days" in sent[0][1].lower(),
                 "D-3 copy is about Relay ending")
+        nudge_types = [row[0]["callback_data"]["tp"] for row in sent[0][2]]
+        _assert_eq(nudge_types[0], "bs_stars", "D-3 still offers Stars")
+        _assert_eq(nudge_types[1], "bs_trfs", "D-3 still offers change-plan")
 
         second = relay_remind.send_relay_d3_reminders(database=path)
         _assert_eq(second, 0, "second hourly tick does not spam")

@@ -27,16 +27,22 @@ other chats). Rec booking was not. Those are different policies.
 If you are unsure whether an old check is still required, keep it and ask.
 Do not drop it to make the new design look simpler.
 
+This is the default for user-facing paths too: menus, live SKUs, pay
+methods, admin commands, Telegram heartbeats. A new default (Relay,
+Stars first) is copy and button order. It is not permission to hide
+an old plan, an old pay method, or a management screen.
+
 ## Subscription storefront
 
 `/subscription` sells Relay first (Stars). That is not permission to
-remove plan management.
+remove plan management or hide Bronze/Silver.
 
 - Keep `bs_trfs` on the main `/subscription` keyboard. The change-plan
   page lists every SKU (Bronze / Silver / Relay + disable).
-- Hide Bronze/Silver only on Stars invoices (`tariffs_for_storefront`).
-- Do not write a test that the picker is off the main screen. The lock
-  is the opposite: `python app/service/payment/test_storefront.py`.
+- Stars, Crypto, and Robokassa list every live SKU. Relay may be first.
+- Digest / D-3 / expiry nudges keep change-plan next to the Relay CTA.
+- Do not write a test that a live SKU or the picker is gone. The lock
+  is `python app/service/payment/test_storefront.py`.
 
 ## Send workers (current contract)
 

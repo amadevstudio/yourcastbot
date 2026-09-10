@@ -4,6 +4,7 @@ import time
 from app.i18n.messages import get_message
 from app.jobs.relay_remind import (
     clear_relay_d3_sent, relay_nudge_markup, send_relay_d3_reminders)
+from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
 from config import db_path, tariff_period
 from db.sqliteAdapter import SQLighter
@@ -43,7 +44,12 @@ def balance_watcher(update_time):
         db.decrease_all_time_left()
         #  если не отключить, то можно накручивать рефералов, надо хранить
         # db.delete_payment_records_without_user()
+        tariffs = db.getTariffs()
         db.close()
+
+        tariffs_by_id = {}
+        for tariff in tariffs:
+            tariffs_by_id[tariff['id']] = tariff
 
         lang = 'no_lang'
         for pu in prolonged_users:
@@ -73,6 +79,12 @@ def balance_watcher(update_time):
             tariff_str = decode_tariff(npu['tlevel'], lang)
             message = message_base + get_tariff_info_message(
                 tariff_str, balance, npu['tprice'], 0, 0, lang)
+            tariff_row = tariffs_by_id.get(npu['tid'])
+            if tariff_row:
+                message += "\n\n" + get_message("your_tariff_description", lang) + ":\n" \
+                           + get_tariff_description_and_button_text(
+                               tariff_row, {'id': npu['tid']}, lang,
+                               show_tariff_level_text=False)['text']
             try:
                 outer_sender(npu['telegramId'], [{
                     'type': 'text',

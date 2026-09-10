@@ -2632,68 +2632,80 @@ messages = {
     },
     "bot_sub_stars_page_body": {
         "ru": {
-            "ro_msg": "Relay — $5 / 30 дней. Кнопка ниже выставляет счёт Stars на месяц автодоставки.\n"
+            "ro_msg": "Выберите сумму пополнения баланса через Telegram Stars.\n"
+                      "Кнопки ниже пополняют USD-баланс на стоимость соответствующего тарифа. "
+                      "Текущий тариф затем активируется или продлевается по обычным правилам баланса.\n"
                       "Курс Telegram: 1000 ⭐ ≈ {rate}$."
         },
         "en": {
-            "ro_msg": "Relay — $5 / 30 days. The button below opens a Stars invoice for one month of auto-delivery.\n"
+            "ro_msg": "Choose a balance top-up amount via Telegram Stars.\n"
+                      "The buttons below top up the USD balance by the corresponding tariff price. "
+                      "Your current tariff is then activated or renewed by the usual balance rules.\n"
                       "Telegram rate: 1000 ⭐ ≈ ${rate}."
         },
         "pt-BR": {
-            "ro_msg": "Relay — US$5 / 30 dias. O botão abaixo abre a fatura Stars de um mês de entrega.\n"
+            "ro_msg": "Escolha um valor de recarga do saldo via Telegram Stars.\n"
+                      "Os botões abaixo recarregam o saldo USD pelo preço do plano correspondente. "
+                      "Seu plano atual é ativado ou renovado pelas regras normais do saldo.\n"
                       "Taxa do Telegram: 1000 ⭐ ≈ US${rate}."
         },
         "es": {
-            "ro_msg": "Relay — $5 / 30 días. El botón abre la factura Stars de un mes de entrega.\n"
+            "ro_msg": "Elige un importe de recarga del saldo con Telegram Stars.\n"
+                      "Los botones recargan el saldo USD al precio del plan correspondiente. "
+                      "Tu plan actual se activa o renueva con las reglas habituales del saldo.\n"
                       "Tipo de Telegram: 1000 ⭐ ≈ ${rate}."
         },
         "de": {
-            "ro_msg": "Relay — $5 / 30 Tage. Der Button öffnet eine Stars-Rechnung für einen Monat Zustellung.\n"
+            "ro_msg": "Wähle einen Aufladebetrag über Telegram Stars.\n"
+                      "Die Buttons laden den USD-Saldo um den Preis des jeweiligen Tarifs auf. "
+                      "Dein aktueller Tarif wird dann nach den üblichen Saldo-Regeln aktiviert oder verlängert.\n"
                       "Telegram-Kurs: 1000 ⭐ ≈ ${rate}."
         },
         "he": {
-            "ro_msg": "Relay — $5 / 30 יום. הכפתור פותח חשבונית Stars לחודש משלוח.\n"
+            "ro_msg": "בחרו סכום להטענת היתרה דרך Telegram Stars.\n"
+                      "הכפתורים למטה מטעינים את יתרת ה-USD במחיר המסלול המתאים. "
+                      "המסלול הנוכחי יופעל או יחודש לפי כללי היתרה.\n"
                       "שער טלגרם: 1000 ⭐ ≈ ${rate}."
         }
     },
     "telegram_stars_invoice_title": {
         "ru": {
-            "ro_msg": "Yourcast Relay — 1 месяц"
+            "ro_msg": "Пополнение баланса"
         },
         "en": {
-            "ro_msg": "Yourcast Relay — 1 month"
+            "ro_msg": "Balance top-up"
         },
         "pt-BR": {
-            "ro_msg": "Yourcast Relay — 1 mês"
+            "ro_msg": "Recarga de saldo"
         },
         "es": {
-            "ro_msg": "Yourcast Relay — 1 mes"
+            "ro_msg": "Recarga de saldo"
         },
         "de": {
-            "ro_msg": "Yourcast Relay — 1 Monat"
+            "ro_msg": "Guthaben aufladen"
         },
         "he": {
-            "ro_msg": "Yourcast Relay — חודש אחד"
+            "ro_msg": "הטענת יתרה"
         }
     },
     "telegram_stars_invoice_description": {
         "ru": {
-            "ro_msg": "Автодоставка выпусков в чат и в канал. {stars} ⭐"
+            "ro_msg": "Пополнение баланса на {balance}$ за {stars} ⭐. Курс: 1000 ⭐ ≈ {rate}$."
         },
         "en": {
-            "ro_msg": "Auto-deliver episodes to chat and channel. {stars} ⭐"
+            "ro_msg": "Top up balance by ${balance} for {stars} ⭐. Rate: 1000 ⭐ ≈ ${rate}."
         },
         "pt-BR": {
-            "ro_msg": "Entrega automática de episódios no chat e no canal. {stars} ⭐"
+            "ro_msg": "Recarregar saldo em US${balance} por {stars} ⭐. Taxa: 1000 ⭐ ≈ US${rate}."
         },
         "es": {
-            "ro_msg": "Entrega automática de episodios al chat y al canal. {stars} ⭐"
+            "ro_msg": "Recargar saldo en ${balance} por {stars} ⭐. Tipo: 1000 ⭐ ≈ ${rate}."
         },
         "de": {
-            "ro_msg": "Folgen automatisch in Chat und Kanal. {stars} ⭐"
+            "ro_msg": "Guthaben um ${balance} für {stars} ⭐. Kurs: 1000 ⭐ ≈ ${rate}."
         },
         "he": {
-            "ro_msg": "משלוח אוטומטי של פרקים לצ'אט ולערוץ. {stars} ⭐"
+            "ro_msg": "הטענת יתרה ב-{balance}$ תמורת {stars} ⭐. שער: 1000 ⭐ ≈ ${rate}."
         }
     },
     "telegram_stars_invoice_error": {

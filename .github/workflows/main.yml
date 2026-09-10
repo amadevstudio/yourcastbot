@@ -32,6 +32,7 @@ jobs:
           python3 app/service/payment/test_storefront.py
           python3 app/i18n/test_relay_copy.py
           python3 app/jobs/test_circle_health.py
+          python3 app/jobs/test_relay_remind.py
 
   deploy-build-restart:
     needs: storefront-guards
