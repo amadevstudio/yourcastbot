@@ -22,12 +22,6 @@ def _assert_eq(got, expected, label):
     print("ok  %s = %r" % (label, got))
 
 
-def _assert_true(cond, label):
-    if not cond:
-        raise AssertionError(label)
-    print("ok  %s" % label)
-
-
 def test_first_finish_notifies_later_silent(db_path):
     start = datetime.datetime(2026, 9, 7, 9, 0, 0)
     end = datetime.datetime(2026, 9, 7, 10, 5, 0)
@@ -35,8 +29,12 @@ def test_first_finish_notifies_later_silent(db_path):
     first = circle_health.mark_circle_finished(now=end, database=db_path)
     _assert_eq(first['notify'], True, "first finish of the day notifies")
     _assert_eq(first['circles_today'], 1, "first circle counted")
+    _assert_eq(first['circles_yesterday'], 0, "no yesterday yet")
     _assert_eq(first['duration_sec'], 3900, "65 minutes")
-    _assert_true('65 min' in first['summary'], "summary has duration")
+    _assert_eq(
+        first['summary'],
+        "duration: 65 min; today: 1; yesterday: 0",
+        "first-day summary")
 
     circle_health.mark_circle_started(
         now=datetime.datetime(2026, 9, 7, 10, 15, 0), database=db_path)
@@ -49,6 +47,11 @@ def test_first_finish_notifies_later_silent(db_path):
         now=datetime.datetime(2026, 9, 8, 10, 0, 0), database=db_path)
     _assert_eq(next_day['notify'], True, "next day notifies again")
     _assert_eq(next_day['circles_today'], 1, "counter resets next day")
+    _assert_eq(next_day['circles_yesterday'], 2, "yesterday keeps the full day")
+    if "today: 1; yesterday: 2" not in next_day['summary']:
+        raise AssertionError(
+            "daily Telegram shows yesterday's total: %r" % next_day['summary'])
+    print("ok  daily Telegram shows yesterday's total = %r" % next_day['summary'])
 
 
 def test_users_count_lines(db_path):
@@ -62,7 +65,9 @@ def test_users_count_lines(db_path):
     lines = circle_health.format_status_lines(database=db_path)
     _assert_eq(
         lines,
-        "Последний круг: 46 мин (16:46)\nКругов сегодня: 1",
+        "Последний круг: 46 мин (16:46)\n"
+        "Кругов сегодня: 1\n"
+        "Кругов вчера: 0",
         "usersCount extra lines")
 
 

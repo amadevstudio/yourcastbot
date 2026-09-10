@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""User-facing storefront: one plan (Relay = Gold / level 3).
+"""User-facing storefront: Relay (Gold / level 3) is the default sell.
 
-Does not change tariff rows or payment apply. Bronze/Silver stay in SQLite
-for the rare legacy subscriber; they are hidden unless that user is on them.
+Does not change tariff rows or payment apply. Bronze/Silver stay in SQLite.
+Stars invoices hide them; the change-plan page lists every SKU.
 """
 
 from app.i18n.messages import get_message
@@ -31,11 +31,26 @@ def tariffs_for_storefront(tariffs, current_tariff_id=0):
     return priced or rows
 
 
+def tariffs_for_change_plan(tariffs):
+    """Every live SKU on the change-plan page, including Bronze/Silver."""
+    visible = []
+    seen = set()
+    for tariff in list(tariffs or []):
+        tariff_id = int(tariff["id"])
+        if tariff_id <= 0 or tariff_id in seen:
+            continue
+        visible.append(tariff)
+        seen.add(tariff_id)
+    return visible
+
+
 def subscription_pay_rows(language_code, include_robokassa=False):
-    """Main /subscription pay buttons. Stars first; no tariff picker."""
+    """Main /subscription pay buttons. Stars first, then change plan."""
     rows = [
         [{'text': get_message("payViaTelegramStars", language_code),
           'callback_data': {'tp': 'bs_stars'}}],
+        [{'text': get_message("tariffs", language_code),
+          'callback_data': {'tp': 'bs_trfs'}}],
         [{'text': get_message("payViaCryptoBot", language_code),
           'callback_data': {'tp': 'bs_cryptobot'}}],
         [{'text': get_message("payViaPatreon", language_code),

@@ -3010,63 +3010,60 @@ messages = {
     },
     "tariffs": {
         "ru": {
-            "ro_msg": emojiCodes.get('clipboard') + " Выбрать тариф"
+            "ro_msg": emojiCodes.get('clipboard') + " Сменить план"
         },
         "en": {
-            "ro_msg": emojiCodes.get('clipboard') + "Choose a tariff"
+            "ro_msg": emojiCodes.get('clipboard') + " Change plan"
         },
         "pt-BR": {
-            "ro_msg": emojiCodes.get('clipboard') + "Escolha um plano"
+            "ro_msg": emojiCodes.get('clipboard') + " Mudar de plano"
         },
         "he": {
-            "ro_msg": emojiCodes.get('clipboard') + "בחר מסלול"
+            "ro_msg": emojiCodes.get('clipboard') + " שנה מסלול"
         },
         "de": {
-            "ro_msg": emojiCodes.get('clipboard') + "Preisklasse wählen"
+            "ro_msg": emojiCodes.get('clipboard') + " Tarif wechseln"
+        },
+        "es": {
+            "ro_msg": emojiCodes.get('clipboard') + " Cambiar plan"
         }
     },
     "bot_sub_trfs_page": {
         "ru": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
-                      "Один план: автодоставка файлов в чат и посты в ваши каналы, $5 / 30 дней.\n"
-                      "Без Relay — не больше "
-                      + str(max_subscriptions_without_tariff) + " подкастов.\n\n"
-                      "Пополнение — поддержка проекта (пожертвование); доступ включается по балансу."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Сменить план</b>\n\n"
+                      "Рекомендуем Relay — $5 / 30 дней, автодоставка файлов в чат и посты в каналы.\n"
+                      "Bronze и Silver тоже можно включить. Без плана — не больше "
+                      + str(max_subscriptions_without_tariff) + " подкастов."
         },
         "en": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
-                      "One plan: auto-deliver files to this chat and posts to your channels, $5 / 30 days.\n"
-                      "Without Relay — at most "
-                      + str(max_subscriptions_without_tariff) + " podcasts.\n\n"
-                      "Top-ups are project support (donation); access follows the balance rules."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Change plan</b>\n\n"
+                      "Relay ($5 / 30 days) is the recommended plan: files to this chat and posts to your channels.\n"
+                      "Bronze and Silver are still available. Without a plan — at most "
+                      + str(max_subscriptions_without_tariff) + " podcasts."
         },
         "pt-BR": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
-                      "Um plano: entrega de arquivos neste chat e posts nos canais, US$5 / 30 dias.\n"
-                      "Sem Relay — no máximo "
-                      + str(max_subscriptions_without_tariff) + " podcasts.\n\n"
-                      "Recargas são apoio ao projeto (doação); o acesso segue o saldo."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Mudar de plano</b>\n\n"
+                      "Relay (US$5 / 30 dias) é o plano recomendado: arquivos neste chat e posts nos canais.\n"
+                      "Bronze e Silver ainda estão disponíveis. Sem plano — no máximo "
+                      + str(max_subscriptions_without_tariff) + " podcasts."
         },
         "de": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
-                      "Ein Plan: Dateien in diesen Chat und Posts in deine Kanäle, $5 / 30 Tage.\n"
-                      "Ohne Relay — höchstens "
-                      + str(max_subscriptions_without_tariff) + " Podcasts.\n\n"
-                      "Aufladungen sind Projektunterstützung (Spende); Zugang folgt dem Kontostand."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Tarif wechseln</b>\n\n"
+                      "Relay ($5 / 30 Tage) ist der empfohlene Plan: Dateien in diesen Chat und Posts in deine Kanäle.\n"
+                      "Bronze und Silver bleiben verfügbar. Ohne Plan — höchstens "
+                      + str(max_subscriptions_without_tariff) + " Podcasts."
         },
         "es": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
-                      "Un plan: archivos en este chat y publicaciones en tus canales, $5 / 30 días.\n"
-                      "Sin Relay — como máximo "
-                      + str(max_subscriptions_without_tariff) + " podcasts.\n\n"
-                      "Las recargas son apoyo al proyecto (donación); el acceso sigue el saldo."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Cambiar plan</b>\n\n"
+                      "Relay ($5 / 30 días) es el plan recomendado: archivos en este chat y publicaciones en tus canales.\n"
+                      "Bronze y Silver siguen disponibles. Sin plan — como máximo "
+                      + str(max_subscriptions_without_tariff) + " podcasts."
         },
         "he": {
-            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " Relay</b>\n\n"
-                      "תוכנית אחת: קבצים לצ'אט ופוסטים לערוצים, $5 / 30 יום.\n"
-                      "בלי Relay — עד "
-                      + str(max_subscriptions_without_tariff) + " פודקאסטים.\n\n"
-                      "הטענה היא תמיכה בפרויקט (תרומה); הגישה לפי היתרה."
+            "ro_msg": "<b>" + emojiCodes.get('clipboard') + " שנה מסלול</b>\n\n"
+                      "Relay ($5 / 30 יום) הוא המסלול המומלץ: קבצים לצ'אט ופוסטים לערוצים.\n"
+                      "Bronze ו-Silver עדיין זמינים. בלי מסלול — עד "
+                      + str(max_subscriptions_without_tariff) + " פודקאסטים."
         }
     },
     "tariff_lvl1": {

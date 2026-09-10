@@ -158,6 +158,7 @@ def main(interval=120):
                 "Circle finished, digest pending:", pending_count(),
                 "; duration_sec:", circle_result['duration_sec'],
                 "; circles_today:", circle_result['circles_today'],
+                "; circles_yesterday:", circle_result.get('circles_yesterday'),
                 "; notify:", circle_result['notify'])
             if circle_result['notify']:
                 send_message_to_creator(

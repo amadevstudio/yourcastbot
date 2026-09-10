@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Relay storefront: one visible plan, Stars first.
+"""Relay storefront: Stars first, then change plan.
 
 Run from the repo root: python app/service/payment/test_storefront.py
 """
@@ -13,7 +13,7 @@ if _ROOT not in sys.path:
 
 from app.i18n.messages import get_message  # noqa: E402
 from app.service.payment.storefront import (  # noqa: E402
-    subscription_pay_rows, tariffs_for_storefront)
+    subscription_pay_rows, tariffs_for_change_plan, tariffs_for_storefront)
 
 
 def _assert(cond, label):
@@ -37,29 +37,33 @@ def main():
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(rows)],
         [3],
-        "storefront is Relay only")
+        "Stars invoice is Relay only")
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(rows, 2)],
         [2, 3],
-        "legacy Silver still sees their plan")
+        "legacy Silver still sees their plan on Stars")
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(rows, 0)],
         [3],
-        "no current tariff still hides bronze/silver")
+        "no current tariff still hides bronze/silver on Stars")
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(
             [{"id": 1, "level": 1, "price": 50}])],
         [1],
         "fallback if Gold is missing")
+    _assert_eq(
+        [t["id"] for t in tariffs_for_change_plan(rows)],
+        [1, 2, 3],
+        "change-plan page lists Bronze, Silver, Relay")
 
     page_types = [
         row[0]["callback_data"]["tp"]
         for row in subscription_pay_rows("en")
     ]
     _assert_eq(page_types[0], "bs_stars", "Stars is the first button")
-    _assert("bs_trfs" not in page_types, "tariff picker is off the main screen")
-    _assert_eq(page_types[1], "bs_cryptobot", "Crypto is second")
-    _assert_eq(page_types[2], "bs_patr", "Patreon is third")
+    _assert_eq(page_types[1], "bs_trfs", "change plan is second")
+    _assert_eq(page_types[2], "bs_cryptobot", "Crypto is third")
+    _assert_eq(page_types[3], "bs_patr", "Patreon is fourth")
     _assert_eq(
         [row[0]["callback_data"]["tp"] for row in subscription_pay_rows("en", True)][-1],
         "bs_robokassa",
@@ -70,9 +74,17 @@ def main():
             "main copy sells delivery")
     footnote = get_message("relay_sub_page_footnote", "en")
     _assert("donation" in footnote.lower(), "donation footnote stays")
+    change = get_message("bot_sub_trfs_page", "en")
+    _assert("Bronze" in change and "Silver" in change,
+            "change-plan copy mentions older SKUs")
+    _assert("Relay" in change, "change-plan copy still recommends Relay")
 
     ru_stars = get_message("payViaTelegramStars", "ru")
     _assert(len(ru_stars) <= 64, "Stars button fits Telegram")
+    ru_plan = get_message("tariffs", "ru")
+    _assert(len(ru_plan) <= 64, "change-plan button fits Telegram")
+    _assert("план" in ru_plan.lower() or "тариф" in ru_plan.lower(),
+            "RU change-plan button is readable")
     print("all storefront checks passed")
 
 

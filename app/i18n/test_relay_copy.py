@@ -34,6 +34,8 @@ def main():
         "telegram_stars_invoice_title",
         "tariff_lvl3",
         "bot_sub_page_header",
+        "bot_sub_trfs_page",
+        "tariffs",
     )
     for key in keys:
         for lang in langs:
@@ -58,8 +60,13 @@ def main():
     _assert("3" in ending, "D-3 interpolates days")
     _assert("%s" not in ending, "D-3 consumed the placeholder")
 
+    change = get_message("bot_sub_trfs_page", "en")
+    _assert("Bronze" in change and "Silver" in change,
+            "change-plan page still lists older SKUs")
+
     for lang in langs:
-        for key in ("relayEnableButton", "payViaTelegramStars", "nosubDigestMuteButton"):
+        for key in ("relayEnableButton", "payViaTelegramStars",
+                    "nosubDigestMuteButton", "tariffs"):
             text = get_message(key, lang)
             _assert(len(text) <= 64, "%s/%s is %s chars" % (key, lang, len(text)))
 

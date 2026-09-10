@@ -19,7 +19,8 @@ from app.routes.message_tools import go_back_inline_markup, go_back_inline_butto
 from app.routes.ptypes import ControllerParams
 from app.service.payment.paymentSafeModule import \
     prepare_price, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
-from app.service.payment.storefront import tariffs_for_storefront, subscription_pay_rows
+from app.service.payment.storefront import (
+    tariffs_for_change_plan, subscription_pay_rows)
 from config import botName
 from config import creatorId
 from config import db_path, tariff_period
@@ -168,7 +169,7 @@ def get_tariffs_sub_message(language_code, tariff_id, balance, time_left, notify
             tariff_lvl = tariff['level']
             tariff_price = tariff['price']
 
-    for tariff in tariffs_for_storefront(tariffs, tariff_id):
+    for tariff in tariffs_for_change_plan(tariffs):
         tariff_texts = get_tariff_description_and_button_text(
             tariff, {'id': tariff_id}, language_code)
 
