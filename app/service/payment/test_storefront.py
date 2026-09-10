@@ -13,7 +13,8 @@ if _ROOT not in sys.path:
 
 from app.i18n.messages import get_message  # noqa: E402
 from app.service.payment.storefront import (  # noqa: E402
-    subscription_pay_rows, tariffs_for_change_plan, tariffs_for_storefront)
+    CHANGE_PLAN_CALLBACK, subscription_pay_rows, tariffs_for_change_plan,
+    tariffs_for_storefront)
 
 
 def _assert(cond, label):
@@ -61,7 +62,13 @@ def main():
         for row in subscription_pay_rows("en")
     ]
     _assert_eq(page_types[0], "bs_stars", "Stars is the first button")
-    _assert_eq(page_types[1], "bs_trfs", "change plan is second")
+    if CHANGE_PLAN_CALLBACK not in page_types:
+        raise AssertionError(
+            "bs_trfs missing from /subscription. Hide Bronze/Silver only "
+            "in tariffs_for_storefront (Stars invoices). Change-plan stays "
+            "on the main keyboard — do not encode its absence as a test.")
+    _assert_eq(
+        page_types[1], CHANGE_PLAN_CALLBACK, "change plan is second")
     _assert_eq(page_types[2], "bs_cryptobot", "Crypto is third")
     _assert_eq(page_types[3], "bs_patr", "Patreon is fourth")
     _assert_eq(

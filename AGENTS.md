@@ -27,6 +27,17 @@ other chats). Rec booking was not. Those are different policies.
 If you are unsure whether an old check is still required, keep it and ask.
 Do not drop it to make the new design look simpler.
 
+## Subscription storefront
+
+`/subscription` sells Relay first (Stars). That is not permission to
+remove plan management.
+
+- Keep `bs_trfs` on the main `/subscription` keyboard. The change-plan
+  page lists every SKU (Bronze / Silver / Relay + disable).
+- Hide Bronze/Silver only on Stars invoices (`tariffs_for_storefront`).
+- Do not write a test that the picker is off the main screen. The lock
+  is the opposite: `python app/service/payment/test_storefront.py`.
+
 ## Send workers (current contract)
 
 Configured in `threads_config`:

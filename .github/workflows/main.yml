@@ -14,7 +14,27 @@ on:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
 
+  # Shop cleanups have already shipped without change-plan. These scripts
+  # do not need telebot or prod secrets; they must pass before CD.
+  storefront-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Stub gitignored constants
+        run: |
+          cp .claude/templates/constants.example.py constants.py
+          cp .claude/templates/constant_texts.example.py constant_texts.py
+      - name: Storefront and copy guards
+        run: |
+          python3 app/service/payment/test_storefront.py
+          python3 app/i18n/test_relay_copy.py
+          python3 app/jobs/test_circle_health.py
+
   deploy-build-restart:
+    needs: storefront-guards
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 

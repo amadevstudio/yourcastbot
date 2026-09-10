@@ -3,11 +3,16 @@
 
 Does not change tariff rows or payment apply. Bronze/Silver stay in SQLite.
 Stars invoices hide them; the change-plan page lists every SKU.
+
+Relay-only is a Stars/SKU filter, not permission to drop plan management.
+`bs_trfs` stays on /subscription. A previous shop cleanup removed it and
+encoded that as a test; do not do that again.
 """
 
 from app.i18n.messages import get_message
 
 SHOWCASE_TARIFF_LEVEL = 3
+CHANGE_PLAN_CALLBACK = "bs_trfs"
 
 
 def tariffs_for_storefront(tariffs, current_tariff_id=0):
@@ -45,12 +50,16 @@ def tariffs_for_change_plan(tariffs):
 
 
 def subscription_pay_rows(language_code, include_robokassa=False):
-    """Main /subscription pay buttons. Stars first, then change plan."""
+    """Main /subscription pay buttons. Stars first, then change plan.
+
+    Change-plan is required. Hide Bronze/Silver only in
+    tariffs_for_storefront (Stars invoices), never by dropping this row.
+    """
     rows = [
         [{'text': get_message("payViaTelegramStars", language_code),
           'callback_data': {'tp': 'bs_stars'}}],
         [{'text': get_message("tariffs", language_code),
-          'callback_data': {'tp': 'bs_trfs'}}],
+          'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}],
         [{'text': get_message("payViaCryptoBot", language_code),
           'callback_data': {'tp': 'bs_cryptobot'}}],
         [{'text': get_message("payViaPatreon", language_code),
