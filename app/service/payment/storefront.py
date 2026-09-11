@@ -14,15 +14,26 @@ SHOWCASE_TARIFF_LEVEL = 3
 CHANGE_PLAN_CALLBACK = "bs_trfs"
 
 
+def _tariff_dict(tariff):
+    """sqlite3.Row has no .get(); dicts from tests do."""
+    if isinstance(tariff, dict):
+        return tariff
+    try:
+        return {key: tariff[key] for key in tariff.keys()}
+    except Exception:
+        return dict(tariff)
+
+
 def tariffs_for_change_plan(tariffs):
     """Every live SKU, including Bronze/Silver."""
     visible = []
     seen = set()
     for tariff in list(tariffs or []):
-        tariff_id = int(tariff["id"])
+        row = _tariff_dict(tariff)
+        tariff_id = int(row["id"])
         if tariff_id <= 0 or tariff_id in seen:
             continue
-        visible.append(tariff)
+        visible.append(row)
         seen.add(tariff_id)
     return visible
 

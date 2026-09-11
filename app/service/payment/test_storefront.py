@@ -29,12 +29,30 @@ def _assert_eq(got, expected, label):
     print("ok  %s = %r" % (label, got))
 
 
+class _SqliteRow:
+    """Like sqlite3.Row: keyed access, no .get()."""
+
+    def __init__(self, data):
+        self._data = data
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def keys(self):
+        return self._data.keys()
+
+
 def main():
     rows = [
         {"id": 1, "level": 1, "price": 50},
         {"id": 2, "level": 2, "price": 200},
         {"id": 3, "level": 3, "price": 500},
     ]
+    sqlite_rows = [_SqliteRow(row) for row in rows]
+    _assert_eq(
+        [t["id"] for t in tariffs_for_storefront(sqlite_rows)],
+        [3, 1, 2],
+        "sqlite3.Row from getTariffs does not crash Stars")
     _assert_eq(
         [t["id"] for t in tariffs_for_storefront(rows)],
         [3, 1, 2],
