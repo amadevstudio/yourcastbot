@@ -18,8 +18,9 @@ from app.i18n.messages import (
     get_message, get_message_rtd, emojiCodes, format_record_unavailable)
 from app.repository.storage import storage, telegram_cache
 from app.service.record.caption import DescriptionModeOptions, record_caption
-from app.service.record.delivery import Upload, fetch_by_url_first, upload_order
-from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path
+from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
+from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path, \
+    trust_rss_podcasts
 from lib.markup import telegram_html
 # from tools.audio_processing import compress_audio
 from lib.requests import requesterModule
@@ -167,7 +168,8 @@ class Sender:
         self.last_upload_percent = [0]  # using pointers
         self.statusTemplate = ""
 
-        self.__too_big_record = False
+        # Message key of the too-big notice, or None: the verdict carries its copy.
+        self.__too_big_notice: str | None = None
         self.__record_gone = False
 
         self.prepare()
@@ -340,7 +342,7 @@ class Sender:
             return True
         # User was told (too big / file gone): this row is finished work,
         # not a flood retry.
-        if self.__too_big_record or self.__record_gone:
+        if self.__too_big_notice or self.__record_gone:
             return True
         if (self.outbox_attempts or 0) >= outbox.MAX_ATTEMPTS:
             return True
@@ -496,7 +498,7 @@ class Sender:
         # All services error
         except Exception as e:
             self._note_send_exception(e)
-            if self.outbox_id is not None and not self.__record_gone and not self.__too_big_record:
+            if self.outbox_id is not None and not self.__record_gone and not self.__too_big_notice:
                 retryable = e
 
         self._sync_outbox_recipients()
@@ -521,7 +523,7 @@ class Sender:
             # Only chats that did not get the audio hear why. A circle job can
             # turn too big after part of its recipients already got the file.
             undelivered = list(self._remaining_chats())
-            if self.__too_big_record:
+            if self.__too_big_notice:
                 self.__send_too_big_record(targets=undelivered)
 
             elif not will_retry:
@@ -603,19 +605,30 @@ class Sender:
         self.__file_progress("up", uploaded, size)
 
     def _deliver(self):
-        """Same path for iTunes and RSS podcasts, user clicks and circle.
+        """Same path for user clicks and circle.
 
         Small files: Telegram fetches the URL. Otherwise, and for chats it
         could not serve, we get the file once and upload it (delivery.upload_order).
+        Podcasts added by an RSS link are never downloaded unless trusted
+        (delivery.may_download): by URL, or a link and a too-big-for-RSS notice.
         """
-        if not upload_order(self.recordSizeMb):
-            self.__too_big_record = True
-            return
-        if fetch_by_url_first(self.recordSizeMb):
+        downloadable = may_download(bool(self.podcast_info.get('itunes_listed')), trust_rss_podcasts)
+        # Unknown size (no Content-Length): a file we may not download still gets the URL try.
+        by_url = fetch_by_url_first(self.recordSizeMb) or (self.recordSize is None and not downloadable)
+        if by_url:
             delivered, _ = self.send_via_link()
             self.successfully_sent_to.extend(delivered)
             if not self._remaining_chats():
                 return
+        if not downloadable:
+            if by_url:
+                self.__record_gone = True
+            else:
+                self.__too_big_notice = "tooBigRecordRss"
+            return
+        if not upload_order(self.recordSizeMb):
+            self.__too_big_notice = "tooBigRecord"
+            return
         try:
             self._obtain_file()
         except DiskBusy as e:
@@ -624,7 +637,7 @@ class Sender:
             raise outbox.OutboxRetryableError(e)
         except DiskTooSmall as e:
             self.logger.warn(e)
-            self.__too_big_record = True
+            self.__too_big_notice = "tooBigRecord"
             return
         self._upload_to_remaining()
 
@@ -664,7 +677,7 @@ class Sender:
         self._refresh_size_from_disk()
         order = upload_order(self.recordSizeMb)
         if not order:
-            self.__too_big_record = True
+            self.__too_big_notice = "tooBigRecord"
             return
         refused_as_too_large = False
         for upload in order:
@@ -681,7 +694,7 @@ class Sender:
             refused_as_too_large |= refusal is not None and request_entity_too_large(refusal)
         if self._remaining_chats():
             if refused_as_too_large or self.recordSizeMb > limits.BOT_UPLOAD_MB:
-                self.__too_big_record = True
+                self.__too_big_notice = "tooBigRecord"
             else:
                 self.__record_gone = True
 
@@ -896,7 +909,7 @@ class Sender:
 
         message_text = self.prepare_record_text(
             chat_id, mode='short', on_error=True) + "\n\n" + get_message(
-            "tooBigRecord", lang_code) % telegram_html.href(self.link)
+            self.__too_big_notice, lang_code) % telegram_html.href(self.link)
 
         # One link per line, like format_record_unavailable. The site line used
         # to check itunesLink, so RSS episodes never showed it.

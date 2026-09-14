@@ -164,12 +164,15 @@ class FakeAgent:
 
 
 class FakeRequester:
-    def __init__(self, size_bytes, download_error=None):
+    def __init__(self, size_bytes, download_error=None, size_known=True):
         self.size = size_bytes
         self.download_error = download_error
+        self.size_known = size_known
         self.downloads = 0
 
     def get_headers(self, link, **kwargs):
+        if not self.size_known:
+            return {'Content-Type': 'audio/mpeg'}
         return {'Content-Type': 'audio/mpeg', 'Content-Length': str(self.size)}
 
     get_headers_with_pre_download = get_headers
@@ -208,14 +211,14 @@ class World:
     def __init__(self, size_mb, url_error=None, download_error=None,
                  disk_free_mb=10_000, reserved_mb=0, with_outbox=False, flood_chat=None,
                  agent_unreachable_chat=None, bot_refuse_chat=None,
-                 blocked_chat=None, flood_once_chat=None):
+                 blocked_chat=None, flood_once_chat=None, size_known=True, trust_rss=False):
         self.tmp = tempfile.mkdtemp(prefix="yourcast_delivery_")
         os.makedirs(os.path.join(self.tmp, "records"))
         self.bot = FakeBot(url_error, flood_chat, bot_refuse_chat, blocked_chat, flood_once_chat)
         self.blocked_marked = []
         self.slept = []
         self.agent = FakeAgent(agent_unreachable_chat)
-        self.requester = FakeRequester(int(size_mb * MB), download_error)
+        self.requester = FakeRequester(int(size_mb * MB), download_error, size_known)
         self.budget = DiskBudget(self.tmp, min_free_bytes=0, disk_free=lambda: disk_free_mb * MB)
         if reserved_mb:
             self.budget.reserve(reserved_mb * MB)
@@ -239,6 +242,7 @@ class World:
             'space': _ns(memory_stat=lambda: b'', top=lambda: b'', storage_stat=lambda: b''),
             'outer_sender': notice, 'render_messages': notice,
             'message_editor': lambda *a, **k: None, 'message_deleter': lambda *a, **k: None,
+            'trust_rss_podcasts': trust_rss,
             'bot_blocked_reaction': self._blocked_reaction,
             'bot_removed_from_channel_reaction': lambda error, chat_id: False,
             'time': _ns(sleep=self.slept.append, time=time.time, time_ns=time.time_ns),
@@ -252,7 +256,7 @@ class World:
             return True
         return False
 
-    def sender(self, chats=(1, 2, 3)):
+    def sender(self, chats=(1, 2, 3), itunes_listed=True):
         podcast_info = {
             'id': 28, 'title': 'Record Club #1', 'descr': 'Mix.', 'itunesLink': '',
             'channelLink': 'https://radiorecord.ru', 'chName': 'Radio Record',
@@ -260,6 +264,8 @@ class World:
             'service_name': 'rss', 'service_id': 'https://radiorecord.ru/rss',
             'with_next_ep_button': False, 'recNum': 0, 'recordUniqId': 'rr-1',
         }
+        if itunes_listed is not None:
+            podcast_info['itunes_listed'] = itunes_listed
         return srh.Sender(
             None, 'https://itunes.radiorecord.ru/tmp_audio/ep.mp3',
             {chat_id: {} for chat_id in chats},
@@ -273,10 +279,11 @@ class World:
 
 
 def main():
-    # Huberman, 14.09: 389 MB from circle used to be "too big" without a try.
+    # Huberman, 14.09: iTunes-listed, fetched by rss_link (service_name 'rss'
+    # since 9e97b92). 389 MB from circle used to be "too big" without a try.
     world = World(size_mb=389)
     sent = world.sender().send_record()
-    _assert(sorted(sent) == [1, 2, 3], "389 MB RSS episode reaches every recipient")
+    _assert(sorted(sent) == [1, 2, 3], "389 MB iTunes-listed episode reaches every recipient")
     _assert(('url' not in {kind for _, kind in world.bot.audio}), "over 20 MB: no URL attempt")
     _assert(world.requester.downloads == 1 and world.agent.uploads == 1, "downloaded once, uploaded once")
     _assert(world.agent.sent_to == [1], "agent sends to the first chat only")
@@ -362,6 +369,41 @@ def main():
                                             for _, text in world.notices),
             "dead file: unavailable notice")
     _assert(world.records_left() == [] and world.budget._live == [], "dead file: partial file and reservation cleaned")
+
+    # Podcasts added by a bare RSS link: never downloaded unless trusted.
+    world = World(size_mb=389)
+    sent = world.sender(itunes_listed=False).send_record()
+    _assert(sent == [] and world.requester.downloads == 0 and world.agent.uploads == 0,
+            "RSS-only 389 MB: nothing downloaded or uploaded")
+    _assert('url' not in {kind for _, kind in world.bot.audio}, "RSS-only over 20 MB: no URL attempt")
+    _assert(len(world.notices) == 3 and all('added by RSS link' in text and 'ep.mp3' in text
+                                            for _, text in world.notices),
+            "RSS-only over 20 MB: too-big-for-RSS notice with the file link")
+
+    world = World(size_mb=12)
+    sent = world.sender(itunes_listed=False).send_record()
+    _assert(sorted(sent) == [1, 2, 3] and world.requester.downloads == 0, "RSS-only 12 MB: by URL as media")
+
+    world = World(size_mb=12, url_error="Bad Request: failed to get HTTP URL content")
+    sent = world.sender(itunes_listed=False).send_record()
+    _assert(sent == [] and world.requester.downloads == 0, "RSS-only, URL refused: still not downloaded")
+    _assert(len(world.notices) == 3 and all('unavaliable' in t.lower() or 'unavailable' in t.lower()
+                                            for _, t in world.notices),
+            "RSS-only, URL refused: unavailable notice with links")
+
+    world = World(size_mb=12, size_known=False)
+    sent = world.sender(itunes_listed=False).send_record()
+    _assert(sorted(sent) == [1, 2, 3] and world.requester.downloads == 0,
+            "RSS-only, unknown size: URL is tried, not a blind too-big")
+
+    world = World(size_mb=389, trust_rss=True)
+    sent = world.sender(itunes_listed=False).send_record()
+    _assert(sorted(sent) == [1, 2, 3] and world.agent.uploads == 1, "trustRssPodcasts on: RSS-only is downloaded")
+
+    world = World(size_mb=389)
+    sent = world.sender(itunes_listed=None).send_record()
+    _assert(sent == [] and world.requester.downloads == 0,
+            "job queued without itunes_listed (before deploy): treated as RSS-only")
 
     print("all record delivery checks passed")
 

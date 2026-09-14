@@ -650,6 +650,7 @@ def send_new_records_by_channel(
             'duration_sec': duration_sec,
             'service_name': service_name,
             'service_id': service_id,
+            'itunes_listed': bool(channel['itunes_id']),
             'with_next_ep_button': False,
             'recNum': i,
             'recordUniqId': pgd

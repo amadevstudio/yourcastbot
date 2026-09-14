@@ -658,6 +658,7 @@ def send_record_direct(
         'duration_sec': duration_sec,
         'service_name': service_name,
         'service_id': service_id,
+        'itunes_listed': bool(channel.get('itunes_id')),
         'with_next_ep_button': True,
         'recNum': i,
         'recordUniqId': record_uniq_id

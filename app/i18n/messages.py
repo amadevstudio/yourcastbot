@@ -931,6 +931,33 @@ messages = {
         }
 
     },
+    "tooBigRecordRss": {
+        "ru": {
+            "ro_msg": "К сожалению, файл выпуска слишком большой для подкаста, добавленного по RSS-ссылке."
+                      " Послушать его можно <a href=\"%s\">по ссылке</a>"
+        },
+        "en": {
+            "ro_msg": "Unfortunately, the episode file is too big for a podcast added by RSS link."
+                      " You can listen to it <a href=\"%s\">via link</a>"
+        },
+        "pt-BR": {
+            "ro_msg": "Infelizmente, o arquivo do episódio é grande demais para um podcast adicionado por link RSS."
+                      " Você pode ouvi-lo <a href=\"%s\">por este link</a>"
+        },
+        "es": {
+            "ro_msg": "Lamentablemente, el archivo del episodio es demasiado grande para un podcast añadido por enlace RSS."
+                      " Puedes escucharlo <a href=\"%s\">en este enlace</a>"
+        },
+        "de": {
+            "ro_msg": "Leider ist die Datei der Folge zu groß für einen per RSS-Link hinzugefügten Podcast."
+                      " Du kannst sie <a href=\"%s\">über den Link</a> anhören"
+        },
+        "he": {
+            "ro_msg": "לצערנו, קובץ הפרק גדול מדי עבור פודקאסט שנוסף דרך קישור RSS."
+                      " אפשר להאזין לו <a href=\"%s\">דרך הקישור</a>"
+        }
+
+    },
     "recordUnavaliableBare": {
         "ru": {
             "ro_msg": "К сожалению, файл подкаста недоступен."

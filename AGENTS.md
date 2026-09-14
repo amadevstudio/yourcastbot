@@ -44,6 +44,29 @@ remove plan management or hide Bronze/Silver.
 - Do not write a test that a live SKU or the picker is gone. The lock
   is `python app/service/payment/test_storefront.py`.
 
+## Episode delivery
+
+Decided by file size and podcast source (`app/service/record/delivery.py`),
+never by `service_name`: since the ETag updater every channel with an
+`rss_link` arrives as `rss`, iTunes-listed or not.
+
+- **iTunes-listed** (`itunes_id` set): up to 20 MB Telegram fetches the URL.
+  Bigger, or refused by Telegram: download once, Bot API up to 50 MB,
+  agent up to 2 GB, every other recipient reuses the file_id. Over 2 GB:
+  too big with links.
+- **Added by a bare RSS link**: never downloaded by us unless
+  `trustRssPodcasts` is on. Up to 20 MB by URL; bigger gets the link and
+  `tooBigRecordRss`. Telegram refusing the URL is "unavailable", not a
+  download.
+- Every `podcast_info` carries `itunes_listed`. A missing key means
+  RSS-only (safe default), so a builder that drops it silently breaks
+  delivery for listed podcasts.
+- Downloads go through `DiskBudget` (512 MB stay free for SQLite, logs,
+  backup). Do not write episode files around it.
+- Too-big / unavailable notices go only to chats that did not get the audio.
+- Locks: `python app/core/sender/test_record_delivery.py`,
+  `python app/service/record/test_delivery.py`.
+
 ## Send workers (current contract)
 
 Configured in `threads_config`:

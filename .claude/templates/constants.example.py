@@ -12,6 +12,7 @@ started with these values.
 creatorId = 0
 botId = 0
 storageChatId = 0
+trustRssPodcasts = False
 
 donate_link = 'https://example.invalid/donate'
 advertising_contact = '@example'

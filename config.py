@@ -16,6 +16,9 @@ apple_itunes_search = "https://itunes.apple.com/search"
 
 creatorId = constants.creatorId
 storageChatId = getattr(constants, 'storageChatId', None) or creatorId
+# Download and re-upload episodes of podcasts added by a bare RSS link (not
+# found in iTunes). Off: those go by URL only, bigger files get a link.
+trust_rss_podcasts = bool(getattr(constants, 'trustRssPodcasts', False))
 # agentId = creatorId
 botId = constants.botId
 donate_link = constants.donate_link

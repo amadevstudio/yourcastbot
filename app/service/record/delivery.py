@@ -13,6 +13,16 @@ class Upload(enum.Enum):
     AGENT = 'agent'  # Telethon upload
 
 
+def may_download(itunes_listed: bool, trust_rss_podcasts: bool) -> bool:
+    """Whether our server may fetch the episode file and re-upload it.
+
+    A podcast added by a bare RSS link points our downloader and our agent at
+    whatever URL its feed names. Unless trust_rss_podcasts is on, such files
+    only go by URL (Telegram fetches them) and are never downloaded here.
+    """
+    return itunes_listed or trust_rss_podcasts
+
+
 def fetch_by_url_first(size_mb: float) -> bool:
     """Small enough for Telegram to download the enclosure URL itself."""
     return size_mb <= limits.URL_FETCH_MB
