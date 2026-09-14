@@ -4,11 +4,9 @@ import os
 import threading
 import time
 from hashlib import sha256
-from io import BufferedReader
-from typing import Union, Any, Optional, TypedDict, Literal, BinaryIO
+from typing import Union, Any, TypedDict
 
-from lib.telegram.telebot.types import Message, ApiException, InlineKeyboardButton, InlineKeyboardMarkup, \
-    ApiTelegramException
+from lib.telegram.telebot.types import Message, ApiException, InlineKeyboardButton, InlineKeyboardMarkup
 
 from agent import bot_telethon
 from agent.bot_telebot import bot
@@ -19,16 +17,19 @@ from app.core.sender import outbox
 from app.i18n.messages import (
     get_message, get_message_rtd, emojiCodes, format_record_unavailable)
 from app.repository.storage import storage, telegram_cache
-from app.service.podcast.podcast import prepare_podcast_update_time
-from app.service.record.caption import prepare_message_text
+from app.service.record.caption import DescriptionModeOptions, record_caption
+from app.service.record.delivery import Upload, fetch_by_url_first, upload_order
 from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path
-from lib.markup.cleaner import html_mrkd_cleaner
+from lib.markup import telegram_html
 # from tools.audio_processing import compress_audio
 from lib.requests import requesterModule
 from lib.system import space
+from lib.system.disk_budget import BudgetedDownload, DiskBudget, DiskBusy, DiskTooSmall
+from lib.telegram import limits
 from lib.net.enclosure import enclosure_host_fault
 from lib.telegram.general.errors import get_timeout_from_error_client, get_timeout_from_error_bot, bot_blocked_reaction, \
-    user_unavailable_error, message_to_edit_not_found, audio_source_gone, request_entity_too_large, log_caught
+    user_unavailable_error, message_to_edit_not_found, audio_source_gone, request_entity_too_large, log_caught, \
+    entities_parse_error, file_refused
 from lib.telegram.general.message_master import outer_sender, message_editor, message_deleter, message_master, \
     render_messages
 from lib.tools.logger import Logger
@@ -45,6 +46,9 @@ requester = requesterModule.Requester(attempts=0, total_attempts=0)
 logger = Logger(file="sender")
 
 MB_NUMBER = 1048576  # 1024 * 1024
+
+# One per bot process: every rec and circle worker thread reserves from it.
+disk_budget = DiskBudget(os.path.join(work_dir, "records"))
 
 
 def transform_duration(duration):
@@ -94,9 +98,6 @@ class OutcomeMessageErrorType(TypedDict):
 class OutcomeMessageType(TypedDict, total=False):
     message_id: int
     errors: OutcomeMessageErrorType
-
-
-DescriptionModeOptions = Literal['default', 'short', 'none']
 
 
 class ChatParamsType(TypedDict, total=False):
@@ -156,7 +157,7 @@ class Sender:
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
         self.bitrates = {}
         self.send_attempts = {}
-        self.fname = ''
+        self._file: BudgetedDownload | None = None
         self.cached_file_id: str | None = None
         self.recordSize: int | None = None
         self.recordSizeMb: float = 51  # will be downloaded and sent via agent by default
@@ -168,7 +169,6 @@ class Sender:
 
         self.__too_big_record = False
         self.__record_gone = False
-        self.__bot_api_too_large = False
 
         self.prepare()
 
@@ -479,12 +479,6 @@ class Sender:
             except Exception as e:
                 log_caught(self.logger, error=e)
 
-    def get_cant_send_to(self, successfully_via_link: list[int]) -> list[int]:
-        return [
-            chat_id
-            for chat_id in self.chats
-            if chat_id not in successfully_via_link and chat_id not in self.blocked_chats]
-
     def send_record(self):
         self.logger.log(f"Begin sending {self.link} to {','.join(map(str, self.chats.keys()))}")
 
@@ -494,48 +488,8 @@ class Sender:
             if storage.enclosure_host_is_cool(self.link):
                 self.__record_gone = True
                 self.logger.warn("enclosure host cooling, skip download")
-
-            # iTunes
-            elif self.podcast_info['service_name'] == 'itunes':
-                if self.recordSizeMb > 2000:
-                    self.__too_big_record = True
-
-                elif self.recordSizeMb > 20:
-                    self.fname = self.specify_file()
-                    self.download_file()
-                    self._send_local_file()
-
-                else:
-                    try:
-                        successfully_via_link = self.send_via_link()
-                        self.successfully_sent_to.extend(successfully_via_link)
-
-                        cant_sent_to = self.get_cant_send_to(successfully_via_link)
-
-                        if cant_sent_to:
-                            self.fname = self.specify_file()
-                            self.download_file()
-                            self._send_local_file(cant_sent_to)
-
-                    except outbox.OutboxRetryableError:
-                        raise
-                    except Exception as e:
-                        self._note_send_exception(e)
-
-            # RSS
-            elif self.podcast_info['service_name'] == 'rss':
-                if self.recordSizeMb > 20:
-                    self.__too_big_record = True
-
-                else:
-                    successfully_via_link = self.send_via_link()
-                    try:
-                        self.successfully_sent_to.extend(successfully_via_link)
-                    except Exception as e:
-                        self._note_send_exception(e)
-                    leftover = self.get_cant_send_to(self.successfully_sent_to)
-                    if leftover and not self.__too_big_record:
-                        self.__record_gone = True
+            else:
+                self._deliver()
 
         except outbox.OutboxRetryableError as e:
             retryable = e
@@ -552,28 +506,26 @@ class Sender:
         if complete:
             self._mark_outbox_done_after_send()
 
-        # Удаляем файл
-        try:
-            if self.fname is not None and self.fname != '':
-                os.remove(self.fname)
-        except Exception as e:
-            self.logger.err(e, f"Can't delete file #{self.fname}")
+        # Удаляем файл и освобождаем место
+        if self._file is not None:
+            try:
+                self._file.close()
+            except Exception as e:
+                self.logger.err(e, f"Can't delete file #{self._file.path}")
 
         self.__delete_status_messages()
 
         # Don't tell the user "unavailable" if the outbox will retry (429).
         will_retry = self.outbox_id is not None and not complete
         try:
+            # Only chats that did not get the audio hear why. A circle job can
+            # turn too big after part of its recipients already got the file.
+            undelivered = list(self._remaining_chats())
             if self.__too_big_record:
-                self.__send_too_big_record()
+                self.__send_too_big_record(targets=undelivered)
 
             elif not will_retry:
-                for chat_id in self.chats:
-                    if (
-                            chat_id not in self.successfully_sent_to
-                            and chat_id not in self.blocked_chats
-                    ):
-                        self.__send_record_unavailable(targets=[chat_id])
+                self.__send_record_unavailable(targets=undelivered)
         except Exception as e:
             self.logger.warn(e)
 
@@ -595,23 +547,12 @@ class Sender:
             self.logger.err("outbox mark_done after send:", e)
 
     def __get_annex(self):
-        if self.recordSizeMb > 50:
+        if self.recordSizeMb > limits.BOT_UPLOAD_MB:
             return "l"
-        elif self.recordSizeMb > 20:
+        elif self.recordSizeMb > limits.URL_FETCH_MB:
             return "m"
         else:
             return "s"
-
-    def specify_file(self):
-        uniq = len(self.chats)
-        annex = f"_{self.__get_annex()}"
-
-        fname = (
-                self.work_dir + "/records/r" + str(uniq)
-                + "_" + str(int(time.time() * 10000000)) + annex + ".mp3")
-        file = open(fname, "w")
-        file.close()
-        return fname
 
     def __set_percent_step_dynamic(self):
         if self.recordSizeMb < 20:
@@ -635,8 +576,8 @@ class Sender:
 
         if mode == "up":
             # Если запись маленькая, прогресс не нужен
-            if self.compressed_file_size_mb is not None and self.compressed_file_size_mb < 20 \
-                    or (self.compressed_file_size_mb is None and self.recordSizeMb < 20):
+            if self.compressed_file_size_mb is not None and self.compressed_file_size_mb < limits.URL_FETCH_MB \
+                    or (self.compressed_file_size_mb is None and self.recordSizeMb < limits.URL_FETCH_MB):
                 return
 
             text = "uploading_to_telegram_servers"
@@ -661,23 +602,47 @@ class Sender:
     def __upload_file_callback(self, uploaded, size):
         self.__file_progress("up", uploaded, size)
 
-    def download_file(self):
+    def _deliver(self):
+        """Same path for iTunes and RSS podcasts, user clicks and circle.
+
+        Small files: Telegram fetches the URL. Otherwise, and for chats it
+        could not serve, we get the file once and upload it (delivery.upload_order).
+        """
+        if not upload_order(self.recordSizeMb):
+            self.__too_big_record = True
+            return
+        if fetch_by_url_first(self.recordSizeMb):
+            delivered, _ = self.send_via_link()
+            self.successfully_sent_to.extend(delivered)
+            if not self._remaining_chats():
+                return
+        try:
+            self._obtain_file()
+        except DiskBusy as e:
+            # Other downloads hold the space: give the lease back, come back later.
+            self.logger.warn(e)
+            raise outbox.OutboxRetryableError(e)
+        except DiskTooSmall as e:
+            self.logger.warn(e)
+            self.__too_big_record = True
+            return
+        self._upload_to_remaining()
+
+    def _obtain_file(self):
+        """A file_id Telegram already has for this URL, or the episode on our disk."""
         cached_file_id = telegram_cache.get_file_id(self.link, 'audio')
         if cached_file_id is not None:
             self.cached_file_id = cached_file_id
             return
-
+        name = "r%d_%d_%s.mp3" % (len(self.chats), time.time_ns() // 100, self.__get_annex())
+        self._file = BudgetedDownload(
+            disk_budget, os.path.join(self.work_dir, "records", name), expected_bytes=self.recordSize)
         self.__update_status_message("downloading")
-        requester.download_chunked(
-            self.link, self.fname, chunk_size=32769,  # 1024 * 32
-            # callback=partial(self.__download_file_callback, self))
-            callback=self.__download_file_callback)
+        self._file.fetch(requester, self.link, progress=self.__download_file_callback)
         self._refresh_size_from_disk()
 
     def _refresh_size_from_disk(self):
-        if not self.fname or not os.path.isfile(self.fname):
-            return
-        size = os.path.getsize(self.fname)
+        size = self._file.size_bytes() if self._file is not None else 0
         if size <= 0:
             return
         self.recordSize = size
@@ -690,279 +655,173 @@ class Sender:
             self.__record_gone = True
         if enclosure_host_fault(error):
             storage.mark_enclosure_host_cool(self.link)
-        if request_entity_too_large(error):
-            self.__bot_api_too_large = True
 
-    def _send_local_file(self, specific_chat_ids: Optional[list[int]] = None):
-        """Send a downloaded mp3: Bot API under 50 MB, Telethon up to ~2 GB.
+    def _upload_to_remaining(self):
+        """Upload the file (or reuse a file_id) to every chat not reached yet.
 
-        HEAD Content-Length is often a lie. After download we re-read the
-        size on disk. A Bot API 413 falls through to the agent instead of
-        giving up.
+        HEAD Content-Length is often a lie: the order comes from the size on disk.
         """
         self._refresh_size_from_disk()
-        if self.recordSizeMb > 2000:
+        order = upload_order(self.recordSizeMb)
+        if not order:
             self.__too_big_record = True
             return
-
-        used_bot_api = self.recordSizeMb <= 50
-        if used_bot_api:
-            sent = self.send(specific_chat_ids)
-        else:
-            sent = self.send_via_agent(specific_chat_ids)
-        self.successfully_sent_to.extend(sent)
-
-        leftover = specific_chat_ids
-        if leftover is None:
-            leftover = self.get_cant_send_to(self.successfully_sent_to)
-        else:
-            leftover = [
-                chat_id for chat_id in leftover
-                if chat_id not in self.successfully_sent_to
-                and chat_id not in self.blocked_chats]
-        if leftover and used_bot_api and not self.__too_big_record:
-            self.logger.log("Falling back to Telethon agent for", leftover)
-            sent = self.send_via_agent(leftover)
-            self.successfully_sent_to.extend(sent)
-            leftover = [
-                chat_id for chat_id in leftover
-                if chat_id not in self.successfully_sent_to
-                and chat_id not in self.blocked_chats]
-        if leftover:
-            if self.__bot_api_too_large or self.recordSizeMb > 50:
+        refused_as_too_large = False
+        for upload in order:
+            remaining = list(self._remaining_chats())
+            if not remaining:
+                return
+            if upload is Upload.AGENT:
+                delivered, refusal = self.send_via_agent(remaining)
+            elif self.cached_file_id is not None or self.recordSizeMb <= limits.BOT_UPLOAD_MB:
+                delivered, refusal = self.send(remaining)
+            else:
+                continue  # over the Bot API upload limit, and no file_id to reuse
+            self.successfully_sent_to.extend(delivered)
+            refused_as_too_large |= refusal is not None and request_entity_too_large(refusal)
+        if self._remaining_chats():
+            if refused_as_too_large or self.recordSizeMb > limits.BOT_UPLOAD_MB:
                 self.__too_big_record = True
             else:
                 self.__record_gone = True
 
-    def send_via_agent(self, specific_chat_ids: Optional[list[int]] = None):
-        chats = self.chats
-        bitrates = self.bitrates
+    def send_via_link(self):
+        """Telegram fetches self.link for each chat."""
+        def send_one(chat_id, caption):
+            self.send_audio(chat_id, self.link, caption)
 
-        successfully_sent_to = []
+        return self._send_each(list(self._remaining_chats()), send_one, "success_s ")
 
-        for bitrate in bitrates:
-            # TODO: Compressing feature (need more servers)
-            if bitrate is not None:
-                self.__update_status_message("compressing")
-                fname = compress_audio(self.fname, bitrate)
-                self.compressed_file_size_mb = os.path.getsize(fname) / MB_NUMBER
-                self.__prepare_status_template()
-                self.__update_status_message("uploading_to_telegram_servers")
-                file = bot_telethon.upload(self.thonbot, fname, callback=self.__upload_file_callback)
-            else:
-                if self.cached_file_id is not None:
-                    file = self.cached_file_id
-                else:
-                    self.__update_status_message("uploading_to_telegram_servers")
-                    file = bot_telethon.upload(self.thonbot, self.fname, callback=self.__upload_file_callback)
-
-            message_info = {
-                'title': self.podcast_info['title'],
-                'chat_id': 0,
-                'file_id': 'fileid',
-                'bot_name': botName,
-                'duration_sec': self.podcast_info['duration_sec'],
-                'channel_name': self.podcast_info['chName'],
-                'message_text': ''
-            }
-
-            for chat_id in bitrates[bitrate]:
-                # If specific id passed, ignore another ids
-                if specific_chat_ids is not None and chat_id not in specific_chat_ids:
-                    continue
-
-                if chat_id not in chats:
-                    continue
-
-                record_message_text = self.prepare_record_text(chat_id, mode=self.__description_mode(chat_id))
-                record_message_text = record_message_text.replace('*', '**')
-
-                message_info['message_text'] = record_message_text
-                message_info['chat_id'] = chat_id
-
-                if self.podcast_info['with_next_ep_button']:
-                    message_info['nextEpButtonText'] = get_message(
-                        "loadNextRecord", self.lang_codes_by_utg[chat_id])
-                    message_info['nextEpButtonData'] = self.get_button_data()
-
-                def send_uploaded():
-                    if self.cached_file_id is not None:
-                        self.send_audio(
-                            chat_id,
-                            self.cached_file_id,
-                            record_message_text)
-                        successfully_sent_to.append(chat_id)
-                        self.logger.log(chat_id, "success_l ", str(self.podcast_info['id']))
-                        self.__set_resend_status(chat_id)
-                        return
-
-                    # bot_telethon.send_uploaded returns {'message_id': ..., 'chat_id': ...}
-                    # MTProto document.id is not compatible with Bot API file_id, so we forward
-                    # the sent message to a storage chat to obtain a valid Bot API file_id.
-                    result = bot_telethon.send_uploaded(self.thonbot, message_info, file)
-                    new_file_id = None
-                    try:
-                        storage_chat = storageChatId
-                        fwd = self.bot.forward_message(
-                            chat_id=storage_chat,
-                            from_chat_id=result['chat_id'],
-                            message_id=result['message_id'])
-                        if fwd:
-                            if fwd.audio:
-                                new_file_id = fwd.audio.file_id
-                            elif fwd.document:
-                                new_file_id = fwd.document.file_id
-                            else:
-                                self.logger.log("forward returned unexpected media type, skipping cache")
-                            try:
-                                self.bot.delete_message(storage_chat, fwd.message_id)
-                            except Exception:
-                                pass
-                            if new_file_id is not None:
-                                self.cached_file_id = new_file_id
-                    except Exception as fwd_e:
-                        self.logger.log("Could not obtain Bot API file_id for cache:", fwd_e)
-
-                    if new_file_id is not None:
-                        telegram_cache.add_file_id(self.link, new_file_id, 'audio',
-                                                   self.cache_expiration_date)
-
-                    successfully_sent_to.append(chat_id)
-                    self.logger.log(chat_id, "success_l ", str(self.podcast_info['id']))
-                    self.__set_resend_status(chat_id)
-
-                try:
-                    send_uploaded()
-
-                except (ApiException, ValueError, ApiTelegramException) as e:
-                    log_caught(self.logger, error=e)
-                    self.print_failure_message_stack(chat_id)
-
-                    if self.error_reactions(e, chat_id):
-                        continue
-
-                    # для юзера, если много отправлений, пытаемся ещё раз
-                    if self._sleep_or_release_flood(e):
-                        # вторая попытка не должна ронять рассылку остальным получателям
-                        try:
-                            send_uploaded()
-                        except Exception as retry_e:
-                            log_caught(self.logger, error=retry_e)
-
-                except Exception as e:
-                    log_caught(self.logger, error=e)
-                    self.print_failure_message_stack(chat_id)
-
-        return successfully_sent_to
-
-    def send(self, specific_chat_ids: Optional[list[int]] = None):
-        bitrates = self.bitrates
-
+    def send(self, chat_ids):
+        """Bot API: the first chat gets the upload, the rest its file_id."""
         self.__update_status_message("uploading_to_telegram_servers")
 
-        successfully_sent_to = []
+        def send_one(chat_id, caption):
+            if self.cached_file_id is not None:
+                self.send_audio(chat_id, self.cached_file_id, caption)
+                return
+            with open(self._file.path, 'rb') as audio:
+                file_id = self.send_audio(chat_id, audio, caption)
+            if file_id is not None:
+                self._remember_file_id(file_id)
 
-        for bitrate in bitrates:
-            file_id: Optional[str] = None
-            for chat_id in bitrates[bitrate]:
+        return self._send_each(chat_ids, send_one, "success_m ")
 
-                # If specific id passed, ignore another ids
-                if specific_chat_ids is not None and chat_id not in specific_chat_ids:
-                    continue
+    def send_via_agent(self, chat_ids):
+        """Telethon upload per bitrate group; the first delivery yields a file_id for the rest."""
+        delivered, refusal = [], None
+        for bitrate, group in self.bitrates.items():
+            targets = [chat_id for chat_id in group if chat_id in chat_ids]
+            if not targets:
+                continue
+            uploaded = self._agent_upload(bitrate)
 
-                file: int | BinaryIO
+            def send_one(chat_id, caption, uploaded=uploaded):
+                caption = caption.replace('*', '**')
                 if self.cached_file_id is not None:
-                    file = self.cached_file_id
-                else:
-                    file = open(self.fname, 'rb')
+                    self.send_audio(chat_id, self.cached_file_id, caption)
+                    return
+                sent = bot_telethon.send_uploaded(self.thonbot, self._agent_message(chat_id, caption), uploaded)
+                self._remember_agent_file_id(sent)
 
-                try:
-                    record_message_text = self.prepare_record_text(chat_id, mode=self.__description_mode(chat_id))
-                    try:
-                        new_file_id = self.send_audio(
-                            chat_id,
-                            file if file_id is None else file_id,
-                            record_message_text)
+            group_delivered, refusal = self._send_each(targets, send_one, "success_l ")
+            delivered.extend(group_delivered)
+            if refusal is not None:
+                break
+        return delivered, refusal
 
-                        if file_id is None and new_file_id is not None:
-                            telegram_cache.add_file_id(self.link, new_file_id, 'audio',
-                                                       self.cache_expiration_date)
-                            file_id = new_file_id
+    def _agent_upload(self, bitrate):
+        if bitrate is None and self.cached_file_id is not None:
+            return self.cached_file_id
+        path = self._file.path
+        if bitrate is not None:
+            # TODO: Compressing feature (need more servers)
+            self.__update_status_message("compressing")
+            path = compress_audio(path, bitrate)
+            self.compressed_file_size_mb = os.path.getsize(path) / MB_NUMBER
+            self.__prepare_status_template()
+        self.__update_status_message("uploading_to_telegram_servers")
+        return bot_telethon.upload(self.thonbot, path, callback=self.__upload_file_callback)
 
-                        successfully_sent_to.append(chat_id)
-                        self.logger.log(chat_id, "success_m ", str(self.podcast_info['id']))
-                        self.__set_resend_status(chat_id)
+    def _agent_message(self, chat_id, caption):
+        message = {
+            'title': self.podcast_info['title'],
+            'chat_id': chat_id,
+            'file_id': 'fileid',
+            'bot_name': botName,
+            'duration_sec': self.podcast_info['duration_sec'],
+            'channel_name': self.podcast_info['chName'],
+            'message_text': caption,
+        }
+        if self.podcast_info['with_next_ep_button']:
+            message['nextEpButtonText'] = get_message("loadNextRecord", self.lang_codes_by_utg[chat_id])
+            message['nextEpButtonData'] = self.get_button_data()
+        return message
 
-                    except (ApiException, ApiTelegramException) as e:
-                        self._note_send_exception(e)
-                        self.print_failure_message_stack(chat_id)
+    def _remember_agent_file_id(self, sent):
+        """MTProto document ids are not Bot API file_ids: forward the agent's
+        message to the storage chat and take the file_id from the copy."""
+        try:
+            forwarded = self.bot.forward_message(
+                chat_id=storageChatId, from_chat_id=sent['chat_id'], message_id=sent['message_id'])
+        except Exception as e:
+            self.logger.log("Could not obtain Bot API file_id for cache:", e)
+            return
+        if not forwarded:
+            return
+        try:
+            self.bot.delete_message(storageChatId, forwarded.message_id)
+        except Exception:
+            pass
+        media = forwarded.audio or forwarded.document
+        if media is None:
+            self.logger.log("forward returned unexpected media type, skipping cache")
+            return
+        self._remember_file_id(media.file_id)
 
-                        if self.error_reactions(e, chat_id):
-                            continue
-                        if request_entity_too_large(e) or audio_source_gone(e):
-                            continue
+    def _remember_file_id(self, file_id):
+        self.cached_file_id = file_id
+        telegram_cache.add_file_id(self.link, file_id, 'audio', self.cache_expiration_date)
 
-                        # попытка 2, если проблема в паузе
-                        if self._sleep_or_release_flood(e):
-                            try:
-                                new_file_id = self.send_audio(
-                                    chat_id,
-                                    file if file_id is None else file_id,
-                                    record_message_text)
+    def _send_each(self, chat_ids, send_one, success_tag):
+        """Per-chat loop shared by the URL, Bot API and agent sends.
 
-                                if file_id is None:
-                                    file_id = new_file_id
-
-                                successfully_sent_to.append(chat_id)
-                                self.logger.log(chat_id, "success_m ", str(self.podcast_info['id']))
-                                self.__set_resend_status(chat_id)
-                            except Exception as e:
-                                log_caught(self.logger, error=e)
-
-                    except Exception as e:
-                        self._note_send_exception(e)
-                        self.print_failure_message_stack(chat_id)
-                finally:
-                    if type(file) is BufferedReader:
-                        file.close()
-
-        return successfully_sent_to
-
-    def send_via_link(self):
-        successfully_sent_to = []
-        chats = self.chats
-
-        for chat_id in chats:
-            record_message_text = self.prepare_record_text(chat_id, mode=self.__description_mode(chat_id))
+        send_one(chat_id, caption) delivers or raises. A blocked chat is marked
+        and skipped; a flood gets one retry (or gives the outbox lease back); a
+        refusal of the file itself ends the loop, since every next chat would
+        get the same answer. Returns (delivered chat ids, that refusal or None).
+        """
+        delivered = []
+        for chat_id in chat_ids:
+            caption = self.prepare_record_text(chat_id, mode=self.__description_mode(chat_id))
             try:
-                self.send_audio(chat_id, self.link, record_message_text)
-                successfully_sent_to.append(chat_id)
-                self.logger.log(chat_id, "success_s ", str(self.podcast_info['id']))
-                self.__set_resend_status(chat_id)
-
-            except (ApiException, ApiTelegramException) as e:
-                self._note_send_exception(e)
+                send_one(chat_id, caption)
+            except outbox.OutboxRetryableError:
+                raise
+            except Exception as e:
+                log_caught(self.logger, error=e)
                 self.print_failure_message_stack(chat_id)
-
                 if self.error_reactions(e, chat_id):
                     continue
-                if audio_source_gone(e) or request_entity_too_large(e):
+                if file_refused(e):
+                    return delivered, e
+                if not self._retry_after_flood(e, send_one, chat_id, caption):
                     continue
+            delivered.append(chat_id)
+            self.logger.log(chat_id, success_tag, str(self.podcast_info['id']))
+            self.__set_resend_status(chat_id)
+        return delivered, None
 
-                # попытка 2, если проблема в паузе
-                if self._sleep_or_release_flood(e):
-                    try:
-                        self.send_audio(chat_id, self.link, record_message_text)
-                        successfully_sent_to.append(chat_id)
-                        self.logger.log(chat_id, "success_s ", str(self.podcast_info['id']))
-                        self.__set_resend_status(chat_id)
-                    except Exception as e:
-                        log_caught(self.logger, error=e)
-
-            except Exception as e:
-                self._note_send_exception(e)
-
-        return successfully_sent_to
+    def _retry_after_flood(self, error, send_one, chat_id, caption):
+        """One more try after a flood pause. With an outbox the lease goes back instead (raises)."""
+        if not self._sleep_or_release_flood(error):
+            return False
+        try:
+            send_one(chat_id, caption)
+            return True
+        except Exception as retry_error:
+            log_caught(self.logger, error=retry_error)
+            return False
 
     def send_audio(self, chat_id: int, audio: Union[Any, str], record_message_text: str) -> str | None:
         """
@@ -987,10 +846,8 @@ class Sender:
 
         # audio + message
         except Exception as e:  # telebot.apihelper.ApiTelegramException, ?
-            if user_unavailable_error(e):
-                raise e
-            if request_entity_too_large(e) or audio_source_gone(e):
-                self._note_send_exception(e)
+            # Not a caption problem: the caller skips, stops or waits out the flood.
+            if user_unavailable_error(e) or file_refused(e) or get_timeout_from_error_bot(e):
                 raise
 
             self.logger.warn(e, "Fail to send with caption")
@@ -1003,11 +860,14 @@ class Sender:
                 chat_id=chat_id, audio=audio,
                 duration=self.podcast_info['duration_sec'],
                 performer=self.podcast_info['chName'], title=self.podcast_info['title'])
+            # Same markup would fail the same way: say it as plain text.
+            as_plain_text = entities_parse_error(e)
             try:
                 self.bot.send_message(
                     chat_id=chat_id,
-                    text=record_message_text,
-                    parse_mode="HTML",
+                    text=(telegram_html.plain_text(record_message_text) if as_plain_text
+                          else record_message_text),
+                    parse_mode=None if as_plain_text else "HTML",
                     reply_markup=self.get_next_ep_button(
                         lang_code=self.lang_codes_by_utg[chat_id]))
             except Exception as e:
@@ -1036,15 +896,17 @@ class Sender:
 
         message_text = self.prepare_record_text(
             chat_id, mode='short', on_error=True) + "\n\n" + get_message(
-            "tooBigRecord", lang_code) % self.link
+            "tooBigRecord", lang_code) % telegram_html.href(self.link)
 
-        if self.podcast_info['itunesLink'] != '':
-            message_text += get_message(
-                "tooBigRecord2", lang_code).lower() % self.podcast_info['itunesLink']
+        # One link per line, like format_record_unavailable. The site line used
+        # to check itunesLink, so RSS episodes never showed it.
+        if self.podcast_info['itunesLink']:
+            message_text += "\n" + get_message(
+                "tooBigRecord2", lang_code) % telegram_html.href(self.podcast_info['itunesLink'])
 
-        if self.podcast_info['itunesLink'] != '':
-            message_text += get_message(
-                "tooBigRecord3", lang_code).lower() % self.podcast_info['channelLink']
+        if self.podcast_info['channelLink']:
+            message_text += "\n" + get_message(
+                "tooBigRecord3", lang_code) % telegram_html.href(self.podcast_info['channelLink'])
 
         if outcome_message_id is not None:
             try:
@@ -1107,8 +969,8 @@ class Sender:
         # print(prepare_record_text(self.podcast_info, 'ru').encode('utf-8'), flush=True)
 
     def __prepare_status_template(self):
-        self.statusTemplate = self.podcast_info['chName'] + "\n" + \
-                              "<b>" + self.podcast_info['title'] + "</b>\n\n" + \
+        self.statusTemplate = telegram_html.text(self.podcast_info['chName']) + "\n" + \
+                              "<b>" + telegram_html.text(self.podcast_info['title']) + "</b>\n\n" + \
                               emojiCodes.get('floppyDisk') + " " + str(round(self.recordSizeMb, 2)) + " MiB" + \
                               ("\n" if self.compressed_file_size_mb is None
                                else f" -> {round(self.compressed_file_size_mb, 2)} MiB\n")
@@ -1118,8 +980,7 @@ class Sender:
         lang_code = self.lang_codes_by_utg[chat_id]
         chat = self.chats[chat_id]
 
-        # base message
-        message = self.record_text_template(
+        return record_caption(
             lang_code, mode, self.podcast_info['channelLink'], self.podcast_info['chName'],
             self.podcast_info['title'], self.podcast_info['id'],
             self.podcast_info['pubDate'], self.podcast_info['descr'],
@@ -1127,74 +988,6 @@ class Sender:
             on_error=on_error,
             show_updated_text=('show_updated_text' not in chat or chat['show_updated_text'] is True),
             bot_reference=('bot_reference' not in chat or chat['bot_reference'] is True))
-
-        return message
-
-    # modes: default, short
-    @staticmethod
-    def record_text_template(
-            lang_code, mode: DescriptionModeOptions,
-            channel_link, ch_name, title, channel_id, pub_date, descr, service_name, service_id,
-            on_error=False, show_updated_text=True, bot_reference=True, bot_reference_botname=True):
-        message = ""
-        if channel_link:
-            message += "<a href=\"" + channel_link + "\">" \
-                       + ch_name + "</a>"
-        else:
-            message += "<b>" + ch_name + "</b>"
-
-        message += "\n<b>" + title
-
-        if channel_id is not None:
-            message += " #id" + str(channel_id) + "\n"
-        else:
-            message += "\n"
-
-        pub_date = prepare_podcast_update_time(pub_date)
-
-        if not on_error and show_updated_text:
-            message += get_message("uploaded", lang_code) + " "
-        message += pub_date + "</b>\n\n"
-
-        # ссылка на бота + ссылка на подкаст в боте
-        if not on_error and bot_reference:
-            try:
-                channel_id = int(channel_id)
-                if channel_id < 1 and channel_id is not None:
-                    channel_id = None
-            except Exception:
-                channel_id = None
-            if channel_id is not None or (service_name == "itunes" and service_id):
-                if channel_id is not None:
-                    message += get_message(
-                        "linkInTheBotByPodcastId_HTML", lang_code).format(
-                        botName=botName, id=channel_id, mode="podcast")
-                elif service_name == "itunes" and service_id:
-                    message += get_message(
-                        "linkInTheBotByPodcastId_HTML", lang_code).format(
-                        botName=botName, id=service_id, mode="podcastItunes")
-                if bot_reference_botname:
-                    message += " " + get_message("in_the_bot", lang_code).format(botName=botName)
-                message += "\n\n"
-            elif bot_reference_botname:
-                message += f"@{botName}" + "\n\n"
-
-        if mode != 'none':
-            message += html_mrkd_cleaner(descr)
-
-        # default have description and longer
-        if mode == 'default':
-            max_characters = 1000
-        elif mode == 'short' or mode == 'none':
-            max_characters = 500
-        else:
-            max_characters = 1000
-
-        # get rid of the last clipped sentence
-        message = prepare_message_text(
-            message, max_length=max_characters, clear_markup=False, parse_mode="HTML")
-
-        return message
 
     def get_next_ep_button(self, lang_code='en'):
         if self.podcast_info['with_next_ep_button']:

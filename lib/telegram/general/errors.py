@@ -69,7 +69,19 @@ def message_to_edit_not_found(e):
 		"message to edit not found" in text
 		or "MESSAGE_ID_INVALID" in text
 		or "message identifier is not specified" in text
+		# An edit that lands while the same message is being deleted (status
+		# thread vs. the sender's cleanup) gets this bare wording.
+		or "Bad Request: not Found" in text
 	)
+
+
+def message_to_delete_not_found(e):
+	return "message to delete not found" in str(e)
+
+
+def entities_parse_error(e):
+	"""Telegram refused our parse_mode markup (unclosed or unsupported tag)."""
+	return "can't parse entities" in str(e)
 
 
 # Telegram could not download the media we handed it: dead/blocked host, broken url,
@@ -87,16 +99,24 @@ def media_fetch_failed(e):
 			or "Bad Request: PHOTO_EXT_INVALID" in error_text
 
 
+# The enclosure URL itself is refused. Retrying the same request cannot
+# help. 408/425/429 are "try later" and stay retryable.
+_ENCLOSURE_REFUSED = re.compile(r'\b(400|401|403|404|410|451) Client Error\b')
+
+
 def audio_source_gone(error):
-	"""File cannot be sent this attempt: 404/410, Telegram URL fetch, or CDN/DNS."""
+	"""File cannot be sent this attempt: 4xx on the URL, Telegram URL fetch, or CDN/DNS."""
 	text = str(error)
 	if "failed to get HTTP URL content" in text:
 		return True
-	if "404 Client Error" in text or "404 Not Found" in text:
-		return True
-	if "410 Client Error" in text or "410 Gone" in text:
+	if _ENCLOSURE_REFUSED.search(text) or "404 Not Found" in text or "410 Gone" in text:
 		return True
 	return enclosure_host_fault(error)
+
+
+def file_refused(error):
+	"""Telegram will not take this file (URL fetch or upload). Per file, not per chat."""
+	return audio_source_gone(error) or request_entity_too_large(error) or media_fetch_failed(error)
 
 
 def expected_send_noise(error) -> bool:
@@ -105,7 +125,7 @@ def expected_send_noise(error) -> bool:
 		return False
 	if user_unavailable_error(error):
 		return True
-	if message_to_edit_not_found(error):
+	if message_to_edit_not_found(error) or message_to_delete_not_found(error):
 		return True
 	if get_timeout_from_error_bot(error) or get_timeout_from_error_client(error):
 		return True

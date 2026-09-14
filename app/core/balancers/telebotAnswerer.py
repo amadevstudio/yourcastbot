@@ -143,7 +143,10 @@ class TheSender(threading.Thread):
             try:
                 change_state = process_input(input_data)
             except Exception as e:
-                logger.err(e)
+                # Message text is not logged; the route is what makes this traceable.
+                logger.err(
+                    "route:", input_data['data'].get('route_name'),
+                    "action:", input_data['data'].get('action_name'), e)
                 change_state = False
 
             # Set new state for user

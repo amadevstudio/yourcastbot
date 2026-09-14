@@ -311,11 +311,15 @@ def job_from_row(row):
 
 
 def flood_wait_seconds(error):
-    """Telegram retry-after, or None if this is not a flood error."""
+    """Telegram retry-after (or a cause's own retry_after_seconds), else None."""
     if error is None:
         return None
     if isinstance(error, OutboxRetryableError) and error.cause is not None:
         error = error.cause
+    # Local back-pressure (disk budget) says when to come back.
+    explicit = getattr(error, 'retry_after_seconds', None)
+    if explicit:
+        return int(explicit)
     from lib.telegram.general.errors import (
         get_timeout_from_error_bot, get_timeout_from_error_client)
     pause = get_timeout_from_error_bot(error)

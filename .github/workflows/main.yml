@@ -33,6 +33,12 @@ jobs:
           python3 app/i18n/test_relay_copy.py
           python3 app/jobs/test_circle_health.py
           python3 app/jobs/test_relay_remind.py
+          python3 app/service/record/test_caption.py
+          python3 app/service/record/test_delivery.py
+          python3 lib/telegram/general/test_errors.py
+          python3 lib/system/test_disk_budget.py
+          python3 app/core/sender/test_record_delivery.py
+          python3 db/test_send_outbox.py
 
   deploy-build-restart:
     needs: storefront-guards

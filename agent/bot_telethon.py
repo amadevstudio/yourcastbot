@@ -120,7 +120,9 @@ async def sender(local_thonbot, argv, file):
     file_sending_result = await local_thonbot.send_file(
         int(chat_id),
         file,
-        caption=str(message_text)[0:1024],
+        # record_caption keeps the visible text under the limit; slicing
+        # the markup here could cut a tag or an entity in half.
+        caption=str(message_text),
         buttons=get_next_ep_button(argv),
         parse_mode='HTML',
         file_name=str(file_name),

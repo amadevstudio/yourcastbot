@@ -224,10 +224,6 @@ def set_last_date(last_date, last_pub_date) -> str:  # strings: itunes, rss; not
     return ''
 
 
-def prepare_podcast_update_time(input_date) -> str:
-    return (input_date.split('T'))[0]
-
-
 def prepare_string_from_rss(rss_string) -> str:
     result = ""
     try:

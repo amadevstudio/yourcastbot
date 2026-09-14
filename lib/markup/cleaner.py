@@ -3,6 +3,9 @@ import re
 html_break_regular = re.compile(r'<\/?br[\s\/]*>?', re.IGNORECASE)
 line_break_regular = re.compile(r'\n')
 html_regular = re.compile(r'<\/?(?:(?!br))[^>]*\/?>', re.IGNORECASE)  # Not b
+# Feeds cut descriptions mid-tag ("...otro).<span data-"). Without a '>'
+# html_regular never sees a tag, and Telegram rejects the whole caption.
+unterminated_tag_regular = re.compile(r'<\/?[a-z][^<>]*\Z', re.IGNORECASE)
 markdown_regular = re.compile(r'[\*[_`]')
 
 
@@ -15,7 +18,7 @@ def html_cleaner(msg):
     # logger.debug("After html regular", html_cleared)
     html_breaks_replaced = html_break_regular.sub('\n', html_cleared)
     # logger.debug("After html breaks replaced", html_breaks_replaced)
-    return html_breaks_replaced
+    return unterminated_tag_regular.sub('', html_breaks_replaced)
 
 
 def markdown_cleaner(msg):

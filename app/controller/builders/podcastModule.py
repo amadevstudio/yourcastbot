@@ -13,6 +13,7 @@ from app.controller.general.notify import notify
 import app.service.podcast.podcast
 import app.service.podcast.subscription
 import app.service.record.caption
+import app.service.record.helpers
 import lib.markup.cleaner
 from app.routes.message_tools import go_back_inline_markup
 from lib.telegram.general.errors import media_fetch_failed
@@ -458,7 +459,7 @@ def construct_channel_message(chat_id, language_code, channel_data=None) -> list
         message_text += lib.markup.cleaner.un_markdown_link(channel_link) + "\n"
     if last_date:
         message_text += get_message("lastUpdate", language_code) + " " + \
-                        app.service.podcast.podcast.prepare_podcast_update_time(last_date) + "\n\n"
+                        app.service.record.helpers.prepare_podcast_update_time(last_date) + "\n\n"
 
     # ссылка на бота + ссылка на подкаст в боте
     channel_id: None | int

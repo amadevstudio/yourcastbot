@@ -2,6 +2,7 @@ from config import (
     tariff_ref_period, tariff_ref_no_subscription_period,
     tariff_ref_notifies, tariff_ref_sub_period, max_subscriptions_without_tariff,
     donate_link, botName)
+from lib.markup.telegram_html import href
 
 
 def get_language(lang_code):
@@ -42,8 +43,8 @@ def get_message(message, lang_code, param=""):
 
 def format_record_unavailable(lang_code, site_url=None, file_url=None) -> str:
     """User-facing rec failure: site and/or direct file link."""
-    site = (site_url or "").strip()
-    file_link = (file_url or "").strip()
+    site = href(site_url)
+    file_link = href(file_url)
     if site:
         text = get_message("recordUnavaliable", lang_code) % site
     else:

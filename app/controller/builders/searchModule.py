@@ -22,12 +22,14 @@ from app.controller.builders.recsModule import load_records_data
 from app.controller.general.notify import notify
 from app.core.message.navigationBuilder import get_full_message_navigation, FullMessageNavigation, \
     determine_search_query_and_page
-from app.core.sender.send_record_helper import Sender, transform_duration, get_file_size_HTTP
+from app.core.sender.send_record_helper import transform_duration, get_file_size_HTTP
 from app.i18n.messages import get_message, emojiCodes, get_message_rtd
 from app.repository.storage import storage, telegram_cache
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams, InlineControllerParams
 from app.routes.routes_list import AvailableRoutes
+from app.service.record.caption import record_caption
+from app.service.record.delivery import fetch_by_url_first
 from config import (
     db_path, available_podcast_hoster_links, botName, server, maxPodcastDateCallDataHexLen,
     apple_itunes_search)
@@ -116,7 +118,7 @@ def make_search(message_text: str, _, per_page: int = PER_PAGE, offset: int = 0)
             'title': item['collectionName'],
             'collectionId': item['collectionId'],
             'trackCount': item['trackCount'],
-            'lastDate': app.service.podcast.podcast.prepare_podcast_update_time(item['releaseDate'])
+            'lastDate': app.service.record.helpers.prepare_podcast_update_time(item['releaseDate'])
         })
 
         per_page_limit += 1
@@ -351,7 +353,7 @@ def inline_podcast_searcher(data: InlineControllerParams):
 def construct_inline_podcast_searcher_channel(podcast, podcast_data, rss_podcast_data, language_code):
     inline_id = f"itunes_{podcast_data['collectionId']}"
 
-    last_update = app.service.podcast.podcast.prepare_podcast_update_time(podcast_data['releaseDate'])
+    last_update = app.service.record.helpers.prepare_podcast_update_time(podcast_data['releaseDate'])
 
     message_text_content = lib.markup.cleaner.html_mrkd_cleaner(f"*{podcast_data['collectionName']}*\n")
     if rss_podcast_data is not None and rss_podcast_data['channelLink']:
@@ -458,7 +460,7 @@ def construct_inline_podcast_searcher_records(podcast_data, rd, founded_count, l
             record_size = 51
 
         # можно отправить через bot api
-        if record_size < 20:
+        if fetch_by_url_first(record_size):
 
             # для записи прикрепляем кнопку открыть подкаст в боте
             if channel is not None:
@@ -470,7 +472,7 @@ def construct_inline_podcast_searcher_records(podcast_data, rd, founded_count, l
                 url=open_podcast_url))
 
             # генерация текста выпуска — полный текст
-            record_message_text = Sender.record_text_template(
+            record_message_text = record_caption(
                 language_code, 'default', rd['channelLink'], rd['chName'],
                 rd['title'][i], channel['id'] if channel is not None else None,
                 rd['pubDatesFormatted'][i], rd['descrs'][i],
@@ -494,7 +496,7 @@ def construct_inline_podcast_searcher_records(podcast_data, rd, founded_count, l
                 download_episode_url += f"episodeItunes_{podcast_data['collectionId']}_{dh}_{rd['rssNumbers'][i]}"
 
             # генерация текста выпуска — короткий текст
-            record_message_text = Sender.record_text_template(
+            record_message_text = record_caption(
                 language_code, 'short', rd['channelLink'], rd['chName'],
                 rd['title'][i], channel['id'] if channel is not None else None,
                 rd['pubDatesFormatted'][i], rd['descrs'][i],

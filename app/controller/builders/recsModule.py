@@ -254,7 +254,7 @@ def construct_records_message(
         last_date = ''
     message_text = "<b>" + ch_name + "</b>\n" + \
                    get_message("lastUpdate", language_code) + " " + \
-                   app.service.podcast.podcast.prepare_podcast_update_time(last_date) + "\n\n" + \
+                   app.service.record.helpers.prepare_podcast_update_time(last_date) + "\n\n" + \
                    descr + "\n" + get_message("thereis", language_code) + " " + \
                    str(message_navigation['page_data']['count']) + " " + disk_emodji + "\n" + \
                    message_navigation['routing_helper_message']
