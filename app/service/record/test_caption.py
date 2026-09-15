@@ -39,6 +39,17 @@ def _assert(cond, label):
     print("ok  %s" % label)
 
 
+_HREF = re.compile(r'<a href="([^"]*)">')
+_ENTITY = re.compile(r'&(lt|gt|amp|quot)(?![A-Za-z]);?')
+_ENTITY_CHARS = {'lt': '<', 'gt': '>', 'amp': '&', 'quot': '"'}
+
+
+def telegram_href(markup):
+    """The first link as Telegram reads it: tdlib decodes these whole names in
+    attribute values, with or without ';' (MessageEntity.cpp, parse_html)."""
+    return _ENTITY.sub(lambda m: _ENTITY_CHARS[m.group(1)], _HREF.search(markup).group(1))
+
+
 def telegram_rejects(markup):
     """Mimic Telegram's HTML parser closely enough for our captions. None = accepted."""
     stack = []
@@ -113,7 +124,12 @@ def main():
 
     text = caption(channel_link='https://example.com/show?a=1&b="x"<y>', descr='')
     _assert(telegram_rejects(text) is None, "quote and brackets in feed URL cannot break href")
-    _assert('href="https://example.com/show?a=1&b=%22x%22%3Cy%3E"' in text, "href percent-encoded")
+    _assert('href="https://example.com/show?a=1&amp;b=%22x%22%3Cy%3E"' in text, "href percent-encoded")
+
+    for url in ('https://example.com/e.mp3?a=1&ltv=2&gt=3&amp=4&quot;=5&aid=6',
+                'https://m.cdn.firstory.me/track/a/b/https%3A%2F%2Ffile.cdn.firstory.me%2Fx.mp3?v=1'):
+        _assert(telegram_href(caption(channel_link=url, descr='')) == url,
+                "Telegram reads the feed URL back unchanged: " + url[:45])
 
     _assert(telegram_rejects('<b>open') is not None, "validator catches unclosed tag")
     _assert(telegram_rejects('x <span data-') is not None, "validator catches cut tag")

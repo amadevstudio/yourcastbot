@@ -9,9 +9,10 @@ import html
 
 from lib.markup.cleaner import html_cleaner, markdown_cleaner
 
-# Percent-encoding keeps a feed URL inside href="..." without relying on
-# Telegram decoding entities in attribute values.
-_HREF_UNSAFE = {'"': '%22', '<': '%3C', '>': '%3E', ' ': '%20'}
+# Percent-encoding keeps a feed URL inside href="...". Telegram decodes
+# &lt &gt &amp &quot in attribute values even without ';', so a query like
+# ?a=1&gt=2 would turn into ?a=1>=2: '&' goes in as &amp;.
+_HREF_UNSAFE = {'"': '%22', '<': '%3C', '>': '%3E', ' ': '%20', '&': '&amp;'}
 
 
 def plain_text(raw: str | None) -> str:

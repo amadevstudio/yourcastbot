@@ -64,8 +64,11 @@ never by `service_name`: since the ETag updater every channel with an
 - Downloads go through `DiskBudget` (512 MB stay free for SQLite, logs,
   backup). Do not write episode files around it.
 - Too-big / unavailable notices go only to chats that did not get the audio.
+- Enclosure, channel and iTunes URLs go through `normalize_url`, never
+  `quote`: trackers embed an encoded URL (`/track/.../https%3A%2F%2F...`)
+  that must reach the network unchanged. In HTML, `telegram_html.href`.
 - Locks: `python app/core/sender/test_record_delivery.py`,
-  `python app/service/record/test_delivery.py`.
+  `python app/service/record/test_delivery.py`, `python lib/requests/test_url.py`.
 
 ## Send workers (current contract)
 

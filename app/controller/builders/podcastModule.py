@@ -7,7 +7,6 @@ import re
 import typing
 from datetime import datetime
 from typing import TypedDict, Literal
-from urllib.parse import quote
 
 from app.controller.general.notify import notify
 import app.service.podcast.podcast
@@ -15,6 +14,7 @@ import app.service.podcast.subscription
 import app.service.record.caption
 import app.service.record.helpers
 import lib.markup.cleaner
+from lib.requests.url import normalize_url
 from app.routes.message_tools import go_back_inline_markup
 from lib.telegram.general.errors import media_fetch_failed
 from lib.telegram.general.message_master import message_master, render_messages, MessageStructuresInterface, \
@@ -235,7 +235,7 @@ def get_podcast_data(chat_id, service_id, podcast_id=None, service_name='itunes'
 
         elif channel_descr.tag == "link":
             try:
-                channel_link = quote(channel_descr.text, safe=":/?=")
+                channel_link = normalize_url(channel_descr.text)
             except Exception:
                 channel_link = channel_descr.text
     # imUrl = json.loads(

@@ -1,12 +1,13 @@
 import json
 from typing import TypedDict, Dict, Tuple, Literal
-from urllib.parse import unquote, quote
+from urllib.parse import unquote
 
 from app.service.podcast.rss import (
     get_rss_root_with_status,
     FeedStatus, FEED_STATUS_GONE, FEED_STATUS_UNAVAILABLE,
     FEED_STATUS_NOT_MODIFIED)
 from lib.requests import requesterModule
+from lib.requests.url import normalize_url
 from lib.tools.logger import logger
 from lib.tools.time_tools.general import format_rss_last_date, prepare_date_time_from_formatted
 
@@ -130,7 +131,7 @@ def podcast_info_query(
                 collection_name = result["collectionName"]
                 feed_url = result["feedUrl"]
                 last_date = result.get("releaseDate", None)
-                itunes_link = quote(result["collectionViewUrl"], safe=":/")
+                itunes_link = normalize_url(result["collectionViewUrl"])
 
                 itunes_podcast_data = result
                 break

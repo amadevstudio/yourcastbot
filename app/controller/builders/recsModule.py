@@ -4,13 +4,13 @@ import re
 from hashlib import sha256
 from threading import Thread
 from typing import TypedDict, Any, cast as typing_cast
-from urllib.parse import quote
 
 import app.service.podcast.podcast
 import app.service.record.caption
 import app.service.record.helpers
 import lib.markup.cleaner
 import lib.tools.time_tools.general
+from lib.requests.url import normalize_url
 from app.controller.builders.podcastModule import PodcastStateData
 from app.controller.general.notify import notify
 from app.controller.types_helpers.recs import RecResult, RecsStateData, RecordsDataType, \
@@ -407,7 +407,7 @@ def load_records_data(
                 for record in record_meta:
                     if record.tag == "enclosure" and take_file_links:
                         try:
-                            rd['links'][-1] = str(quote(record.attrib["url"], safe=":/?=_"))
+                            rd['links'][-1] = normalize_url(record.attrib["url"])
                         except Exception:
                             pass
                     elif record.tag == "title":
@@ -590,7 +590,7 @@ def send_record_direct(
                 break
         elif channelDescr.tag == "link":
             try:
-                channel_link = quote(channelDescr.text, safe=":/?=")
+                channel_link = normalize_url(channelDescr.text)
             except Exception:
                 channel_link = channelDescr.text
         elif channelDescr.tag == "title":
@@ -698,7 +698,7 @@ def collect_record_info(channel_descr_children):
     full_pub_date = ""
     for record in channel_descr_children:
         if record.tag == "enclosure":
-            result['link'] = str(quote(record.attrib["url"], safe=":/?="))
+            result['link'] = normalize_url(record.attrib["url"])
         # link = record.attrib["url"]
         elif record.tag == "description":
             try:

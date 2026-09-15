@@ -2,7 +2,6 @@
 import asyncio
 import time
 import typing
-from urllib.parse import quote
 
 from telebot import types  # type: ignore
 from telethon import TelegramClient
@@ -14,6 +13,7 @@ import app.service.podcast.rss
 import app.service.record.helpers
 import app.service.user.language
 import lib.markup.cleaner
+from lib.requests.url import normalize_url
 from agent.bot_telethon import thobot_session_handler
 from app.controller.builders.helpModule import get_promo_messages
 from app.controller.general.notify import notify
@@ -442,7 +442,7 @@ def send_new_records_by_channel(
     for channelDescr in root.getchildren():
         if channelDescr.tag == "link":
             try:
-                channel_link = quote(channelDescr.text, safe=":/?=")
+                channel_link = normalize_url(channelDescr.text)
             except Exception:
                 channel_link = channelDescr.text
 
@@ -481,7 +481,7 @@ def send_new_records_by_channel(
             for record in channelDescr.getchildren():
                 if record.tag == "enclosure":
                     try:
-                        links[len(links) - 1] = str(quote(record.attrib["url"], safe=":/?=_"))
+                        links[len(links) - 1] = normalize_url(record.attrib["url"])
                     except Exception:
                         links[len(links) - 1] = ""
                 elif record.tag == "description":
