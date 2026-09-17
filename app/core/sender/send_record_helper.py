@@ -214,7 +214,9 @@ class Sender:
         except Exception as e:
             log_caught(self.logger, error=e)
             if enclosure_host_fault(e):
-                storage.mark_enclosure_host_cool(self.link)
+                # The error names the CDN that hung; self.link is often just
+                # a redirector shared with unrelated podcasts.
+                storage.mark_enclosure_host_cool(self.link, error=e)
 
         self.__prepare_status_template()
 
@@ -667,7 +669,7 @@ class Sender:
         if audio_source_gone(error):
             self.__record_gone = True
         if enclosure_host_fault(error):
-            storage.mark_enclosure_host_cool(self.link)
+            storage.mark_enclosure_host_cool(self.link, error=error)
 
     def _upload_to_remaining(self):
         """Upload the file (or reuse a file_id) to every chat not reached yet.

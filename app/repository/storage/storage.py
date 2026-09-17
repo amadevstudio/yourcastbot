@@ -9,7 +9,8 @@ from typing import Mapping, Any, Sequence
 from app.routes.routes_list import AvailableRoutes
 from config import shelve_name
 from db import runtime_kv
-from lib.net.enclosure import COOL_SECONDS, host_from_url
+from lib.net.enclosure import (
+    COOL_SECONDS, enclosure_hosts, host_from_error, host_from_url)
 from lib.tools.logger import logger
 
 _thread_lock = threading.RLock()
@@ -334,10 +335,7 @@ def __enclosure_cool_key(host):
     return "enclosure_cool_until_" + str(host)
 
 
-def enclosure_host_is_cool(url, now=None, database=None) -> bool:
-    host = host_from_url(url)
-    if not host:
-        return False
+def __host_is_cool(host, now=None, database=None) -> bool:
     until = runtime_kv.get_kv(__enclosure_cool_key(host), database=database)
     if until is None or until == "":
         return False
@@ -352,8 +350,27 @@ def enclosure_host_is_cool(url, now=None, database=None) -> bool:
     return True
 
 
-def mark_enclosure_host_cool(url, seconds=None, now=None, database=None) -> str | None:
-    host = host_from_url(url)
+def enclosure_host_is_cool(url, now=None, database=None) -> bool:
+    """A host on the way to this file is cooling.
+
+    Tracker links (podtrac, pdst.fm) reach the CDN named inside the path, and
+    the cooldown is keyed by the host that actually died: check them all, or
+    the 30-minute skip stops working for every redirected podcast.
+    """
+    for host in enclosure_hosts(url):
+        if __host_is_cool(host, now=now, database=database):
+            return True
+    return False
+
+
+def mark_enclosure_host_cool(
+        url, error=None, seconds=None, now=None, database=None) -> str | None:
+    """Cool the host that hung, not the first hop of the URL.
+
+    urllib3 names it in the message; a redirector (dts.podtrac.com) carries
+    dozens of unrelated podcasts and must not be cooled for one dead CDN.
+    """
+    host = host_from_error(error) or host_from_url(url)
     if not host:
         return None
     wait = COOL_SECONDS if seconds is None else int(seconds)

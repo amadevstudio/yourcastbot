@@ -70,6 +70,7 @@ for _name in _OPTIONAL:
 
 from app.core.sender import outbox as real_outbox  # noqa: E402
 from app.core.sender import send_record_helper as srh  # noqa: E402
+from lib.net.enclosure import host_from_error  # noqa: E402
 from lib.system.disk_budget import DiskBudget, DiskBusy  # noqa: E402
 
 
@@ -225,6 +226,7 @@ class World:
         self.logger = FakeLogger()
         self.outbox = FakeOutbox() if with_outbox else real_outbox
         self.notices = []  # (chat_id, text) for too big / unavailable
+        self.cooled = []  # (link, error) passed to the enclosure cooldown
 
         def notice(chat_id, structures, *args, **kwargs):
             self.notices.append((chat_id, structures[0]['text']))
@@ -235,7 +237,7 @@ class World:
             'disk_budget': self.budget, 'logger': self.logger, 'work_dir': self.tmp,
             'outbox': self.outbox, 'storageChatId': 42,
             'storage': _ns(enclosure_host_is_cool=lambda link: False,
-                           mark_enclosure_host_cool=lambda link: None,
+                           mark_enclosure_host_cool=self._cool_host,
                            set_user_resend_flag=lambda chat_id: None),
             'telegram_cache': _ns(get_file_id=lambda link, kind: None,
                                   add_file_id=lambda *a, **k: None),
@@ -249,6 +251,9 @@ class World:
         }
         for name, value in patches.items():
             setattr(srh, name, value)
+
+    def _cool_host(self, link, error=None, **kwargs):
+        self.cooled.append((link, error))
 
     def _blocked_reaction(self, error, chat_id):
         if "bot was blocked" in str(error):
@@ -369,6 +374,18 @@ def main():
                                             for _, text in world.notices),
             "dead file: unavailable notice")
     _assert(world.records_left() == [] and world.budget._live == [], "dead file: partial file and reservation cleaned")
+
+    # A hung download cools a host for 30 minutes, so it must be the host that
+    # hung: the link itself is often a redirector (podtrac, pdst.fm) carrying
+    # unrelated podcasts. urllib3 names the real one in the message.
+    hung_cdn = ("HTTPSConnectionPool(host='nbcnews.simplecastaudio.com', port=443): "
+                "Max retries exceeded with url: /audio/ep.mp3 "
+                "(Caused by ReadTimeoutError(Read timed out. (read timeout=15)))")
+    world = World(size_mb=389, download_error=hung_cdn)
+    world.sender().send_record()
+    _assert([host_from_error(error) for _, error in world.cooled]
+            == ['nbcnews.simplecastaudio.com'],
+            "hung CDN: the cooldown is told the error, not just the link")
 
     # Podcasts added by a bare RSS link: never downloaded unless trusted.
     world = World(size_mb=389)

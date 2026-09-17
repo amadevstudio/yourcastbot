@@ -94,12 +94,53 @@ def test_enclosure_host_cool(db_path):
         False, "cool expires")
 
 
+def test_tracker_link_cools_the_cdn(db_path):
+    """A dead CDN behind podtrac must not take podtrac (13% of our links).
+
+    One NBC download timed out and the next two taps were told "unavailable"
+    because dts.podtrac.com was cooled; every other podtrac podcast was one
+    timeout away from the same.
+    """
+    now = 4_000_000.0
+    nbc = ("https://dts.podtrac.com/redirect.mp3/chrt.fm/track/A1B2/"
+           "nbcnews.simplecastaudio.com/audio/ep.mp3")
+    other = ("https://dts.podtrac.com/redirect.mp3/tracking.swap.fm/track/UV/"
+             "traffic.omny.fm/d/clips/ep.mp3")
+    error = ("HTTPSConnectionPool(host='nbcnews.simplecastaudio.com', port=443): "
+             "Max retries exceeded with url: /audio/ep.mp3 "
+             "(Caused by ReadTimeoutError(Read timed out. (read timeout=15)))")
+
+    host = storage.mark_enclosure_host_cool(
+        nbc, error=error, seconds=60, now=now, database=db_path)
+    _assert_eq(host, "nbcnews.simplecastaudio.com", "cooled the host that hung")
+    _assert_eq(
+        storage.enclosure_host_is_cool(other, now=now + 5, database=db_path),
+        False, "another podcast behind the same redirector still plays")
+    _assert_eq(
+        storage.enclosure_host_is_cool(nbc, now=now + 5, database=db_path),
+        True, "the dead cdn is still skipped through its tracker link")
+    _assert_eq(
+        storage.enclosure_host_is_cool(
+            "https://nbcnews.simplecastaudio.com/audio/other.mp3",
+            now=now + 5, database=db_path),
+        True, "and on a direct link to it")
+    _assert_eq(
+        storage.enclosure_host_is_cool(nbc, now=now + 61, database=db_path),
+        False, "cool expires")
+
+    # Telegram refusals and 4xx name no host: fall back to the URL, as before.
+    host = storage.mark_enclosure_host_cool(
+        other, error="Bad Gateway", seconds=60, now=now + 61, database=db_path)
+    _assert_eq(host, "dts.podtrac.com", "no host in the error, use the url")
+
+
 def main():
     tmpdir = tempfile.mkdtemp(prefix="yourcast_feed_health_")
     cases = (
         test_counts_then_marks_dead,
         test_unavailable_needs_more_failures,
         test_enclosure_host_cool,
+        test_tracker_link_cools_the_cdn,
     )
     for index, case in enumerate(cases):
         path = os.path.join(tmpdir, "case_%d.db" % index)
