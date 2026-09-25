@@ -10,7 +10,8 @@ from app.routes.routes_list import AvailableRoutes
 from config import shelve_name
 from db import runtime_kv
 from lib.net.enclosure import (
-    COOL_SECONDS, enclosure_hosts, host_from_error, host_from_url)
+    COOL_SECONDS, FAULT_WINDOW_SECONDS, FAULTS_BEFORE_COOL, enclosure_hosts,
+    host_from_error, host_from_url)
 from lib.tools.logger import logger
 
 _thread_lock = threading.RLock()
@@ -335,6 +336,10 @@ def __enclosure_cool_key(host):
     return "enclosure_cool_until_" + str(host)
 
 
+def __enclosure_faults_key(host):
+    return "enclosure_faults_" + str(host)
+
+
 def __host_is_cool(host, now=None, database=None) -> bool:
     until = runtime_kv.get_kv(__enclosure_cool_key(host), database=database)
     if until is None or until == "":
@@ -373,10 +378,52 @@ def mark_enclosure_host_cool(
     host = host_from_error(error) or host_from_url(url)
     if not host:
         return None
+    __cool_host(host, seconds=seconds, now=now, database=database)
+    return host
+
+
+def __cool_host(host, seconds=None, now=None, database=None):
     wait = COOL_SECONDS if seconds is None else int(seconds)
     stamp = time.time() if now is None else float(now)
     runtime_kv.set_kv(
         __enclosure_cool_key(host), str(stamp + wait), database=database)
+
+
+def note_enclosure_host_fault(url, error=None, now=None, database=None) -> str | None:
+    """A job's enclosure hit a timeout/DNS fault. Returns the host if this cooled it.
+
+    One fault is often a hiccup, so it only counts. FAULTS_BEFORE_COOL faults
+    within FAULT_WINDOW_SECONDS cool the host (the one urllib3 names, not the
+    redirector in the URL). Cooling leaves the counter primed from the end of
+    the cooldown: a host still dead after 30 minutes is cooled again by its
+    first failure, not given two more jobs every half hour.
+    """
+    host = host_from_error(error) or host_from_url(url)
+    if not host:
+        return None
+    stamp = time.time() if now is None else float(now)
+    cooled = []
+
+    def count_fault(old):
+        first, count = stamp, 0
+        if old:
+            try:
+                old_first, old_count = old.split("|", 1)
+                if stamp - float(old_first) <= FAULT_WINDOW_SECONDS:
+                    first, count = float(old_first), int(old_count)
+            except (TypeError, ValueError):
+                pass
+        count += 1
+        if count < FAULTS_BEFORE_COOL:
+            return "%s|%d" % (first, count)
+        cooled.append(host)
+        return "%s|%d" % (stamp + COOL_SECONDS, FAULTS_BEFORE_COOL - 1)
+
+    runtime_kv.update_kv(
+        __enclosure_faults_key(host), count_fault, database=database)
+    if not cooled:
+        return None
+    __cool_host(host, now=stamp, database=database)
     return host
 
 

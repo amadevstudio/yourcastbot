@@ -124,6 +124,40 @@ def incr_kv(key, database=None):
         conn.close()
 
 
+def update_kv(key, change, database=None):
+    """Atomically replace a value with change(old); old is None if absent.
+
+    change returns the new value, or None to delete the key. Runs under
+    BEGIN IMMEDIATE, so rec workers in the bot and jobs processes cannot
+    read the same old value and lose one of their writes.
+    """
+    conn = _connect(database)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT value FROM bot_runtime_kv WHERE key = ?",
+                (str(key),),
+            ).fetchone()
+            value = change(row["value"] if row is not None else None)
+            if value is None:
+                conn.execute(
+                    "DELETE FROM bot_runtime_kv WHERE key = ?", (str(key),))
+            else:
+                conn.execute(
+                    "INSERT INTO bot_runtime_kv (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (str(key), str(value)),
+                )
+            conn.execute("COMMIT")
+            return value
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+
+
 def migrate_updater_state_from_shelve(
         shelve_path=None, database=None):
     """Copy updater cursor out of gdbm before children open anything.

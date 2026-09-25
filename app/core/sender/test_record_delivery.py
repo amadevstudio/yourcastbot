@@ -165,13 +165,16 @@ class FakeAgent:
 
 
 class FakeRequester:
-    def __init__(self, size_bytes, download_error=None, size_known=True):
+    def __init__(self, size_bytes, download_error=None, size_known=True, head_error=None):
         self.size = size_bytes
         self.download_error = download_error
+        self.head_error = head_error
         self.size_known = size_known
         self.downloads = 0
 
     def get_headers(self, link, **kwargs):
+        if self.head_error:
+            raise RuntimeError(self.head_error)
         if not self.size_known:
             return {'Content-Type': 'audio/mpeg'}
         return {'Content-Type': 'audio/mpeg', 'Content-Length': str(self.size)}
@@ -212,21 +215,22 @@ class World:
     def __init__(self, size_mb, url_error=None, download_error=None,
                  disk_free_mb=10_000, reserved_mb=0, with_outbox=False, flood_chat=None,
                  agent_unreachable_chat=None, bot_refuse_chat=None,
-                 blocked_chat=None, flood_once_chat=None, size_known=True, trust_rss=False):
+                 blocked_chat=None, flood_once_chat=None, size_known=True, trust_rss=False,
+                 head_error=None):
         self.tmp = tempfile.mkdtemp(prefix="yourcast_delivery_")
         os.makedirs(os.path.join(self.tmp, "records"))
         self.bot = FakeBot(url_error, flood_chat, bot_refuse_chat, blocked_chat, flood_once_chat)
         self.blocked_marked = []
         self.slept = []
         self.agent = FakeAgent(agent_unreachable_chat)
-        self.requester = FakeRequester(int(size_mb * MB), download_error, size_known)
+        self.requester = FakeRequester(int(size_mb * MB), download_error, size_known, head_error)
         self.budget = DiskBudget(self.tmp, min_free_bytes=0, disk_free=lambda: disk_free_mb * MB)
         if reserved_mb:
             self.budget.reserve(reserved_mb * MB)
         self.logger = FakeLogger()
         self.outbox = FakeOutbox() if with_outbox else real_outbox
         self.notices = []  # (chat_id, text) for too big / unavailable
-        self.cooled = []  # (link, error) passed to the enclosure cooldown
+        self.host_faults = []  # (link, error) counted toward cooling a host
 
         def notice(chat_id, structures, *args, **kwargs):
             self.notices.append((chat_id, structures[0]['text']))
@@ -237,7 +241,7 @@ class World:
             'disk_budget': self.budget, 'logger': self.logger, 'work_dir': self.tmp,
             'outbox': self.outbox, 'storageChatId': 42,
             'storage': _ns(enclosure_host_is_cool=lambda link: False,
-                           mark_enclosure_host_cool=self._cool_host,
+                           note_enclosure_host_fault=self._host_fault,
                            set_user_resend_flag=lambda chat_id: None),
             'telegram_cache': _ns(get_file_id=lambda link, kind: None,
                                   add_file_id=lambda *a, **k: None),
@@ -252,8 +256,8 @@ class World:
         for name, value in patches.items():
             setattr(srh, name, value)
 
-    def _cool_host(self, link, error=None, **kwargs):
-        self.cooled.append((link, error))
+    def _host_fault(self, link, error=None, **kwargs):
+        self.host_faults.append((link, error))
 
     def _blocked_reaction(self, error, chat_id):
         if "bot was blocked" in str(error):
@@ -383,9 +387,18 @@ def main():
                 "(Caused by ReadTimeoutError(Read timed out. (read timeout=15)))")
     world = World(size_mb=389, download_error=hung_cdn)
     world.sender().send_record()
-    _assert([host_from_error(error) for _, error in world.cooled]
+    _assert([host_from_error(error) for _, error in world.host_faults]
             == ['nbcnews.simplecastaudio.com'],
             "hung CDN: the cooldown is told the error, not just the link")
+    _assert(len(world.notices) == 3 and all('unavailable' in t.lower() or 'unavaliable' in t.lower()
+                                            for _, t in world.notices),
+            "hung CDN: one fault still ends the job with unavailable")
+
+    # HEAD and GET dying in the same job are one bad try, not two: counting
+    # both would cool the CDN on the very hiccup the threshold is there for.
+    world = World(size_mb=389, head_error=hung_cdn, download_error=hung_cdn)
+    world.sender().send_record()
+    _assert(len(world.host_faults) == 1, "HEAD + GET timeout in one job: one fault")
 
     # Podcasts added by a bare RSS link: never downloaded unless trusted.
     world = World(size_mb=389)

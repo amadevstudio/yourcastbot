@@ -8,8 +8,16 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote, urlparse, urlsplit
 
-# After N timeouts from the same host, skip downloads for this long.
+# After FAULTS_BEFORE_COOL timeouts from the same host, skip downloads for this long.
 COOL_SECONDS = 30 * 60
+
+# One timeout is often a hiccup: the NBC CDN missed a 15 s read once and
+# answered in 0.9 s a minute later, but the host sat cooled for 30 minutes and
+# the user's retaps were told "unavailable". A host is cooled only when it fails
+# again, in another job, within the window. The failing job itself is terminal
+# either way (audio_source_gone), so no MAX_ATTEMPTS are spent on it.
+FAULTS_BEFORE_COOL = 2
+FAULT_WINDOW_SECONDS = 10 * 60
 
 # An enclosure URL rarely points at the CDN: dts.podtrac.com, pdst.fm and
 # chrt.fm redirect (~13% of our links). Cooling the first host punishes every

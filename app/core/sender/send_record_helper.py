@@ -153,6 +153,7 @@ class Sender:
         self.outbox_attempts = outbox_attempts
         self._last_outbox_touch = None
         self._quota_charged = set()
+        self._host_fault_noted = False
 
         self.successfully_sent_to = []
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
@@ -213,10 +214,7 @@ class Sender:
                 self.__set_percent_step_dynamic()
         except Exception as e:
             log_caught(self.logger, error=e)
-            if enclosure_host_fault(e):
-                # The error names the CDN that hung; self.link is often just
-                # a redirector shared with unrelated podcasts.
-                storage.mark_enclosure_host_cool(self.link, error=e)
+            self._note_host_fault(e)
 
         self.__prepare_status_template()
 
@@ -668,8 +666,19 @@ class Sender:
         log_caught(self.logger, error=error)
         if audio_source_gone(error):
             self.__record_gone = True
-        if enclosure_host_fault(error):
-            storage.mark_enclosure_host_cool(self.link, error=error)
+        self._note_host_fault(error)
+
+    def _note_host_fault(self, error):
+        """Count a timeout/DNS fault toward cooling its host, once per job.
+
+        The error names the CDN that hung; self.link is often just a redirector
+        shared with unrelated podcasts. A HEAD and a GET failing in the same
+        job are one bad try: cooling waits for the host to fail another job.
+        """
+        if self._host_fault_noted or not enclosure_host_fault(error):
+            return
+        self._host_fault_noted = True
+        storage.note_enclosure_host_fault(self.link, error=error)
 
     def _upload_to_remaining(self):
         """Upload the file (or reuse a file_id) to every chat not reached yet.

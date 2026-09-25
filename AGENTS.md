@@ -98,8 +98,15 @@ Rules:
 - Hung HTTP on a rec worker must fail fast (timeouts, no long urllib3
   retry storms). A dead CDN must not hold a lease indefinitely.
 - **Dead enclosure** (timeout, DNS, Telegram could not fetch the URL) is
-  terminal: do not spend `MAX_ATTEMPTS` on it. Cool the host in
-  `bot_runtime_kv`, tell the user with site + file links.
+  terminal: do not spend `MAX_ATTEMPTS` on it. Tell the user with site +
+  file links.
+- **Host cooldown** (`bot_runtime_kv`, 30 min) is a separate rule. One
+  timeout/DNS fault only counts (once per job, HEAD + GET is one); the
+  second in another job within 10 min cools the host. One hiccup must not
+  refuse a CDN's podcasts for half an hour. Cool the host the error names
+  (`host='...'`), never the redirector in the URL (podtrac, pdst.fm);
+  the check covers hosts a tracker link carries in its path. Locks:
+  `python app/jobs/test_feed_health.py`, `python lib/net/test_enclosure.py`.
 - Expected Telegram outcomes (blocked user, 429, stale edit) are WARN,
   not ERR.
 - **Admin broadcasts** are `admin_mail_jobs` processed by a jobs-role
