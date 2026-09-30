@@ -147,6 +147,19 @@ Rules:
   thread. Do not dump mailings onto rec/circle/send workers. The admin
   HTTP API is a fourth supervisor role (`admin`) bound to localhost.
 
+## Diagnostics API
+
+`GET /api/diag/ping|audit|missed?tg=&hour=` (`app/admin_web/diag.py`) serve
+the missed-episode reports for agents without server access. Rules:
+
+- Own token `diagToken` in `constants.py` (>= 32 chars, `Authorization:
+  Bearer`). Unset or short: 404. It never opens admin endpoints, and the
+  admin cookie never opens diag.
+- Read-only: GET only, the DB is opened `mode=ro`. Do not add actions
+  (resend, edit, mail) behind this token; those belong to the admin login.
+- Locks: `python app/admin_web/test_diag.py` (CD gate),
+  `python app/admin_web/test_admin_web.py`.
+
 ## Tests
 
 Run the smallest existing suite that covers the change (for send jobs:

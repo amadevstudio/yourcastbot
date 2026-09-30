@@ -13,6 +13,7 @@ creatorId = 0
 botId = 0
 storageChatId = 0
 trustRssPodcasts = False
+diagToken = ''  # read-only /api/diag token; empty = off
 
 donate_link = 'https://example.invalid/donate'
 advertising_contact = '@example'

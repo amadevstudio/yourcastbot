@@ -284,6 +284,61 @@ def test_http(path):
         config.server = original_server
 
 
+def test_diag_http(path):
+    """/api/diag/*: its own read-only token, never the admin cookie."""
+    original = config.db_path
+    original_token = getattr(config, "diag_token", None)
+    token = "d" * 40
+    config.db_path = path
+    auth._login_attempts.clear()
+    db = SQLighter(path)
+    try:  # cursor columns the prod schema has and this fixture skipped
+        for table in ("user_channel_cs", "channels"):
+            for column in ("last_guid", "last_date"):
+                db.connection.execute(
+                    "ALTER TABLE %s ADD COLUMN %s TEXT" % (table, column))
+        db.connection.commit()
+    finally:
+        db.close()
+    try:
+        client = TestClient(app)
+        config.diag_token = None
+        _assert_eq(client.get("/api/diag/ping").status_code, 404, "diag off without a token")
+        config.diag_token = "short"
+        _assert_eq(
+            client.get("/api/diag/ping", headers={"Authorization": "Bearer short"}).status_code,
+            404, "diag off with a short token")
+        config.diag_token = token
+        _assert_eq(client.get("/api/diag/ping").status_code, 401, "no header")
+        _assert_eq(
+            client.get("/api/diag/ping", headers={"Authorization": "Bearer " + "x" * 40}).status_code,
+            401, "wrong token")
+        client.post("/api/login", json={"mail": "ops@yourcast.test", "password": "secret"})
+        _assert_eq(client.get("/api/diag/audit").status_code, 401,
+                   "admin session does not open diag")
+        bearer = {"Authorization": "Bearer " + token}
+        _assert_eq(TestClient(app).get("/api/stats", headers=bearer).status_code, 401,
+                   "diag token does not open admin endpoints")
+        ping = client.get("/api/diag/ping", headers=bearer)
+        _assert_eq((ping.status_code, ping.text), (200, "ok\n"), "ping")
+        audit = client.get("/api/diag/audit", headers=bearer)
+        _assert_eq(audit.status_code, 200, "audit")
+        _assert_eq("== Paying users" in audit.text, True, "audit is the report text")
+        missed = client.get("/api/diag/missed", params={"tg": 1001, "hour": "2026-09-30 08"},
+                            headers=bearer)
+        _assert_eq(missed.status_code, 200, "missed report")
+        _assert_eq("== Verdict for 2026-09-30 08:00:00" in missed.text, True, "hour honoured")
+        _assert_eq(
+            client.get("/api/diag/missed", params={"tg": 1001, "hour": "yesterday"},
+                       headers=bearer).status_code, 400, "bad hour")
+        _assert_eq(client.post("/api/diag/audit", headers=bearer).status_code, 405,
+                   "diag is GET only")
+    finally:
+        config.db_path = original
+        config.diag_token = original_token
+        auth._login_attempts.clear()
+
+
 def test_payment_scripts_no_debug_side_effects():
     root = _ROOT
     crypto = open(
@@ -326,6 +381,7 @@ def main():
     _prepare(path)
     test_queries_and_mailer(path)
     test_http(path)
+    test_diag_http(path)
     print("all admin_web checks passed")
 
 

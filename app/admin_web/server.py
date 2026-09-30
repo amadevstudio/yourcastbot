@@ -10,12 +10,12 @@ from urllib.parse import urlparse
 from fastapi import (
     APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, Response,
     UploadFile)
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
-from app.admin_web import auth, mail_jobs, queries
+from app.admin_web import auth, diag, mail_jobs, queries
 from lib.tools.logger import logger
 
 ADMIN_HOST = "127.0.0.1"
@@ -97,9 +97,57 @@ def current_admin(request: Request) -> dict:
     return payload
 
 
+def diag_access(request: Request) -> None:
+    """Read-only reports by a separate token, never the admin session.
+
+    The token (constants.diagToken) opens only GET /api/diag/*: no tariffs,
+    no mailings. Unset: 404. Wrong tokens share the login rate limit.
+    """
+    configured = getattr(config, "diag_token", None)
+    if not diag.enabled(configured):
+        raise HTTPException(status_code=404, detail="not found")
+    ip = _client_ip(request)
+    key = "diag:" + ip
+    if not auth.login_allowed(key):
+        raise HTTPException(status_code=429, detail="too many attempts")
+    if not diag.token_ok(request.headers.get("authorization"), configured):
+        auth.register_login_failure(key)
+        raise HTTPException(status_code=401, detail="bad token")
+    logger.log("admin diag", request.url.path, "ip", ip)
+
+
+def _diag_text(run, *args, **kwargs) -> PlainTextResponse:
+    conn = diag.connect_ro()
+    try:
+        return PlainTextResponse(diag.as_text(run, conn, *args, **kwargs))
+    finally:
+        conn.close()
+
+
 @api.get("/health")
 def health():
     return {"ok": True}
+
+
+@api.get("/diag/ping")
+def diag_ping(_access: None = Depends(diag_access)):
+    return PlainTextResponse("ok\n")
+
+
+@api.get("/diag/audit")
+def diag_audit(_access: None = Depends(diag_access)):
+    return _diag_text(diag.audit)
+
+
+@api.get("/diag/missed")
+def diag_missed(
+        tg: int, hour: Optional[str] = None,
+        _access: None = Depends(diag_access)):
+    try:
+        start = diag.parse_hour(hour) if hour else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="hour: YYYY-MM-DD HH")
+    return _diag_text(diag.report, tg, hour=start)
 
 
 @api.post("/login")

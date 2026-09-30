@@ -9,6 +9,7 @@ creatorId = int
 botId = int
 storageChatId = int  # private chat/channel where bot is admin, used to obtain Bot API file_id after Telethon uploads (falls back to creatorId if not set)
 trustRssPodcasts = Bool  # optional, default False: download big episodes of podcasts added by RSS link (not in iTunes)
+diagToken = 'str'  # optional: read-only token for GET /api/diag/* (>= 32 chars; unset = endpoints off)
 
 transmitterBotToken = 'str'
 
