@@ -116,10 +116,15 @@ paying user read as free (see Tariff clock).
   (early return: all current, or no items), refetching again only costs a
   download and 6 s per circle. Without the guard channels 21 and 1899
   refetched every circle.
-- A cursor `__` (the feed parsed to no items when it was saved) gets a
-  quiet start: the first real parse moves it to the newest episode
-  without sending or reminding. A real, older cursor catches up as usual
-  (at most 4 episodes). A channel whose latest is `__` reminds nobody.
+- A cursor `__` (the feed parsed to no items when it was saved) reads as
+  the channel's stored latest when that is real (as `add_sub` would set
+  it): the next episode is delivered. Only when the channel's latest is
+  also `__` (first parse of a fixed feed) it gets a quiet start: moved to
+  the newest episode without sending or reminding, and the cursor sync
+  runs even when nothing was sent (else it stays `__` and every later
+  episode is "quiet": payers never get files). A real, older cursor
+  catches up as usual (at most 4 episodes). A channel whose latest is
+  `__` reminds nobody.
 - A free listener is reminded of a later episode, not of a different id
   (`nosub_users_behind` with dates): the same episode's id changes when
   the host re-renders its pubDate (`+0300` vs `GMT`) or edits a title, and

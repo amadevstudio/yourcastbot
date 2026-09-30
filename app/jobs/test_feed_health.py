@@ -220,6 +220,14 @@ def test_paid_targets_behind(_db_path):
         [], "no channel latest: trust the 304")
     _assert_eq(
         feed_health.paid_targets_behind(channel, []), [], "no paid targets")
+    _assert_eq(
+        feed_health.paid_targets_behind(channel, [
+            {'user_telegram_id': 5, 'last_guid': '__', 'last_date': '2026-09-01'}]),
+        [], "empty cursor counts as at the channel's latest, not behind")
+    _assert_eq(
+        [c['user_telegram_id'] for c in feed_health.paid_targets_behind(
+            {'last_guid': '__', 'last_date': '2026-09-30'}, [behind])],
+        [2], "channel still empty: a real cursor still triggers the one refetch")
 
 
 def test_refetch_once_per_version(db_path):

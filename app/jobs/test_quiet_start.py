@@ -38,6 +38,13 @@ def main():
     send = ast.dump(_function(tree, "send_new_records_by_channel"))
     _assert_eq("quiet_start" in send and "is_empty_cursor" in send, True,
                "the circle drops empty cursors from the recipients")
+    send_fn = _function(tree, "send_new_records_by_channel")
+    sync_ifs = [node for node in ast.walk(send_fn) if isinstance(node, ast.If)
+                and "guids" in ast.dump(node.test) and "quiet_start" in ast.dump(node.test)]
+    _assert_eq(len(sync_ifs) >= 1, True,
+               "cursor sync runs for quiet chats even when nothing was sent")
+    _assert_eq("channel_latest_guid" in send, True,
+               "an empty cursor on a channel with a real latest reads as that latest")
     flag = _function(tree, "flag_nosubs_for_digest")
     first = flag.body[0]
     _assert_eq(isinstance(first, ast.If) and "is_empty_cursor" in ast.dump(first.test)

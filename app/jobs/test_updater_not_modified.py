@@ -308,6 +308,42 @@ def main():
         _assert_eq(digest_outbox.get_row(FREE_C, database=config.db_path) is not None, True,
                    "and the free listener is reminded as usual")
 
+        # Every payer empty: nobody is left to send to, links.pop() empties
+        # guids, and the end-of-parse sync used to be skipped: the cursors stayed
+        # "__" and every later episode was "quiet" too (payers never got files).
+        FEED["version"] = 2
+        _setup(feed_url)
+        runtime_kv.delete_kv("feed_refetch_%s" % CHANNEL_ID, database=config.db_path)
+        conn = connect_sqlite(config.db_path)
+        conn.execute("UPDATE channels SET last_guid = '__' WHERE id = ?", (CHANNEL_ID,))
+        conn.execute("UPDATE user_channel_cs SET last_guid = '__'")
+        conn.commit()
+        conn.close()
+        sent, requests = _circle()
+        _assert_eq(sent, [], "all payers empty: nothing sent on the first parse")
+        _assert_eq((_cursor(PAYER_A), _cursor(PAYER_B)), (_pgd(2), _pgd(2)),
+                   "all payers empty: cursors still moved to the newest")
+        FEED["version"] = 3
+        sent, requests = _circle()
+        _assert_eq(sent, [("Wednesday", [PAYER_A, PAYER_B])],
+                   "all payers empty: the next episode is delivered")
+
+        # A payer stuck at "__" while the channel already has a real latest
+        # (left by the bug above, or subscribed while the feed was broken):
+        # it has seen the channel's latest, and gets the next episode.
+        FEED["version"] = 2
+        _setup(feed_url)
+        runtime_kv.delete_kv("feed_refetch_%s" % CHANNEL_ID, database=config.db_path)
+        conn = connect_sqlite(config.db_path)
+        conn.execute("UPDATE user_channel_cs SET last_guid = '__' WHERE user_telegram_id = ?",
+                     (PAYER_A,))
+        conn.commit()
+        conn.close()
+        sent, requests = _circle()
+        _assert_eq(sent, [("Tuesday", [PAYER_A, PAYER_B])],
+                   "stuck empty cursor, real channel latest: the next episode is sent")
+        _assert_eq(_cursor(PAYER_A), _pgd(2), "and its cursor is real again")
+
         # A channel still parsing to nothing ("__" latest) must not remind
         # free listeners with a real cursor, nor overwrite it with "__".
         conn = connect_sqlite(config.db_path)
@@ -315,10 +351,11 @@ def main():
         conn.execute("DELETE FROM digest_outbox WHERE user_telegram_id = ?", (FREE_C,))
         conn.commit()
         conn.close()
+        before = _cursor(FREE_C)
         updater.flag_nosubs_for_digest({FREE_C: _pgd(3)}, "__", "x", CHANNEL_ID)
         _assert_eq(digest_outbox.get_row(FREE_C, database=config.db_path), None,
                    "empty channel latest: no reminder")
-        _assert_eq(_cursor(FREE_C), _pgd(3), "empty channel latest: cursor kept")
+        _assert_eq(_cursor(FREE_C), before, "empty channel latest: cursor kept")
         FEED["script"] = False
 
         # Same episode, new id: the host re-renders Tuesday's pubDate as GMT

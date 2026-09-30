@@ -79,9 +79,12 @@ def paid_targets_behind(channel, target_connections) -> list:
         return []
     if _missing(latest_guid):
         return []
+    # An empty cursor ("__": saved while the feed parsed to nothing) counts as
+    # having seen the channel's latest (podcastsUpdater treats it so), not behind.
     return [
         connection for connection in (target_connections or [])
-        if connection['last_guid'] != latest_guid
+        if not _missing(connection['last_guid']) and connection['last_guid'] != "__"
+        and connection['last_guid'] != latest_guid
         and connection['last_date'] != latest_date]
 
 

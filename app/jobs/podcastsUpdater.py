@@ -386,8 +386,21 @@ def send_new_records_by_channel(
     last_saved_guids_map: dict[str, list[int]] = {}  # guid -> [chat_id]
     last_saved_dates_map: dict[str, list[int]] = {}  # date -> [chat_id]
     target_users_tg_set: dict[int, ChatParamsType] = {}  # chat_id ->
+    try:
+        channel_latest_guid = channel['last_guid']
+    except (KeyError, IndexError, TypeError):
+        channel_latest_guid = None
+    channel_latest_date = _channel_last_date(channel)
     # Core logic!
     for connection in all_target_connections:
+        # Пустой курсор ("__") при известном последнем выпуске канала — «видел то,
+        # что было у канала в прошлый раз», как при подписке (add_sub ставит так
+        # же): следующий выпуск он получит. «Тихий старт» (ниже) — только когда
+        # и у канала последнего выпуска ещё нет: первый разбор починенного фида.
+        cursor_guid, cursor_date = connection['last_guid'], connection['last_date']
+        if is_empty_cursor(cursor_guid) and not is_empty_cursor(channel_latest_guid) \
+                and channel_latest_date:
+            cursor_guid, cursor_date = channel_latest_guid, channel_latest_date
         # продолжаем, если хотя бы у одного дата отличается
         # flag = flag and (lastDate == connection['last_date'])
         # но itunes иногда отдаёт неправильные даты
@@ -409,19 +422,20 @@ def send_new_records_by_channel(
                 DescriptionModeOptions, 'none')
 
         # для данного последнего guid создаём массив с пользователями
-        if connection['last_guid'] not in last_saved_guids_map:
-            last_saved_guids_map[connection['last_guid']] = []
+        if cursor_guid not in last_saved_guids_map:
+            last_saved_guids_map[cursor_guid] = []
         # то же для даты
-        if connection['last_date'] \
-                and connection['last_date'] not in last_saved_dates_map:
-            last_saved_dates_map[connection['last_date']] = []
+        if cursor_date \
+                and cursor_date not in last_saved_dates_map:
+            last_saved_dates_map[cursor_date] = []
 
         # и добавляем туда текущего юзера (там уже могут быть другие)
-        last_saved_guids_map[connection['last_guid']].append(
+        last_saved_guids_map[cursor_guid].append(
             connection['user_telegram_id'])
-        # то же для даты
-        last_saved_dates_map[connection['last_date']].append(
-            connection['user_telegram_id'])
+        # то же для даты (курсор без даты раньше ронял весь канал KeyError)
+        if cursor_date:
+            last_saved_dates_map[cursor_date].append(
+                connection['user_telegram_id'])
 
         if connection['notify_count'] is None:
             notify_left_tg[connection['user_telegram_id']] = 0
@@ -448,6 +462,7 @@ def send_new_records_by_channel(
     # ставит его на последний выпуск (синхронизация target_chats в конце),
     # ничего не отправляя: иначе починка фида разом шлёт до 4 старых выпусков.
     # Ручное «обновить» работает как обычно.
+    quiet_start = set()
     if not manual:
         quiet_start = {
             utg for guid, users in last_saved_guids_map.items()
@@ -753,11 +768,14 @@ def send_new_records_by_channel(
         db_users=db_users, cursor_dates=nosub_cursor_dates,
         latest_at=_when(newest_pub_date))
 
-    # обновление данных о последнем выпуске для пользователей
-    if len(guids) > 0:
+    # обновление данных о последнем выпуске для пользователей.
+    # guids пуст, когда слать было некому (links.pop() выше); курсоры «тихого
+    # старта» всё равно ставим на последний выпуск, иначе они навсегда "__":
+    # каждый новый выпуск снова «тихий», и платные ничего не получают.
+    if len(guids) > 0 or quiet_start:
 
         # для пользователей с подпиской
-        if len(guids) > 0:
+        if len(guids) > 0 or quiet_start:
             for user_tg_id in target_chats:
 
                 # если канал, то обновить владельца, если его уже нет в общем списке
