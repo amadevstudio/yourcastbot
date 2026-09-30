@@ -4,9 +4,17 @@
 Run on the server from the repo root:
 
     venv/bin/python tools/debugging_utilities/missed_episodes.py <telegram_id> [YYYY-MM-DD HH]
+    venv/bin/python tools/debugging_utilities/missed_episodes.py --audit
 
 The hour is server-local, like the logs. Without it the hour of the chat's
 last nosub digest is used (users.nosub_digest_sent_at is UTC).
+
+--audit lists paying users whose current period began since LOSSY_SINCE:
+until 3c52606 every renewal left them an hour at time_left = 0, and since
+7830e35 a nosub flag in that hour moves the cursor past the new episode.
+A flag in the hours before the period start is the gap; a payment that
+day means they probably bought after the digest (they were free: by
+design). Traces expire: logs after 3 days, outbox and flags after 7.
 
 An episode is reported missed when a circle job for one of the chat's
 podcasts was queued in that hour for other listeners, and neither that
@@ -27,6 +35,9 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 import config  # noqa: E402
+
+LOSSY_SINCE = datetime.datetime(2026, 9, 3)  # 7830e35: the nosub flag moves the cursor
+OUTBOX_KEEP = datetime.timedelta(days=7)
 
 LOG_ENTRY = re.compile(r"^\[(\d\d:\d\d:\d\d \d\d\.\d\d\.\d\d\d\d)\] ")
 CHANNEL_IN_LOG = re.compile(
@@ -98,7 +109,109 @@ def log_entries(start, end):
         day += datetime.timedelta(days=1)
 
 
+def load_jobs(conn, tg, channel_ids, since_utc):
+    """rec jobs of this chat and circle jobs of these podcasts, oldest first."""
+    circle_users = ["c%s" % cid for cid in channel_ids]
+    return conn.execute(
+        "SELECT id, created_at, action, user_id, payload_json, status FROM send_outbox "
+        "WHERE created_at >= ? AND ((action = 'rec' AND user_id = ?) OR "
+        "(action = 'circle' AND user_id IN (%s))) ORDER BY id" % ",".join("?" * len(circle_users)),
+        [since_utc, str(tg)] + circle_users).fetchall()
+
+
+def chat_got(job, tg):
+    return (job["action"] == "rec") or (str(tg) in payload_info(job)[1])
+
+
+def missed_in(jobs, tg, start, end):
+    """Circle jobs queued in [start, end) that no job ever gave this chat."""
+    delivered = {
+        payload_info(job)[0].get("recordUniqId") for job in jobs
+        if chat_got(job, tg) and job["status"] != "failed"}
+    missed = []
+    for job in jobs:
+        info = payload_info(job)[0]
+        created = utc_to_local(job["created_at"])
+        if job["action"] == "circle" and created is not None and start <= created < end \
+                and not chat_got(job, tg) and info.get("recordUniqId") not in delivered:
+            missed.append((job, info))
+    return missed, delivered
+
+
+def paid_on(conn, user_id, tg, day):
+    """True if payment_history has a row for this user dated that day."""
+    rows = conn.execute(
+        "SELECT datetime FROM payment_history WHERE user_id IN (?, ?)",
+        (str(user_id), str(tg))).fetchall()
+    for row in rows:
+        text = str(row["datetime"] or "")
+        try:
+            stamp = datetime.datetime.fromtimestamp(float(text))
+        except ValueError:
+            stamp = utc_to_local(text[:19])
+        if stamp is not None and stamp.date() == day:
+            return True
+    return False
+
+
+def audit(conn):
+    now = datetime.datetime.now()
+    tick = now.replace(minute=0, second=0, microsecond=0)
+    rows = conn.execute(
+        "SELECT u.id, u.telegramId, u.nosub_digest_sent_at AS sent, utc.time_left, "
+        "d.created_at AS flagged FROM user_tariff_cs utc "
+        "INNER JOIN users u ON u.id = utc.uid "
+        "LEFT JOIN digest_outbox d ON d.user_telegram_id = u.telegramId "
+        "WHERE utc.tariff_id > 0 AND utc.time_left > 0 AND u.deleted_at IS NULL "
+        "ORDER BY utc.time_left DESC").fetchall()
+    print("== Paying users whose period began since %s (server-local, +-1h)" % LOSSY_SINCE.date())
+    counts = {}
+    for row in rows:
+        # old tick: renew 0 -> period, then -1; so time_left = period - 1 - hours since
+        started = tick - datetime.timedelta(hours=config.tariff_period - 1 - row["time_left"])
+        if started < LOSSY_SINCE:
+            continue
+        tg = row["telegramId"]
+        marks = [t for t in (utc_to_local(row["flagged"]), utc_to_local(row["sent"])) if t]
+        near = sorted(t for t in marks
+                      if started - datetime.timedelta(hours=3) <= t < started + datetime.timedelta(hours=1))
+        if near and paid_on(conn, row["id"], tg, started.date()):
+            verdict = "flag, then a payment that day: probably bought after the digest"
+        elif near:
+            verdict = "GAP: flagged in the hour before renewal"
+        elif now - started < OUTBOX_KEEP:
+            verdict = "clean: no flag around renewal"
+        else:
+            verdict = "unknown: traces older than 7 days are purged"
+        counts[verdict.split(":")[0]] = counts.get(verdict.split(":")[0], 0) + 1
+        print("  %s  period from ~%s  flags %s  %s" % (
+            tg, started.strftime("%Y-%m-%d %H:00"),
+            [t.strftime("%m-%d %H:%M") for t in marks], verdict))
+        if verdict.startswith("GAP"):
+            start = near[0].replace(minute=0, second=0)
+            names = {r["channel_id"]: r["name"] for r in conn.execute(
+                "SELECT ucc.channel_id, c.name FROM user_channel_cs ucc "
+                "INNER JOIN channels c ON c.id = ucc.channel_id "
+                "WHERE ucc.user_telegram_id = ?", (str(tg),)).fetchall()}
+            if now - start > OUTBOX_KEEP:
+                print("      outbox for that hour is purged; episodes unknown")
+                continue
+            jobs = load_jobs(conn, tg, names, local_to_utc_text(start - datetime.timedelta(days=2)))
+            missed, _ = missed_in(jobs, tg, start, start + datetime.timedelta(hours=1, minutes=1))
+            for _job, info in missed:
+                print("      MISSED: #%s %s | %s | %s" % (
+                    info.get("id"), names.get(info.get("id"), ""), info.get("title"),
+                    info.get("pubDate")))
+            if not missed:
+                print("      no other payer got an episode then; run the per-chat report "
+                      "(logs keep 3 days)")
+    print("  totals: %s" % counts)
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--audit":
+        audit(connect_ro(config.db_path))
+        return
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(2)
@@ -182,38 +295,23 @@ def main():
         previous_matched = bool(ids)
 
     since = local_to_utc_text(start - datetime.timedelta(days=2))
-    circle_users = ["c%s" % cid for cid in names]
-    jobs = conn.execute(
-        "SELECT id, created_at, action, user_id, payload_json, status FROM send_outbox "
-        "WHERE created_at >= ? AND ((action = 'rec' AND user_id = ?) OR "
-        "(action = 'circle' AND user_id IN (%s))) ORDER BY id" % ",".join("?" * len(circle_users)),
-        [since, str(tg)] + circle_users).fetchall()
-
-    delivered = {}
-    for job in jobs:
-        info, chats = payload_info(job)
-        got = (job["action"] == "rec") or (str(tg) in chats)
-        if got and job["status"] != "failed":
-            delivered[info.get("recordUniqId")] = job
+    jobs = load_jobs(conn, tg, names, since)
+    missed, delivered = missed_in(jobs, tg, start, end)
 
     print("\n== send_outbox for these podcasts since %s UTC" % since)
-    missed = []
     queued_in_hour = set()
     for job in jobs:
         info, chats = payload_info(job)
         created = utc_to_local(job["created_at"])
-        uid = info.get("recordUniqId")
-        got = (job["action"] == "rec") or (str(tg) in chats)
-        in_hour = created is not None and start <= created < end
-        if in_hour and job["action"] == "circle":
+        got = chat_got(job, tg)
+        if job["action"] == "circle" and created is not None and start <= created < end:
             queued_in_hour.add(info.get("id"))
-        mark = "got it" if got else ("got it by another job" if uid in delivered else "NOT this chat")
+        mark = "got it" if got else (
+            "got it by another job" if info.get("recordUniqId") in delivered else "NOT this chat")
         print("  %s  %-6s %-7s #%s %s | %s | %s | %d chats | %s" % (
             created, job["action"], job["status"], info.get("id"),
             names.get(info.get("id"), ""), info.get("title"), info.get("pubDate"),
             len(chats), mark))
-        if in_hour and not got and uid not in delivered:
-            missed.append((job, info))
 
     print("\n== Verdict for %s .. %s" % (start, end))
     if missed:
@@ -225,8 +323,7 @@ def main():
     else:
         print("  no circle job in that hour skipped this chat")
     for cid in sorted(processed - queued_in_hour):
-        last = [j for j in jobs if payload_info(j)[0].get("id") == cid
-                and ((j["action"] == "rec") or str(tg) in payload_info(j)[1])]
+        last = [j for j in jobs if payload_info(j)[0].get("id") == cid and chat_got(j, tg)]
         last_uid = payload_info(last[-1])[0].get("recordUniqId") if last else None
         channel_latest = next(s["ch_guid"] for s in subs if s["channel_id"] == cid)
         print("  processed, no circle job: #%s %s\n      podcast latest:    %s\n"
