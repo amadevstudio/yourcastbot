@@ -124,6 +124,68 @@ def test_deleted_user_is_not_due():
         "deleted user skipped")
 
 
+def test_paid_user_is_skipped_at_send(db_path):
+    """Tariff is read at send time: queued while free, paid since, no nudge."""
+    _fresh(db_path)
+    from app.jobs import digest_watcher
+    db = SQLighter(db_path)
+    try:
+        db.connection.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegramId INTEGER NOT NULL UNIQUE,
+                lang char(15),
+                deleted_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS user_tariff_cs (
+                id INTEGER PRIMARY KEY,
+                uid INTEGER NOT NULL,
+                tariff_id INTEGER NOT NULL,
+                balance INTEGER,
+                notify_count INTEGER,
+                time_left INTEGER
+            );
+        """)
+        db.connection.execute(
+            "INSERT INTO users (telegramId, lang) VALUES (5005, 'en')")
+        db.connection.execute(
+            "INSERT INTO user_tariff_cs "
+            "(uid, tariff_id, balance, notify_count, time_left) "
+            "VALUES (1, 3, 30000, -1, 720)")
+        db.connection.commit()
+    finally:
+        db.close()
+    _fresh(db_path)  # next SQLighter adds nosub_digest_* to the new users table
+    db = SQLighter(db_path)
+    try:
+        db.mark_nosub_digest_sent(5005, when="2000-01-01 00:00:00")
+    finally:
+        db.close()
+
+    sent = []
+    real_sender = digest_watcher.outer_sender
+    digest_watcher.outer_sender = \
+        lambda chat_id, messages, **_kwargs: sent.append(chat_id) or True
+    try:
+        _assert_eq(
+            digest_watcher.send_digest_to_user(5005, database=db_path),
+            False, "paying user skipped")
+        _assert_eq(sent, [], "no 'without Relay' message to a payer")
+
+        db = SQLighter(db_path)
+        try:
+            db.connection.execute("UPDATE user_tariff_cs SET time_left = 0")
+            db.connection.commit()
+        finally:
+            db.close()
+        _assert_eq(
+            digest_watcher.send_digest_to_user(5005, database=db_path),
+            True, "expired user gets the digest")
+        _assert_eq(sent, [5005], "digest sent once")
+    finally:
+        digest_watcher.outer_sender = real_sender
+
+
 def test_storage_flag_enqueues(db_path):
     _fresh(db_path)
     digest_outbox.enqueue(4004, database=db_path)
@@ -331,6 +393,7 @@ def main():
         test_enqueue_does_not_reset_leased,
         test_migrate_from_kv_json_array,
         test_storage_flag_enqueues,
+        test_paid_user_is_skipped_at_send,
         test_sqlighter_creates_digest_outbox,
         test_old_two_column_table_gains_lease,
         test_parallel_ensure_on_legacy_table,

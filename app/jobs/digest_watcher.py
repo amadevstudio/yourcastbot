@@ -27,7 +27,9 @@ def send_digest_to_user(user_tg_id, database=None):
     db_users = SQLighter(db_path if database is None else database)
     try:
         user = db_users.get_user_by_tg(user_tg_id)
-        if not should_send_nosub_digest(user):
+        if not should_send_nosub_digest(
+                user,
+                has_tariff=db_users.is_user_have_bot_subscription(user_tg_id)):
             return False
         user_language = app.service.user.language.user_language(user['lang'])
         sent = outer_sender(user['telegramId'], [{

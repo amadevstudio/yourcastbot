@@ -1718,7 +1718,7 @@ class SQLighter:
                 FROM user_tariff_cs utc
                 INNER JOIN tariffs t ON t.id = utc.tariff_id
                 INNER JOIN users u ON u.id = utc.uid
-                WHERE utc.balance >= t.price AND utc.time_left = 0
+                WHERE utc.balance >= t.price AND utc.time_left <= 1
                     AND u.deleted_at IS NULL
                 ORDER BY u.lang
             """
@@ -1758,6 +1758,9 @@ class SQLighter:
         # которые ему всё равно не отправляются, нельзя. Тот же фильтр стоит в
         # get_users_who_can_be_prolonged, и условия обязаны совпадать — иначе
         # деньги списываются, а уведомление о списании не уходит.
+        # Продлеваем на последнем часе (time_left <= 1), до decrease_all_time_left:
+        # при time_left = 0 все проверки тарифа считают пользователя бесплатным,
+        # и до следующего тика он получал дайджест «без Relay» вместо выпуска.
         with self.connection:
             sql = """
                 UPDATE user_tariff_cs
@@ -1771,7 +1774,7 @@ class SQLighter:
                 WHERE balance >= (
                     SELECT price FROM tariffs
                     WHERE tariffs.id = user_tariff_cs.tariff_id
-                ) AND time_left = 0
+                ) AND time_left <= 1
                     AND NOT EXISTS (
                         SELECT 1 FROM users u
                         WHERE u.id = user_tariff_cs.uid

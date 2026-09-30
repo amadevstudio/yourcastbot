@@ -44,6 +44,19 @@ remove plan management or hide Bronze/Silver.
 - Do not write a test that a live SKU or the picker is gone. The lock
   is `python app/service/payment/test_storefront.py`.
 
+## Tariff clock
+
+`balance_watcher` ticks hourly through `run_tariff_tick`
+(`app/jobs/tariff_tick.py`). A user whose balance covers the next period
+never sits at `time_left = 0`: every tariff check reads 0 as "no tariff",
+so for that hour the updater lists them as nosub, sends the "without
+Relay" digest and moves their `last_guid` past the episode. Renew on the
+last hour (`time_left <= 1`, the same condition in `prolong_users` and
+`get_users_who_can_be_prolonged`), before the countdown. The digest
+re-reads the tariff when it sends, not when it was queued.
+Locks: `python app/jobs/test_tariff_tick.py`,
+`python app/jobs/test_digest_outbox.py`.
+
 ## Episode delivery
 
 Decided by file size and podcast source (`app/service/record/delivery.py`),

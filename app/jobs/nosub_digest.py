@@ -67,8 +67,12 @@ def digest_is_due(sent_at, now=None, cooldown=DIGEST_COOLDOWN) -> bool:
     return now - parsed >= cooldown
 
 
-def should_send_nosub_digest(user, now=None) -> bool:
+def should_send_nosub_digest(user, now=None, has_tariff=False) -> bool:
+    """has_tariff is read when the row is sent, not when it was queued:
+    a user who paid in between must not get the 'without Relay' nudge."""
     if user is None:
+        return False
+    if has_tariff:
         return False
     if _user_field(user, "deleted_at") is not None:
         return False
