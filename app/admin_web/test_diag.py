@@ -244,6 +244,21 @@ def test_refetches(path, work_dir):
     _assert_in("totals: 2 channels, 3 refetches", text, "totals")
 
 
+def test_digest_stats(path):
+    conn = diag.connect_ro(path)
+    try:
+        text = diag.as_text(diag.digest_stats, conn, hours=6, now=NOW)
+    finally:
+        conn.close()
+    # 42 was sent at 05:06 UTC; 7007's stamp is its registration (12:30 UTC 29.09)
+    _assert_in("sent (users.nosub_digest_sent_at, registrations excluded): 1", text,
+               "sends counted, registration stamps are not")
+    _assert_in("queued (digest_outbox by status): {'done': 1}", text,
+               "queued rows in the window by status")
+    _assert_in("Empty cursors (\"__\") with notifications left: 0 on 0 channels", text,
+               "no empty cursors in the fixture")
+
+
 def main():
     work_dir = tempfile.mkdtemp(prefix="yourcast_diag_")
     path = _prepare(work_dir)
@@ -253,6 +268,7 @@ def main():
     test_report(path, work_dir)
     test_audit(path, work_dir)
     test_refetches(path, work_dir)
+    test_digest_stats(path)
     print("all diag checks passed")
 
 

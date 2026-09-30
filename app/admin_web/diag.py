@@ -454,6 +454,39 @@ def _local(node):
     return etree.QName(node).localname if isinstance(node.tag, str) else None
 
 
+def digest_stats(conn, out=print, hours=6, now=None):
+    """Nosub digests queued/sent in the last hours, and empty cursors left.
+
+    A wave of "new episodes are out" shows here first. Registration writes
+    nosub_digest_sent_at too; those rows (equal to created_at) are not sends.
+    """
+    now = datetime.datetime.now() if now is None else now
+    since = local_to_utc_text(now - datetime.timedelta(hours=hours))
+    since_sql = since.replace("T", " ").rstrip("Z")
+    out("== Nosub digests, last %dh (since %s UTC)" % (hours, since))
+    try:
+        rows = conn.execute(
+            "SELECT status, count(*) AS n FROM digest_outbox WHERE created_at >= ? "
+            "GROUP BY status", (since,)).fetchall()
+        out("  queued (digest_outbox by status): %s" % {r["status"]: r["n"] for r in rows})
+    except sqlite3.OperationalError as e:
+        out("  digest_outbox: %s" % e)
+    sent = conn.execute(
+        "SELECT count(*) FROM users WHERE nosub_digest_sent_at >= ? "
+        "AND (created_at IS NULL OR nosub_digest_sent_at != created_at)",
+        (since_sql,)).fetchone()[0]
+    out("  sent (users.nosub_digest_sent_at, registrations excluded): %d" % sent)
+    rows = conn.execute(
+        "SELECT ucc.channel_id, c.name, count(*) AS n FROM user_channel_cs ucc "
+        "INNER JOIN channels c ON c.id = ucc.channel_id WHERE ucc.notify = 1 "
+        "AND (ucc.last_guid IS NULL OR ucc.last_guid IN ('__', '', 'None')) "
+        "GROUP BY ucc.channel_id ORDER BY n DESC").fetchall()
+    out("\n== Empty cursors (\"__\") with notifications left: %d on %d channels" % (
+        sum(r["n"] for r in rows), len(rows)))
+    for r in rows[:10]:
+        out("  #%s %s: %d" % (r["channel_id"], r["name"], r["n"]))
+
+
 def _describe_feed(url, get, out):
     """GET url as the updater does (no validators) and show what it parses."""
     from lxml import etree
