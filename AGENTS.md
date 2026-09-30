@@ -41,6 +41,10 @@ remove plan management or hide Bronze/Silver.
   page lists every SKU (Bronze / Silver / Relay + disable).
 - Stars, Crypto, and Robokassa list every live SKU. Relay may be first.
 - Digest / D-3 / expiry nudges keep change-plan next to the Relay CTA.
+- D-3 ("Relay ends in N days, $5") goes only to users who will expire:
+  balance below the tariff price. The hourly tick renews the others, so
+  for them it was false (`get_users_nearing_expiry`; lock:
+  `python app/jobs/test_relay_remind.py`).
 - Do not write a test that a live SKU or the picker is gone. The lock
   is `python app/service/payment/test_storefront.py`.
 

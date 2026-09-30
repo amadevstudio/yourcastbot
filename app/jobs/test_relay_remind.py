@@ -55,7 +55,7 @@ def _schema(conn):
     conn.commit()
 
 
-def _add_user(conn, telegram_id, time_left, deleted_at=None, lang="en"):
+def _add_user(conn, telegram_id, time_left, deleted_at=None, lang="en", balance=0):
     conn.execute(
         "INSERT INTO users (telegramId, lang, deleted_at) VALUES (?, ?, ?)",
         (telegram_id, lang, deleted_at))
@@ -65,8 +65,8 @@ def _add_user(conn, telegram_id, time_left, deleted_at=None, lang="en"):
     conn.execute(
         "INSERT INTO user_tariff_cs "
         "(uid, tariff_id, balance, notify_count, time_left) "
-        "VALUES (?, 3, 0, -1, ?)",
-        (uid, time_left))
+        "VALUES (?, 3, ?, -1, ?)",
+        (uid, balance, time_left))
     conn.commit()
 
 
@@ -101,12 +101,19 @@ def main():
             _add_user(db.connection, 102, 200)
             _add_user(db.connection, 103, 10, deleted_at="2026-01-01")
             _add_user(db.connection, 104, 0)
+            # balance covers the price (500): the tick renews it, "Relay ends
+            # in 2 days, pay $5" would be false
+            _add_user(db.connection, 105, 50, balance=31246)
+            # short by a cent: will expire, gets the reminder
+            _add_user(db.connection, 106, 60, balance=499)
         finally:
             db.close()
 
         first = relay_remind.send_relay_d3_reminders(database=path)
-        _assert_eq(first, 1, "only the in-window live user")
-        _assert_eq(sent[0][0], 101, "reminded the in-window user")
+        _assert_eq(first, 2, "in-window live users that will expire")
+        _assert_eq([row[0] for row in sent], [101, 106], "reminded the in-window users")
+        _assert_eq(105 in [row[0] for row in sent], False,
+                   "balance covers the renewal: not told Relay ends")
         _assert("Relay" in sent[0][1] or "ends" in sent[0][1].lower()
                 or "days" in sent[0][1].lower(),
                 "D-3 copy is about Relay ending")
@@ -120,6 +127,7 @@ def main():
         relay_remind.clear_relay_d3_sent(101, database=path)
         third = relay_remind.send_relay_d3_reminders(database=path)
         _assert_eq(third, 1, "renewal clears the flag")
+        _assert_eq(sent[-1][0], 101, "and only that user is reminded again")
     finally:
         os.remove(path)
 

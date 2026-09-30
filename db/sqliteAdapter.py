@@ -1749,6 +1749,8 @@ class SQLighter:
                 WHERE utc.time_left > 0 AND utc.time_left <= ?
                     AND utc.tariff_id != 0
                     AND u.deleted_at IS NULL
+                    -- enough balance: the tick renews it, "ends in N days" is false
+                    AND (utc.balance IS NULL OR utc.balance < t.price)
                 ORDER BY utc.time_left ASC
             """
             return self.cursor.execute(sql, (int(max_hours),)).fetchall()
