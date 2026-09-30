@@ -46,6 +46,7 @@ jobs:
           python3 app/admin_web/test_diag.py
           python3 app/service/podcast/test_feed_xml.py
           python3 app/jobs/test_quiet_start.py
+          python3 app/jobs/test_nosub_rule.py
 
   deploy-build-restart:
     needs: storefront-guards

@@ -62,11 +62,17 @@ def _assert_eq(got, expected, label):
     print("ok  %s = %r" % (label, got))
 
 
+def _pub_date(number):
+    # the host re-renders the same instant as GMT: the episode id changes
+    date = EPISODES[number][1]
+    return date.replace("+0000", "GMT") if FEED.get("redate") else date
+
+
 def _feed_xml(version):
     items = "".join(
         "<item><title>%s</title><guid>%s</guid><pubDate>%s</pubDate>"
         "<enclosure url='http://127.0.0.1/%s.mp3' length='1000' type='audio/mpeg'/>"
-        "</item>" % (EPISODES[i][2], EPISODES[i][0], EPISODES[i][1], EPISODES[i][0])
+        "</item>" % (EPISODES[i][2], EPISODES[i][0], _pub_date(i), EPISODES[i][0])
         for i in range(version, 0, -1))
     build = ("<lastBuildDate>%s</lastBuildDate>" % FEED["build_date"]
              if FEED["build_date"] else "")
@@ -79,7 +85,7 @@ def _feed_xml(version):
 
 class _Feed(BaseHTTPRequestHandler):
     def do_GET(self):
-        etag = '"v%d"' % FEED["version"]
+        etag = '"v%d%s"' % (FEED["version"], "r" if FEED.get("redate") else "")
         conditional = self.headers.get("If-None-Match")
         if conditional == etag:
             FEED["requests"].append("304")
@@ -314,6 +320,40 @@ def main():
                    "empty channel latest: no reminder")
         _assert_eq(_cursor(FREE_C), _pgd(3), "empty channel latest: cursor kept")
         FEED["script"] = False
+
+        # Same episode, new id: the host re-renders Tuesday's pubDate as GMT
+        # (the prod case: "+0300" vs "GMT"). Free listeners are not told
+        # "new episodes are out", neither on the full parse nor on the 304
+        # after it; payers are not re-sent.
+        FEED["version"] = 2
+        _setup(feed_url)
+        runtime_kv.delete_kv("feed_refetch_%s" % CHANNEL_ID, database=config.db_path)
+        _circle()  # Tuesday: payers get it, C is reminded
+        conn = connect_sqlite(config.db_path)
+        conn.execute("DELETE FROM digest_outbox WHERE user_telegram_id = ?", (FREE_C,))
+        conn.commit()
+        conn.close()
+        FEED["redate"] = True
+        sent, requests = _circle()
+        _assert_eq(requests, ["200 conditional"], "the host changed the feed")
+        _assert_eq(sent, [], "re-dated episode is not re-sent")
+        _assert_eq(digest_outbox.get_row(FREE_C, database=config.db_path), None,
+                   "re-dated episode: no 'new episodes' for free listeners")
+        sent, requests = _circle()
+        _assert_eq(requests, ["304"], "unchanged since")
+        _assert_eq(digest_outbox.get_row(FREE_C, database=config.db_path), None,
+                   "304 after it: channel id differs from the cursor, dates do not")
+        FEED["redate"] = False
+
+        # get_strped_datetime answers 1970-01-01 for junk: an unparseable
+        # channel date is "unknown" (ids decide), not "older than everything".
+        _assert_eq(updater._when("list-view-date"), None, "junk date is unknown")
+        updater.flag_nosubs_for_digest(
+            {FREE_C: "old-id"}, "new-id", "x", CHANNEL_ID,
+            cursor_dates={FREE_C: "2026-09-29T23:00:00+0000"},
+            latest_at=updater._when("list-view-date"))
+        _assert_eq(digest_outbox.get_row(FREE_C, database=config.db_path) is not None, True,
+                   "unknown channel date: a different id still reminds, as before")
     finally:
         server.shutdown()
     print("all updater 304 checks passed")

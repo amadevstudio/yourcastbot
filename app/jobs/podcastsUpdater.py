@@ -228,14 +228,19 @@ def send_new_records_by_channel(
         _persist_channel_http_validators(channel, pc_info)
         if nosubs_connections:
             nosub_connections_to_pgd = {}
+            nosub_cursor_dates = {}
             for connection in nosubs_connections:
                 nosub_connections_to_pgd[connection['user_telegram_id']] = \
                     connection['last_guid']
+                nosub_cursor_dates[connection['user_telegram_id']] = \
+                    connection['last_date']
             flag_nosubs_for_digest(
                 nosub_connections_to_pgd,
                 latest_episode_id(channel, connections),
-                channel['last_date'] if 'last_date' in channel.keys() else None,
-                channel['id'])
+                _channel_last_date(channel),
+                channel['id'],
+                cursor_dates=nosub_cursor_dates,
+                latest_at=_when(_channel_last_date(channel)))
         logger.log(
             "Feed not modified for channel", channel['id'],
             "; etag:", pc_info.get('http_etag'))
@@ -425,10 +430,13 @@ def send_new_records_by_channel(
 
     # для пользователей без подписки, аналогично
     nosub_connections_to_pgd = {}
+    nosub_cursor_dates = {}
     if nosubs_connections is not None:
         for connection in nosubs_connections:
             nosub_connections_to_pgd[connection['user_telegram_id']] = \
                 connection['last_guid']
+            nosub_cursor_dates[connection['user_telegram_id']] = \
+                connection['last_date']
 
     # if flag:  # если можно получить и сравнить lastDate до rss, обычно из itunes
     #     return new_recs_flag
@@ -504,7 +512,8 @@ def send_new_records_by_channel(
                 latest_pgd = latest_episode_id(channel, all_target_connections)
                 flag_nosubs_for_digest(
                     nosub_connections_to_pgd, latest_pgd, last_date,
-                    channel['id'])
+                    channel['id'], cursor_dates=nosub_cursor_dates,
+                    latest_at=_when(_channel_last_date(channel)))
                 return ChannelUpdateResult(new_recs_flag, 'fetched')
 
         elif channelDescr.tag == "item":
@@ -594,6 +603,7 @@ def send_new_records_by_channel(
     last_guid = guids[0]
     last_pub_date_strped = pub_dates_strped[0]
     last_title = titles[0]
+    newest_pub_date = pub_dates[0]
 
     # удалить тот, который уже был отправлен, если были такие пользователи
     if flag_have_users != 0:
@@ -740,7 +750,8 @@ def send_new_records_by_channel(
 
     flag_nosubs_for_digest(
         nosub_connections_to_pgd, pgd, last_date, channel['id'],
-        db_users=db_users)
+        db_users=db_users, cursor_dates=nosub_cursor_dates,
+        latest_at=_when(newest_pub_date))
 
     # обновление данных о последнем выпуске для пользователей
     if len(guids) > 0:
@@ -793,8 +804,28 @@ def _persist_channel_http_validators(channel, pc_info):
         db_users.close()
 
 
+def _when(value):
+    """A cursor/channel/pubDate string as an aware datetime, or None."""
+    if value is None or str(value).strip() in ('', 'None'):
+        return None
+    try:
+        when = lib.tools.time_tools.general.prepare_date_time_from_formatted(str(value))
+    except Exception:
+        return None
+    # get_strped_datetime answers 1970-01-01 when it cannot parse: unknown, not old
+    return None if when is None or when.year <= 1970 else when
+
+
+def _channel_last_date(channel):
+    try:
+        return channel['last_date']
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 def flag_nosubs_for_digest(
-        nosub_last_guids, latest_pgd, latest_date, channel_id, db_users=None):
+        nosub_last_guids, latest_pgd, latest_date, channel_id, db_users=None,
+        cursor_dates=None, latest_at=None):
     # Канал без разобранного выпуска: сравнивать не с чем. Раньше чаты с
     # настоящим курсором получали «вышли новые выпуски», а курсор затирался "__".
     if is_empty_cursor(latest_pgd):
@@ -802,9 +833,16 @@ def flag_nosubs_for_digest(
     cursors = nosub_last_guids or {}
     # пустой курсор («тихий старт»): переставить без напоминания
     quiet = [u for u, guid in cursors.items() if is_empty_cursor(guid)]
+    # «новое» — выпуск позже по дате, а не другой id (см. nosub_users_behind).
+    # Даты разбираем только у тех, чей id отличается: у TED ~10k бесплатных.
+    candidates = {
+        u: guid for u, guid in cursors.items()
+        if not is_empty_cursor(guid) and guid != latest_pgd}
+    seen = None
+    if latest_at is not None and cursor_dates:
+        seen = {u: _when(cursor_dates.get(u)) for u in candidates}
     behind = nosub_users_behind(
-        {u: guid for u, guid in cursors.items() if not is_empty_cursor(guid)},
-        latest_pgd)
+        candidates, latest_pgd, seen_at=seen, latest_at=latest_at)
     if not behind and not quiet:
         return
     own_db = db_users is None
