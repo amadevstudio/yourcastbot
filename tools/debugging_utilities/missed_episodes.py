@@ -6,6 +6,7 @@ Run on the server from the repo root:
     venv/bin/python tools/debugging_utilities/missed_episodes.py <telegram_id> [YYYY-MM-DD HH]
     venv/bin/python tools/debugging_utilities/missed_episodes.py --audit
     venv/bin/python tools/debugging_utilities/missed_episodes.py --refetches [hours]
+    venv/bin/python tools/debugging_utilities/missed_episodes.py --feed <channel_id>
 
 The hour is server-local, like the logs. Without it the hour of the chat's
 last nosub digest is used. The same reports are served read-only at
@@ -30,6 +31,9 @@ def main():
     try:
         if sys.argv[1] == "--audit":
             diag.audit(conn)
+            return
+        if sys.argv[1] == "--feed":
+            diag.feed_probe(conn, int(sys.argv[2]))
             return
         if sys.argv[1] == "--refetches":
             diag.refetches(conn, hours=int(sys.argv[2]) if len(sys.argv) > 2 else 24)

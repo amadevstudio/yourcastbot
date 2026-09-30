@@ -26,6 +26,10 @@ renewal, and registration writes nosub_digest_sent_at: neither is a gap.
 refetches(): full refetches after a 304 (paid_targets_behind), per channel.
 One per feed version is expected; more means the guard is not working.
 
+feed_probe(): GET a channel's stored feed as the updater does and show the
+XML the parser sees (what rss.__parse_rss_root takes as the channel, the
+items it finds). The only diag call that touches the network; no writes.
+
 DB timestamps are UTC; logs and the reported hours are server-local.
 """
 import ast
@@ -434,6 +438,122 @@ def refetches(conn, out=print, hours=24, now=None, work_dir=None):
             item["behind"]))
     out("  totals: %d channels, %d refetches" % (
         len(seen), sum(item["count"] for item in seen.values())))
+
+
+def _node_kind(node):
+    from lxml import etree
+    if node.tag is etree.Comment:
+        return "comment %r" % (node.text or "").strip()[:80]
+    if node.tag is etree.PI:
+        return "processing instruction %r" % str(node)[:80]
+    return "element %s" % node.tag
+
+
+def _local(node):
+    from lxml import etree
+    return etree.QName(node).localname if isinstance(node.tag, str) else None
+
+
+def _describe_feed(url, get, out):
+    """GET url as the updater does (no validators) and show what it parses."""
+    from lxml import etree
+    try:
+        response = get(url)
+    except Exception as e:
+        out("  GET failed: %s" % e)
+        return
+    redirects = [r.url for r in getattr(response, "history", [])]
+    out("  HTTP %s, final URL %s, %s, %d bytes%s" % (
+        response.status_code, response.url, response.headers.get("Content-Type"),
+        len(response.content or b""), ", redirects %s" % redirects if redirects else ""))
+    try:
+        doc = etree.fromstring(response.content)
+    except Exception as e:
+        out("  not XML: %s; starts with %r" % (e, (response.content or b"")[:120]))
+        return
+    out("  root %s; its children in order:" % doc.tag)
+    children = list(doc)
+    for index, node in enumerate(children[:8]):
+        out("    [%d] %s" % (index, _node_kind(node)))
+    if not children:
+        out("    (none)")
+        return
+    picked = children[0]
+    out("  the updater takes [0] as the channel (rss.__parse_rss_root): %s, %d children, "
+        "items %d" % (_node_kind(picked), len(picked),
+                      sum(1 for c in picked if c.tag == "item")))
+    channel = next((c for c in children if _local(c) == "channel"), None)
+    if channel is None:
+        out("  no <channel> element under the root")
+        return
+    items = [c for c in channel if _local(c) == "item"]
+    title = next((c.text for c in channel if c.tag == "title"), None)
+    out("  real <channel> at [%d]: tag %s, title %r, items %d (plain 'item' tags %d)" % (
+        children.index(channel), channel.tag, title, len(items),
+        sum(1 for c in items if c.tag == "item")))
+    if items:
+        fields = {c.tag: (c.attrib.get("url") if c.tag == "enclosure" else c.text)
+                  for c in items[0] if c.tag in ("guid", "title", "pubDate", "enclosure")}
+        out("  newest item as the updater reads its fields: %r" % fields)
+        out("  newest item child tags: %s" % sorted({str(c.tag) for c in items[0]})[:15])
+
+
+def feed_probe(conn, channel_id, out=print, get=None, itunes=None):
+    """Fetch a channel's feed as the updater does; say why it parses or not.
+
+    Read-only: a GET of the URL stored for the channel (and of the one
+    iTunes lists for it, when it differs); nothing is written.
+    """
+    from app.service.podcast import rss
+    if get is None:
+        def get(url):
+            return rss.feed_requester.get(url, timeout=rss.FEED_REQUEST_TIMEOUT)
+    if itunes is None:
+        def itunes(itunes_id):
+            response = rss.requester.get(
+                "https://itunes.apple.com/lookup",
+                params={"entity": "podcast", "id": itunes_id}, timeout=(5, 10))
+            for result in response.json().get("results", []):
+                if result.get("feedUrl"):
+                    return result["feedUrl"]
+            return None
+    row = conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    if row is None:
+        out("no channel %s" % channel_id)
+        return
+    keys = row.keys()
+    listeners = conn.execute(
+        "SELECT count(*) FROM user_channel_cs WHERE channel_id = ? AND notify = 1",
+        (channel_id,)).fetchone()[0]
+    out("== Channel #%s %s (%d listeners with notifications)" % (row["id"], row["name"], listeners))
+    out("  stored latest: %r | %r" % (row["last_guid"], row["last_date"]))
+    if "http_etag" in keys:
+        out("  stored validators: etag %r, last_modified %r" % (
+            row["http_etag"], row["http_last_modified"]))
+    rss_link = row["rss_link"] if "rss_link" in keys else None
+    out("  rss_link: %s" % rss_link)
+    itunes_url = None
+    if row["itunes_id"]:
+        try:
+            itunes_url = itunes(row["itunes_id"])
+        except Exception as e:
+            out("  iTunes lookup failed: %s" % e)
+        out("  iTunes feedUrl for %s: %s" % (row["itunes_id"], itunes_url))
+    if rss_link:
+        out("\n== rss_link, as the updater fetches it")
+        _describe_feed(rss_link, get, out)
+    if itunes_url and itunes_url.rstrip("/").split("://")[-1] != (rss_link or "").rstrip("/").split("://")[-1]:
+        out("\n== iTunes feedUrl (differs from rss_link)")
+        _describe_feed(itunes_url, get, out)
+
+    rows = conn.execute(
+        "SELECT c.id, c.name, count(ucc.id) AS listeners FROM channels c "
+        "INNER JOIN user_channel_cs ucc ON ucc.channel_id = c.id AND ucc.notify = 1 "
+        "WHERE c.last_guid IS NULL OR c.last_guid IN ('__', '', 'None') "
+        "GROUP BY c.id ORDER BY listeners DESC").fetchall()
+    out("\n== Channels with notifications whose latest id is empty: %d" % len(rows))
+    for r in rows[:20]:
+        out("  #%s %s: %d listeners" % (r["id"], r["name"], r["listeners"]))
 
 
 def as_text(run, *args, **kwargs):

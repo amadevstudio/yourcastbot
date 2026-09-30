@@ -146,6 +146,11 @@ def diag_refetches(hours: int = 24, _access: None = Depends(diag_access)):
     return _diag_text(diag.refetches, hours=hours)
 
 
+@api.get("/diag/feed")
+def diag_feed(channel: int, _access: None = Depends(diag_access)):
+    return _diag_text(diag.feed_probe, channel)
+
+
 @api.get("/diag/missed")
 def diag_missed(
         tg: int, hour: Optional[str] = None,

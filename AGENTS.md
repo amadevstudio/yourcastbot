@@ -156,7 +156,7 @@ Rules:
 
 ## Diagnostics API
 
-`GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=` (`app/admin_web/diag.py`) serve
+`GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=|feed?channel=` (`app/admin_web/diag.py`) serve
 the missed-episode reports for agents without server access. Rules:
 
 - Own token `diagToken` in `constants.py` (>= 32 chars, `Authorization:
@@ -170,6 +170,9 @@ the missed-episode reports for agents without server access. Rules:
   done row lists nobody. Logs keep 3 days; past that, say "unknown".
 - `refetches?hours=` counts 304 refetches per channel: more than one per
   channel without a new feed version means the refetch guard is off.
+- `feed?channel=` is the only call that touches the network: a GET of the
+  URL stored for that channel (and of iTunes' feedUrl when it differs),
+  never a URL from the request. It shows the XML the parser sees.
 - Locks: `python app/admin_web/test_diag.py` (CD gate),
   `python app/admin_web/test_admin_web.py`.
 
