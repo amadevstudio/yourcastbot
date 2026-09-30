@@ -44,6 +44,7 @@ jobs:
           python3 app/core/sender/test_record_delivery.py
           python3 db/test_send_outbox.py
           python3 app/admin_web/test_diag.py
+          python3 app/service/podcast/test_feed_xml.py
 
   deploy-build-restart:
     needs: storefront-guards

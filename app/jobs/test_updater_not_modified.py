@@ -51,7 +51,7 @@ EPISODES = {
     1: ("ep-1", "Mon, 28 Sep 2026 23:00:00 +0000", "Monday"),
     2: ("ep-2", "Tue, 29 Sep 2026 23:00:00 +0000", "Tuesday"),
 }
-FEED = {"version": 1, "requests": [], "build_date": None}
+FEED = {"version": 1, "requests": [], "build_date": None, "script": False}
 SENT = []
 
 
@@ -69,8 +69,11 @@ def _feed_xml(version):
         for i in range(version, 0, -1))
     build = ("<lastBuildDate>%s</lastBuildDate>" % FEED["build_date"]
              if FEED["build_date"] else "")
-    return ("<?xml version='1.0'?><rss version='2.0'><channel><title>News</title>"
-            "<link>http://127.0.0.1/</link>%s%s</channel></rss>" % (build, items)).encode()
+    # feeds.acast.com puts an XHTML <script> before <channel>
+    script = ("<script xmlns='http://www.w3.org/1999/xhtml'>var x = 1;</script>"
+              if FEED["script"] else "")
+    return ("<?xml version='1.0'?><rss version='2.0'>%s<channel><title>News</title>"
+            "<link>http://127.0.0.1/</link>%s%s</channel></rss>" % (script, build, items)).encode()
 
 
 class _Feed(BaseHTTPRequestHandler):
@@ -259,6 +262,18 @@ def main():
         sent, requests = _circle()
         _assert_eq(requests, ["304"], "same version again: no second download")
         _assert_eq(sent, [], "still nothing to send")
+
+        # Acast: a <script> before <channel> used to parse to no items at all.
+        FEED["version"] = 2
+        FEED["build_date"] = None
+        FEED["script"] = True
+        _setup(feed_url)
+        runtime_kv.delete_kv("feed_refetch_%s" % CHANNEL_ID, database=config.db_path)
+        sent, requests = _circle()
+        _assert_eq(sent, [("Tuesday", [PAYER_A, PAYER_B])],
+                   "script before <channel>: the episode is parsed and sent")
+        _assert_eq(_cursor(PAYER_B), _pgd(2), "cursor at the real episode, not '__'")
+        FEED["script"] = False
     finally:
         server.shutdown()
     print("all updater 304 checks passed")

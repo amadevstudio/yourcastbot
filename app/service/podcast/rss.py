@@ -4,6 +4,7 @@ import typing
 import cchardet
 from lxml import etree
 
+from app.service.podcast.feed_xml import channel_element
 from lib.requests import requesterModule
 from lib.requests.requesterModule import STD_REQUEST_HEADERS
 
@@ -196,7 +197,7 @@ def __load_rss_root(feed_url, headers=None, etag=None, last_modified=None):
 def __parse_rss_root(content):
     # парсинг xml
     try:
-        root = etree.fromstring(content).getchildren()[0]
+        root = channel_element(etree.fromstring(content))
     except Exception:
         try:
             # попытка передекодировать
@@ -207,8 +208,10 @@ def __parse_rss_root(content):
                 encoding = "UTF-8"
             if char_coding_desired != encoding:
                 result_data = result_data.decode(encoding).encode(char_coding_desired)
-            root = etree.fromstring(result_data).getchildren()[0]
+            root = channel_element(etree.fromstring(result_data))
         except Exception as e:
             return {'root': False, 'error': "mainf/parsing_error (fully): " + str(e)}
 
+    if root is None:
+        return {'root': False, 'error': "mainf/parsing_error: no <channel> in the feed"}
     return {'root': root}

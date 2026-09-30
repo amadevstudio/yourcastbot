@@ -80,6 +80,11 @@ never by `service_name`: since the ETag updater every channel with an
 - Enclosure, channel and iTunes URLs go through `normalize_url`, never
   `quote`: trackers embed an encoded URL (`/track/.../https%3A%2F%2F...`)
   that must reach the network unchanged. In HTML, `telegram_html.href`.
+- The feed's `<channel>` is `feed_xml.channel_element(root)`, never the
+  root's first child: Acast puts `<script xmlns=xhtml>` before it, and
+  TED Talks Daily (10k listeners) plus ~1.4k channels parsed to no items,
+  cursors `__`. Locks: `python app/service/podcast/test_feed_xml.py`,
+  `python app/jobs/test_updater_not_modified.py`.
 - Locks: `python app/core/sender/test_record_delivery.py`,
   `python app/service/record/test_delivery.py`, `python lib/requests/test_url.py`.
 

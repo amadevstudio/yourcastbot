@@ -27,8 +27,8 @@ refetches(): full refetches after a 304 (paid_targets_behind), per channel.
 One per feed version is expected; more means the guard is not working.
 
 feed_probe(): GET a channel's stored feed as the updater does and show the
-XML the parser sees (what rss.__parse_rss_root takes as the channel, the
-items it finds). The only diag call that touches the network; no writes.
+XML the parser sees (what rss.__parse_rss_root took and now takes as the
+channel, the items it finds). The only diag call that touches the network; no writes.
 
 DB timestamps are UTC; logs and the reported hours are server-local.
 """
@@ -478,10 +478,14 @@ def _describe_feed(url, get, out):
     if not children:
         out("    (none)")
         return
-    picked = children[0]
-    out("  the updater takes [0] as the channel (rss.__parse_rss_root): %s, %d children, "
-        "items %d" % (_node_kind(picked), len(picked),
-                      sum(1 for c in picked if c.tag == "item")))
+    from app.service.podcast.feed_xml import channel_element
+    old_pick = children[0]
+    out("  before the fix, the updater took [0] as the channel: %s, items %d" % (
+        _node_kind(old_pick), sum(1 for c in old_pick if c.tag == "item")))
+    picked = channel_element(doc)
+    out("  the updater now takes (feed_xml.channel_element): %s, items %d" % (
+        "nothing" if picked is None else _node_kind(picked),
+        0 if picked is None else sum(1 for c in picked if c.tag == "item")))
     channel = next((c for c in children if _local(c) == "channel"), None)
     if channel is None:
         out("  no <channel> element under the root")
