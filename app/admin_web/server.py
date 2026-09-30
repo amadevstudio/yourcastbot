@@ -139,6 +139,13 @@ def diag_audit(_access: None = Depends(diag_access)):
     return _diag_text(diag.audit)
 
 
+@api.get("/diag/refetches")
+def diag_refetches(hours: int = 24, _access: None = Depends(diag_access)):
+    if not 1 <= hours <= 72:
+        raise HTTPException(status_code=400, detail="hours: 1..72")
+    return _diag_text(diag.refetches, hours=hours)
+
+
 @api.get("/diag/missed")
 def diag_missed(
         tg: int, hour: Optional[str] = None,

@@ -5,21 +5,30 @@ Used by tools/debugging_utilities/missed_episodes.py (on the server) and by
 GET /api/diag/* (admin API, separate read-only token). Nothing here writes:
 the DB is opened with mode=ro.
 
-report(): one chat and one server-local hour. An episode is missed when a
-circle job for one of the chat's podcasts was queued in that hour for other
-listeners and neither that job nor any rec job gave it to this chat.
-Podcasts the updater processed in that hour without a circle job are listed
-too: if the chat is their only payer there is no job to compare with.
+Who got an episode comes from the updater log, not from send_outbox: the
+sender rewrites a circle row's chat_ids to the chats still waiting, so a
+done row lists nobody. The log line "Sending automatically ... to {...}"
+is written when the episode is queued and names every recipient. Logs keep
+3 days; rec rows (a chat tapped an episode) keep their chat for 7.
+
+report(): one chat and one server-local hour. An episode is missed when it
+was queued in that hour for other chats of a podcast this chat follows with
+notifications on, and no queue line in the kept logs nor a rec row gave it
+to this chat. Podcasts processed in that hour without a send are listed
+with dates: if the chat is their only payer there is nobody to compare with.
 
 audit(): paying users whose current period began since LOSSY_SINCE. Until
 3c52606 every renewal left a payer an hour at time_left = 0, and since
 7830e35 a nosub flag in that hour moves the cursor past the new episode.
-A flag in the hours before the period start is the gap; a payment that day
-means they probably bought after the digest (they were free: by design).
-Traces expire: logs after 3 days, outbox and flags after 7.
+New users start on the welcome Relay (tariff_new_user_period), not on a
+renewal, and registration writes nosub_digest_sent_at: neither is a gap.
+
+refetches(): full refetches after a 304 (paid_targets_behind), per channel.
+One per feed version is expected; more means the guard is not working.
 
 DB timestamps are UTC; logs and the reported hours are server-local.
 """
+import ast
 import datetime
 import hmac
 import json
@@ -31,11 +40,16 @@ import config
 
 LOSSY_SINCE = datetime.datetime(2026, 9, 3)  # 7830e35: the nosub flag moves the cursor
 OUTBOX_KEEP = datetime.timedelta(days=7)
+LOG_KEEP = datetime.timedelta(days=3)
 MIN_TOKEN_LENGTH = 32
 
 LOG_ENTRY = re.compile(r"^\[(\d\d:\d\d:\d\d \d\d\.\d\d\.\d\d\d\d)\] ")
 CHANNEL_IN_LOG = re.compile(
     r"(?:Processig channel|Channel id:|for channel) (\d+)")
+SENDING = re.compile(r"Sending automatically\.\.\.\s+(b(['\"]).*\2)\s*$", re.S)
+SENDING_HEAD = re.compile(r"Channel id: (\d+), '(.*)' \(itunes id:", re.S)
+REFETCH = re.compile(
+    r"Feed not modified for channel (\d+) ; paid listeners behind: \[([^\]]*)\] ; refetching")
 
 
 def token_ok(authorization, configured) -> bool:
@@ -81,11 +95,6 @@ def parse_hour(text):
     return datetime.datetime.strptime(str(text).strip(), "%Y-%m-%d %H")
 
 
-def short(record_uniq_id, width=70):
-    text = str(record_uniq_id or "")
-    return text if len(text) <= width else "..." + text[-width:]
-
-
 def payload_info(row):
     try:
         payload = json.loads(row["payload_json"] or "{}")
@@ -97,12 +106,8 @@ def payload_info(row):
     return info, chats
 
 
-def payload_link(row):
-    try:
-        payload = json.loads(row["payload_json"] or "{}")
-    except (TypeError, ValueError):
-        return None
-    return (payload.get("func_params", payload) or {}).get("link")
+def _quiet(*_args):
+    pass
 
 
 def log_entries(start, end, work_dir=None, out=print):
@@ -131,33 +136,64 @@ def log_entries(start, end, work_dir=None, out=print):
         day += datetime.timedelta(days=1)
 
 
-def load_jobs(conn, tg, channel_ids, since_utc):
-    """rec jobs of this chat and circle jobs of these podcasts, oldest first."""
-    circle_users = ["c%s" % cid for cid in channel_ids]
-    return conn.execute(
-        "SELECT id, created_at, action, user_id, payload_json, status FROM send_outbox "
-        "WHERE created_at >= ? AND ((action = 'rec' AND user_id = ?) OR "
-        "(action = 'circle' AND user_id IN (%s))) ORDER BY id" % ",".join("?" * len(circle_users)),
-        [since_utc, str(tg)] + circle_users).fetchall()
+def parse_sending(text):
+    """(channel_id, title, recipient ids as str) from a 'Sending automatically' entry."""
+    match = SENDING.search(text)
+    if not match:
+        return None
+    try:
+        body = ast.literal_eval(match.group(1)).decode("utf-8", "replace")
+    except (ValueError, SyntaxError, AttributeError):
+        return None
+    head, sep, rest = body.partition(" to {")
+    head_match = SENDING_HEAD.match(head)
+    if not sep or not head_match:
+        return None
+    try:
+        recipients = ast.literal_eval("{" + rest.split(" ___ link: ", 1)[0])
+    except (ValueError, SyntaxError):
+        return None
+    if not isinstance(recipients, dict):
+        return None
+    return int(head_match.group(1)), head_match.group(2), {str(k) for k in recipients}
 
 
-def chat_got(job, tg):
-    return (job["action"] == "rec") or (str(tg) in payload_info(job)[1])
+def sends(channel_ids, start, end, work_dir=None):
+    """Episodes queued for these podcasts in [start, end), from the updater log."""
+    found = []
+    wanted = set(channel_ids)
+    for stamp, text in log_entries(start, end, work_dir=work_dir, out=_quiet):
+        parsed = parse_sending(text)
+        if parsed and parsed[0] in wanted:
+            found.append({"stamp": stamp, "channel": parsed[0], "title": parsed[1],
+                          "chats": parsed[2]})
+    return found
 
 
-def missed_in(jobs, tg, start, end):
-    """Circle jobs queued in [start, end) that no job ever gave this chat."""
-    delivered = {
-        payload_info(job)[0].get("recordUniqId") for job in jobs
-        if chat_got(job, tg) and job["status"] != "failed"}
-    missed = []
-    for job in jobs:
-        info = payload_info(job)[0]
-        created = utc_to_local(job["created_at"])
-        if job["action"] == "circle" and created is not None and start <= created < end \
-                and not chat_got(job, tg) and info.get("recordUniqId") not in delivered:
-            missed.append((job, info))
-    return missed, delivered
+def rec_titles(conn, tg, since_utc):
+    """(channel id, title) of episodes this chat tapped (rec rows keep the chat)."""
+    rows = conn.execute(
+        "SELECT payload_json FROM send_outbox WHERE action = 'rec' AND user_id = ? "
+        "AND created_at >= ? AND status != 'failed'", (str(tg), since_utc)).fetchall()
+    return {(payload_info(r)[0].get("id"), payload_info(r)[0].get("title")) for r in rows}
+
+
+def missed_in(conn, tg, channel_ids, start, end, now=None, work_dir=None):
+    """Episodes queued in [start, end) for others and never for this chat.
+
+    Returns (missed, in_window) or (None, None) when that hour's log is gone.
+    """
+    now = datetime.datetime.now() if now is None else now
+    if now - start > LOG_KEEP:
+        return None, None
+    kept = sends(channel_ids, now - LOG_KEEP, now + datetime.timedelta(minutes=1),
+                 work_dir=work_dir)
+    got = {(s["channel"], s["title"]) for s in kept if str(tg) in s["chats"]}
+    got |= rec_titles(conn, tg, local_to_utc_text(now - OUTBOX_KEEP))
+    in_window = [s for s in kept if start <= s["stamp"] < end]
+    missed = [s for s in in_window
+              if str(tg) not in s["chats"] and (s["channel"], s["title"]) not in got]
+    return missed, in_window
 
 
 def paid_on(conn, user_id, tg, day):
@@ -176,64 +212,91 @@ def paid_on(conn, user_id, tg, day):
     return False
 
 
-def audit(conn, out=print, now=None):
+def period_start(tick, time_left, period):
+    """Local start of a period of `period` hours that has time_left left now."""
+    # old tick: grant/renew, then -1 at the next tick; +-1 h either way
+    return tick - datetime.timedelta(hours=period - 1 - time_left)
+
+
+def audit(conn, out=print, now=None, work_dir=None):
     now = datetime.datetime.now() if now is None else now
     tick = now.replace(minute=0, second=0, microsecond=0)
+    near_hours = datetime.timedelta(hours=2)
     rows = conn.execute(
-        "SELECT u.id, u.telegramId, u.nosub_digest_sent_at AS sent, utc.time_left, "
-        "d.created_at AS flagged FROM user_tariff_cs utc "
+        "SELECT u.id, u.telegramId, u.created_at, u.nosub_digest_sent_at AS sent, "
+        "utc.time_left, d.created_at AS flagged FROM user_tariff_cs utc "
         "INNER JOIN users u ON u.id = utc.uid "
         "LEFT JOIN digest_outbox d ON d.user_telegram_id = u.telegramId "
         "WHERE utc.tariff_id > 0 AND utc.time_left > 0 AND u.deleted_at IS NULL "
         "ORDER BY utc.time_left DESC").fetchall()
     out("== Paying users whose period began since %s (server-local, +-1h)" % LOSSY_SINCE.date())
     counts = {}
+
+    def count(key):
+        counts[key] = counts.get(key, 0) + 1
+
     for row in rows:
-        # old tick: renew 0 -> period, then -1; so time_left = period - 1 - hours since
-        started = tick - datetime.timedelta(hours=config.tariff_period - 1 - row["time_left"])
+        tg = row["telegramId"]
+        created = utc_to_local(row["created_at"])
+        trial = None
+        for period in (config.tariff_new_user_period, config.tariff_secret_start_cmd_period):
+            start = period_start(tick, row["time_left"], period)
+            if created is not None and abs(start - created) <= near_hours:
+                trial = (period, start)
+        if trial is not None:
+            count("welcome")
+            out("  %s  welcome Relay (%dh) from %s: no renewal yet" % (
+                tg, trial[0], created.strftime("%Y-%m-%d %H:%M")))
+            continue
+        started = period_start(tick, row["time_left"], config.tariff_period)
         if started < LOSSY_SINCE:
             continue
-        tg = row["telegramId"]
-        marks = [t for t in (utc_to_local(row["flagged"]), utc_to_local(row["sent"])) if t]
+        # registration writes nosub_digest_sent_at: that is not a digest
+        marks = [t for t in (utc_to_local(row["flagged"]), utc_to_local(row["sent"]))
+                 if t and not (created and abs(t - created) <= datetime.timedelta(minutes=5))]
         near = sorted(t for t in marks
                       if started - datetime.timedelta(hours=3) <= t < started + datetime.timedelta(hours=1))
         if near and paid_on(conn, row["id"], tg, started.date()):
-            verdict = "flag, then a payment that day: probably bought after the digest"
+            verdict = "bought: flag, then a payment that day (they were free: by design)"
         elif near:
             verdict = "GAP: flagged in the hour before renewal"
         elif now - started < OUTBOX_KEEP:
             verdict = "clean: no flag around renewal"
         else:
-            verdict = "unknown: traces older than 7 days are purged"
-        key = verdict.split(":")[0]
-        counts[key] = counts.get(key, 0) + 1
+            verdict = "unknown: flags older than 7 days are purged"
+        count(verdict.split(":")[0])
         out("  %s  period from ~%s  flags %s  %s" % (
             tg, started.strftime("%Y-%m-%d %H:00"),
             [t.strftime("%m-%d %H:%M") for t in marks], verdict))
         if not verdict.startswith("GAP"):
             continue
-        start = near[0].replace(minute=0, second=0)
-        names = {r["channel_id"]: r["name"] for r in conn.execute(
-            "SELECT ucc.channel_id, c.name FROM user_channel_cs ucc "
-            "INNER JOIN channels c ON c.id = ucc.channel_id "
-            "WHERE ucc.user_telegram_id = ?", (str(tg),)).fetchall()}
-        if now - start > OUTBOX_KEEP:
-            out("      outbox for that hour is purged; episodes unknown")
+        names = followed(conn, tg)
+        hour = near[0].replace(minute=0, second=0)
+        missed, _ = missed_in(conn, tg, names, hour, hour + datetime.timedelta(hours=1, minutes=1),
+                              now=now, work_dir=work_dir)
+        if missed is None:
+            out("      log of that hour is purged (3 days); episodes unknown")
             continue
-        jobs = load_jobs(conn, tg, names, local_to_utc_text(start - datetime.timedelta(days=2)))
-        missed, _ = missed_in(jobs, tg, start, start + datetime.timedelta(hours=1, minutes=1))
-        for _job, info in missed:
-            out("      MISSED: #%s %s | %s | %s" % (
-                info.get("id"), names.get(info.get("id"), ""), info.get("title"),
-                info.get("pubDate")))
+        for item in missed:
+            out("      MISSED: #%s %s | %s | queued %s for %d chats" % (
+                item["channel"], names.get(item["channel"], ""), item["title"],
+                item["stamp"].strftime("%m-%d %H:%M"), len(item["chats"])))
         if not missed:
-            out("      no other payer got an episode then; run the per-chat report "
-                "(logs keep 3 days)")
+            out("      nobody else got an episode of its podcasts then; see the per-chat report")
     out("  totals: %s" % counts)
 
 
-def report(conn, tg, hour=None, out=print, work_dir=None):
+def followed(conn, tg):
+    """{channel_id: name} this chat follows with notifications on."""
+    return {r["channel_id"]: r["name"] for r in conn.execute(
+        "SELECT ucc.channel_id, c.name FROM user_channel_cs ucc "
+        "INNER JOIN channels c ON c.id = ucc.channel_id "
+        "WHERE ucc.user_telegram_id = ? AND ucc.notify = 1", (str(tg),)).fetchall()}
+
+
+def report(conn, tg, hour=None, out=print, work_dir=None, now=None):
     """One chat, one server-local hour (default: the hour of its last nosub digest)."""
+    now = datetime.datetime.now() if now is None else now
     user = conn.execute(
         "SELECT * FROM users WHERE telegramId = ?", (str(tg),)).fetchone()
     if user is None:
@@ -275,7 +338,7 @@ def report(conn, tg, hour=None, out=print, work_dir=None):
     out("  %d %s" % (len(rows), [r["telegramId"] for r in rows[:20]]))
 
     out("\n== Digest")
-    out("  nosub_digest_sent_at: %s UTC = %s server-local" % (
+    out("  nosub_digest_sent_at: %s UTC = %s server-local (registration writes it too)" % (
         digest_sent, utc_to_local(digest_sent)))
     try:
         row = conn.execute(
@@ -289,63 +352,92 @@ def report(conn, tg, hour=None, out=print, work_dir=None):
         "c.name, c.last_guid AS ch_guid, c.last_date AS ch_date "
         "FROM user_channel_cs ucc INNER JOIN channels c ON c.id = ucc.channel_id "
         "WHERE ucc.user_telegram_id = ? ORDER BY ucc.channel_id", (str(tg),)).fetchall()
-    names = {s["channel_id"]: s["name"] for s in subs}
-    out("\n== Subscriptions (%d); cursor = what the updater thinks this chat has" % len(subs))
-    for s in subs:
-        out("  #%s %s notify=%s%s\n      cursor:  %s\n      channel: %s" % (
-            s["channel_id"], s["name"], s["notify"],
+    on = [s for s in subs if s["notify"] == 1]
+    names = {s["channel_id"]: s["name"] for s in on}
+    out("\n== Subscriptions: %d, with notifications %d (cursor = what the updater "
+        "thinks this chat has; channel = latest the bot saw)" % (len(subs), len(on)))
+    for s in on:
+        out("  #%s %s%s\n      cursor:  %s | %s\n      channel: %s | %s" % (
+            s["channel_id"], s["name"],
             "" if s["last_guid"] == s["ch_guid"] else "  <-- cursor != channel latest",
-            short(s["last_guid"]), short(s["ch_guid"])))
+            s["last_date"], s["last_guid"], s["ch_date"], s["ch_guid"]))
 
-    out("\n== Updater log, %s .. %s (server-local), this chat's podcasts" % (start, end))
+    out("\n== Updater log, %s .. %s (server-local), podcasts with notifications" % (start, end))
     processed = set()
-    previous_matched = False
     for _stamp, text in log_entries(start, end, work_dir=work_dir, out=out):
         ids = {int(x) for x in CHANNEL_IN_LOG.findall(text)} & set(names)
-        if ids or (previous_matched and "ENQUEUED AUTOMATICALLY" in text):
+        if not ids:
+            continue
+        parsed = parse_sending(text)
+        if parsed:
+            out("  [%s] SENT #%s '%s' to %d chats, this chat %s" % (
+                _stamp.strftime("%H:%M:%S"), parsed[0], parsed[1], len(parsed[2]),
+                "INCLUDED" if str(tg) in parsed[2] else "not included"))
+        else:
             out("  " + text.replace("\n", "\n    "))
-            if "Processig channel" in text:
-                processed |= ids
-        previous_matched = bool(ids)
-
-    since = local_to_utc_text(start - datetime.timedelta(days=2))
-    jobs = load_jobs(conn, tg, names, since)
-    missed, delivered = missed_in(jobs, tg, start, end)
-
-    out("\n== send_outbox for these podcasts since %s UTC" % since)
-    queued_in_hour = set()
-    for job in jobs:
-        info, chats = payload_info(job)
-        created = utc_to_local(job["created_at"])
-        if job["action"] == "circle" and created is not None and start <= created < end:
-            queued_in_hour.add(info.get("id"))
-        mark = "got it" if chat_got(job, tg) else (
-            "got it by another job" if info.get("recordUniqId") in delivered else "NOT this chat")
-        out("  %s  %-6s %-7s #%s %s | %s | %s | %d chats | %s" % (
-            created, job["action"], job["status"], info.get("id"),
-            names.get(info.get("id"), ""), info.get("title"), info.get("pubDate"),
-            len(chats), mark))
+        if "Processig channel" in text:
+            processed |= ids
 
     out("\n== Verdict for %s .. %s" % (start, end))
-    if missed:
-        for job, info in missed:
-            out("  MISSED: #%s %s | %s | %s\n          %s" % (
-                info.get("id"), names.get(info.get("id"), ""), info.get("title"),
-                info.get("pubDate"), payload_link(job)))
+    missed, in_window = missed_in(conn, tg, names, start, end, now=now, work_dir=work_dir)
+    if missed is None:
+        out("  log of that hour is purged (logs keep 3 days): cannot tell")
     else:
-        out("  no circle job in that hour skipped this chat")
-    for cid in sorted(processed - queued_in_hour):
-        last = [j for j in jobs if payload_info(j)[0].get("id") == cid and chat_got(j, tg)]
-        last_uid = payload_info(last[-1])[0].get("recordUniqId") if last else None
-        channel_latest = next(s["ch_guid"] for s in subs if s["channel_id"] == cid)
-        out("  processed, no circle job: #%s %s\n      podcast latest:    %s\n"
-            "      last sent to chat: %s%s" % (
-                cid, names[cid], short(channel_latest), short(last_uid),
-                "" if last_uid == channel_latest else "  <-- check this one"))
+        for item in missed:
+            out("  MISSED: #%s %s | %s | queued %s for %d other chats, never for this one" % (
+                item["channel"], names.get(item["channel"], ""), item["title"],
+                item["stamp"].strftime("%H:%M"), len(item["chats"])))
+        if not missed:
+            out("  no episode of these podcasts was queued for others and not for this chat")
+        sent_channels = {item["channel"] for item in in_window}
+        by_id = {s["channel_id"]: s for s in on}
+        for cid in sorted(processed - sent_channels):
+            s = by_id[cid]
+            out("  processed, nothing sent: #%s %s | channel latest %s | cursor %s" % (
+                cid, s["name"], s["ch_date"], s["last_date"]))
+
+    since = local_to_utc_text(now - OUTBOX_KEEP)
+    out("\n== Taps (rec rows keep the chat for 7 days)")
+    for row in conn.execute(
+            "SELECT created_at, status, payload_json FROM send_outbox "
+            "WHERE action = 'rec' AND user_id = ? AND created_at >= ? ORDER BY id",
+            (str(tg), since)).fetchall():
+        info = payload_info(row)[0]
+        out("  %s %-7s #%s %s | %s" % (
+            utc_to_local(row["created_at"]), row["status"], info.get("id"),
+            info.get("title"), info.get("pubDate")))
+
+
+def refetches(conn, out=print, hours=24, now=None, work_dir=None):
+    """Full refetches after a 304 per channel. One per feed version is expected."""
+    now = datetime.datetime.now() if now is None else now
+    start = now - datetime.timedelta(hours=hours)
+    seen = {}
+    for stamp, text in log_entries(start, now + datetime.timedelta(minutes=1),
+                                   work_dir=work_dir, out=_quiet):
+        match = REFETCH.search(text)
+        if not match:
+            continue
+        cid = int(match.group(1))
+        behind = len([x for x in match.group(2).split(",") if x.strip()])
+        item = seen.setdefault(cid, {"count": 0, "first": stamp, "behind": behind})
+        item["count"] += 1
+        item["last"] = stamp
+        item["behind"] = behind
+    out("== Full refetches after 304, last %dh (server-local); >1 per channel "
+        "without a new feed version means the guard is off" % hours)
+    for cid, item in sorted(seen.items(), key=lambda kv: -kv[1]["count"]):
+        row = conn.execute("SELECT name FROM channels WHERE id = ?", (cid,)).fetchone()
+        out("  #%s %s: %d refetches, %s .. %s, %d payers behind" % (
+            cid, row["name"] if row else "", item["count"],
+            item["first"].strftime("%m-%d %H:%M"), item["last"].strftime("%m-%d %H:%M"),
+            item["behind"]))
+    out("  totals: %d channels, %d refetches" % (
+        len(seen), sum(item["count"] for item in seen.values())))
 
 
 def as_text(run, *args, **kwargs):
-    """Run report/audit and return what it printed."""
+    """Run report/audit/refetches and return what it printed."""
     lines = []
     run(*args, out=lines.append, **kwargs)
     return "\n".join(lines) + "\n"

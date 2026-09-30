@@ -28,7 +28,7 @@ from app.i18n.messages import get_message, format_feed_notice
 from app.jobs.circle_health import mark_circle_finished, mark_circle_started
 from app.jobs.feed_health import (
     should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold,
-    paid_targets_behind)
+    paid_targets_behind, feed_version, refetch_allowed, note_refetched)
 from app.jobs.digest_outbox import pending_count
 from app.jobs.nosub_digest import (
     latest_episode_id, nosub_users_behind, should_skip_item_parse)
@@ -203,10 +203,13 @@ def send_new_records_by_channel(
     if pc_info.get('notModified'):
         # 304 — «фид тот же, что при прошлом разборе», а не «все платные его
         # получили»: ручное «обновить» разбирает фид для одного чата и сохраняет
-        # ETag за всех. Если кто-то из платных отстал от канала — полный фид.
+        # ETag за всех. Если кто-то из платных отстал от канала — полный фид,
+        # но один раз на версию: channels.last_* пишут и список выпусков, и
+        # add_sub, и после разбора той же версии «отставание» может остаться.
         behind = paid_targets_behind(
             channel, list(connections) + list(tg_channel_connections or []))
-        if behind:
+        version = feed_version(pc_info, channel)
+        if behind and refetch_allowed(channel['id'], version):
             logger.log(
                 "Feed not modified for channel", channel['id'],
                 "; paid listeners behind:",
@@ -215,6 +218,8 @@ def send_new_records_by_channel(
             root, pc_info, service_name, service_id = \
                 app.service.podcast.podcast.fetch_channel_feed(
                     channel, manual=manual, conditional=False)
+            if root is not False:
+                note_refetched(channel['id'], version)
 
     if pc_info.get('notModified'):
         # 304: фид живой и не менялся. Не парсим, не шлём, счётчик сбоев не трогаем

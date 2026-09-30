@@ -39,6 +39,7 @@ sys.modules["agent.bot_telethon"] = _telethon
 from db.connection import connect_sqlite  # noqa: E402
 import app.jobs.podcastsUpdater as updater  # noqa: E402
 from app.jobs import digest_outbox  # noqa: E402
+from db import runtime_kv  # noqa: E402
 from app.service.podcast.podcast import prepare_string_from_rss  # noqa: E402
 from app.service.record.helpers import get_record_uniq_id  # noqa: E402
 from db.sqliteAdapter import SQLighter  # noqa: E402
@@ -50,7 +51,7 @@ EPISODES = {
     1: ("ep-1", "Mon, 28 Sep 2026 23:00:00 +0000", "Monday"),
     2: ("ep-2", "Tue, 29 Sep 2026 23:00:00 +0000", "Tuesday"),
 }
-FEED = {"version": 1, "requests": []}
+FEED = {"version": 1, "requests": [], "build_date": None}
 SENT = []
 
 
@@ -66,8 +67,10 @@ def _feed_xml(version):
         "<enclosure url='http://127.0.0.1/%s.mp3' length='1000' type='audio/mpeg'/>"
         "</item>" % (EPISODES[i][2], EPISODES[i][0], EPISODES[i][1], EPISODES[i][0])
         for i in range(version, 0, -1))
+    build = ("<lastBuildDate>%s</lastBuildDate>" % FEED["build_date"]
+             if FEED["build_date"] else "")
     return ("<?xml version='1.0'?><rss version='2.0'><channel><title>News</title>"
-            "<link>http://127.0.0.1/</link>%s</channel></rss>" % items).encode()
+            "<link>http://127.0.0.1/</link>%s%s</channel></rss>" % (build, items)).encode()
 
 
 class _Feed(BaseHTTPRequestHandler):
@@ -235,6 +238,27 @@ def main():
         _assert_eq(
             digest_outbox.get_row(FREE_C, database=config.db_path) is not None,
             True, "free listener behind is still flagged for the digest")
+
+        # Loop guard. The episode list rewrote channels.last_* in its own
+        # format; a full parse of the same version finds every payer current
+        # (lastBuildDate) and returns early, so they stay "behind". One full
+        # refetch per feed version, then the 304 is trusted.
+        FEED["version"] = 1
+        FEED["build_date"] = EPISODES[1][1]
+        _setup(feed_url)
+        runtime_kv.delete_kv("feed_refetch_%s" % CHANNEL_ID, database=config.db_path)
+        _circle()
+        conn = connect_sqlite(config.db_path)
+        conn.execute("UPDATE channels SET last_guid = 'list-view-format', "
+                     "last_date = 'list-view-date' WHERE id = ?", (CHANNEL_ID,))
+        conn.commit()
+        conn.close()
+        sent, requests = _circle()
+        _assert_eq(requests, ["304", "200 full"], "drifted channel: one full refetch")
+        _assert_eq(sent, [], "the parse finds everyone current")
+        sent, requests = _circle()
+        _assert_eq(requests, ["304"], "same version again: no second download")
+        _assert_eq(sent, [], "still nothing to send")
     finally:
         server.shutdown()
     print("all updater 304 checks passed")

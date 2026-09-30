@@ -100,6 +100,13 @@ paying user read as free (see Tariff clock).
   all. `paid_targets_behind` (`app/jobs/feed_health.py`): if a paid
   cursor is behind the channel, refetch without validators and parse.
   Free listeners behind do not force a download.
+- At most one such refetch per feed version and channel
+  (`refetch_allowed`, `bot_runtime_kv` `feed_refetch_<id>`). The episode
+  list and `add_sub` also write `channels.last_*`, in their own formats;
+  when a full parse of the same version still leaves payers "behind"
+  (early return: all current, or no items), refetching again only costs a
+  download and 6 s per circle. Without the guard channels 21 and 1899
+  refetched every circle.
 - Locks: `python app/jobs/test_feed_health.py` (CD gate),
   `python app/jobs/test_updater_not_modified.py` (needs the bot's
   requirements).
@@ -149,7 +156,7 @@ Rules:
 
 ## Diagnostics API
 
-`GET /api/diag/ping|audit|missed?tg=&hour=` (`app/admin_web/diag.py`) serve
+`GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=` (`app/admin_web/diag.py`) serve
 the missed-episode reports for agents without server access. Rules:
 
 - Own token `diagToken` in `constants.py` (>= 32 chars, `Authorization:
@@ -157,6 +164,12 @@ the missed-episode reports for agents without server access. Rules:
   admin cookie never opens diag.
 - Read-only: GET only, the DB is opened `mode=ro`. Do not add actions
   (resend, edit, mail) behind this token; those belong to the admin login.
+- Who got a circle episode comes from the updater log line
+  `Sending automatically ... to {...}`, never from a done `send_outbox`
+  row: the sender rewrites `chat_ids` to the chats still waiting, so a
+  done row lists nobody. Logs keep 3 days; past that, say "unknown".
+- `refetches?hours=` counts 304 refetches per channel: more than one per
+  channel without a new feed version means the refetch guard is off.
 - Locks: `python app/admin_web/test_diag.py` (CD gate),
   `python app/admin_web/test_admin_web.py`.
 

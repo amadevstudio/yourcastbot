@@ -222,6 +222,22 @@ def test_paid_targets_behind(_db_path):
         feed_health.paid_targets_behind(channel, []), [], "no paid targets")
 
 
+def test_refetch_once_per_version(db_path):
+    _assert_eq(feed_health.feed_version({'http_etag': 'W/"a"'}, None), 'W/"a"|',
+               "version is the 304's ETag")
+    _assert_eq(feed_health.feed_version({}, {'http_etag': '"b"', 'http_last_modified': 'Mon'}),
+               '"b"|Mon', "falls back to the channel's validators")
+    _assert_eq(feed_health.refetch_allowed(7, 'W/"a"|', database=db_path), True,
+               "first 304 of a version may refetch")
+    feed_health.note_refetched(7, 'W/"a"|', database=db_path)
+    _assert_eq(feed_health.refetch_allowed(7, 'W/"a"|', database=db_path), False,
+               "same version again: trust the 304 (the parse already said so)")
+    _assert_eq(feed_health.refetch_allowed(8, 'W/"a"|', database=db_path), True,
+               "per channel")
+    _assert_eq(feed_health.refetch_allowed(7, 'W/"c"|', database=db_path), True,
+               "a new version (e.g. a manual refresh) may refetch once")
+
+
 def test_updater_refetches_when_paid_behind(_db_path):
     """304 must not end the channel before the behind check and full refetch."""
     path = os.path.join(_ROOT, "app", "jobs", "podcastsUpdater.py")
@@ -233,7 +249,11 @@ def test_updater_refetches_when_paid_behind(_db_path):
     def name(call):
         return getattr(call.func, "attr", getattr(call.func, "id", None))
 
-    check = [c.lineno for c in calls if name(c) == "paid_targets_behind"]
+    check = [c.lineno for c in calls if name(c) in ("paid_targets_behind", "refetch_allowed")]
+    _assert_eq(sorted({name(c) for c in calls if name(c) in (
+        "paid_targets_behind", "refetch_allowed", "note_refetched")}),
+        ["note_refetched", "paid_targets_behind", "refetch_allowed"],
+        "304 branch checks behind, once per version, and records the refetch")
     refetch = [c.lineno for c in calls if name(c) == "fetch_channel_feed" and any(
         k.arg == "conditional" and isinstance(k.value, ast.Constant)
         and k.value.value is False for k in c.keywords)]
@@ -256,6 +276,7 @@ def main():
         test_one_fault_is_a_hiccup,
         test_fault_counter_survives_garbage,
         test_paid_targets_behind,
+        test_refetch_once_per_version,
         test_updater_refetches_when_paid_behind,
     )
     for index, case in enumerate(cases):

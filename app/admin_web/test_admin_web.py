@@ -333,6 +333,12 @@ def test_diag_http(path):
                        headers=bearer).status_code, 400, "bad hour")
         _assert_eq(client.post("/api/diag/audit", headers=bearer).status_code, 405,
                    "diag is GET only")
+        refetches = client.get("/api/diag/refetches", params={"hours": 6}, headers=bearer)
+        _assert_eq(refetches.status_code, 200, "refetches summary")
+        _assert_eq("== Full refetches after 304" in refetches.text, True, "refetches text")
+        _assert_eq(client.get("/api/diag/refetches", params={"hours": 500},
+                              headers=bearer).status_code, 400, "hours bounded")
+        _assert_eq(client.get("/api/diag/refetches").status_code, 401, "refetches needs the token")
     finally:
         config.db_path = original
         config.diag_token = original_token

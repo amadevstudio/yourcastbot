@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from app.repository.storage import storage
+from db import runtime_kv
 
 # Разовый таймаут/503 не должен гасить уведомления.
 FEED_FAILURES_BEFORE_NOTIFY_OFF = 5
@@ -82,3 +83,33 @@ def paid_targets_behind(channel, target_connections) -> list:
         connection for connection in (target_connections or [])
         if connection['last_guid'] != latest_guid
         and connection['last_date'] != latest_date]
+
+
+def feed_version(pc_info, channel=None) -> str:
+    """The validators a 304 answered for: one feed version of this channel."""
+    def pick(key):
+        value = (pc_info or {}).get(key)
+        if value:
+            return str(value)
+        try:
+            return str(channel[key] or "")
+        except (KeyError, IndexError, TypeError):
+            return ""
+    return pick('http_etag') + "|" + pick('http_last_modified')
+
+
+def refetch_allowed(channel_id, version, database=None) -> bool:
+    """One full refetch per feed version and channel.
+
+    paid_targets_behind compares cursors with channels.last_*, which the
+    episode list and add_sub also write, in their own formats. When a full
+    parse of the same version leaves them "behind" (it returned early:
+    everyone current, or no items), refetching again gives the same result:
+    it only costs a download and 6 s of the circle, every circle.
+    """
+    return runtime_kv.get_kv(
+        "feed_refetch_%s" % channel_id, database=database) != version
+
+
+def note_refetched(channel_id, version, database=None):
+    runtime_kv.set_kv("feed_refetch_%s" % channel_id, version, database=database)
