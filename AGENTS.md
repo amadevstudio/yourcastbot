@@ -83,6 +83,27 @@ never by `service_name`: since the ETag updater every channel with an
 - Locks: `python app/core/sender/test_record_delivery.py`,
   `python app/service/record/test_delivery.py`, `python lib/requests/test_url.py`.
 
+## Episode cursor
+
+Which episodes the circle sends is decided by one cursor per subscription
+(`user_channel_cs.last_guid` / `last_date`), not by a delivery log. The
+updater moves it when it queues the circle job, before Telegram. The
+outbox (done after ACK, retries, dead-enclosure notice) covers a job that
+exists; it cannot bring back an episode no job was queued for. So
+anything that moves a cursor without queueing a job for that chat skips
+the episode for good. On purpose: the nosub digest ("reminded = seen")
+and opening the episode list (the chat saw it). Never on purpose: a
+paying user read as free (see Tariff clock).
+
+- A 304 means "the feed is what was parsed last time", not "every payer
+  got it". A manual refresh parses for one chat and stores the ETag for
+  all. `paid_targets_behind` (`app/jobs/feed_health.py`): if a paid
+  cursor is behind the channel, refetch without validators and parse.
+  Free listeners behind do not force a download.
+- Locks: `python app/jobs/test_feed_health.py` (CD gate),
+  `python app/jobs/test_updater_not_modified.py` (needs the bot's
+  requirements).
+
 ## Send workers (current contract)
 
 Configured in `threads_config`:

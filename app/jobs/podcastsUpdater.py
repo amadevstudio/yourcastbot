@@ -27,7 +27,8 @@ from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message, format_feed_notice
 from app.jobs.circle_health import mark_circle_finished, mark_circle_started
 from app.jobs.feed_health import (
-    should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold)
+    should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold,
+    paid_targets_behind)
 from app.jobs.digest_outbox import pending_count
 from app.jobs.nosub_digest import (
     latest_episode_id, nosub_users_behind, should_skip_item_parse)
@@ -198,6 +199,22 @@ def send_new_records_by_channel(
 
     root, pc_info, service_name, service_id = \
         app.service.podcast.podcast.fetch_channel_feed(channel, manual=manual)
+
+    if pc_info.get('notModified'):
+        # 304 — «фид тот же, что при прошлом разборе», а не «все платные его
+        # получили»: ручное «обновить» разбирает фид для одного чата и сохраняет
+        # ETag за всех. Если кто-то из платных отстал от канала — полный фид.
+        behind = paid_targets_behind(
+            channel, list(connections) + list(tg_channel_connections or []))
+        if behind:
+            logger.log(
+                "Feed not modified for channel", channel['id'],
+                "; paid listeners behind:",
+                [c['user_telegram_id'] for c in behind],
+                "; refetching without validators")
+            root, pc_info, service_name, service_id = \
+                app.service.podcast.podcast.fetch_channel_feed(
+                    channel, manual=manual, conditional=False)
 
     if pc_info.get('notModified'):
         # 304: фид живой и не менялся. Не парсим, не шлём, счётчик сбоев не трогаем

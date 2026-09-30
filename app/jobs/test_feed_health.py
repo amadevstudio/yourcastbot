@@ -3,6 +3,7 @@
 
 Run: python app/jobs/test_feed_health.py
 """
+import ast
 import os
 import sys
 import tempfile
@@ -194,6 +195,57 @@ def test_fault_counter_survives_garbage(db_path):
         None, "unreadable counter counts as the first fault")
 
 
+def test_paid_targets_behind(_db_path):
+    channel = {'last_guid': 'ep-2', 'last_date': '2026-09-30'}
+    current = {'user_telegram_id': 1, 'last_guid': 'ep-2', 'last_date': '2026-09-30'}
+    behind = {'user_telegram_id': 2, 'last_guid': 'ep-1', 'last_date': '2026-09-29'}
+    _assert_eq(
+        [c['user_telegram_id'] for c in
+         feed_health.paid_targets_behind(channel, [current, behind])],
+        [2], "manual refresh left the other payer behind")
+    _assert_eq(
+        feed_health.paid_targets_behind(channel, [current]), [],
+        "everyone current trusts the 304")
+    _assert_eq(
+        feed_health.paid_targets_behind(channel, [
+            {'user_telegram_id': 3, 'last_guid': 'ep-2 ', 'last_date': '2026-09-30'}]),
+        [], "same date: a full parse would send nothing either")
+    _assert_eq(
+        feed_health.paid_targets_behind(channel, [
+            {'user_telegram_id': 4, 'last_guid': 'ep-2', 'last_date': '2026-09-30 01'}]),
+        [], "same guid: nothing newer to send")
+    _assert_eq(
+        feed_health.paid_targets_behind(
+            {'last_guid': None, 'last_date': None}, [behind]),
+        [], "no channel latest: trust the 304")
+    _assert_eq(
+        feed_health.paid_targets_behind(channel, []), [], "no paid targets")
+
+
+def test_updater_refetches_when_paid_behind(_db_path):
+    """304 must not end the channel before the behind check and full refetch."""
+    path = os.path.join(_ROOT, "app", "jobs", "podcastsUpdater.py")
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    func = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                and node.name == "send_new_records_by_channel")
+    calls = [node for node in ast.walk(func) if isinstance(node, ast.Call)]
+
+    def name(call):
+        return getattr(call.func, "attr", getattr(call.func, "id", None))
+
+    check = [c.lineno for c in calls if name(c) == "paid_targets_behind"]
+    refetch = [c.lineno for c in calls if name(c) == "fetch_channel_feed" and any(
+        k.arg == "conditional" and isinstance(k.value, ast.Constant)
+        and k.value.value is False for k in c.keywords)]
+    not_modified_return = [
+        node.lineno for node in ast.walk(func) if isinstance(node, ast.Return)
+        and "not_modified" in ast.dump(node)]
+    _assert_eq(bool(check and refetch and not_modified_return), True,
+               "updater has the behind check, the full refetch and the 304 return")
+    _assert_eq(max(check + refetch) < min(not_modified_return), True,
+               "behind check and refetch come before the 304 return")
+
+
 def main():
     tmpdir = tempfile.mkdtemp(prefix="yourcast_feed_health_")
     cases = (
@@ -203,6 +255,8 @@ def main():
         test_tracker_link_cools_the_cdn,
         test_one_fault_is_a_hiccup,
         test_fault_counter_survives_garbage,
+        test_paid_targets_behind,
+        test_updater_refetches_when_paid_behind,
     )
     for index, case in enumerate(cases):
         path = os.path.join(tmpdir, "case_%d.db" % index)

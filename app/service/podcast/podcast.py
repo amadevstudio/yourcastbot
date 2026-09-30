@@ -47,16 +47,17 @@ def _channel_field(channel, key, default=None):
     return value
 
 
-def fetch_channel_feed(channel, manual=False):
+def fetch_channel_feed(channel, manual=False, conditional=True):
     """Выборка фида канала для апдейтера.
 
     Scheduled (manual=False): наш rss_link + сохранённые HTTP-валидаторы.
     iTunes — только если rss_link пустой.
     Ручная кнопка «обновить» оставляет itunes-then-rss, но валидаторы
     всё равно уходят на GET RSS.
+    conditional=False — без валидаторов: полный фид даже при прежнем ETag.
     """
-    etag = _channel_field(channel, 'http_etag')
-    last_modified = _channel_field(channel, 'http_last_modified')
+    etag = _channel_field(channel, 'http_etag') if conditional else None
+    last_modified = _channel_field(channel, 'http_last_modified') if conditional else None
     rss_link = _channel_field(channel, 'rss_link')
     itunes_id = _channel_field(channel, 'itunes_id')
 

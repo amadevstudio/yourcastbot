@@ -53,3 +53,32 @@ def note_feed_failure(
     storage.set_channel_feed_dead_until(
         channel_id, stamp + FEED_DEAD_PROBE_SECONDS, database=database)
     return "newly_dead"
+
+
+def _missing(value) -> bool:
+    return value in (None, '', 'None')
+
+
+def paid_targets_behind(channel, target_connections) -> list:
+    """Paid targets a 304 would leave without the latest episode.
+
+    304 means "the feed is what was parsed last time", not "every paid
+    listener got it": a manual refresh parses the feed for one chat and
+    stores the ETag for the channel. A full parse sends the latest item only
+    to a cursor that differs from the channel's by guid and by date (the
+    date check drops everyone at the channel's date), so this does the
+    same. Empty when the channel has no latest to compare with.
+    """
+    if channel is None:
+        return []
+    try:
+        latest_guid = channel['last_guid']
+        latest_date = channel['last_date']
+    except (KeyError, IndexError, TypeError):
+        return []
+    if _missing(latest_guid):
+        return []
+    return [
+        connection for connection in (target_connections or [])
+        if connection['last_guid'] != latest_guid
+        and connection['last_date'] != latest_date]
