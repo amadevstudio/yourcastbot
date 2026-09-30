@@ -31,7 +31,7 @@ from app.jobs.feed_health import (
     paid_targets_behind, feed_version, refetch_allowed, note_refetched)
 from app.jobs.digest_outbox import pending_count
 from app.jobs.nosub_digest import (
-    latest_episode_id, nosub_users_behind, should_skip_item_parse)
+    is_empty_cursor, latest_episode_id, nosub_users_behind, should_skip_item_parse)
 from app.repository.storage import storage
 from config import (
     db_path, std_bitrate, server,
@@ -434,6 +434,24 @@ def send_new_records_by_channel(
     #     return new_recs_flag
 
     target_chats = dict(target_users_tg_set)
+
+    # «Тихий старт»: курсор "__" записан, пока фид не разбирался (Acast/BBC до
+    # feed_xml.channel_element), — чат не видел ни одного выпуска. Первый разбор
+    # ставит его на последний выпуск (синхронизация target_chats в конце),
+    # ничего не отправляя: иначе починка фида разом шлёт до 4 старых выпусков.
+    # Ручное «обновить» работает как обычно.
+    if not manual:
+        quiet_start = {
+            utg for guid, users in last_saved_guids_map.items()
+            if is_empty_cursor(guid) for utg in users}
+        quiet_start &= set(target_users_tg_set)
+        if quiet_start:
+            logger.log(
+                "Quiet start for channel", channel['id'],
+                "; chats with an empty cursor:", len(quiet_start))
+            for utg in quiet_start:
+                del target_users_tg_set[utg]
+
     utg_langs: dict[int, str] = {}
     bitrates_tg: dict[int, int | None] = {}
     db_users = SQLighter(db_path)
@@ -777,15 +795,26 @@ def _persist_channel_http_validators(channel, pc_info):
 
 def flag_nosubs_for_digest(
         nosub_last_guids, latest_pgd, latest_date, channel_id, db_users=None):
-    behind = nosub_users_behind(nosub_last_guids, latest_pgd)
-    if not behind:
+    # Канал без разобранного выпуска: сравнивать не с чем. Раньше чаты с
+    # настоящим курсором получали «вышли новые выпуски», а курсор затирался "__".
+    if is_empty_cursor(latest_pgd):
+        return
+    cursors = nosub_last_guids or {}
+    # пустой курсор («тихий старт»): переставить без напоминания
+    quiet = [u for u, guid in cursors.items() if is_empty_cursor(guid)]
+    behind = nosub_users_behind(
+        {u: guid for u, guid in cursors.items() if not is_empty_cursor(guid)},
+        latest_pgd)
+    if not behind and not quiet:
         return
     own_db = db_users is None
     if own_db:
         db_users = SQLighter(db_path)
     try:
-        for user_tg_id in behind:
-            storage.set_new_podcast_available_flag(user_tg_id)
+        remind = set(behind)  # TED alone has ~10k free listeners: no list scans
+        for user_tg_id in behind + quiet:
+            if user_tg_id in remind:
+                storage.set_new_podcast_available_flag(user_tg_id)
             try:
                 db_users.update_sub_last_guid_and_date(
                     user_tg_id, channel_id, latest_pgd, latest_date)

@@ -19,6 +19,15 @@ def is_missing_guid(value) -> bool:
     return value in (None, '', 'None')
 
 
+# get_record_uniq_id('', '', ''): saved when the feed parsed to no items
+# (Acast/BBC before feed_xml.channel_element). Such a chat never saw an episode.
+EMPTY_CURSOR = "__"
+
+
+def is_empty_cursor(value) -> bool:
+    return is_missing_guid(value) or value == EMPTY_CURSOR
+
+
 def _user_field(user, name, default=None):
     if user is None:
         return default

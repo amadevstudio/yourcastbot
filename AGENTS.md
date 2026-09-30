@@ -112,7 +112,12 @@ paying user read as free (see Tariff clock).
   (early return: all current, or no items), refetching again only costs a
   download and 6 s per circle. Without the guard channels 21 and 1899
   refetched every circle.
-- Locks: `python app/jobs/test_feed_health.py` (CD gate),
+- A cursor `__` (the feed parsed to no items when it was saved) gets a
+  quiet start: the first real parse moves it to the newest episode
+  without sending or reminding. A real, older cursor catches up as usual
+  (at most 4 episodes). A channel whose latest is `__` reminds nobody.
+- Locks: `python app/jobs/test_feed_health.py`,
+  `python app/jobs/test_quiet_start.py` (CD gate),
   `python app/jobs/test_updater_not_modified.py` (needs the bot's
   requirements).
 
