@@ -132,16 +132,28 @@ def for_each_digest_user(user_tg_ids, handle_user, on_error=None, pause=None):
             pause()
 
 
-def nosub_users_behind(nosub_last_guids, latest_pgd):
-    """Telegram ids whose saved last_guid is not the latest episode on this channel."""
+def nosub_users_behind(nosub_last_guids, latest_pgd, seen_at=None, latest_at=None):
+    """Telegram ids with something new on this channel.
+
+    nosub_last_guids: {tg: saved last_guid}. With latest_at (when the newest
+    episode came out) and seen_at ({tg: date of the saved cursor}), "new"
+    means a later episode, not a different id: the same episode's id changes
+    when the feed re-formats its pubDate or edits a title, and
+    channels.last_* is also written by the episode list and add_sub in their
+    own formats. That sent "new episodes are out" with nothing new. Without
+    both dates the ids decide, as before. Datetimes must be comparable
+    (all aware).
+    """
     if is_missing_guid(latest_pgd):
         return []
     behind = []
     seen = set()
     for user_tg_id, saved_guid in (nosub_last_guids or {}).items():
-        if user_tg_id in seen:
+        if user_tg_id in seen or saved_guid == latest_pgd:
             continue
-        if saved_guid != latest_pgd:
-            behind.append(user_tg_id)
-            seen.add(user_tg_id)
+        saved_at = (seen_at or {}).get(user_tg_id)
+        if latest_at is not None and saved_at is not None and latest_at <= saved_at:
+            continue
+        behind.append(user_tg_id)
+        seen.add(user_tg_id)
     return behind

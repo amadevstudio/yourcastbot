@@ -120,6 +120,12 @@ paying user read as free (see Tariff clock).
   quiet start: the first real parse moves it to the newest episode
   without sending or reminding. A real, older cursor catches up as usual
   (at most 4 episodes). A channel whose latest is `__` reminds nobody.
+- A free listener is reminded of a later episode, not of a different id
+  (`nosub_users_behind` with dates): the same episode's id changes when
+  the host re-renders its pubDate (`+0300` vs `GMT`) or edits a title, and
+  `channels.last_*` is also written by the episode list and `add_sub`.
+  Unknown dates (`get_strped_datetime` answers 1970 for junk) fall back to
+  ids. Lock: `python app/jobs/test_nosub_rule.py` (CD gate).
 - Locks: `python app/jobs/test_feed_health.py`,
   `python app/jobs/test_quiet_start.py` (CD gate),
   `python app/jobs/test_updater_not_modified.py` (needs the bot's
