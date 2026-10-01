@@ -4,6 +4,12 @@ This repository is public. Do not commit secrets, tokens, private hostnames,
 or production credentials. Gitignored `constants.py` / `constant_texts.py`
 stay local.
 
+Commit only what the product and its tests need. Debugging leftovers
+(commented-out debug code, one-off scripts, sample payloads), agent working
+files (scratch, reports, dumps, notes) and real user data (Telegram ids,
+balances, payments, log lines) stay out of code, tests, docs and commit
+messages. Tests use made-up ids; scratch lives outside the repo.
+
 ## Do not drop existing behavior
 
 A refactor that replaces *how* something works must keep *what* it

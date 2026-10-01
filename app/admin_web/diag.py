@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """Read-only "which episodes did a chat miss" reports. DB and updater logs.
 
-Used by tools/debugging_utilities/missed_episodes.py (on the server) and by
-GET /api/diag/* (admin API, separate read-only token). Nothing here writes:
-the DB is opened with mode=ro.
+Served by GET /api/diag/* (admin API, separate read-only token). Nothing
+here writes: the DB is opened with mode=ro.
 
 Who got an episode comes from the updater log, not from send_outbox: the
 sender rewrites a circle row's chat_ids to the chats still waiting, so a
