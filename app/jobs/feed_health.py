@@ -60,15 +60,25 @@ def _missing(value) -> bool:
     return value in (None, '', 'None')
 
 
+def _empty(value) -> bool:
+    # "__": the id of a feed that parsed to no items (nosub_digest.EMPTY_CURSOR)
+    return _missing(value) or value == "__"
+
+
 def paid_targets_behind(channel, target_connections) -> list:
-    """Paid targets a 304 would leave without the latest episode.
+    """Paid targets a 304 would leave without an episode.
 
     304 means "the feed is what was parsed last time", not "every paid
     listener got it": a manual refresh parses the feed for one chat and
     stores the ETag for the channel. A full parse sends the latest item only
     to a cursor that differs from the channel's by guid and by date (the
     date check drops everyone at the channel's date), so this does the
-    same. Empty when the channel has no latest to compare with.
+    same.
+
+    A channel with no latest (the stored version parsed to nothing, e.g.
+    before feed_xml.channel_element) holds every paid target: its first good
+    parse is a quiet start. Waiting for the next feed version means that
+    version's new episode is the one the quiet start skips.
     """
     if channel is None:
         return []
@@ -77,13 +87,14 @@ def paid_targets_behind(channel, target_connections) -> list:
         latest_date = channel['last_date']
     except (KeyError, IndexError, TypeError):
         return []
-    if _missing(latest_guid):
-        return []
+    targets = list(target_connections or [])
+    if _empty(latest_guid):
+        return targets
     # An empty cursor ("__": saved while the feed parsed to nothing) counts as
     # having seen the channel's latest (podcastsUpdater treats it so), not behind.
     return [
-        connection for connection in (target_connections or [])
-        if not _missing(connection['last_guid']) and connection['last_guid'] != "__"
+        connection for connection in targets
+        if not _empty(connection['last_guid'])
         and connection['last_guid'] != latest_guid
         and connection['last_date'] != latest_date]
 

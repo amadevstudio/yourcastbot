@@ -125,6 +125,11 @@ paying user read as free (see Tariff clock).
   episode is "quiet": payers never get files). A real, older cursor
   catches up as usual (at most 4 episodes). A channel whose latest is
   `__` reminds nobody.
+- A 304 on a channel whose latest is `__` counts every payer as behind
+  (one refetch per version). An unchanged feed answers 304 every circle
+  and is never parsed, so its first good parse came with the next
+  episode, and the quiet start skipped exactly that episode (6 Minute
+  English, ~1.3k channels after the parser fix).
 - A free listener is reminded of a later episode, not of a different id
   (`nosub_users_behind` with dates): the same episode's id changes when
   the host re-renders its pubDate (`+0300` vs `GMT`) or edits a title, and

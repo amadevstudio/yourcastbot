@@ -328,6 +328,33 @@ def main():
         _assert_eq(sent, [("Wednesday", [PAYER_A, PAYER_B])],
                    "all payers empty: the next episode is delivered")
 
+        # The prod case after the parser fix (6 Minute English): the feed has
+        # not changed since it parsed to nothing, so every circle got 304 and
+        # the channel and all cursors stayed "__". The first parse came with
+        # the next episode, and the quiet start skipped exactly that episode.
+        # A 304 on an empty channel refetches once per version, so the quiet
+        # start lands on the old version and the next episode is delivered.
+        FEED["version"] = 2
+        _setup(feed_url)
+        runtime_kv.delete_kv("feed_refetch_%s" % CHANNEL_ID, database=config.db_path)
+        _circle()  # stores the ETag of version 2
+        conn = connect_sqlite(config.db_path)
+        conn.execute("UPDATE channels SET last_guid = '__' WHERE id = ?", (CHANNEL_ID,))
+        conn.execute("UPDATE user_channel_cs SET last_guid = '__'")
+        conn.commit()
+        conn.close()
+        sent, requests = _circle()
+        _assert_eq(requests, ["304", "200 full"], "304 on an empty channel: one full refetch")
+        _assert_eq(sent, [], "the refetch is a quiet start: old episodes are not sent")
+        _assert_eq((_cursor(PAYER_A), _cursor(PAYER_B)), (_pgd(2), _pgd(2)),
+                   "empty channel: cursors moved before the next episode")
+        sent, requests = _circle()
+        _assert_eq(requests, ["304"], "same version again: no second download")
+        FEED["version"] = 3
+        sent, requests = _circle()
+        _assert_eq(sent, [("Wednesday", [PAYER_A, PAYER_B])],
+                   "empty channel behind a 304: the next episode is delivered")
+
         # A payer stuck at "__" while the channel already has a real latest
         # (left by the bug above, or subscribed while the feed was broken):
         # it has seen the channel's latest, and gets the next episode.

@@ -215,9 +215,9 @@ def test_paid_targets_behind(_db_path):
             {'user_telegram_id': 4, 'last_guid': 'ep-2', 'last_date': '2026-09-30 01'}]),
         [], "same guid: nothing newer to send")
     _assert_eq(
-        feed_health.paid_targets_behind(
-            {'last_guid': None, 'last_date': None}, [behind]),
-        [], "no channel latest: trust the 304")
+        [c['user_telegram_id'] for c in feed_health.paid_targets_behind(
+            {'last_guid': None, 'last_date': None}, [behind])],
+        [2], "no channel latest: the first parse must not wait for a new episode")
     _assert_eq(
         feed_health.paid_targets_behind(channel, []), [], "no paid targets")
     _assert_eq(
@@ -228,6 +228,14 @@ def test_paid_targets_behind(_db_path):
         [c['user_telegram_id'] for c in feed_health.paid_targets_behind(
             {'last_guid': '__', 'last_date': '2026-09-30'}, [behind])],
         [2], "channel still empty: a real cursor still triggers the one refetch")
+    empty = {'user_telegram_id': 6, 'last_guid': '__', 'last_date': '2026-08-06'}
+    _assert_eq(
+        [c['user_telegram_id'] for c in feed_health.paid_targets_behind(
+            {'last_guid': '__', 'last_date': '2026-08-06'}, [empty])],
+        [6], "channel and cursors empty behind a 304: refetch before the next episode")
+    _assert_eq(
+        feed_health.paid_targets_behind({'last_guid': '__', 'last_date': None}, []),
+        [], "empty channel without payers: free listeners do not force a download")
 
 
 def test_refetch_once_per_version(db_path):
