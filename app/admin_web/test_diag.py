@@ -259,6 +259,57 @@ def test_digest_stats(path):
                "no empty cursors in the fixture")
 
 
+def test_outbox_stats(work_dir):
+    path = os.path.join(work_dir, "outbox.db")
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE send_outbox (id INTEGER PRIMARY KEY, created_at TEXT, "
+        "action TEXT NOT NULL, user_id TEXT NOT NULL, payload_json TEXT NOT NULL, "
+        "status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, "
+        "leased_until TEXT NULL, available_at TEXT NOT NULL)")
+    conn.commit()
+    conn.close()
+    ro = diag.connect_ro(path)
+    try:
+        text = diag.as_text(diag.outbox_stats, ro, hours=6, now=NOW)
+    finally:
+        ro.close()
+    _assert_in("none: every pool is drained", text, "empty outbox: drained")
+
+    def at(**delta):
+        return diag.local_to_utc_text(NOW + datetime.timedelta(**delta))
+
+    rows = [
+        (1, at(hours=-1), 'circle', 'c7', 'done', 1, None, at(hours=-1)),
+        (2, at(hours=-2), 'circle', 'c8', 'failed', 8, None, at(hours=-2)),
+        (3, at(minutes=-30), 'rec', '5001', 'done', 1, None, at(minutes=-30)),
+        (4, at(hours=-3), 'rec', '5002', 'pending', 2, None, at(minutes=10)),
+        (5, at(minutes=-40), 'circle', 'c9', 'leased', 1, at(minutes=-10), at(minutes=-40)),
+        (6, at(hours=-10), 'update', '5003', 'done', 1, None, at(hours=-10)),
+    ]
+    conn = sqlite3.connect(path)
+    conn.executemany(
+        "INSERT INTO send_outbox (id, created_at, action, user_id, payload_json, status, "
+        "attempts, leased_until, available_at) VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?)", rows)
+    conn.commit()
+    conn.close()
+    ro = diag.connect_ro(path)
+    try:
+        text = diag.as_text(diag.outbox_stats, ro, hours=6, now=NOW)
+    finally:
+        ro.close()
+    _assert_in("circle {'done': 1, 'failed': 1, 'leased': 1}", text,
+               "circle rows of the window by status")
+    _assert_in("rec    {'done': 1, 'pending': 1}", text, "rec rows of the window by status")
+    _assert_eq("update" in text.split("== Open rows")[0], False,
+               "rows older than the window are not counted")
+    _assert_in("rec    pending 1, oldest created", text, "open pending rows")
+    _assert_in("1 waiting for their retry time", text, "backoff is told apart")
+    _assert_in("circle leased  1", text, "open leased rows")
+    _assert_in("1 with an expired lease (no worker renews it)", text, "expired lease flagged")
+    _assert_eq("5001" in text or "5002" in text, False, "no chat or user ids in the report")
+
+
 def main():
     work_dir = tempfile.mkdtemp(prefix="yourcast_diag_")
     path = _prepare(work_dir)
@@ -269,6 +320,7 @@ def main():
     test_audit(path, work_dir)
     test_refetches(path, work_dir)
     test_digest_stats(path)
+    test_outbox_stats(work_dir)
     print("all diag checks passed")
 
 

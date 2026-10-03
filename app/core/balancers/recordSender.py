@@ -95,10 +95,20 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
     def _heartbeat_loop(self):
         while True:
             time.sleep(outbox.HEARTBEAT_SECONDS)
-            try:
-                outbox.heartbeat()
-            except Exception as e:
-                logger.err("Send balancer outbox heartbeat failed:", e)
+            self._heartbeat_once()
+
+    def _heartbeat_once(self, now=None):
+        try:
+            stalled = outbox.release_stalled(now=now)
+            if stalled:
+                # Slots belong to the balancer thread: replace them there.
+                self.main_queue.put({'action': 'stalled', 'ids': stalled})
+        except Exception as e:
+            logger.err("Send balancer stalled check failed:", e)
+        try:
+            outbox.heartbeat(now=now)
+        except Exception as e:
+            logger.err("Send balancer outbox heartbeat failed:", e)
 
     def _on_sender_idle(self):
         try:
@@ -141,6 +151,10 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
         if action == 'drain':
             self._fill_idle()
             return
+        if action == 'stalled':
+            self._replace_stalled(input_data.get('ids') or [])
+            self._fill_idle()
+            return
         if action in self.actions:
             # enqueue() only puts drain on this queue. A leftover rec/update
             # payload must not sit behind an in-flight upload: sqlite holds
@@ -150,6 +164,31 @@ class RecordBalancer(threading.Thread, metaclass=Singleton):
             self._fill_idle()
             return
         logger.warn(f"Unknown sender action {action!r}, skipping")
+
+    def _replace_stalled(self, outbox_ids):
+        """Give a slot whose worker is stuck a fresh thread and queue.
+
+        A call that never returns keeps the thread busy (not paused), so the
+        slot is never idle again until a restart. The stuck thread keeps the
+        old queue: it never takes new work. If its call returns after all,
+        it finishes that job (mark_done is a no-op once the row was retried)
+        and waits on the old queue forever.
+        """
+        stalled = set(outbox_ids)
+        for action in self.actions:
+            for index in range(self.count_threads[action]):
+                thread = self.threads[action][index]
+                current = getattr(thread, 'current_outbox_id', None)
+                if current is None or current not in stalled:
+                    continue
+                logger.err(
+                    f"Thread {action}:{index} is stuck on outbox id={current}, "
+                    "replacing it")
+                self.queues[action][index] = queue.Queue()
+                self.threads[action][index] = RecordSender(
+                    self.queues[action][index], f"{action}_{index}",
+                    on_idle=self._on_sender_idle)
+                self.threads[action][index].start()
 
     def _ensure_sender_alive(self, action, current_thread_index):
         if self.threads[action][current_thread_index].is_alive():
@@ -180,6 +219,9 @@ class RecordSender(threading.Thread):
         self.thread_queue = thread_queue
         self.thread_num = thread_num
         self.on_idle = on_idle
+        # The outbox row this thread is working on (the balancer replaces a
+        # thread stuck on it, see RecordBalancer._replace_stalled).
+        self.current_outbox_id = None
 
     def pause(self):
         with self.state:
@@ -210,10 +252,12 @@ class RecordSender(threading.Thread):
 
             try:
                 logger.log(f"Sending in thread #{self.thread_num}")
+                self.current_outbox_id = input_data.get('outbox_id')
                 self.process_input(input_data, thonbot)
             except Exception as e:
                 log_caught(logger, f"{self.thread_num} failed sending, continuing:", error=e)
             finally:
+                self.current_outbox_id = None
                 self.thread_queue.task_done()
                 if self.thread_queue.empty():
                     self.pause()

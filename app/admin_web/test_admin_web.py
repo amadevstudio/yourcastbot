@@ -348,6 +348,13 @@ def test_diag_http(path):
                               headers=bearer).status_code, 400, "digest hours bounded")
         _assert_eq(client.get("/api/diag/feed", params={"channel": "x"},
                               headers=bearer).status_code, 422, "channel must be an id")
+        pools = client.get("/api/diag/outbox", params={"hours": 6}, headers=bearer)
+        _assert_eq(pools.status_code, 200, "outbox stats")
+        _assert_eq("== send_outbox rows created in the last 6h" in pools.text, True,
+                   "outbox stats text")
+        _assert_eq(client.get("/api/diag/outbox").status_code, 401, "outbox needs the token")
+        _assert_eq(client.get("/api/diag/outbox", params={"hours": 500},
+                              headers=bearer).status_code, 400, "outbox hours bounded")
     finally:
         config.db_path = original
         config.diag_token = original_token

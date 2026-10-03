@@ -174,6 +174,19 @@ Rules:
   `/usersCount` stall). This does **not** apply to rec/circle/update.
 - Hung HTTP on a rec worker must fail fast (timeouts, no long urllib3
   retry storms). A dead CDN must not hold a lease indefinitely.
+- **Stuck worker.** Heartbeat renews every in-flight lease while the
+  process lives, so a call that never returns used to hold its row, its
+  user's place in the pool and its slot until a restart (MAX_ATTEMPTS
+  never counted). A job with no progress (claim or `touch()`) for
+  `STALL_SECONDS` (30 min) is released (`release_stalled`): the lease
+  expires, the row is retried, the slot gets a fresh thread. Long work
+  must touch: download/upload progress does, each chat of a fanout, and
+  the manual refresh per feed. Locks: `python db/test_send_outbox.py`,
+  `python app/core/balancers/test_record_balancer.py`,
+  `python app/core/sender/test_record_delivery.py`.
+- **Claim order.** Clicks newest first (the person is waiting now).
+  Circle oldest first: one row per episode, one in flight per channel, so
+  a catch-up arrives in order and an old row is never passed forever.
 - **Dead enclosure** (timeout, DNS, Telegram could not fetch the URL) is
   terminal: do not spend `MAX_ATTEMPTS` on it. Tell the user with site +
   file links.
@@ -192,8 +205,9 @@ Rules:
 
 ## Diagnostics API
 
-`GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=|feed?channel=` (`app/admin_web/diag.py`) serve
-the missed-episode reports for agents without server access. Rules:
+`GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=|digest?hours=|outbox?hours=|feed?channel=`
+(`app/admin_web/diag.py`) serve the missed-episode reports for agents
+without server access. Rules:
 
 - Own token `diagToken` in `constants.py` (>= 32 chars, `Authorization:
   Bearer`). Unset or short: 404. It never opens admin endpoints, and the
@@ -206,6 +220,9 @@ the missed-episode reports for agents without server access. Rules:
   done row lists nobody. Logs keep 3 days; past that, say "unknown".
 - `refetches?hours=` counts 304 refetches per channel: more than one per
   channel without a new feed version means the refetch guard is off.
+- `outbox?hours=` counts `send_outbox` rows per pool and status, and the
+  open ones (pending, leased) of any age: an old pending row or an expired
+  lease means a pool is not draining. Aggregates only, no chat ids.
 - `feed?channel=` is the only call that touches the network: a GET of the
   URL stored for that channel (and of iTunes' feedUrl when it differs),
   never a URL from the request. It shows the XML the parser sees.

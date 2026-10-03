@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -590,6 +591,103 @@ def _set_created_at(db_path, outbox_id, created_at):
         db.close()
 
 
+def _expire_lease(db_path, outbox_id):
+    db = SQLighter(db_path)
+    try:
+        db.cursor.execute(
+            "UPDATE send_outbox SET leased_until = ? WHERE id = ?",
+            ("2000-01-01T00:00:00Z", outbox_id))
+        db.connection.commit()
+    finally:
+        db.close()
+
+
+def test_stalled_job_is_released_and_retried(db_path):
+    """A worker stuck on a call that never returns: heartbeat used to renew
+    its lease for as long as the process lived, so the row (and the user's
+    place in the pool) stayed taken and MAX_ATTEMPTS never counted."""
+    outbox_id = outbox.enqueue(
+        _rec_job(chat_id=7101), database=db_path, dispatch=False)
+    stuck = outbox.claim(database=db_path, action='rec')
+    _assert_eq(stuck['outbox_id'], outbox_id, "claimed by the worker that gets stuck")
+    _assert_eq(outbox.release_stalled(database=db_path), [], "a fresh claim is live")
+    later = time.monotonic() + outbox.STALL_SECONDS + 1
+    _assert_eq(outbox.release_stalled(database=db_path, now=later), [outbox_id],
+               "no progress for STALL_SECONDS: released")
+    _expire_lease(db_path, outbox_id)
+    _assert_eq(outbox.heartbeat(database=db_path, now=later), 0,
+               "heartbeat no longer renews it")
+    _assert_eq(outbox.reclaim(database=db_path, force=False), 1,
+               "its lease expires and the row is reclaimed")
+    retry = outbox.claim(database=db_path, action='rec')
+    _assert_eq((retry['outbox_id'], retry['outbox_attempts']), (outbox_id, 2),
+               "another worker retries it, attempts count")
+    outbox.mark_done(outbox_id, database=db_path, attempts=stuck['outbox_attempts'])
+    _assert_eq(outbox.get_row(outbox_id, database=db_path)['status'], 'leased',
+               "the stuck call returning late changes nothing")
+    _assert_eq(outbox.release_stalled(database=db_path), [],
+               "the retry is held (the late call did not drop it)")
+    outbox.mark_done(outbox_id, database=db_path, attempts=retry['outbox_attempts'])
+    _assert_eq(outbox.get_row(outbox_id, database=db_path)['status'], 'done',
+               "the retry completes it")
+
+
+def test_touch_is_progress(db_path):
+    outbox_id = outbox.enqueue(
+        _rec_job(chat_id=7102), database=db_path, dispatch=False)
+    job = outbox.claim(database=db_path, action='rec')
+    key = (db_path, outbox_id)
+    # claimed almost STALL_SECONDS ago, still downloading
+    outbox._in_flight[key] = time.monotonic() - outbox.STALL_SECONDS + 5
+    _assert_eq(outbox.touch(outbox_id, database=db_path, attempts=job['outbox_attempts']), 1,
+               "a progress callback touches the row")
+    _assert_eq(outbox.release_stalled(database=db_path, now=time.monotonic() + 10), [],
+               "a touch restarts the clock: a long live download is not stuck")
+    # released while silent, then the call comes back before the lease expired
+    _assert_eq(outbox.release_stalled(
+        database=db_path, now=time.monotonic() + outbox.STALL_SECONDS + 1), [outbox_id],
+        "silent: released")
+    outbox.touch(outbox_id, database=db_path, attempts=job['outbox_attempts'])
+    _expire_lease(db_path, outbox_id)
+    _assert_eq(outbox.heartbeat(database=db_path), 1,
+               "a job that came back is covered by heartbeat again")
+    _assert_eq(outbox.reclaim(database=db_path, force=False), 0, "and is not reclaimed")
+    outbox.mark_done(outbox_id, database=db_path, attempts=job['outbox_attempts'])
+    _assert_eq(outbox.touch(outbox_id, database=db_path, attempts=job['outbox_attempts']), 0,
+               "touch after done is a no-op")
+    _assert_eq(key in outbox._in_flight, False, "and does not hold the row again")
+
+
+def test_claim_circle_oldest_first(db_path):
+    """Circle: one row per episode, one in flight per channel. Newest first
+    sent a catch-up out of order and let new rows pass an old one forever."""
+    first = outbox.enqueue(
+        _circle_job(channel_id=61, chat_ids={1: {}}, record_uniq_id='e1'),
+        database=db_path, dispatch=False)
+    second = outbox.enqueue(
+        _circle_job(channel_id=61, chat_ids={1: {}}, record_uniq_id='e2'),
+        database=db_path, dispatch=False)
+    other = outbox.enqueue(
+        _circle_job(channel_id=62, chat_ids={2: {}}, record_uniq_id='x1'),
+        database=db_path, dispatch=False)
+    _set_created_at(db_path, first, "2026-01-01T00:00:00Z")
+    _set_created_at(db_path, second, "2026-01-01T00:00:01Z")
+    _set_created_at(db_path, other, "2026-01-01T00:00:02Z")
+    got = outbox.claim(database=db_path, action='circle')
+    _assert_eq(got['outbox_id'], first, "oldest circle row first")
+    got_other = outbox.claim(database=db_path, action='circle')
+    _assert_eq(got_other['outbox_id'], other, "its channel is busy: the next channel")
+    outbox.mark_done(first, database=db_path, attempts=got['outbox_attempts'])
+    got_second = outbox.claim(database=db_path, action='circle')
+    _assert_eq(got_second['outbox_id'], second, "then that channel's next episode, in order")
+    clicks = [outbox.enqueue(_rec_job(chat_id=chat_id), database=db_path, dispatch=False)
+              for chat_id in (7201, 7202)]
+    _set_created_at(db_path, clicks[0], "2026-01-01T00:00:00Z")
+    _set_created_at(db_path, clicks[1], "2026-01-01T00:00:05Z")
+    _assert_eq(outbox.claim(database=db_path, action='rec')['outbox_id'], clicks[1],
+               "clicks stay newest first")
+
+
 def _set_status(db_path, outbox_id, status):
     db = SQLighter(db_path)
     try:
@@ -996,6 +1094,9 @@ def main():
         test_clean_old_outbox_job,
         test_claim_one_lease_per_user,
         test_claim_rec_pool_skips_circle,
+        test_stalled_job_is_released_and_retried,
+        test_touch_is_progress,
+        test_claim_circle_oldest_first,
         test_legacy_c_star_rec_migrates_to_circle,
         test_enqueue_user_rec_reuses_pending_not_done,
         test_enqueue_user_rec_after_failed,

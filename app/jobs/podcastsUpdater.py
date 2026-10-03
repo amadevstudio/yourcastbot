@@ -952,6 +952,14 @@ def update_feed_thread(input_data, thonbot):
     db_users.close()
 
     for connection in connections:
+        # Progress for the outbox: a refresh of 100+ feeds is long but alive,
+        # it must not read as a stuck worker (outbox.release_stalled).
+        try:
+            outbox.touch(
+                input_data.get('outbox_id'),
+                attempts=input_data.get('outbox_attempts'))
+        except Exception as e:
+            logger.err("podcastsUpdater/update_feed_thread touch:", e)
         db_users = SQLighter(db_path)
         channel = db_users.get_channel(connection['channel_id'])
         db_users.close()

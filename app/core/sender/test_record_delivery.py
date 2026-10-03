@@ -198,9 +198,10 @@ class FakeOutbox:
 
     def __init__(self):
         self.done = False
+        self.touches = 0
 
     def touch(self, *args, **kwargs):
-        pass
+        self.touches += 1
 
     def mark_done(self, *args, **kwargs):
         self.done = True
@@ -434,6 +435,16 @@ def main():
     sent = world.sender(itunes_listed=None).send_record()
     _assert(sent == [] and world.requester.downloads == 0,
             "job queued without itunes_listed (before deploy): treated as RSS-only")
+
+    # A fanout by URL (Telegram fetches the file for each chat) has no
+    # download progress: each chat is the progress, or a long circle job
+    # reads as a stuck worker and is released (outbox.release_stalled).
+    world = World(size_mb=5, with_outbox=True)
+    world.outbox.TOUCH_MIN_INTERVAL_SECONDS = 0
+    chats = (1, 2, 3, 4, 5)
+    sent = world.sender(chats=chats).send_record()
+    _assert(sorted(sent) == list(chats) and world.outbox.touches >= len(chats) + 1,
+            "fanout by URL touches the outbox for every chat")
 
     print("all record delivery checks passed")
 

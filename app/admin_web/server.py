@@ -153,6 +153,13 @@ def diag_digest(hours: int = 6, _access: None = Depends(diag_access)):
     return _diag_text(diag.digest_stats, hours=hours)
 
 
+@api.get("/diag/outbox")
+def diag_outbox(hours: int = 6, _access: None = Depends(diag_access)):
+    if not 1 <= hours <= 168:
+        raise HTTPException(status_code=400, detail="hours: 1..168")
+    return _diag_text(diag.outbox_stats, hours=hours)
+
+
 @api.get("/diag/feed")
 def diag_feed(channel: int, _access: None = Depends(diag_access)):
     return _diag_text(diag.feed_probe, channel)

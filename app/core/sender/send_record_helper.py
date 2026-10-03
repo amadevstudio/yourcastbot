@@ -817,6 +817,9 @@ class Sender:
         """
         delivered = []
         for chat_id in chat_ids:
+            # Each chat is progress: a long fanout (Telegram fetching the URL
+            # per chat) must not read as a stuck worker (outbox.release_stalled).
+            self._touch_outbox()
             caption = self.prepare_record_text(chat_id, mode=self.__description_mode(chat_id))
             try:
                 send_one(chat_id, caption)

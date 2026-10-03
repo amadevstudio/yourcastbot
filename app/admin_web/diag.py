@@ -486,6 +486,58 @@ def digest_stats(conn, out=print, hours=6, now=None):
         out("  #%s %s: %d" % (r["channel_id"], r["name"], r["n"]))
 
 
+def outbox_stats(conn, out=print, hours=6, now=None):
+    """send_outbox per pool: is each one draining? Aggregates only, no chats.
+
+    pending and leased rows stay until a worker handles them: an old pending
+    row, or a lease past leased_until, means a pool is stuck. Rows are
+    counted by created_at (no completion time is stored).
+    """
+    now = datetime.datetime.now() if now is None else now
+    now_utc = local_to_utc_text(now)
+    since = local_to_utc_text(now - datetime.timedelta(hours=hours))
+    out("== send_outbox rows created in the last %dh (since %s UTC), by status" % (
+        hours, since))
+    created = {}
+    try:
+        rows = conn.execute(
+            "SELECT action, status, count(*) AS n FROM send_outbox "
+            "WHERE created_at >= ? GROUP BY action, status ORDER BY action, status",
+            (since,)).fetchall()
+    except sqlite3.OperationalError as e:
+        out("  send_outbox: %s" % e)
+        return
+    for r in rows:
+        created.setdefault(r["action"], {})[r["status"]] = r["n"]
+    for action in sorted(created):
+        out("  %-6s %s" % (action, created[action]))
+    if not created:
+        out("  none")
+    out("\n== Open rows (pending, leased), any age")
+    rows = conn.execute(
+        "SELECT action, status, count(*) AS n, min(created_at) AS oldest, "
+        "max(attempts) AS attempts, "
+        "sum(CASE WHEN status = 'pending' AND available_at > ? THEN 1 ELSE 0 END) "
+        "AS backoff, "
+        "sum(CASE WHEN status = 'leased' AND leased_until <= ? THEN 1 ELSE 0 END) "
+        "AS expired "
+        "FROM send_outbox WHERE status IN ('pending', 'leased') "
+        "GROUP BY action, status ORDER BY action, status",
+        (now_utc, now_utc)).fetchall()
+    if not rows:
+        out("  none: every pool is drained")
+    for r in rows:
+        oldest = utc_to_local(r["oldest"])
+        line = "  %-6s %-7s %d, oldest created %s, max attempts %s" % (
+            r["action"], r["status"], r["n"],
+            oldest.strftime("%m-%d %H:%M") if oldest else r["oldest"], r["attempts"])
+        if r["backoff"]:
+            line += ", %d waiting for their retry time" % r["backoff"]
+        if r["expired"]:
+            line += ", %d with an expired lease (no worker renews it)" % r["expired"]
+        out(line)
+
+
 def _describe_feed(url, get, out):
     """GET url as the updater does (no validators) and show what it parses."""
     from lxml import etree

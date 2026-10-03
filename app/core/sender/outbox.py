@@ -16,7 +16,9 @@ booking). Extra clicks from the same chat wait; they must not fill the
 whole rec pool.
 
 Lease is short (~5 min). The worker must touch() the row while it downloads
-or sends. done is Telegram ACK; a 429 goes back to pending with available_at.
+or sends. A job silent for STALL_SECONDS is let go (release_stalled) and
+retried; the balancer gives its slot a fresh thread.
+done is Telegram ACK; a 429 goes back to pending with available_at.
 Old done/failed rows are deleted by purge_old(); pending and leased stay.
 """
 import datetime
@@ -24,6 +26,7 @@ import json
 import sqlite3
 import sys
 import threading
+import time
 
 import config
 from config import db_path
@@ -36,6 +39,10 @@ from lib.telegram.general.errors import audio_source_gone
 LEASE_SECONDS = 5 * 60
 HEARTBEAT_SECONDS = 30
 TOUCH_MIN_INTERVAL_SECONDS = 15
+# No progress (claim or touch) this long: the worker is stuck on a call that
+# never returns. Downloads and uploads touch() from their progress callback,
+# a 429 releases the row instead of sleeping, so a live job is never this quiet.
+STALL_SECONDS = 30 * 60
 MAX_ATTEMPTS = 8
 MAX_BACKOFF_SECONDS = 5 * 60
 # Finished rows stay for a short window (debug / future idempotency), then go.
@@ -83,8 +90,9 @@ CREATE INDEX IF NOT EXISTS send_outbox_claim_idx
 _timers_lock = threading.Lock()
 _timers = []
 _in_flight_lock = threading.Lock()
-# (database_path, outbox_id) currently held by this process.
-_in_flight = set()
+# (database_path, outbox_id) currently held by this process -> monotonic time
+# of its last progress (claim or touch).
+_in_flight = {}
 
 
 def now_iso():
@@ -103,13 +111,14 @@ def _database(database):
 
 
 def _inflight_add(database, outbox_id):
+    """Claimed, or touched by the worker that holds it: progress now."""
     with _in_flight_lock:
-        _in_flight.add((_database(database), int(outbox_id)))
+        _in_flight[(_database(database), int(outbox_id))] = time.monotonic()
 
 
 def _inflight_discard(database, outbox_id):
     with _in_flight_lock:
-        _in_flight.discard((_database(database), int(outbox_id)))
+        _in_flight.pop((_database(database), int(outbox_id)), None)
 
 
 def _inflight_ids(database):
@@ -533,13 +542,44 @@ def enqueue_user_rec(job, database=None, dispatch=True):
     return enqueue(job, database=database, dispatch=dispatch)
 
 
-def heartbeat(database=None):
+def release_stalled(database=None, now=None):
+    """Stop holding jobs that made no progress for STALL_SECONDS.
+
+    heartbeat() renews every in-flight lease while the process lives, so a
+    worker stuck on a call that never returns would keep its row, and its
+    user's place in the pool, until a restart, and MAX_ATTEMPTS would never
+    count. A released id leaves the in-flight set: heartbeat stops renewing
+    it, the lease expires, reclaim() makes the row pending and another worker
+    retries it (attempts + 1). If the stuck call returns after all, its
+    mark_done / fail_or_retry carry the old attempts and do nothing
+    (at-least-once: the episode may be sent twice).
+    """
+    database = _database(database)
+    stamp = time.monotonic() if now is None else now
+    with _in_flight_lock:
+        stalled = sorted(
+            oid for (db, oid), last in _in_flight.items()
+            if db == database and stamp - last >= STALL_SECONDS)
+        for oid in stalled:
+            _in_flight.pop((database, oid), None)
+    for oid in stalled:
+        logger.err(
+            "outbox job id=%s made no progress for %d min: the worker is "
+            "stuck; its lease is left to expire and the row is retried "
+            "(at-least-once: the episode may be sent twice)" % (
+                oid, STALL_SECONDS // 60))
+    return stalled
+
+
+def heartbeat(database=None, now=None):
     """Renew leased_until for jobs this process is still working on.
 
     Belt for work that is not calling touch() itself. The download/send
-    path should touch the one outbox_id it holds.
+    path should touch the one outbox_id it holds. A job silent for
+    STALL_SECONDS is released first, not renewed (release_stalled).
     """
     database = _database(database)
+    release_stalled(database, now=now)
     ids = _inflight_ids(database)
     if not ids:
         return 0
@@ -565,7 +605,11 @@ def heartbeat(database=None):
 
 
 def touch(outbox_id, database=None, attempts=None):
-    """Renew the lease of one in-progress job. Safe no-op if already done."""
+    """Renew the lease of one in-progress job. Safe no-op if already done.
+
+    A renewed lease is progress: heartbeat keeps covering the job, also one
+    release_stalled() let go while its lease had not expired yet.
+    """
     if outbox_id is None:
         return 0
     database = _database(database)
@@ -588,6 +632,8 @@ def touch(outbox_id, database=None, attempts=None):
                 )
             count = conn.execute("SELECT changes()").fetchone()[0]
             conn.execute("COMMIT")
+            if count:
+                _inflight_add(database, outbox_id)
             return count
         except Exception:
             conn.execute("ROLLBACK")
@@ -695,10 +741,16 @@ def fail_exhausted(database=None):
         conn.close()
 
 
+_CIRCLE_ROW = "CASE WHEN action = 'circle' OR user_id GLOB 'c*'"
+
+
 def claim(database=None, outbox_id=None, action=None):
     """Claim one available pending row. Returns a memory-queue job or None.
 
-    Without outbox_id: user rec before circle, newest first.
+    Without outbox_id: user rec before circle. Clicks newest first (the
+    person who tapped is waiting now); circle oldest first: one row per
+    episode and one in flight per channel, so a catch-up arrives in order
+    and an old row is never passed by newer ones.
     Skip a user who already has a leased row of the same action — one
     clicker cannot occupy every rec worker.
     Rows at MAX_ATTEMPTS are skipped (fail_exhausted marks them failed).
@@ -731,8 +783,9 @@ def claim(database=None, outbox_id=None, action=None):
                     "WHERE busy.status = 'leased' "
                     "AND busy.user_id = send_outbox.user_id "
                     "AND busy.action = send_outbox.action) "
-                    "ORDER BY CASE WHEN action = 'circle' "
-                    "OR user_id GLOB 'c*' THEN 1 ELSE 0 END, "
+                    "ORDER BY " + _CIRCLE_ROW + " THEN 1 ELSE 0 END, "
+                    + _CIRCLE_ROW + " THEN created_at END ASC, "
+                    + _CIRCLE_ROW + " THEN id END ASC, "
                     "created_at DESC, id DESC LIMIT 1",
                     params,
                 ).fetchone()
