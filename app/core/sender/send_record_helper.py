@@ -769,12 +769,12 @@ class Sender:
 
     def _agent_message(self, chat_id, caption):
         message = {
-            'title': self.podcast_info['title'],
+            'title': telegram_html.plain_text(self.podcast_info['title']),
             'chat_id': chat_id,
             'file_id': 'fileid',
             'bot_name': botName,
             'duration_sec': self.podcast_info['duration_sec'],
-            'channel_name': self.podcast_info['chName'],
+            'channel_name': telegram_html.plain_text(self.podcast_info['chName']),
             'message_text': caption,
         }
         if self.podcast_info['with_next_ep_button']:
@@ -866,7 +866,8 @@ class Sender:
             message = self.bot.send_audio(
                 chat_id=chat_id, audio=audio,
                 duration=self.podcast_info['duration_sec'],
-                performer=self.podcast_info['chName'], title=self.podcast_info['title'],
+                performer=telegram_html.plain_text(self.podcast_info['chName']),
+                title=telegram_html.plain_text(self.podcast_info['title']),
                 caption=record_message_text,
                 parse_mode="HTML",
                 reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id]))
@@ -886,7 +887,8 @@ class Sender:
             message = self.bot.send_audio(
                 chat_id=chat_id, audio=audio,
                 duration=self.podcast_info['duration_sec'],
-                performer=self.podcast_info['chName'], title=self.podcast_info['title'])
+                performer=telegram_html.plain_text(self.podcast_info['chName']),
+                title=telegram_html.plain_text(self.podcast_info['title']))
             # Same markup would fail the same way: say it as plain text.
             as_plain_text = entities_parse_error(e)
             try:

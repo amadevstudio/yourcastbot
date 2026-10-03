@@ -98,6 +98,22 @@ never by `service_name`: since the ETag updater every channel with an
 - Locks: `python app/core/sender/test_record_delivery.py`,
   `python app/service/record/test_delivery.py`, `python lib/requests/test_url.py`.
 
+## Feed text in messages
+
+Titles, show names, descriptions and dates from feeds (and Telegram channel
+titles) are data. They reach a message, button or inline result only
+through `lib/markup/telegram_html`: `plain_text` for plain fields (buttons,
+audio title and performer, inline titles), `text` between our tags,
+`escape` for text that is already plain, `href` for links. Our messages
+are HTML; Telegram HTML knows only `&lt; &gt; &amp; &quot;`, so a pasted
+entity shows as text ("educational:&nbsp; explaining" on the podcast page)
+and a stray `<` rejects the message. Job payloads keep the raw feed text;
+it is decoded once, where it is shown. Cards are built in
+`app/service/podcast/card.py`, captions in `app/service/record/caption.py`.
+Only `telegram_html` imports `lib.markup.cleaner`.
+Lock: `python app/service/podcast/test_card.py` (CD gate),
+`python app/service/record/test_caption.py`.
+
 ## Episode cursor
 
 Which episodes the circle sends is decided by one cursor per subscription

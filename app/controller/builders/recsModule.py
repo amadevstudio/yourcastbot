@@ -1,14 +1,14 @@
 import json
 import queue
-import re
 from hashlib import sha256
 from threading import Thread
 from typing import TypedDict, Any, cast as typing_cast
 
+import app.service.podcast.card
 import app.service.podcast.podcast
 import app.service.record.caption
 import app.service.record.helpers
-import lib.markup.cleaner
+from lib.markup import telegram_html
 import lib.tools.time_tools.general
 from lib.requests.url import normalize_url
 from app.controller.builders.podcastModule import PodcastStateData
@@ -227,37 +227,11 @@ def make_query(
 def construct_records_message(
         recs_data: RecsStateData, podcast_data: PodcastStateData, route_name: AvailableRoutes,
         message_navigation: FullMessageNavigation, language_code: str) -> list[MessageStructuresInterface]:
-    # Generate short podcast message
-    disk_emodji = emojiCodes.get('disk')
-    try:
-        descr = podcast_data["descr"]
-    except Exception:
-        descr = ""
-    # первое предложение
-    i = [x.start() for x in re.finditer(r'[.?!]\s', descr)]
-    try:
-        if i[0] > 0:
-            descr = descr[:i[0] + 1]
-    except Exception:
-        pass
-    # дополнительная обработка текста
-    descr = app.service.record.caption.prepare_message_text(descr)
-    # Clean dates
-    ch_name = lib.markup.cleaner.html_mrkd_cleaner(podcast_data['title'])
-    descr = lib.markup.cleaner.html_mrkd_cleaner(descr)
-    last_date = lib.markup.cleaner.html_mrkd_cleaner(podcast_data['lastDate'])
-    if ch_name is None or not ch_name:
-        ch_name = ''
-    if descr is None or not descr:
-        descr = ''
-    if last_date is None or not last_date:
-        last_date = ''
-    message_text = "<b>" + ch_name + "</b>\n" + \
-                   get_message("lastUpdate", language_code) + " " + \
-                   app.service.record.helpers.prepare_podcast_update_time(last_date) + "\n\n" + \
-                   descr + "\n" + get_message("thereis", language_code) + " " + \
-                   str(message_navigation['page_data']['count']) + " " + disk_emodji + "\n" + \
-                   message_navigation['routing_helper_message']
+    # Short podcast message. Feed text goes in through lib.markup.telegram_html
+    # (app/service/podcast/card.py).
+    message_text = app.service.podcast.card.records_header_text(
+        podcast_data, message_navigation['page_data']['count'],
+        message_navigation['routing_helper_message'], language_code)
 
     # Keyboard
     records_keyboard: list[list[InlineButtonData]] = []
@@ -266,7 +240,7 @@ def construct_records_message(
     for res in message_navigation['page_data']['data']:
         new_ep_text = standartSymbols.get("newItem", "") + " " if res['is_new_episode'] else ""
         records_keyboard.append([
-            {'text': new_ep_text + res['file_size'] + res['title'],
+            {'text': new_ep_text + res['file_size'] + telegram_html.plain_text(res['title']),
              'callback_data': rec_callback_data_identifier(podcast_data['id'], podcast_data['service_id'],
                                                            podcast_data['service_name'], res['dh'], res['num'])}
         ])
@@ -623,10 +597,10 @@ def send_record_direct(
     if record_info['pubDate'] is None or record_info['pubDate'] == "None":
         record_info['pubDate'] = ""
 
-    descr = lib.markup.cleaner.html_mrkd_cleaner(record_info['descr'])
-    title = lib.markup.cleaner.html_mrkd_cleaner(record_info['title'])
+    # Raw feed text: whoever shows it decodes it once (lib.markup.telegram_html).
+    descr = record_info['descr']
+    title = record_info['title']
     pub_date = record_info['pubDate']
-    ch_name = lib.markup.cleaner.html_mrkd_cleaner(ch_name)
 
     duration = record_info['duration']
     duration_sec = send_record_helper.transform_duration(duration)

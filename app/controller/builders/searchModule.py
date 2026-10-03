@@ -11,10 +11,11 @@ import requests
 from telebot import types
 
 import app.i18n.messages
+import app.service.podcast.card
 import app.service.podcast.podcast
 import app.service.record.helpers
 import app.service.user.language
-import lib.markup.cleaner
+from lib.markup import telegram_html
 from agent.bot_telebot import bot
 from app.controller.builders.podcastModule import (
     filter_genre, channel_query)
@@ -355,14 +356,6 @@ def construct_inline_podcast_searcher_channel(podcast, podcast_data, rss_podcast
 
     last_update = app.service.record.helpers.prepare_podcast_update_time(podcast_data['releaseDate'])
 
-    message_text_content = lib.markup.cleaner.html_mrkd_cleaner(f"*{podcast_data['collectionName']}*\n")
-    if rss_podcast_data is not None and rss_podcast_data['channelLink']:
-        message_text_content += rss_podcast_data['channelLink'] + "\n"
-    else:
-        message_text_content += f"[Apple Podcasts]({podcast_data['collectionViewUrl']})\n"
-    message_text_content += get_message("lastUpdate", language_code) + " " \
-                            + last_update + "\n\n"
-
     # получение картинок
     thumb_url = None
     itunes_artwork_size_keys = [
@@ -376,47 +369,31 @@ def construct_inline_podcast_searcher_channel(podcast, podcast_data, rss_podcast
 
     # получение ссылки на подкаст
     if podcast is not None:
-        url = f"t.me/{botName}?start=podcast_{podcast['id']}"
-        message_text_content += get_message(
-            "linkInTheBotByPodcastId", language_code).format(
-            botName=botName, id=podcast['id'], mode="podcast")
+        open_mode, open_id = "podcast", podcast['id']
     else:
-        url = f"t.me/{botName}?start=podcastItunes_{podcast_data['collectionId']}"
-        message_text_content += get_message(
-            "linkInTheBotByPodcastId", language_code).format(
-            botName=botName, id=podcast_data['collectionId'], mode="podcastItunes")
-    message_text_content += "\n\n"
+        open_mode, open_id = "podcastItunes", podcast_data['collectionId']
+    url = f"t.me/{botName}?start={open_mode}_{open_id}"
 
     description = f"{podcast_data['trackCount']} {emojiCodes.get('disk')}" \
                   + " " + last_update
 
-    genres_str = ""
     # получение жанров
-    if 'genres' in podcast_data:
-        if 'primaryGenreName' in podcast_data:
-            primary_genre_name = podcast_data['primaryGenreName']
-        else:
-            primary_genre_name = ''
-        for genre in podcast_data['genres']:
-            genre = filter_genre(genre)
-            if genre is not None:
-                if genres_str != "":
-                    genres_str += ", "
-                genre_localized_name = get_message_rtd(
-                    ["genres", genre], language_code)
-                if primary_genre_name == genre:
-                    genres_str = genres_str + f"*{genre_localized_name}*"
-                else:
-                    genres_str = genres_str + genre_localized_name
-    if genres_str != "":
-        message_text_content += lib.markup.cleaner.html_mrkd_cleaner(genres_str)
+    primary_genre_name = podcast_data.get('primaryGenreName', '')
+    genres = [
+        (genre, genre == primary_genre_name)
+        for genre in map(filter_genre, podcast_data.get('genres') or [])
+        if genre is not None]
 
-    # заголовок inline результатов
-    title = lib.markup.cleaner.html_mrkd_cleaner(podcast_data['collectionName'])
-    # body inline результатов
-    description = lib.markup.cleaner.html_mrkd_cleaner(description)
-    # сообщение, которое отправляется при нажатии
-    # message_text_content
+    # сообщение, которое отправляется при нажатии: feed text goes in through
+    # lib.markup.telegram_html (app/service/podcast/card.py)
+    site_link = rss_podcast_data['channelLink'] if rss_podcast_data is not None else None
+    message_text_content = app.service.podcast.card.search_card_text(
+        podcast_data['collectionName'], site_link, podcast_data['collectionViewUrl'],
+        podcast_data['releaseDate'], open_mode, open_id, genres, language_code, botName)
+
+    # заголовок и body inline результатов: plain text fields
+    title = telegram_html.plain_text(podcast_data['collectionName'])
+    description = telegram_html.plain_text(description)
 
     # создание кнопок
     inline_channel_actions = types.InlineKeyboardMarkup()
@@ -429,7 +406,7 @@ def construct_inline_podcast_searcher_channel(podcast, podcast_data, rss_podcast
         url=url, description=description,
         thumbnail_url=thumb_url, reply_markup=inline_channel_actions,
         input_message_content=types.InputTextMessageContent(
-            message_text=message_text_content, parse_mode="Markdown"))
+            message_text=message_text_content, parse_mode="HTML"))
 
     return button
 
@@ -480,9 +457,10 @@ def construct_inline_podcast_searcher_records(podcast_data, rd, founded_count, l
 
             button = types.InlineQueryResultAudio(
                 id=inline_id, audio_url=rd['links'][i],
-                title=lib.markup.cleaner.html_mrkd_cleaner(rd['title'][i]),
+                title=telegram_html.plain_text(rd['title'][i]),
                 caption=record_message_text,
-                parse_mode="HTML", performer=rd['chName'], audio_duration=duration_sec,
+                parse_mode="HTML", performer=telegram_html.plain_text(rd['chName']),
+                audio_duration=duration_sec,
                 reply_markup=inline_channel_actions)
 
         else:
@@ -512,14 +490,14 @@ def construct_inline_podcast_searcher_records(podcast_data, rd, founded_count, l
                     if thumb_url is None:
                         thumb_url = podcast_data[sizeKey]
 
-            description = rd['chName']
+            description = telegram_html.plain_text(rd['chName'])
 
             inline_channel_actions.row(types.InlineKeyboardButton(
                 text=get_message("downloadEpisode", language_code),
                 url=download_episode_url))
 
             button = types.InlineQueryResultArticle(
-                id=inline_id, title=lib.markup.cleaner.html_mrkd_cleaner(rd['title'][i]),
+                id=inline_id, title=telegram_html.plain_text(rd['title'][i]),
                 description=description,
                 thumbnail_url=thumb_url, reply_markup=inline_channel_actions,
                 input_message_content=types.InputTextMessageContent(

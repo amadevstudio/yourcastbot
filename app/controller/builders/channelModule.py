@@ -6,6 +6,7 @@ from agent.bot_telebot import bot
 from app.controller.general.notify import notify
 import app.i18n.messages
 import app.service.user.language
+from lib.markup import telegram_html
 from app.core.message.navigationBuilder import determine_search_query_and_page, get_full_message_navigation, \
     FullMessageNavigation
 from app.routes.message_tools import go_back_inline_markup, go_back_inline_button
@@ -205,7 +206,8 @@ def get_connected_channel_message(tg_channel_data, language_code):
 
         return {'message': message_text, 'markup': keyboard}
 
-    message_text += "<b>" + tg_channel_data['title'] + "</b>\n\n"
+    # A Telegram channel title is plain text: escaped, never parsed as HTML.
+    message_text += "<b>" + telegram_html.escape(str(tg_channel_data['title'])) + "</b>\n\n"
     message_text += get_message("yourTgChannel", language_code)
 
     keyboard = []

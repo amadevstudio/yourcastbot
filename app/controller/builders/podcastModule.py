@@ -9,18 +9,17 @@ from datetime import datetime
 from typing import TypedDict, Literal
 
 from app.controller.general.notify import notify
+import app.service.podcast.card
 import app.service.podcast.podcast
 import app.service.podcast.subscription
 import app.service.record.caption
-import app.service.record.helpers
-import lib.markup.cleaner
 from lib.requests.url import normalize_url
 from app.routes.message_tools import go_back_inline_markup
 from lib.telegram.general.errors import media_fetch_failed
 from lib.telegram.general.message_master import message_master, render_messages, MessageStructuresInterface, \
     message_editor, InlineButtonData
 from lib.tools.logger import logger
-from app.i18n.messages import get_message, get_message_rtd, emojiCodes, standartSymbols
+from app.i18n.messages import get_message, emojiCodes, standartSymbols
 from app.repository.storage import storage
 from config import (db_path, noPhoto, botName, max_subscriptions_without_tariff)
 from db.sqliteAdapter import SQLighter
@@ -411,87 +410,9 @@ def construct_channel_message(chat_id, language_code, channel_data=None) -> list
         # channelActions.add(button1, button2)
         channel_actions.append([button2])
 
-    try:
-        title = channel_data["title"]
-    except Exception:
-        title = ""
-
-    try:
-        last_date = channel_data["lastDate"]
-    except Exception:
-        last_date = ""
-
-    genres_str = ""
-    if "genres" in channel_data:
-        for genre in channel_data["genres"]:
-            if genres_str != "":
-                genres_str += ", "
-            genre_localized_name = get_message_rtd(
-                ["genres", genre['name']], language_code)
-            if genre['isMain']:
-                genres_str = genres_str + f"<b>{genre_localized_name}</b>"
-            else:
-                genres_str = genres_str + genre_localized_name
-
-    try:
-        descr = channel_data["descr"]
-    except Exception:
-        descr = ""
-
-    try:
-        channel_link = channel_data["channelLink"]
-    except Exception:
-        channel_link = ""
-
-    if title is None or not title:
-        title = ''
-    if last_date is None or not last_date:
-        last_date = ''
-    if descr is None or not descr:
-        descr = ''
-
-    title = lib.markup.cleaner.html_mrkd_cleaner(title)
-    last_date = lib.markup.cleaner.html_mrkd_cleaner(last_date)
-    descr = lib.markup.cleaner.html_mrkd_cleaner(descr)
-
-    message_text = "<b>" + title + "</b>" + "\n"
-    if channel_link:
-        message_text += lib.markup.cleaner.un_markdown_link(channel_link) + "\n"
-    if last_date:
-        message_text += get_message("lastUpdate", language_code) + " " + \
-                        app.service.record.helpers.prepare_podcast_update_time(last_date) + "\n\n"
-
-    # ссылка на бота + ссылка на подкаст в боте
-    channel_id: None | int
-    if channel_data.get('id', None) is not None:
-        channel_id = int(channel_data['id'])
-        if channel_id is not None and channel_id < 1:
-            channel_id = None
-    else:
-        channel_id = None
-    if channel_id is not None:
-        message_text += get_message("linkInTheBotByPodcastId_HTML", language_code).format(
-            botName=botName, id=channel_id, mode="podcast")
-        message_text += " " + get_message("in_the_bot", language_code).format(botName=botName)
-    elif channel_data.get('service_name', None) == "itunes" \
-            and channel_data['service_id']:
-        message_text += get_message("linkInTheBotByPodcastId_HTML", language_code).format(
-            botName=botName, id=channel_data['service_id'], mode="podcastItunes")
-        message_text += " " + get_message("in_the_bot", language_code).format(botName=botName)
-    else:
-        message_text += f"@{botName}"
-    message_text += "\n\n"
-
-    if genres_str or 'rating' in channel_data:
-        if genres_str:
-            message_text += genres_str + "\n"
-        if 'rating' in channel_data and channel_data['rating']['value']:
-            rating = round(float(channel_data['rating']['value']), 1)
-            rating = rating if int(rating) != rating else int(rating)
-            message_text += emojiCodes['trophy'] + " " + f"{rating}/5 ({channel_data['rating']['count']})\n"
-        message_text += "\n"
-
-    message_text += descr
+    # Feed text goes in through lib.markup.telegram_html (app/service/podcast/card.py).
+    message_text = app.service.podcast.card.channel_card_text(
+        channel_data, language_code, botName)
 
     if channel_data is not None:
         image = channel_data.get('imgUrl', noPhoto)

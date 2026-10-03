@@ -15,7 +15,6 @@ if _ROOT not in sys.path:
 from app.service.record.caption import (  # noqa: E402
     CAPTION_LIMITS, prepare_message_text, record_caption)
 from lib.markup import telegram_html  # noqa: E402
-from lib.markup.cleaner import html_mrkd_cleaner  # noqa: E402
 from lib.telegram import limits  # noqa: E402
 
 # Tags Telegram accepts with parse_mode=HTML (the subset captions can hit).
@@ -84,8 +83,8 @@ def caption(mode='default', **fields):
 def main():
     _assert(max(CAPTION_LIMITS.values()) <= limits.CAPTION_CHARS, "caption budgets fit Telegram's limit")
 
-    # The production failure: html_mrkd_cleaner left "<span data-".
-    _assert('<span' not in html_mrkd_cleaner(_TRUNCATED_FEED_TAIL),
+    # The production failure: the old html_mrkd_cleaner left "<span data-".
+    _assert('<span' not in telegram_html.plain_text(_TRUNCATED_FEED_TAIL),
             "cleaner drops a tag the feed cut before '>'")
 
     for mode in ('default', 'short'):

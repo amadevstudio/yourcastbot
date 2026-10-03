@@ -1,5 +1,5 @@
 from app.controller.general.notify import notify
-import lib.markup.cleaner
+from lib.markup import telegram_html
 from app.core.message.navigationBuilder import get_full_message_navigation, FullMessageNavigation, \
     determine_search_query_and_page
 from lib.python.dict_tools import deep_get
@@ -64,7 +64,7 @@ def construct_subs_message(message_navigation: FullMessageNavigation, language_c
         except Exception:
             notify_enabled = '\U0001F514'  # enabled
 
-        b = {'text': new_eps + " " + notify_enabled + " " + lib.markup.cleaner.html_mrkd_cleaner(sub['name']),
+        b = {'text': new_eps + " " + notify_enabled + " " + telegram_html.plain_text(sub['name']),
              'callback_data': {'tp': 'podcast', 'id': sub['id']}}
         subs_keyboard.append([b])
 

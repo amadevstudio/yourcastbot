@@ -23,14 +23,3 @@ def html_cleaner(msg):
 
 def markdown_cleaner(msg):
     return markdown_regular.sub(' ', msg)
-
-
-def html_mrkd_cleaner(msg: str | None):
-    if msg is None:
-        return ''
-
-    return markdown_cleaner(html_cleaner(msg))
-
-
-def un_markdown_link(str):
-    return str.replace("_", "\\_")

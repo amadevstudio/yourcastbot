@@ -5,7 +5,6 @@ from app.i18n.messages import get_message
 from app.service.record.helpers import prepare_podcast_update_time
 from config import botName
 from lib.markup import telegram_html
-from lib.markup.cleaner import html_mrkd_cleaner
 
 DescriptionModeOptions = Literal['default', 'short', 'none']
 
@@ -22,7 +21,7 @@ def prepare_message_text(text, max_length=1024, clear_markup=True, whole_sentenc
     than a clipped fragment.
     """
     if clear_markup:
-        text = html_mrkd_cleaner(text)
+        text = telegram_html.plain_text(text)
 
     # убрать тройные+ переносы
     text = re.sub(r'\n\n\n+', '\n\n', text)

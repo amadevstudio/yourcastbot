@@ -1,9 +1,17 @@
-"""Untrusted text inside Telegram HTML.
+"""Untrusted text inside Telegram messages: the one way in.
 
 Feed titles, show names and descriptions are data, not markup. Reduce them
 to plain text, measure and trim that text, then escape it on the way into
 our own tags. Our tags stay balanced by construction, so nothing ever has to
 close a foreign tag or slice a string that contains markup.
+
+Every message, button and inline result takes feed text through here:
+plain_text() for plain fields (buttons, audio title and performer, inline
+result titles), text() between our tags, escape() for text that is already
+plain (a Telegram channel title, a URL shown as text), href() for links.
+Stored data (job payloads) keeps the raw feed text and is decoded once, when
+shown. Only this module uses lib.markup.cleaner.
+Lock: app/service/podcast/test_card.py.
 """
 import html
 

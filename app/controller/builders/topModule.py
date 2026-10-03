@@ -4,7 +4,7 @@ import math
 from telebot import types
 
 from app.controller.general.notify import notify
-import lib.markup.cleaner
+from lib.markup import telegram_html
 from app.core.message.navigationBuilder import determine_search_query_and_page, get_full_message_navigation, \
     FullMessageNavigation
 from lib.telegram.general.message_master import message_master, render_messages, InlineButtonData
@@ -63,9 +63,8 @@ def construct_genres_message(message_navigation: FullMessageNavigation, language
 
     for genre in message_navigation['page_data']['data']:
         genres_keyboard.append([{
-            'text': lib.markup.cleaner.html_mrkd_cleaner(
-                get_message_rtd(["genres", genre['name']], language_code)
-                .encode('utf-8').capitalize().decode('utf-8')),
+            'text': get_message_rtd(["genres", genre['name']], language_code)
+            .encode('utf-8').capitalize().decode('utf-8'),
             'callback_data': {'tp': 'top_ch', 'id': genre['id'], 'p': 1}}])
 
     if message_navigation['nav_layout_parts'] is not None:
@@ -133,7 +132,7 @@ def construct_top_message(message_navigation: FullMessageNavigation, language_co
 
     for podcast in message_navigation['page_data']['data']:
         tops_keyboard.append([{
-            'text': lib.markup.cleaner.html_mrkd_cleaner(podcast['name'])
+            'text': telegram_html.plain_text(podcast['name'])
                     + f" {podcast['rate']} ({podcast['rates_count']})",
             'callback_data': {'tp': 'podcast', 'id': podcast['id']}
         }])

@@ -12,7 +12,7 @@ import app.service.podcast.podcast
 import app.service.podcast.rss
 import app.service.record.helpers
 import app.service.user.language
-import lib.markup.cleaner
+from lib.markup import telegram_html
 from lib.requests.url import normalize_url
 from agent.bot_telethon import thobot_session_handler
 from app.controller.builders.helpModule import get_promo_messages
@@ -274,7 +274,7 @@ def send_new_records_by_channel(
 
                     user_language = app.service.user.language.user_language(
                         user['lang'] if user is not None else None)
-                    title = lib.markup.cleaner.html_mrkd_cleaner(str(podcast_name))
+                    title = telegram_html.text(str(podcast_name))
                     body = format_feed_notice(
                         user_language, 'feedTemporarilyUnavailable',
                         _channel_feed_url(channel, pc_info))
@@ -335,7 +335,7 @@ def send_new_records_by_channel(
             collection_name = (pc_info or {}).get("collectionName") or channel["name"] or ""
 
             try:
-                title = lib.markup.cleaner.html_mrkd_cleaner(str(collection_name))
+                title = telegram_html.text(str(collection_name))
                 body = format_feed_notice(
                     user_language, 'notificationsFCDisabled',
                     _channel_feed_url(channel, pc_info))
@@ -688,9 +688,7 @@ def send_new_records_by_channel(
         if ch_name is None or ch_name == "None" or ch_name == "":
             ch_name = channel['name']
 
-        descr = lib.markup.cleaner.html_mrkd_cleaner(descr)
-        title = lib.markup.cleaner.html_mrkd_cleaner(title)
-        ch_name = lib.markup.cleaner.html_mrkd_cleaner(ch_name)
+        # Raw feed text: whoever shows it decodes it once (lib.markup.telegram_html).
 
         duration_sec = send_record_helper.transform_duration(duration)
 
