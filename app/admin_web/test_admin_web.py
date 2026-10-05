@@ -341,6 +341,14 @@ def test_diag_http(path):
         _assert_eq(client.get("/api/diag/refetches").status_code, 401, "refetches needs the token")
         _assert_eq(client.get("/api/diag/feed", params={"channel": 21}).status_code, 401,
                    "feed probe needs the token")
+        errors = client.get("/api/diag/errors", params={"hours": 6}, headers=bearer)
+        _assert_eq(errors.status_code, 200, "errors summary")
+        _assert_eq("== ERR / WARN in role logs" in errors.text, True, "errors text")
+        _assert_eq(client.get("/api/diag/errors", params={"q": "ab"},
+                              headers=bearer).status_code, 400, "errors: q too short")
+        _assert_eq(client.get("/api/diag/errors", params={"hours": 100},
+                              headers=bearer).status_code, 400, "errors: hours bounded by the logs")
+        _assert_eq(client.get("/api/diag/errors").status_code, 401, "errors needs the token")
         digest = client.get("/api/diag/digest", params={"hours": 6}, headers=bearer)
         _assert_eq(digest.status_code, 200, "digest stats")
         _assert_eq("== Nosub digests, last 6h" in digest.text, True, "digest stats text")

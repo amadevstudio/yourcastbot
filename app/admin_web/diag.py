@@ -25,6 +25,11 @@ renewal, and registration writes nosub_digest_sent_at: neither is a gap.
 refetches(): full refetches after a 304 (paid_targets_behind), per channel.
 One per feed version is expected; more means the guard is not working.
 
+errors(): ERR and WARN lines of every role log (sender, updater, out, ...),
+grouped by message with numbers of 5+ digits (chat ids) masked; with q,
+every line containing q, e.g. an enclosure URL: its "Exit sending" line says
+how that job ended (delivered n/m, size, too big / unavailable / retry).
+
 feed_probe(): GET a channel's stored feed as the updater does and show the
 XML the parser sees (what rss.__parse_rss_root took and now takes as the
 channel, the items it finds). The only diag call that touches the network; no writes.
@@ -53,6 +58,12 @@ SENDING = re.compile(r"Sending automatically\.\.\.\s+(b(['\"]).*\2)\s*$", re.S)
 SENDING_HEAD = re.compile(r"Channel id: (\d+), '(.*)' \(itunes id:", re.S)
 REFETCH = re.compile(
     r"Feed not modified for channel (\d+) ; paid listeners behind: \[([^\]]*)\] ; refetching")
+LOG_NAME = re.compile(r"^([a-z_]+)_\d\d_\d\d_\d{4}\.log$")
+LEVEL = re.compile(r"^\[[^\]]*\] (ERR|WARN|LOG|DEBUG|EMLVL) ?")
+# Chat, user and message ids: never in a diag answer. Sizes, codes and
+# seconds are shorter; ids glued to letters (an enclosure name) stay.
+LONG_NUMBER = re.compile(r"(?<![\w.])-?\d{5,}(?![\w.])")
+ANY_NUMBER = re.compile(r"\d+")
 
 
 def token_ok(authorization, configured) -> bool:
@@ -113,14 +124,14 @@ def _quiet(*_args):
     pass
 
 
-def log_entries(start, end, work_dir=None, out=print):
-    """Updater log entries (with continuation lines) in [start, end)."""
+def log_entries(start, end, work_dir=None, out=print, name="updater"):
+    """Entries of one role log (updater, sender, ...) with continuation lines, in [start, end)."""
     base = config.work_dir if work_dir is None else work_dir
     day = start.date()
     while day <= end.date():
-        path = os.path.join(base, "log", "updater_%s.log" % day.strftime("%d_%m_%Y"))
+        path = os.path.join(base, "log", "%s_%s.log" % (name, day.strftime("%d_%m_%Y")))
         if not os.path.exists(path):
-            out("  (no log file updater_%s.log; logs keep 3 days)" % day.strftime("%d_%m_%Y"))
+            out("  (no log file %s_%s.log; logs keep 3 days)" % (name, day.strftime("%d_%m_%Y")))
             day += datetime.timedelta(days=1)
             continue
         entry = None
@@ -642,6 +653,82 @@ def feed_probe(conn, channel_id, out=print, get=None, itunes=None):
     out("\n== Channels with notifications whose latest id is empty: %d" % len(rows))
     for r in rows[:20]:
         out("  #%s %s: %d listeners" % (r["id"], r["name"], r["listeners"]))
+
+
+def log_names(work_dir=None):
+    """Role logs on disk: updater, sender, out, ..."""
+    base = config.work_dir if work_dir is None else work_dir
+    try:
+        files = os.listdir(os.path.join(base, "log"))
+    except OSError:
+        return []
+    return sorted({m.group(1) for m in map(LOG_NAME.match, files) if m})
+
+
+def _flat(text, limit):
+    """One line, ids masked, at most limit characters."""
+    text = LONG_NUMBER.sub("#", " | ".join(p.strip() for p in text.split("\n") if p.strip()))
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def errors(_conn, out=print, hours=24, q=None, now=None, work_dir=None):
+    """ERR and WARN lines of every role log, grouped by message; or every line containing q.
+
+    Sender lines of parallel workers interleave. Each job ends with
+    "Exit sending <link>: delivered n/m, size, outcome": q=<enclosure> finds it.
+    """
+    now = datetime.datetime.now() if now is None else now
+    start = now - datetime.timedelta(hours=hours)
+    end = now + datetime.timedelta(minutes=1)
+    names = log_names(work_dir)
+    if q:
+        found = []
+        for name in names:
+            for stamp, text in log_entries(start, end, work_dir=work_dir, out=_quiet, name=name):
+                if q in text:
+                    found.append((stamp, name, text))
+        found.sort(key=lambda item: item[0])
+        out("== Log lines containing %r, last %dh (server-local): %d%s" % (
+            q, hours, len(found), ", the last 200" if len(found) > 200 else ""))
+        for stamp, name, text in found[-200:]:
+            level = LEVEL.match(text)
+            out("  %s %-8s %-4s %s" % (
+                stamp.strftime("%m-%d %H:%M:%S"), name, level.group(1) if level else "",
+                _flat(text[level.end():] if level else text, 600)))
+        return
+    totals = {}
+    groups = {}
+    for name in names:
+        for stamp, text in log_entries(start, end, work_dir=work_dir, out=_quiet, name=name):
+            level = LEVEL.match(text)
+            if not level or level.group(1) not in ("ERR", "WARN"):
+                continue
+            body = text[level.end():]
+            totals[(name, level.group(1))] = totals.get((name, level.group(1)), 0) + 1
+            key = (level.group(1), name, ANY_NUMBER.sub("N", _flat(body, 160)))
+            group = groups.setdefault(key, {"count": 0, "first": stamp})
+            group["count"] += 1
+            group["last"] = stamp
+            group["example"] = body
+    out("== ERR / WARN in role logs, last %dh (server-local; logs keep 3 days); "
+        "numbers of 5+ digits masked" % hours)
+    if not totals:
+        out("  none")
+    for name in names:
+        if (name, "ERR") in totals or (name, "WARN") in totals:
+            out("  %-14s ERR %d, WARN %d" % (
+                name, totals.get((name, "ERR"), 0), totals.get((name, "WARN"), 0)))
+    for wanted in ("ERR", "WARN"):
+        rows = sorted(((key, g) for key, g in groups.items() if key[0] == wanted),
+                      key=lambda item: -item[1]["count"])
+        if not rows:
+            continue
+        out("\n== %s by message: %d kinds%s; the latest of each" % (
+            wanted, len(rows), ", the 40 most frequent" if len(rows) > 40 else ""))
+        for key, g in rows[:40]:
+            out("  %5dx %-8s %s .. %s  %s" % (
+                g["count"], key[1], g["first"].strftime("%m-%d %H:%M"),
+                g["last"].strftime("%m-%d %H:%M"), _flat(g["example"], 400)))
 
 
 def as_text(run, *args, **kwargs):

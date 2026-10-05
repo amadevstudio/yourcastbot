@@ -310,6 +310,38 @@ def test_outbox_stats(work_dir):
     _assert_eq("5001" in text or "5002" in text, False, "no chat or user ids in the report")
 
 
+def test_errors(work_dir):
+    """ERR/WARN of every role log by message, chat ids masked; q finds a job's lines."""
+    base = os.path.join(work_dir, "errors")
+    os.makedirs(os.path.join(base, "log"))
+    link = "https://traffic.megaphone.fm/SCIM2211492808.mp3"
+    with open(os.path.join(base, "log", "sender_30_09_2026.log"), "w", encoding="utf-8") as f:
+        f.write("[09:10:00 30.09.2026] LOG Begin sending %s to 5550001,5550002\n" % link)
+        f.write("[09:11:00 30.09.2026] WARN A wait of 34 seconds is required 5550001\n")
+        f.write("[09:12:00 30.09.2026] ERR Fail to send | Details: <class 'ConnectionError'> "
+                "Connection to Telegram failed 5 time(s) send_record_helper.py:812 \n\n")
+        f.write("[09:13:00 30.09.2026] ERR Fail to send | Details: <class 'ConnectionError'> "
+                "Connection to Telegram failed 3 time(s) send_record_helper.py:812 \n\n")
+        f.write("[09:14:00 30.09.2026] LOG Exit sending %s: delivered 0/2, 389.2 MB, "
+                "retry: agent delivered the downloaded file to no chat \n\n\n\n" % link)
+        f.write("[01:00:00 30.09.2026] ERR outside the window\n")
+    with open(os.path.join(base, "log", "updater_30_09_2026.log"), "w", encoding="utf-8") as f:
+        f.write("[10:00:00 30.09.2026] WARN Feed not modified for channel 21\n")
+    text = diag.as_text(diag.errors, None, hours=6, now=NOW, work_dir=base)
+    _assert_in("sender         ERR 2, WARN 1", text, "per log totals")
+    _assert_in("updater        ERR 0, WARN 1", text, "every role log is read")
+    _assert_in("    2x sender   09-30 09:12 .. 09-30 09:13", text, "same message, other numbers: one kind")
+    _assert_in("failed 3 time(s)", text, "the latest example is shown")
+    _assert_eq("outside the window" in text, False, "lines before the window are skipped")
+    _assert_eq("5550001" in text, False, "chat ids masked in the summary")
+    text = diag.as_text(diag.errors, None, hours=6, now=NOW, work_dir=base, q="SCIM2211492808")
+    _assert_in("== Log lines containing 'SCIM2211492808', last 6h (server-local): 2", text,
+               "q: lines of that enclosure")
+    _assert_in("sender   LOG  Exit sending %s: delivered 0/2, 389.2 MB, retry:" % link, text,
+               "q: the job's outcome line, the enclosure id kept")
+    _assert_eq("5550002" in text, False, "q: chat ids masked")
+
+
 def main():
     work_dir = tempfile.mkdtemp(prefix="yourcast_diag_")
     path = _prepare(work_dir)
@@ -321,6 +353,7 @@ def main():
     test_refetches(path, work_dir)
     test_digest_stats(path)
     test_outbox_stats(work_dir)
+    test_errors(work_dir)
     print("all diag checks passed")
 
 

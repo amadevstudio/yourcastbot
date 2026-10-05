@@ -148,16 +148,19 @@ class FakeBot:
 
 
 class FakeAgent:
-    def __init__(self, unreachable_chat=None):
+    def __init__(self, unreachable_chat=None, send_error=None):
         self.uploads = 0
         self.sent_to = []
         self.unreachable_chat = unreachable_chat
+        self.send_error = send_error  # every send fails: the agent itself is down
 
     def upload(self, thonbot, fname, callback=None):
         self.uploads += 1
         return 'INPUT_FILE'
 
     def send_uploaded(self, thonbot, data, file):
+        if self.send_error:
+            raise ConnectionError(self.send_error)
         if data['chat_id'] == self.unreachable_chat:
             raise ValueError("Could not find the input entity for PeerUser")
         self.sent_to.append(data['chat_id'])
@@ -217,13 +220,13 @@ class World:
                  disk_free_mb=10_000, reserved_mb=0, with_outbox=False, flood_chat=None,
                  agent_unreachable_chat=None, bot_refuse_chat=None,
                  blocked_chat=None, flood_once_chat=None, size_known=True, trust_rss=False,
-                 head_error=None):
+                 head_error=None, agent_send_error=None):
         self.tmp = tempfile.mkdtemp(prefix="yourcast_delivery_")
         os.makedirs(os.path.join(self.tmp, "records"))
         self.bot = FakeBot(url_error, flood_chat, bot_refuse_chat, blocked_chat, flood_once_chat)
         self.blocked_marked = []
         self.slept = []
-        self.agent = FakeAgent(agent_unreachable_chat)
+        self.agent = FakeAgent(agent_unreachable_chat, agent_send_error)
         self.requester = FakeRequester(int(size_mb * MB), download_error, size_known, head_error)
         self.budget = DiskBudget(self.tmp, min_free_bytes=0, disk_free=lambda: disk_free_mb * MB)
         if reserved_mb:
@@ -266,7 +269,7 @@ class World:
             return True
         return False
 
-    def sender(self, chats=(1, 2, 3), itunes_listed=True):
+    def sender(self, chats=(1, 2, 3), itunes_listed=True, attempts=1):
         podcast_info = {
             'id': 28, 'title': 'Record Club #1', 'descr': 'Mix.', 'itunesLink': '',
             'channelLink': 'https://radiorecord.ru', 'chName': 'Radio Record',
@@ -282,7 +285,7 @@ class World:
             {chat_id: 'en' for chat_id in chats},
             {chat_id: None for chat_id in chats},
             podcast_info, with_status_message=False, consume_notify=False,
-            outbox_id=7 if isinstance(self.outbox, FakeOutbox) else None, outbox_attempts=1)
+            outbox_id=7 if isinstance(self.outbox, FakeOutbox) else None, outbox_attempts=attempts)
 
     def records_left(self):
         return [name for name in os.listdir(os.path.join(self.tmp, "records"))]
@@ -353,6 +356,34 @@ def main():
     _assert(sent == [] and world.requester.downloads == 0, "over 2 GB: not downloaded")
     _assert(len(world.notices) == 3 and all('too big' in text for _, text in world.notices),
             "over 2 GB: too-big notice with links")
+
+    # Huberman, 05.10: 389 MB, the agent cannot reach Telegram for anyone. The
+    # size fits the agent: this is a failed try, not "too big". It used to be a
+    # terminal too-big notice, and a circle cursor had already moved past it.
+    agent_down = "Connection to Telegram failed 5 time(s); connection refused"
+    world = World(size_mb=389, with_outbox=True, agent_send_error=agent_down)
+    try:
+        world.sender().send_record()
+        raise AssertionError("agent down must hand the job back to the outbox")
+    except real_outbox.OutboxRetryableError as e:
+        _assert(isinstance(e.cause, srh.AgentDeliveredNothing), "agent down: job goes back to the outbox")
+        _assert(not real_outbox._is_terminal_rec_error(e),
+                "agent down: retried, not failed as a dead enclosure")
+    _assert(world.notices == [] and not world.outbox.done, "agent down: no notice, not done")
+    _assert(world.host_faults == [], "agent down: Telegram's error does not cool the CDN")
+    _assert(world.records_left() == [] and world.budget._live == [], "agent down: file and disk released")
+
+    world = World(size_mb=389, with_outbox=True, agent_send_error=agent_down)
+    sent = world.sender(attempts=real_outbox.MAX_ATTEMPTS).send_record()
+    _assert(sent == [] and world.outbox.done, "agent down, last attempt: done")
+    _assert(len(world.notices) == 3 and all('too big' not in t and 'unava' in t.lower()
+                                            for _, t in world.notices),
+            "agent down, last attempt: unavailable, never too big")
+
+    world = World(size_mb=389, agent_send_error="Error code: 413. Description: Request Entity Too Large")
+    sent = world.sender().send_record()
+    _assert(sent == [] and len(world.notices) == 3 and all('too big' in t for _, t in world.notices),
+            "Telegram refused the upload as too large: too-big notice")
 
     world = World(size_mb=389, disk_free_mb=300)
     sent = world.sender().send_record()

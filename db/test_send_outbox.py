@@ -853,6 +853,10 @@ def test_audio_error_classification(_db_path=None):
         request_entity_too_large(RuntimeError(
             "Bad Request: file must be non-empty")),
         False, "empty-file 400 is not 413")
+    _assert_eq(
+        request_entity_too_large(RuntimeError(
+            "A wait of 4130 seconds is required (caused by SendMediaRequest)")),
+        False, "413 inside a number is not 413")
 
 
 def test_claim_prefers_fresh_user_over_circle_and_old(db_path):

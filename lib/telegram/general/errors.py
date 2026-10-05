@@ -151,7 +151,14 @@ def log_caught(logger, *args, error=None):
 		logger.err()
 
 
+_HTTP_413 = re.compile(r'\b413\b')
+
+
 def request_entity_too_large(error):
-	"""Bot API rejected the upload (typically over the ~50 MB bot limit)."""
+	"""Bot API rejected the upload (typically over the ~50 MB bot limit).
+
+	The code alone: "413" inside a number (a FloodWait of 4130 s, a chat id)
+	used to read as too big, a terminal notice for a file that fits.
+	"""
 	text = str(error)
-	return "413" in text or "Request Entity Too Large" in text or "FILE_TOO_BIG" in text
+	return bool(_HTTP_413.search(text)) or "Request Entity Too Large" in text or "FILE_TOO_BIG" in text

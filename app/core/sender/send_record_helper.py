@@ -52,6 +52,13 @@ MB_NUMBER = 1048576  # 1024 * 1024
 disk_budget = DiskBudget(os.path.join(work_dir, "records"))
 
 
+class AgentDeliveredNothing(RuntimeError):
+    """A file only the agent can carry reached no chat. Retry, it is not too big."""
+
+    def __init__(self):
+        super().__init__("agent delivered the downloaded file to no chat")
+
+
 def transform_duration(duration):
     if isinstance(duration, int):  # type(duration) is int:
         duration_sec = duration
@@ -519,10 +526,10 @@ class Sender:
 
         # Don't tell the user "unavailable" if the outbox will retry (429).
         will_retry = self.outbox_id is not None and not complete
+        # Only chats that did not get the audio hear why. A circle job can
+        # turn too big after part of its recipients already got the file.
+        undelivered = list(self._remaining_chats())
         try:
-            # Only chats that did not get the audio hear why. A circle job can
-            # turn too big after part of its recipients already got the file.
-            undelivered = list(self._remaining_chats())
             if self.__too_big_notice:
                 self.__send_too_big_record(targets=undelivered)
 
@@ -531,7 +538,12 @@ class Sender:
         except Exception as e:
             self.logger.warn(e)
 
-        self.logger.log("Exit sending: ", datetime.datetime.now(), "\n\n\n")
+        # One line per job with the link: sender lines of parallel workers
+        # interleave, this one says how this episode ended (/api/diag/errors?q=).
+        self.logger.log("Exit sending %s: delivered %d/%d, %.1f MB, %s" % (
+            self.link, len(set(self.successfully_sent_to)), len(self.chats), self.recordSizeMb,
+            "retry: %s" % (retryable or "not delivered") if will_retry
+            else self.__too_big_notice or ("unavailable" if undelivered else "done")), "\n\n\n")
 
         if will_retry:
             if retryable is not None:
@@ -636,7 +648,7 @@ class Sender:
             self.logger.warn(e)
             raise outbox.OutboxRetryableError(e)
         except DiskTooSmall as e:
-            self.logger.warn(e)
+            self.logger.warn(e, self.link)
             self.__too_big_notice = "tooBigRecord"
             return
         self._upload_to_remaining()
@@ -691,23 +703,35 @@ class Sender:
             self.__too_big_notice = "tooBigRecord"
             return
         refused_as_too_large = False
+        agent_delivered = False
         for upload in order:
             remaining = list(self._remaining_chats())
             if not remaining:
                 return
             if upload is Upload.AGENT:
                 delivered, refusal = self.send_via_agent(remaining)
+                agent_delivered = bool(delivered)
             elif self.cached_file_id is not None or self.recordSizeMb <= limits.BOT_UPLOAD_MB:
                 delivered, refusal = self.send(remaining)
             else:
                 continue  # over the Bot API upload limit, and no file_id to reuse
             self.successfully_sent_to.extend(delivered)
             refused_as_too_large |= refusal is not None and request_entity_too_large(refusal)
-        if self._remaining_chats():
-            if refused_as_too_large or self.recordSizeMb > limits.BOT_UPLOAD_MB:
-                self.__too_big_notice = "tooBigRecord"
-            else:
-                self.__record_gone = True
+        if not self._remaining_chats():
+            return
+        if refused_as_too_large:
+            self.__too_big_notice = "tooBigRecord"
+        elif self.recordSizeMb > limits.BOT_UPLOAD_MB and not agent_delivered \
+                and self.cached_file_id is None:
+            # Only the agent carries this file and Telegram never got it: the
+            # agent failed (connection, event loop), the size fits. "Too big"
+            # here was terminal, and a circle cursor has already moved: the
+            # listener lost the episode for good. The outbox retries; after
+            # MAX_ATTEMPTS the chats hear "unavailable". Our text, not the
+            # agent's: a Telegram "connection refused" must not cool the CDN.
+            raise outbox.OutboxRetryableError(AgentDeliveredNothing())
+        else:
+            self.__record_gone = True
 
     def send_via_link(self):
         """Telegram fetches self.link for each chat."""

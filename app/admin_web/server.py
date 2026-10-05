@@ -160,6 +160,15 @@ def diag_outbox(hours: int = 6, _access: None = Depends(diag_access)):
     return _diag_text(diag.outbox_stats, hours=hours)
 
 
+@api.get("/diag/errors")
+def diag_errors(hours: int = 24, q: Optional[str] = None, _access: None = Depends(diag_access)):
+    if not 1 <= hours <= 72:
+        raise HTTPException(status_code=400, detail="hours: 1..72")
+    if q is not None and len(q.strip()) < 4:
+        raise HTTPException(status_code=400, detail="q: at least 4 characters")
+    return _diag_text(diag.errors, hours=hours, q=q.strip() if q else None)
+
+
 @api.get("/diag/feed")
 def diag_feed(channel: int, _access: None = Depends(diag_access)):
     return _diag_text(diag.feed_probe, channel)

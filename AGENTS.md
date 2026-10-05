@@ -87,6 +87,12 @@ never by `service_name`: since the ETag updater every channel with an
 - Downloads go through `DiskBudget` (512 MB stay free for SQLite, logs,
   backup). Do not write episode files around it.
 - Too-big / unavailable notices go only to chats that did not get the audio.
+- "Too big" is the size or Telegram's 413, never a failed try. A file over
+  50 MB that the agent delivered to nobody (connection, event loop) goes
+  back to the outbox; after `MAX_ATTEMPTS` the chats hear "unavailable".
+  "Too big" is terminal and a circle cursor has already moved, so a wrong
+  one loses the episode for good. Match 413 as a number, not a substring
+  (a FloodWait of 4130 s). Lock: `python app/core/sender/test_record_delivery.py`.
 - Enclosure, channel and iTunes URLs go through `normalize_url`, never
   `quote`: trackers embed an encoded URL (`/track/.../https%3A%2F%2F...`)
   that must reach the network unchanged. In HTML, `telegram_html.href`.
@@ -221,7 +227,7 @@ Rules:
 
 ## Diagnostics API
 
-`GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=|digest?hours=|outbox?hours=|feed?channel=`
+`GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=|digest?hours=|outbox?hours=|errors?hours=&q=|feed?channel=`
 (`app/admin_web/diag.py`) serve the missed-episode reports for agents
 without server access. Rules:
 
@@ -239,6 +245,10 @@ without server access. Rules:
 - `outbox?hours=` counts `send_outbox` rows per pool and status, and the
   open ones (pending, leased) of any age: an old pending row or an expired
   lease means a pool is not draining. Aggregates only, no chat ids.
+- `errors?hours=` groups ERR / WARN of every role log by message;
+  `errors?q=` lists every line containing q (an enclosure URL finds that
+  job's `Exit sending <link>: delivered n/m, MB, outcome`). Numbers of 5+
+  digits (chat ids) are masked in both.
 - `feed?channel=` is the only call that touches the network: a GET of the
   URL stored for that channel (and of iTunes' feedUrl when it differs),
   never a URL from the request. It shows the XML the parser sees.
