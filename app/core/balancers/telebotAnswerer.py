@@ -12,6 +12,7 @@ from app.core.balancers.sticky import UserGate, incoming_user_id
 from app.routes.ptypes import HandleInThreadParams, ControllerParams
 from config import threads_config
 
+from lib.telegram.general.errors import expected_send_noise
 from lib.tools.logger import logger
 from lib.tools.loggers.incoming import log_incoming_data, log_incoming_inline
 
@@ -144,8 +145,9 @@ class TheSender(threading.Thread):
                 change_state = process_input(input_data)
             except Exception as e:
                 # Message text is not logged; the route is what makes this traceable.
-                logger.err(
-                    "route:", input_data['data'].get('route_name'),
+                # Telegram's own failures (blocked user, 429, 502) are WARN, not ERR
+                log = logger.warn if expected_send_noise(e) else logger.err
+                log("route:", input_data['data'].get('route_name'),
                     "action:", input_data['data'].get('action_name'), e)
                 change_state = False
 
