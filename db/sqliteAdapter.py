@@ -1086,6 +1086,41 @@ class SQLighter:
                 (str(lastGuid), str(telegramId), str(podcastId),))
             self.connection.commit()
 
+    def mark_sub_seen(self, telegramId, channelId):
+        """The chat opened the episode list: its cursor takes the channel's.
+
+        Copies channels.last_* (the updater's format) rather than building a
+        cursor from the feed, which would differ and read as "behind". Skips
+        a chat that gets this podcast's files automatically (paid tariff and
+        notify on): the circle moves its cursor when it sends, and moving it
+        here would skip the file. Skips a channel without a real latest
+        ("__"/NULL): that cursor is the quiet start's to set.
+        Returns (last_guid, last_date) when the cursor moved, else None.
+        """
+        with self.connection:
+            row = self.cursor.execute(
+                """SELECT c.last_guid, c.last_date
+                    FROM user_channel_cs uc
+                    JOIN channels c ON c.id = uc.channel_id
+                    LEFT JOIN user_tariff_cs ut ON ut.uid = (
+                        SELECT id FROM users WHERE telegramId = uc.user_telegram_id)
+                    WHERE uc.user_telegram_id = ? AND uc.channel_id = ?
+                        AND c.last_guid IS NOT NULL AND c.last_guid NOT IN ('', '__')
+                        AND c.last_date IS NOT NULL
+                        AND NOT (uc.notify = 1
+                            AND COALESCE(ut.notify_count, 0) != 0
+                            AND COALESCE(ut.time_left, 0) > 0
+                            AND COALESCE(ut.tariff_id, 0) > 0)""",
+                (str(telegramId), str(channelId))).fetchone()
+            if row is None:
+                return None
+            self.cursor.execute(
+                "UPDATE user_channel_cs SET last_guid = ?, last_date = ? "
+                "WHERE user_telegram_id = ? AND channel_id = ?",
+                (row[0], row[1], str(telegramId), str(channelId)))
+            self.connection.commit()
+            return row[0], row[1]
+
     def update_sub_last_guid_and_date(
             self, telegramId, podcastId, lastGuid, lastDate):
         with self.connection:

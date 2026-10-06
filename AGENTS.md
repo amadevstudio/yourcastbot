@@ -126,14 +126,23 @@ the episode for good. On purpose: the nosub digest ("reminded = seen")
 and opening the episode list (the chat saw it). Never on purpose: a
 paying user read as free (see Tariff clock).
 
+- Opening page 1 of the episode list copies the channel's cursor into the
+  subscription (`SQLighter.mark_sub_seen`), so the "new" mark goes out.
+  Not for a chat with a paid tariff and notify on: the circle sends it the
+  file and moves its cursor then. Never a cursor built from the feed (it
+  reads as "behind"), never `channels.last_*`, never a `__` channel cursor.
+  Until 2026-10 this never ran (the builtin `id` was passed for the chat),
+  so muted subscriptions kept "new" for good.
+  Lock: `python db/test_mark_sub_seen.py`.
+
 - A 304 means "the feed is what was parsed last time", not "every payer
   got it". A manual refresh parses for one chat and stores the ETag for
   all. `paid_targets_behind` (`app/jobs/feed_health.py`): if a paid
   cursor is behind the channel, refetch without validators and parse.
   Free listeners behind do not force a download.
 - At most one such refetch per feed version and channel
-  (`refetch_allowed`, `bot_runtime_kv` `feed_refetch_<id>`). The episode
-  list and `add_sub` also write `channels.last_*`, in their own formats;
+  (`refetch_allowed`, `bot_runtime_kv` `feed_refetch_<id>`).
+  `add_sub` also writes `channels.last_*`, in its own format;
   when a full parse of the same version still leaves payers "behind"
   (early return: all current, or no items), refetching again only costs a
   download and 6 s per circle. Without the guard channels 21 and 1899
@@ -155,7 +164,7 @@ paying user read as free (see Tariff clock).
 - A free listener is reminded of a later episode, not of a different id
   (`nosub_users_behind` with dates): the same episode's id changes when
   the host re-renders its pubDate (`+0300` vs `GMT`) or edits a title, and
-  `channels.last_*` is also written by the episode list and `add_sub`.
+  `channels.last_*` is also written by `add_sub`.
   Unknown dates (`get_strped_datetime` answers 1970 for junk) fall back to
   ids. Lock: `python app/jobs/test_nosub_rule.py` (CD gate).
 - Locks: `python app/jobs/test_feed_health.py`,
