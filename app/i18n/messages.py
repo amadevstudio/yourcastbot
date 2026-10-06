@@ -74,10 +74,9 @@ def get_message_rtd(message_route, lang_code):
                     curr_route = routed_messages.get(r.lower())
                 else:
                     curr_route = curr_route.get(r.lower())
-            try:
-                msg = curr_route.get(lang_code)
-            except Exception:
-                msg = curr_route.get("en")
+            # .get() answers None for a missing language, it does not raise:
+            # fall back to English, or Telegram gets "" ("message text is empty")
+            msg = curr_route.get(lang_code) or curr_route.get("en")
         except AttributeError:
             msg = str(message_route.pop())
 

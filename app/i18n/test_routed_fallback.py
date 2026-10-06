@@ -1,0 +1,56 @@
+# -*- coding: utf-8 -*-
+"""A routed message missing a language falls back to English, never "".
+
+Telegram rejects an empty text ("message text is empty"): an es user who
+searched a podcast's episodes and found nothing got no answer at all.
+
+Run: python app/i18n/test_routed_fallback.py
+"""
+import os
+import sys
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from app.i18n.messages import get_message_rtd, routed_messages  # noqa: E402
+
+LANGUAGES = ("en", "ru", "pt-br", "es", "de", "he", "zh-hans", None)
+
+
+def _assert(cond, label):
+    if not cond:
+        raise AssertionError(label)
+    print("ok  %s" % label)
+
+
+def _routes(node, path):
+    """Every route that ends at a {language: text} leaf."""
+    if isinstance(node, dict) and isinstance(node.get("en"), str):
+        yield path
+        return
+    if isinstance(node, dict):
+        for key, child in node.items():
+            yield from _routes(child, path + [key])
+
+
+def main():
+    _assert(
+        get_message_rtd(["subs", "errors", "paging", "empty_when_search"], "es")
+        == routed_messages["subs"]["errors"]["paging"]["empty_when_search"]["en"],
+        "es episode search with no results gets the English text")
+    _assert(
+        get_message_rtd(["errors", "unknown"], "ru")
+        == routed_messages["errors"]["unknown"]["ru"],
+        "a language that has the text still gets its own")
+
+    routes = list(_routes(routed_messages, []))
+    _assert(len(routes) > 0, "routed messages found")
+    empty = [(".".join(route), lang) for route in routes for lang in LANGUAGES
+             if not get_message_rtd(list(route), lang)]
+    _assert(not empty, "no routed message is empty in any language: %r" % empty[:5])
+    print("all routed fallback checks passed")
+
+
+if __name__ == "__main__":
+    main()
