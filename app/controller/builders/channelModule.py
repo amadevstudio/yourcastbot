@@ -309,7 +309,7 @@ def open_channel_subs(data: ControllerParams):
     if 'error' in message_navigation['page_data']:
         logger.warn(message_navigation['page_data']['error'])
         if message_navigation['page_data']['error'] == 'empty':
-            error_message = get_message_rtd(['subs', 'error', 'paging', 'empty'], data['language_code'])
+            error_message = get_message_rtd(['subs', 'errors', 'paging', 'empty'], data['language_code'])
         else:
             error_message = get_message_rtd(['errors', 'unknown'], data['language_code'])
         notify(data['callback'], data['message'], error_message)

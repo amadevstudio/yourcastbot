@@ -34,11 +34,21 @@ def _routes(node, path):
             yield from _routes(child, path + [key])
 
 
+def _leaf(route):
+    node = routed_messages
+    for key in route:
+        node = node[key]
+    return node
+
+
 def main():
-    _assert(
-        get_message_rtd(["subs", "errors", "paging", "empty_when_search"], "es")
-        == routed_messages["subs"]["errors"]["paging"]["empty_when_search"]["en"],
-        "es episode search with no results gets the English text")
+    # A text not translated yet (every one is today) falls back to English
+    routed_messages["_untranslated"] = {"en": "English only", "ru": "Только русский"}
+    try:
+        _assert(get_message_rtd(["_untranslated"], "es") == "English only",
+                "a missing language gets the English text, not \"\"")
+    finally:
+        del routed_messages["_untranslated"]
     _assert(
         get_message_rtd(["errors", "unknown"], "ru")
         == routed_messages["errors"]["unknown"]["ru"],
@@ -56,6 +66,9 @@ def main():
 
     routes = list(_routes(routed_messages, []))
     _assert(len(routes) > 0, "routed messages found")
+    untranslated = [".".join(route) for route in routes
+                    if set(_leaf(route)) < {"en", "ru", "pt-BR", "es", "de", "he"}]
+    _assert(not untranslated, "every routed text has all six languages: %r" % untranslated[:5])
     empty = [(".".join(route), lang) for route in routes for lang in LANGUAGES
              if not get_message_rtd(list(route), lang)]
     _assert(not empty, "no routed message is empty in any language: %r" % empty[:5])
