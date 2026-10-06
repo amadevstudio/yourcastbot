@@ -172,6 +172,16 @@ paying user read as free (see Tariff clock).
   `python app/jobs/test_updater_not_modified.py` (needs the bot's
   requirements).
 
+## Updater restarts
+
+A deploy stops the updater mid-circle. That is not a problem: the SIGTERM
+handler leaves `updater_clean_stop` (`bot_runtime_kv`), the next start
+processes the same channel again and sends nothing to the creator. Only a
+crash (supervisor flag) or a circle cut short without SIGTERM skips that
+channel and sends `#restarted` with the channel id. So `#problem
+#restarted` always means something went wrong.
+Lock: `python app/jobs/test_updater_resume.py`.
+
 ## Send workers (current contract)
 
 Configured in `threads_config`:

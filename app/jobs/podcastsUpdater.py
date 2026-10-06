@@ -30,6 +30,7 @@ from app.jobs.feed_health import (
     should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold,
     paid_targets_behind, feed_version, refetch_allowed, note_refetched)
 from app.jobs.digest_outbox import pending_count
+from app.jobs.updater_resume import consume_clean_stop, resume_point
 from app.jobs.nosub_digest import (
     is_empty_cursor, latest_episode_id, nosub_users_behind, should_skip_item_parse)
 from app.repository.storage import storage
@@ -74,6 +75,7 @@ def main(interval=120):
     ).start(bot_token=token)
     thonbot.disconnect()
 
+    stopped_cleanly = consume_clean_stop()
     while True:
         if not server:
             send_message_to_creator("Started", level='info')
@@ -81,13 +83,17 @@ def main(interval=120):
             storage.set_last_channel_id(1)
 
         try:
-            last_updated_channel_id = storage.get_last_channel_id()
-            # если поток упал, то пропустить то, что уронило
-            logger.log("Restarted?", storage.is_last_channel_restarted())
-            if storage.is_last_channel_restarted() or last_updated_channel_id != 1:
-                last_updated_channel_id += 1
+            # если поток упал, то пропустить то, что уронило;
+            # после деплоя (SIGTERM) пройти тот же канал заново и молчать
+            crashed = storage.is_last_channel_restarted()
+            logger.log("Restarted?", crashed, "clean stop:", stopped_cleanly)
+            last_updated_channel_id, restart_alert = resume_point(
+                storage.get_last_channel_id(), crashed, stopped_cleanly)
+            stopped_cleanly = False
+            if crashed:
                 storage.set_last_channel_restarted(False)
-                send_message_to_creator("#restarted", level='warning')
+            if restart_alert:
+                send_message_to_creator(restart_alert, level='warning')
 
             logger.log("New circle, luci: ", last_updated_channel_id, "| ", time.ctime())
             # Telegram #new_circle every pass was noise: a full round is ~hourly

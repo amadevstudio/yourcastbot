@@ -55,6 +55,12 @@ def _install_shutdown():
             return
         _shutting_down = True
         logger.log(f"Received signal {signum}, shutting down...")
+        if os.environ.get("YOURCAST_ROLE") == "updater":
+            try:
+                from app.jobs.updater_resume import mark_clean_stop
+                mark_clean_stop()
+            except Exception as e:
+                logger.err("Shutdown mark clean stop:", e)
         try:
             _close_open_storage()
         except Exception as e:
