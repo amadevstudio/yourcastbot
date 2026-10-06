@@ -4221,6 +4221,30 @@ routed_messages = {
         },
     },
 
+    # Episode list of one podcast (route "recs"): not subscriptions
+    'recs': {
+        'errors': {
+            'paging': {
+                'empty': {
+                    'en': "This podcast has no episodes yet",
+                    'ru': "В этом подкасте пока нет выпусков",
+                    'pt-BR': "Este podcast ainda não tem episódios",
+                    'es': "Este pódcast aún no tiene episodios",
+                    'de': "Dieser Podcast hat noch keine Folgen",
+                    'he': "לפודקאסט הזה אין עדיין פרקים"
+                },
+                'empty_when_search': {
+                    'en': "No episodes found, try another search",
+                    'ru': "Выпусков не найдено, попробуйте другой запрос",
+                    'pt-BR': "Nenhum episódio encontrado, tente outra busca",
+                    'es': "No se encontraron episodios, prueba con otra búsqueda",
+                    'de': "Keine Folgen gefunden, versuche eine andere Suche",
+                    'he': "לא נמצאו פרקים, נסו חיפוש אחר"
+                }
+            }
+        },
+    },
+
     'buttons': {
         'back': {
             'en': "Back",

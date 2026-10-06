@@ -105,7 +105,7 @@ def open_recs(data: ControllerParams):
         if message_navigation['page_data']['error'] == 'empty':
             error_text_getter = 'empty' if search_query is None else 'empty_when_search'
             error_message = get_message_rtd(
-                ['subs', 'errors', 'paging', error_text_getter], data['language_code'])
+                ['recs', 'errors', 'paging', error_text_getter], data['language_code'])
         else:
             error_message = get_message_rtd(['errors', 'unknown'], data['language_code'])
         notify(data['callback'], data['message'], text=error_message, resending=True)

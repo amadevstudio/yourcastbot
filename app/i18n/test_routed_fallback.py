@@ -44,6 +44,16 @@ def main():
         == routed_messages["errors"]["unknown"]["ru"],
         "a language that has the text still gets its own")
 
+    # The episode list speaks of episodes, not subscriptions, in every language
+    for key in ("empty", "empty_when_search"):
+        texts = routed_messages["recs"]["errors"]["paging"][key]
+        _assert(set(texts) == {"en", "ru", "pt-BR", "es", "de", "he"},
+                "recs %s is translated to every language" % key)
+    _assert(
+        get_message_rtd(["recs", "errors", "paging", "empty_when_search"], "es")
+        == routed_messages["recs"]["errors"]["paging"]["empty_when_search"]["es"],
+        "es episode search with no results gets its own text")
+
     routes = list(_routes(routed_messages, []))
     _assert(len(routes) > 0, "routed messages found")
     empty = [(".".join(route), lang) for route in routes for lang in LANGUAGES
