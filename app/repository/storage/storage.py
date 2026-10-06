@@ -146,21 +146,29 @@ def del_user_resend_flag(chat_id):
 
 
 # состояния
+def _load_states(chat_id) -> list | None:
+    """The screen stack; None when there is none.
+
+    About a third of the stored stacks (4.7k on 6 Oct 2026) are an old shape,
+    {"states": [...]}: read as a list they made the current screen unknown,
+    reset the stack with an ERR on the next tap, and broke "Back" (dict.pop).
+    """
+    try:
+        states = json.loads(storage[str(chat_id) + "_states"])
+    except Exception:
+        return None
+    if isinstance(states, dict):
+        states = states.get("states")
+    if not isinstance(states, list):
+        return None
+    return states
+
+
 @_locked
 def add_user_state(chat_id, state: AvailableRoutes):
-    curr_state = get_user_curr_state(chat_id)
-    if curr_state == state:
+    curr_states = _load_states(chat_id) or []
+    if curr_states and curr_states[-1] == state:
         return
-
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-    except Exception:
-        curr_states = []
-
-    # TODO: bug when curr_states is {'states': []}, added workaround
-    if type(curr_states) is not list:
-        logger.custom_err(f"Curr states for user #{chat_id} isn't list:", curr_states)
-        curr_states = []
 
     curr_states.append(state)
     storage[str(chat_id) + "_states"] = json.dumps(curr_states)
@@ -168,51 +176,37 @@ def add_user_state(chat_id, state: AvailableRoutes):
 
 @_locked
 def get_user_states(chat_id) -> list[AvailableRoutes] | None:
-    try:
-        return json.loads(storage[str(chat_id) + "_states"])
-    except Exception:
-        return None
+    return _load_states(chat_id)
 
 
 @_locked
 def get_user_curr_state(chat_id) -> AvailableRoutes | None:
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-        return curr_states[len(curr_states) - 1]
-    except Exception:
-        return None
+    curr_states = _load_states(chat_id)
+    return curr_states[-1] if curr_states else None
 
 
 @_locked
 def get_user_prev_state(chat_id) -> AvailableRoutes | None:
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-        return curr_states[len(curr_states) - 2]
-    except Exception:
-        return None
+    curr_states = _load_states(chat_id)
+    return curr_states[-2] if curr_states and len(curr_states) >= 2 else None
 
 
 @_locked
 def get_user_prev_curr_states(chat_id) -> tuple[AvailableRoutes | None, AvailableRoutes | None]:
-    try:
-        curr_states = json.loads(storage[str(chat_id) + '_states'])
-        if len(curr_states) >= 2:
-            return curr_states[-2], curr_states[-1]
-        elif len(curr_states) == 1:
-            return None, curr_states[0]
-        else:
-            return None, None
-    except Exception:
+    curr_states = _load_states(chat_id)
+    if not curr_states:
         return None, None
+    if len(curr_states) == 1:
+        return None, curr_states[0]
+    return curr_states[-2], curr_states[-1]
 
 
 @_locked
 def del_user_curr_state(chat_id):
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-    except Exception:
+    curr_states = _load_states(chat_id)
+    if curr_states is None:
         return
-    if curr_states is not None:
+    if curr_states:
         curr_states.pop()
     storage[str(chat_id) + "_states"] = json.dumps(curr_states)
 

@@ -48,6 +48,19 @@ def test_menu_states(db):
     _assert_eq(s.get_user_states(7), None, "clear removes states")
     _assert_eq(s.get_user_state_data(7, "recs"), None, "clear removes data")
 
+    # About a third of the stored stacks are an old shape, {"states": [...]}
+    runtime_kv.set_kv("fsm:8_states", json.dumps({"states": ["menu", "genres", "top_ch"]}),
+                      database=db)
+    _assert_eq(s.get_user_curr_state(8), "top_ch", "old-shape stack: current screen")
+    _assert_eq(s.get_user_prev_curr_states(8), ("genres", "top_ch"), "old-shape stack: prev")
+    s.del_user_curr_state(8)  # "Back"; dict.pop() raised here
+    _assert_eq(s.get_user_states(8), ["menu", "genres"], "old-shape stack: back works")
+    _assert_eq(runtime_kv.get_kv("fsm:8_states", database=db), '["menu", "genres"]',
+               "rewritten as a plain list")
+    runtime_kv.set_kv("fsm:9_states", json.dumps({"states": ["menu"]}), database=db)
+    s.add_user_state(9, "subs")
+    _assert_eq(s.get_user_states(9), ["menu", "subs"], "old-shape stack keeps its screens")
+
     os.environ["YOURCAST_ROLE"] = "updater"
     try:
         s.storage["7_states"]
