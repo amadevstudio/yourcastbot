@@ -1,6 +1,43 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #0b0b0c;
+  --color-panel: #141416;
+  --color-line: #2a2a2e;
+
+  --color-brand: #f5a018;
+  --color-brand-dim: #c47d0c;
+  --color-brand-fg: #0b0b0c;
+
+  --color-tg: #08b508;
+
+  --shadow-glow:
+    0 0 0 1px rgba(245, 160, 24, 0.25), 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /* Tailwind 4 dropped cursor: pointer on buttons; keep the v3 behaviour */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 html,
 body,
@@ -26,4 +63,24 @@ body {
 ::selection {
   background: #f5a018;
   color: #0b0b0c;
+}
+
+/*
+  Tailwind 4 spaces `space-y-*` children with margin-bottom on all but the
+  last one. An inline child (a <label> above its input) ignores a vertical
+  margin, so label and field touched. Keep the v3 rule: margin-top on every
+  child after the first. Only the values the admin uses.
+*/
+@layer utilities {
+  /* :where() keeps this at zero specificity, so an explicit mb-* still wins */
+  :where([class*='space-y-'] > :not([hidden])) {
+    margin-bottom: 0;
+  }
+  .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 1); }
+  .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 1.5); }
+  .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 2); }
+  .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 3); }
+  .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 4); }
+  .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 5); }
+  .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 6); }
 }

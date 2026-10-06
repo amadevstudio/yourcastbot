@@ -50,7 +50,7 @@ function JobCard({ job }: { job: MailJob }) {
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
       <Progress value={job.progress} />
-      <div className="text-sm text-zinc-300 [overflow-wrap:anywhere]">
+      <div className="text-sm text-zinc-300 wrap-anywhere">
         отправлено {job.sent} · ошибок {job.failed} · пропущено {job.skipped}
         {" · "}
         осталось {job.remaining ?? Math.max((job.total || 0) - job.sent, 0)} из{" "}
@@ -67,10 +67,10 @@ function JobCard({ job }: { job: MailJob }) {
         {job.created_at ? ` · ${formatWhen(job.created_at)}` : ""}
       </Hint>
       {job.last_error ? (
-        <div className="text-sm text-red-400 [overflow-wrap:anywhere]">{job.last_error}</div>
+        <div className="text-sm text-red-400 wrap-anywhere">{job.last_error}</div>
       ) : null}
       {job.recent_errors?.length ? (
-        <div className="space-y-1 text-xs text-zinc-500 [overflow-wrap:anywhere]">
+        <div className="space-y-1 text-xs text-zinc-500 wrap-anywhere">
           {job.recent_errors.map((row, i) => (
             <div key={`${row.tgid}-${i}`}>
               {row.tgid}: {row.error || "ошибка"}

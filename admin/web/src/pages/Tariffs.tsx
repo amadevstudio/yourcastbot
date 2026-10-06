@@ -44,7 +44,7 @@ function Row({ row }: { row: Tariff }) {
       <td className="px-3 py-2 text-zinc-400">{row.id}</td>
       <td className="px-3 py-2">
         <div>{row.level}</div>
-        <div className="text-[11px] text-zinc-500">уровень в боте</div>
+        <div className="text-[11px] leading-5 text-zinc-500">уровень в боте</div>
       </td>
       {columns.map((col) => (
         <td key={col.key} className="px-2 py-2 align-top">
@@ -56,12 +56,12 @@ function Row({ row }: { row: Tariff }) {
             }
           />
           {col.key === "price" ? (
-            <div className="mt-1 text-[11px] text-zinc-500">
+            <div className="mt-1 text-[11px] leading-5 text-zinc-500">
               = ${centsToUsd(draft.price)}
             </div>
           ) : null}
           {col.key === "notify_count" && draft.notify_count === -1 ? (
-            <div className="mt-1 text-[11px] text-zinc-500">без лимита</div>
+            <div className="mt-1 text-[11px] leading-5 text-zinc-500">без лимита</div>
           ) : null}
         </td>
       ))}

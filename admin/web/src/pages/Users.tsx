@@ -51,7 +51,7 @@ function UserCard({
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <button
               type="button"
-              className="font-mono text-brand hover:underline [overflow-wrap:anywhere]"
+              className="font-mono text-brand hover:underline wrap-anywhere"
               title="Показать только этого человека"
               onClick={() => onFilter(String(user.telegramId))}
             >
