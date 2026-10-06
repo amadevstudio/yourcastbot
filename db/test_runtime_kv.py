@@ -121,17 +121,17 @@ def main():
     print("-- test_migrate_from_shelve")
     test_migrate_from_shelve(
         tmpdir, os.path.join(tmpdir, "migrate.db"))
-    print("-- test_shelve_rejected_for_updater_role")
+    print("-- test_menu_states_rejected_for_updater_role")
     os.environ["YOURCAST_ROLE"] = "updater"
     try:
         import app.repository.storage.storage as storage_mod
         try:
-            storage_mod._get_shelve()
-            raise AssertionError("updater must not open FSM shelve")
+            storage_mod.storage["1_states"]
+            raise AssertionError("updater must not touch menu states")
         except RuntimeError as e:
             if "bot process" not in str(e):
                 raise
-            print("ok  updater cannot open FSM shelve")
+            print("ok  updater cannot touch menu states")
     finally:
         os.environ.pop("YOURCAST_ROLE", None)
     print("-- test_thonbot_rejected_for_updater_role")

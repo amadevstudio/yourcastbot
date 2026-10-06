@@ -206,6 +206,12 @@ def main(argv=None):
             migrate_updater_state_from_shelve()
         except Exception as e:
             logger.err("Updater cursor migrate skipped:", e)
+        # Menu states and the Telegram cache leave gdbm for sqlite (once)
+        try:
+            from app.repository.storage.shelve_migration import migrate_shelves_to_sqlite
+            migrate_shelves_to_sqlite()
+        except Exception as e:
+            logger.err("Shelve move skipped:", e)
         try:
             from db.hot_indexes import build_hot_path_indexes
             build_hot_path_indexes()

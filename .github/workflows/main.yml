@@ -41,6 +41,7 @@ jobs:
           python3 lib/requests/test_url.py
           python3 lib/net/test_enclosure.py
           python3 app/jobs/test_feed_health.py
+          python3 app/repository/storage/test_sqlite_storage.py
           python3 lib/telegram/general/test_errors.py
           python3 lib/telegram/general/test_render_retry.py
           python3 lib/system/test_disk_budget.py

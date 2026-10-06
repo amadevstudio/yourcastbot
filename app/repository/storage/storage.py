@@ -1,13 +1,11 @@
 import json
 import os
-import shelve
 import threading
 import time
 from functools import wraps
 from typing import Mapping, Any, Sequence
 
 from app.routes.routes_list import AvailableRoutes
-from config import shelve_name
 from db import runtime_kv
 from lib.net.enclosure import (
     COOL_SECONDS, FAULT_WINDOW_SECONDS, FAULTS_BEFORE_COOL, enclosure_hosts,
@@ -15,60 +13,77 @@ from lib.net.enclosure import (
 from lib.tools.logger import logger
 
 _thread_lock = threading.RLock()
-_shelve_init_lock = threading.Lock()
-_shelve_db = None
+
+# Menu states ("<chat>_states", "<chat>_states_data") under this prefix in
+# bot_runtime_kv. They lived in a gdbm shelve: it never gives space back
+# (10 MB of states in a 448 MB file) and could only be compacted with the
+# bot stopped.
+FSM_KEY_PREFIX = "fsm:"
 
 
 def _role():
     return os.environ.get("YOURCAST_ROLE") or ""
 
 
-def _shelve_allowed():
-    # Unset role = legacy single process. After the split, only bot opens gdbm.
+def _fsm_allowed():
+    # The menu belongs to the bot process (unset role = legacy single process);
+    # updater/jobs touching it would be a bug, as it was with the shelve.
     return _role() in ("", "bot")
 
 
-def _get_shelve():
-    global _shelve_db
-    if not _shelve_allowed():
-        raise RuntimeError(
-            "FSM shelve is opened only in the bot process; "
-            "updater/jobs must use sqlite (runtime_kv)")
-    with _shelve_init_lock:
-        if _shelve_db is None:
-            _shelve_db = shelve.open(shelve_name)
-        return _shelve_db
+class _FsmStore:
+    """Dict-like view of the menu states; same interface the shelve had.
 
+    One connection per thread, kept open: a screen reads and writes states
+    several times, and opening SQLite for each access cost ~8 ms.
+    """
 
-class _LazyShelve:
+    def __init__(self, database=None):
+        self.database = database
+        self._local = threading.local()
+
+    def _conn(self):
+        if not _fsm_allowed():
+            raise RuntimeError(
+                "menu states are used only in the bot process")
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = runtime_kv._connect(self.database)
+            self._local.conn = conn
+        return conn
+
     def __getitem__(self, key):
-        return _get_shelve()[key]
+        row = self._conn().execute(
+            "SELECT value FROM bot_runtime_kv WHERE key = ?",
+            (FSM_KEY_PREFIX + key,)).fetchone()
+        if row is None:
+            raise KeyError(key)
+        return row["value"]
 
     def __setitem__(self, key, value):
-        _get_shelve()[key] = value
+        # Autocommit: one statement, one transaction
+        self._conn().execute(
+            "INSERT INTO bot_runtime_kv (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (FSM_KEY_PREFIX + key, str(value)))
 
     def __delitem__(self, key):
-        del _get_shelve()[key]
+        cursor = self._conn().execute(
+            "DELETE FROM bot_runtime_kv WHERE key = ?", (FSM_KEY_PREFIX + key,))
+        if cursor.rowcount == 0:
+            raise KeyError(key)
 
     def sync(self):
-        db = _shelve_db
-        if db is not None:
-            db.sync()
+        pass
 
     def close(self):
-        global _shelve_db
-        with _shelve_init_lock:
-            db = _shelve_db
-            _shelve_db = None
-        if db is not None:
-            try:
-                db.sync()
-                db.close()
-            except Exception:
-                pass
+        conn = getattr(self._local, "conn", None)
+        self._local.conn = None
+        if conn is not None:
+            conn.close()
 
 
-storage = _LazyShelve()
+storage = _FsmStore()
 
 
 def _locked(fn):
@@ -447,6 +462,6 @@ def clear_new_podcast_available_flags():
 def close_storage():
     try:
         storage.close()
-        logger.log("Storage shelve closed")
+        logger.log("Storage closed")
     except Exception as e:
-        logger.err("Error closing storage shelve:", e)
+        logger.err("Error closing storage:", e)
