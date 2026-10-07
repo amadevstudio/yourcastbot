@@ -3,6 +3,7 @@ from config import (
     tariff_ref_notifies, tariff_ref_sub_period, max_subscriptions_without_tariff,
     donate_link, botName)
 from lib.markup.telegram_html import href
+from app.i18n.translations_extra import EXTRA_TRANSLATIONS
 
 
 def get_language(lang_code):
@@ -3706,7 +3707,7 @@ messages = {
     },
     "patreonShort": {
         "en": {
-            "ro_msg": "<a gref='%s'>%s</a>" % (donate_link, donate_link)
+            "ro_msg": "<a href='%s'>%s</a>" % (donate_link, donate_link)
         }
     },
     "openThePodcast": {
@@ -3926,7 +3927,7 @@ messages = {
             "ro_msg": emojiCodes.get('crown') + "\nТоп жанра"
         },
         "en": {
-            "ro_msg": emojiCodes.get('crown') + "\nТоп жанра"
+            "ro_msg": emojiCodes.get('crown') + "\nGenre top"
         },
         "pt-BR": {
             "ro_msg": emojiCodes.get('crown') + "\nTop gêneros"
@@ -4674,3 +4675,21 @@ def _merge_translations(target, extra):
 
 
 _merge_translations(routed_messages, _ROUTED_TRANSLATIONS)
+
+
+def _merge_message_translations(target, extra):
+    """Fill languages `messages` lacks; a text already written there wins."""
+    for key, by_lang in extra.items():
+        node = target.get(key)
+        if node is None:
+            continue  # a translation for a text that no longer exists
+        for lang, text in by_lang.items():
+            if not (node.get(lang) or {}).get("ro_msg"):
+                node[lang] = {"ro_msg": text}
+
+
+_merge_message_translations(messages, EXTRA_TRANSLATIONS)
+
+# a bare link reads the same in every language
+for _lang in ("ru", "pt-BR", "es", "de", "he"):
+    messages["patreonShort"].setdefault(_lang, dict(messages["patreonShort"]["en"]))
