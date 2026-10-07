@@ -1,6 +1,6 @@
 Полная инструкция: docs/DEPLOY.md (два дерева, PHP→Python для оплаты, роли, nginx, CD).
 
-Ниже — поля constants.py (файл в git не кладётся) и старые заметки по php-fpm.
+Ниже — поля constants.py (файл в git не кладётся). Полный список с заглушками — .claude/templates/constants.example.py (его же берёт CI); если список ниже разошёлся с ним, верен шаблон.
 
 
 1. setup constants.py
@@ -43,53 +43,20 @@ databaseName = 'yourcast.db'
 
 noPhoto = 'link'
 
-
-
-2. visudo:
-www-data ALL =(root) NOPASSWD: /home/yourcast/yourcast/scripts/subscription_income.py
-www-data ALL =(root) NOPASSWD: /home/yourcast/yourcast/scripts/send_message.py
-...
-
-
-
-3. nginx (/etc/nginx/sites-available/default)
-
-server {
-        listen 80 default_server;
-        listen [::]:80 default_server;
-
-        root *bot_server_path*;
-
-        index index.html index.htm index.nginx-debian.html index.php;
-
-        server_name *ip* *www.domain*;
-
-        location / {
-                # First attempt to serve request as file, then
-                # as directory, then fall back to displaying a 404.
-                try_files $uri $uri/ =404;
-        }
-
-        location ~ \.php$ {
-                include snippets/fastcgi-php.conf;
-                fastcgi_pass unix:/run/php/php7.0-fpm.sock;
-}
-
-3'. nginx (/etc/nginx/nginx.conf)
-
-add to http 'client_max_body_size 20M;
-
-3''. php.ini (/etc/php/7.0/fpm/php.ini)
-
-; Maximum allowed size for uploaded files.
-upload_max_filesize = 20M 
-; Must be greater than or equal to upload_max_filesize
-post_max_size = 20M 
-
-3'''. systemctl restarn nginx && service php7.0-fpm restart
+# also required by config.py (see the template for the exact shapes)
+donate_link = 'str'
+advertising_contact = 'str'
+amplitude_analytics_api_key = 'str'
+crypto_bot_api_key = 'str'
+crypto_bot_api_key_test = 'str'
+patreon_creator_access_token = 'str'
+yandex_disk_backup_token = 'str'  # backups
+yandex_disk_mail = 'str'
+isTest = Bool
+testToken = 'str'
+testBotName = 'str'
 
 
 
-4. Access rights
-bot/db -> chmod 777 db
-bot/db/yourcast.db -> chmod 766 yourcast.db
+2. Everything else (nginx, php-fpm, sudo for the PHP webhooks, file rights,
+   certificates, supervisor, deploy): docs/DEPLOY.md and install.sh.
