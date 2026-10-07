@@ -81,7 +81,7 @@ supervisorctl reread
 supervisorctl update
 
 # Actions
-cp /home/yourcast/yourcast/pull_restart_clean.sh /home/yourcast/pull_restart_clean.sh
-chmod u+x pull_restart_clean.sh
+# Manual deploy, if GitHub Actions is down: /home/yourcast/yourcast/pull_restart_clean.sh
+chmod u+x /home/yourcast/yourcast/pull_restart_clean.sh
 
 supervisorctl restart yourcast
