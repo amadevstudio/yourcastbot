@@ -222,6 +222,12 @@ Rules:
 - **Claim order.** Clicks newest first (the person is waiting now).
   Circle oldest first: one row per episode, one in flight per channel, so
   a catch-up arrives in order and an old row is never passed forever.
+- **A stalled download resumes** (`Requester.download_chunked`): a quiet
+  read in the middle of a file continues from the byte it stopped at
+  (`Range` + `If-Range`, only on a 206 for that offset), at most 3 times, and
+  a retry that brings no bytes is the last. Quiet before the first byte gets
+  one more plain GET. A CDN dead for two quiet reads still fails in about a
+  minute. Lock: `python lib/requests/test_download_resume.py`.
 - **Dead enclosure** (timeout, DNS, Telegram could not fetch the URL) is
   terminal: do not spend `MAX_ATTEMPTS` on it. Tell the user with site +
   file links.

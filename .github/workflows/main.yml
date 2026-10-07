@@ -27,6 +27,8 @@ jobs:
         run: |
           cp .claude/templates/constants.example.py constants.py
           cp .claude/templates/constant_texts.example.py constant_texts.py
+      - name: HTTP client for the loopback download tests
+        run: python3 -m pip install requests
       - name: Storefront and copy guards
         run: |
           python3 app/service/payment/test_storefront.py
@@ -39,6 +41,7 @@ jobs:
           python3 app/service/record/test_delivery.py
           python3 app/service/podcast/test_card.py
           python3 lib/requests/test_url.py
+          python3 lib/requests/test_download_resume.py
           python3 lib/net/test_enclosure.py
           python3 app/jobs/test_feed_health.py
           python3 app/repository/storage/test_sqlite_storage.py

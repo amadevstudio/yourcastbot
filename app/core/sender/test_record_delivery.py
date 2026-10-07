@@ -378,6 +378,9 @@ def main():
     _assert(len(world.notices) == 3 and all('unavailable' in text.lower() or 'unavaliable' in text.lower()
                                             for _, text in world.notices),
             "dead file: unavailable notice")
+    warned = [text for level, text in world.logger.lines if level == 'warn' and 'Unavailable' in text]
+    _assert(len(warned) == 1 and '3 chats' in warned[0],
+            "dead file: one warning for the episode, not one per chat")
     _assert(world.records_left() == [] and world.budget._live == [], "dead file: partial file and reservation cleaned")
 
     # A hung download cools a host for 30 minutes, so it must be the host that
