@@ -15,6 +15,20 @@ FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF = 3
 FEED_DEAD_PROBE_SECONDS = 24 * 60 * 60
 
 
+def channel_feed_url(channel, pc_info=None) -> str:
+    """The feed URL for a user-facing notice. `channel` may be a dict or the
+    sqlite3.Row the poll query returns (a Row has no .get: the "notifications
+    are off" notice died on it for every dead feed)."""
+    if pc_info:
+        url = str(pc_info.get("feedUrl") or "").strip()
+        if url:
+            return url
+    try:
+        return str(channel["rss_link"] or "").strip()
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
 def failures_threshold(reason: str) -> int:
     if reason == "gone":
         return FEED_GONE_FAILURES_BEFORE_NOTIFY_OFF

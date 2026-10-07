@@ -28,7 +28,8 @@ from app.i18n.messages import get_message, format_feed_notice
 from app.jobs.circle_health import mark_circle_finished, mark_circle_started
 from app.jobs.feed_health import (
     should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold,
-    paid_targets_behind, feed_version, refetch_allowed, note_refetched)
+    paid_targets_behind, feed_version, refetch_allowed, note_refetched,
+    channel_feed_url)
 from app.jobs.digest_outbox import pending_count
 from app.jobs.updater_resume import consume_clean_stop, resume_point
 from app.jobs.nosub_digest import (
@@ -53,12 +54,7 @@ class ChannelUpdateResult(typing.NamedTuple):
         return self.new_recs
 
 
-def _channel_feed_url(channel, pc_info=None) -> str:
-    if pc_info:
-        url = str((pc_info or {}).get("feedUrl") or "").strip()
-        if url:
-            return url
-    return str((channel or {}).get("rss_link") or "").strip()
+_channel_feed_url = channel_feed_url
 
 
 logger = Logger(file="updater")

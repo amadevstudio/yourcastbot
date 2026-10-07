@@ -74,6 +74,24 @@ def test_unavailable_needs_more_failures(db_path):
         "newly_dead", "unavailable threshold 5")
 
 
+def test_notice_url_from_a_poll_row(db_path):
+    """The poll query returns a sqlite3.Row, which has no .get: the "notifications
+    are off" notice raised AttributeError and never reached the subscribers."""
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT 'https://feed.example/rss.xml' AS rss_link").fetchone()
+    _assert_eq(feed_health.channel_feed_url(row), "https://feed.example/rss.xml",
+               "url from a Row")
+    _assert_eq(feed_health.channel_feed_url({"rss_link": "https://a.example/x"}),
+               "https://a.example/x", "url from a dict")
+    _assert_eq(feed_health.channel_feed_url(row, {"feedUrl": " https://itunes.example/f "}),
+               "https://itunes.example/f", "iTunes feedUrl wins")
+    _assert_eq(feed_health.channel_feed_url(None), "", "no channel")
+    no_link = conn.execute("SELECT 1 AS id").fetchone()
+    _assert_eq(feed_health.channel_feed_url(no_link), "", "row without rss_link")
+
+
 def test_enclosure_host_cool(db_path):
     url = "https://m.cdn.firstory.me/track/a.mp3"
     now = 3_000_000.0
@@ -287,6 +305,7 @@ def main():
     cases = (
         test_counts_then_marks_dead,
         test_unavailable_needs_more_failures,
+        test_notice_url_from_a_poll_row,
         test_enclosure_host_cool,
         test_tracker_link_cools_the_cdn,
         test_one_fault_is_a_hiccup,
