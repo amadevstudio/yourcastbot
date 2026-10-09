@@ -7,6 +7,7 @@ from app.jobs.relay_remind import (
 from app.jobs.tariff_tick import run_tariff_tick
 from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
+from app.service.payment.storefront import plan_off_text
 from config import tariff_period
 from lib.telegram.general.message_master import outer_sender
 from lib.tools.logger import logger
@@ -50,12 +51,10 @@ def balance_watcher(update_time):
                     tariff_str, balance, pu['tprice'], tariff_period, pu['tnc'], lang)
                 outer_sender(pu['telegramId'], [{'type': 'text', 'text': message}])
 
-        lang = 'no_lang'
         for npu in not_prolonged_users:
-            if lang != npu['lang']:
-                lang = npu['lang']
-                message_base = get_message(
-                    "tariff_cannot_be_prolonged_by_daemon", lang) + "\n\n"
+            lang = npu['lang']
+            # The plan that stopped is the user's own (Bronze, Silver, Relay).
+            message_base = plan_off_text(npu['tlevel'], lang) + "\n\n"
 
             balance = int(npu['balance'])
 

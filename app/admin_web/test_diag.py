@@ -225,6 +225,8 @@ def test_audit(path, work_dir):
     _assert_in("MISSED: #7 World News Tonight | Wednesday – Special 'live'", text,
                "42: missed episode from the log")
     _assert_in("bought", lines.get("4004", ""), "4004: paid after the digest")
+    _assert_in("== Plans in force (time_left > 0)", text, "the audit says which plans are in force")
+    _assert_in("level 3, price 500:", text, "the Relay users are counted per plan")
     _assert_in("clean", lines.get("5005", ""), "5005: clean")
     _assert_in("unknown", lines.get("2002", ""), "2002: flags purged")
     _assert_in("welcome Relay (336h)", lines.get("7007", ""),

@@ -4,7 +4,7 @@
 Runs from the existing hourly balance_watcher. Does not touch payment apply.
 """
 from app.i18n.messages import get_message
-from app.service.payment.storefront import CHANGE_PLAN_CALLBACK
+from app.service.payment.storefront import CHANGE_PLAN_CALLBACK, plan_ending_text
 from config import db_path
 from db import runtime_kv
 from db.sqliteAdapter import SQLighter
@@ -83,7 +83,7 @@ def send_relay_d3_reminders(database=None):
             continue
         lang = user["lang"] if user["lang"] else "en"
         days = days_left_label(user["time_left"])
-        text = get_message("relay_trial_ending", lang) % days
+        text = plan_ending_text(user["level"], days, lang)
         try:
             _send(telegram_id, [{
                 "type": "text",

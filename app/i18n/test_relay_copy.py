@@ -11,6 +11,8 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from app.i18n.messages import get_message  # noqa: E402
+from app.service.payment.storefront import (  # noqa: E402
+    plan_ending_text, plan_name, plan_off_text)
 
 
 def _assert(cond, label):
@@ -26,6 +28,8 @@ def main():
         "relay_sub_page_footnote",
         "relayEnableButton",
         "relay_trial_ending",
+        "plan_ending_soon",
+        "plan_off_by_daemon",
         "youHaveNewEpisodes",
         "withoutTariffSubscriptionsLimited",
         "award_welcome",
@@ -71,6 +75,34 @@ def main():
                     "nosubDigestMuteButton", "tariffs"):
             text = get_message(key, lang)
             _assert(len(text) <= 64, "%s/%s is %s chars" % (key, lang, len(text)))
+
+    # The plan that ends is the user's own. Relay keeps its text as it is;
+    # Bronze and Silver are named, as an apposition (plan names have a gender).
+    for lang in langs:
+        _assert(plan_name(1, lang) and plan_name(1, lang) != plan_name(3, lang),
+                "%s: Bronze has its own name" % lang)
+        _assert(plan_name(3, lang) == "Relay" and "🥇" not in plan_name(3, lang),
+                "%s: the name has no medal" % lang)
+        _assert(plan_ending_text(3, 3, lang) == get_message("relay_trial_ending", lang) % 3,
+                "%s: the Relay D-3 text is unchanged" % lang)
+        _assert(plan_off_text(3, lang) == get_message("tariff_cannot_be_prolonged_by_daemon", lang),
+                "%s: the Relay 'plan is off' text is unchanged" % lang)
+        for level in (1, 2):
+            name = plan_name(level, lang)
+            ending = plan_ending_text(level, 3, lang)
+            off = plan_off_text(level, lang)
+            _assert(name in ending and "3" in ending and "{" not in ending and "🥉" not in ending
+                    and "🥈" not in ending, "%s/level %d: D-3 names the plan and the days" % (lang, level))
+            _assert(name in off and "{" not in off, "%s/level %d: 'plan is off' names the plan" % (lang, level))
+            _assert("Relay" in ending and "Relay" in off,
+                    "%s/level %d: both still offer Relay" % (lang, level))
+        _assert(plan_ending_text(0, 3, lang) == plan_ending_text(3, 3, lang)
+                and plan_off_text(9, lang) == plan_off_text(3, lang),
+                "%s: an unknown level keeps the Relay text (as before)" % lang)
+
+    watcher = open(os.path.join(_ROOT, "app", "jobs", "balance_watcher.py"), encoding="utf-8").read()
+    _assert("plan_off_text" in watcher and '"tariff_cannot_be_prolonged_by_daemon"' not in watcher,
+            "the daemon's 'not prolonged' notice names the user's own plan")
 
     print("all relay copy checks passed")
 

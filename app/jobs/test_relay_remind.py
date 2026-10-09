@@ -55,7 +55,7 @@ def _schema(conn):
     conn.commit()
 
 
-def _add_user(conn, telegram_id, time_left, deleted_at=None, lang="en", balance=0):
+def _add_user(conn, telegram_id, time_left, deleted_at=None, lang="en", balance=0, tariff_id=3):
     conn.execute(
         "INSERT INTO users (telegramId, lang, deleted_at) VALUES (?, ?, ?)",
         (telegram_id, lang, deleted_at))
@@ -65,9 +65,47 @@ def _add_user(conn, telegram_id, time_left, deleted_at=None, lang="en", balance=
     conn.execute(
         "INSERT INTO user_tariff_cs "
         "(uid, tariff_id, balance, notify_count, time_left) "
-        "VALUES (?, 3, ?, -1, ?)",
-        (uid, balance, time_left))
+        "VALUES (?, ?, ?, -1, ?)",
+        (uid, tariff_id, balance, time_left))
     conn.commit()
+
+
+def _plans(sent):
+    """Bronze, Silver and Relay users all expire: each is told about its own plan."""
+    from app.i18n.messages import get_message
+    fd, path = tempfile.mkstemp(suffix=".sqlite")
+    os.close(fd)
+    try:
+        db = SQLighter(path)
+        try:
+            _schema(db.connection)
+            db.connection.execute(
+                "INSERT INTO tariffs (id, level, price, notify_count) VALUES (1, 1, 100, 100)")
+            db.connection.execute(
+                "INSERT INTO tariffs (id, level, price, notify_count) VALUES (2, 2, 300, 500)")
+            db.connection.commit()
+            _add_user(db.connection, 201, 48, tariff_id=1, lang="ru")
+            _add_user(db.connection, 202, 48, tariff_id=2, lang="en")
+            _add_user(db.connection, 203, 48, tariff_id=3, lang="en")
+            _add_user(db.connection, 204, 48, tariff_id=1, lang="en", balance=100)  # renewed by the tick
+        finally:
+            db.close()
+        del sent[:]
+        count = relay_remind.send_relay_d3_reminders(database=path)
+        by_user = {row[0]: row for row in sent}
+        _assert_eq(count, 3, "Bronze, Silver and Relay users that will expire are reminded")
+        _assert_eq(204 in by_user, False, "a Bronze user whose balance renews it is not reminded")
+        _assert("«Бронза»" in by_user[201][1] and "Relay заканчивается" not in by_user[201][1],
+                "a Bronze user is told Bronze ends, not Relay (ru)")
+        _assert('"Silver"' in by_user[202][1] and "Relay ends" not in by_user[202][1],
+                "a Silver user is told Silver ends, not Relay (en)")
+        _assert_eq(by_user[203][1], get_message("relay_trial_ending", "en") % 2,
+                   "the Relay text is exactly what it was")
+        for chat_id in (201, 202, 203):
+            _assert_eq([row[0]["callback_data"]["tp"] for row in by_user[chat_id][2]], ["bs_stars", "bs_trfs"],
+                       "%s: still Stars first, change-plan next to it" % chat_id)
+    finally:
+        os.remove(path)
 
 
 def main():
@@ -131,6 +169,7 @@ def main():
     finally:
         os.remove(path)
 
+    _plans(sent)
     print("all relay_remind checks passed")
 
 

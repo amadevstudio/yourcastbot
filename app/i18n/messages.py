@@ -3463,6 +3463,82 @@ messages = {
                       "להחזיר: Relay $5 לחודש — קבצים בצ'אט ופוסטים לערוץ."
         }
     },
+    # For a plan that is not the showcase one (Bronze, Silver): the same message
+    # as relay_trial_ending / tariff_cannot_be_prolonged_by_daemon, with the
+    # user's own plan named as an apposition ("the plan «Bronze»"): plan names
+    # are localized words with a gender, so they never replace "Relay" in a
+    # sentence. The Relay text itself stays as it is
+    # (app/service/payment/storefront.plan_ending_text / plan_off_text).
+    "plan_ending_soon": {
+        "ru": {
+            "ro_msg": "⏳ План «{plan}» заканчивается через {days} дн.\n\n"
+                      "После этого новые выпуски перестанут приходить файлом — "
+                      "останутся только текстовые напоминания раз в неделю.\n\n"
+                      "Сохранить автодоставку с Relay: $5/мес, оплата в Telegram за 2 тапа."
+        },
+        "en": {
+            "ro_msg": "⏳ Your plan \"{plan}\" ends in {days} days.\n\n"
+                      "After that, new episodes won't arrive as files — "
+                      "only a weekly text reminder.\n\n"
+                      "Keep auto-delivery with Relay: $5/mo, pay inside Telegram in 2 taps."
+        },
+        "pt-BR": {
+            "ro_msg": "⏳ O plano «{plan}» termina em {days} dia(s).\n\n"
+                      "Depois disso, os episódios não chegam mais como arquivo — "
+                      "só um lembrete semanal em texto.\n\n"
+                      "Manter a entrega com o Relay: US$5/mês, pague no Telegram em 2 toques."
+        },
+        "es": {
+            "ro_msg": "⏳ El plan «{plan}» termina en {days} día(s).\n\n"
+                      "Después, los episodios ya no llegarán como archivo — "
+                      "solo un recordatorio semanal.\n\n"
+                      "Mantén la entrega con Relay: $5/mes, paga en Telegram en 2 toques."
+        },
+        "de": {
+            "ro_msg": "⏳ Der Plan „{plan}“ endet in {days} Tag(en).\n\n"
+                      "Danach kommen neue Folgen nicht mehr als Datei — "
+                      "nur eine wöchentliche Text-Erinnerung.\n\n"
+                      "Auto-Zustellung mit Relay behalten: $5/Monat, Zahlung in Telegram in 2 Taps."
+        },
+        "he": {
+            "ro_msg": "⏳ התוכנית \"{plan}\" מסתיימת בעוד {days} ימים.\n\n"
+                      "אחרי זה פרקים חדשים לא יגיעו כקובץ — "
+                      "רק תזכורת טקסט שבועית.\n\n"
+                      "להשאיר משלוח אוטומטי עם Relay: $5 לחודש, תשלום בטלגרם בשתי הקשות."
+        }
+    },
+    "plan_off_by_daemon": {
+        "ru": {
+            "ro_msg": "План «{plan}» остановлен — автодоставка выключена.\n\n"
+                      "Новые выпуски больше не приходят файлом. Раз в неделю можем напомнить текстом.\n"
+                      "Включить: Relay $5/мес — файлы в чат и посты в канал."
+        },
+        "en": {
+            "ro_msg": "Your plan \"{plan}\" is off — auto-delivery stopped.\n\n"
+                      "New episodes no longer arrive as files. We may send a weekly text reminder.\n"
+                      "Turn it on: Relay $5/mo — files in chat and posts to your channel."
+        },
+        "pt-BR": {
+            "ro_msg": "O plano «{plan}» foi desligado — a entrega automática parou.\n\n"
+                      "Os episódios não chegam mais como arquivo. Podemos lembrar por texto uma vez por semana.\n"
+                      "Ligar: Relay US$5/mês — arquivos no chat e posts no canal."
+        },
+        "es": {
+            "ro_msg": "El plan «{plan}» está apagado — la entrega automática se detuvo.\n\n"
+                      "Los episodios ya no llegan como archivo. Podemos recordar por texto una vez por semana.\n"
+                      "Activar: Relay $5/mes — archivos en el chat y publicaciones en tu canal."
+        },
+        "de": {
+            "ro_msg": "Der Plan „{plan}“ ist aus — Auto-Zustellung gestoppt.\n\n"
+                      "Neue Folgen kommen nicht mehr als Datei. Wöchentlich kann eine Text-Erinnerung kommen.\n"
+                      "Einschalten: Relay $5/Monat — Dateien im Chat und Posts in deinen Kanal."
+        },
+        "he": {
+            "ro_msg": "התוכנית \"{plan}\" כבויה — המשלוח האוטומטי נעצר.\n\n"
+                      "פרקים חדשים לא מגיעים כקובץ. אפשר תזכורת טקסט פעם בשבוע.\n"
+                      "להפעיל: Relay $5 לחודש — קבצים בצ'אט ופוסטים לערוץ."
+        }
+    },
     "your_tariff_description": {
         "ru": {
             "ro_msg": "Описание вашего тарифа",

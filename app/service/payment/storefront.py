@@ -8,10 +8,42 @@ or removes change-plan.
 `bs_trfs` stays on /subscription. Stars lists every SKU, Relay first.
 """
 
+import re
+
 from app.i18n.messages import get_message
 
 SHOWCASE_TARIFF_LEVEL = 3
 CHANGE_PLAN_CALLBACK = "bs_trfs"
+
+_MEDAL = re.compile(r"^[^\w]+")
+
+
+def plan_name(level, language_code) -> str:
+    """The localized plan name without its medal: Bronze, Silver, Relay. '' if unknown."""
+    key = "tariff_lvl%d" % int(level or 0)
+    name = get_message(key, language_code)
+    return "" if name == key else _MEDAL.sub("", name).strip()
+
+
+def plan_ending_text(level, days, language_code) -> str:
+    """D-3: the plan that ends is the user's own, not always Relay.
+
+    Relay keeps its tuned text as it is. Other plans get a neutral one that
+    names the plan as an apposition: plan names are localized words with a
+    gender, they cannot replace "Relay" inside a sentence.
+    """
+    name = plan_name(level, language_code)
+    if int(level or 0) == SHOWCASE_TARIFF_LEVEL or not name:
+        return get_message("relay_trial_ending", language_code) % days
+    return get_message("plan_ending_soon", language_code).format(plan=name, days=days)
+
+
+def plan_off_text(level, language_code) -> str:
+    """The daemon could not renew the plan: say which plan stopped."""
+    name = plan_name(level, language_code)
+    if int(level or 0) == SHOWCASE_TARIFF_LEVEL or not name:
+        return get_message("tariff_cannot_be_prolonged_by_daemon", language_code)
+    return get_message("plan_off_by_daemon", language_code).format(plan=name)
 
 
 def _tariff_dict(tariff):

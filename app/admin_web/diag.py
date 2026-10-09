@@ -298,6 +298,7 @@ def audit(conn, out=print, now=None, work_dir=None):
         if not missed:
             out("      nobody else got an episode of its podcasts then; see the per-chat report")
     out("  totals: %s" % counts)
+    plans_in_force(conn, out)
 
 
 def followed(conn, tg):
@@ -676,6 +677,27 @@ def orphan_listeners(conn, out=print):
         "sum(CASE WHEN ut.notify_count = 0 OR ut.time_left = 0 OR ut.tariff_id = 0 THEN 1 ELSE 0 END) AS nosub "
         + base + " GROUP BY uc.channel_id) WHERE paid = 0 AND nosub = 0").fetchone()[0]
     out("  channels polled but never fetched (every live listener is in neither list): %d" % channels)
+
+
+def plans_in_force(conn, out=print):
+    """Live users per plan, and how many of them the D-3 nudge is about to reach."""
+    out("\n== Plans in force (time_left > 0): level, price, users, and in the D-3 window who will expire")
+    try:
+        rows = conn.execute(
+            "SELECT t.level, t.price, count(*) AS users, "
+            "sum(CASE WHEN utc.time_left <= 72 AND (utc.balance IS NULL OR utc.balance < t.price) "
+            "THEN 1 ELSE 0 END) AS ending "
+            "FROM user_tariff_cs utc JOIN tariffs t ON t.id = utc.tariff_id "
+            "JOIN users u ON u.id = utc.uid "
+            "WHERE utc.time_left > 0 AND utc.tariff_id != 0 AND u.deleted_at IS NULL "
+            "GROUP BY t.level, t.price ORDER BY t.level").fetchall()
+    except sqlite3.OperationalError as e:
+        out("  %s" % e)
+        return
+    for r in rows:
+        out("  level %s, price %s: %d users, %d ending" % (r["level"], r["price"], r["users"], r["ending"] or 0))
+    if not rows:
+        out("  none")
 
 
 def _kv(conn, key):
