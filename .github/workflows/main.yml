@@ -59,6 +59,7 @@ jobs:
           python3 app/jobs/test_quiet_start.py
           python3 app/jobs/test_nosub_rule.py
           python3 app/jobs/test_updater_resume.py
+          python3 app/jobs/test_circle_pace.py
           python3 app/i18n/test_translations_complete.py
 
   deploy-build-restart:

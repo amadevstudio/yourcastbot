@@ -228,6 +228,22 @@ channel and sends `#restarted` with the channel id. So `#problem
 #restarted` always means something went wrong.
 Lock: `python app/jobs/test_updater_resume.py`.
 
+## Circle pace
+
+The circle fetches a feed in full for ~550 of ~3400 channels (the rest answer
+304 or have no recipients). It used to sleep 6 s after every full fetch, so
+~55 of its ~58 minutes were sleeping. The invariant behind it is "do not hit
+one host again and again", so the rule is per host (`app/jobs/circle_pace.py`):
+a host is fetched in full at most once per 6 s, any two full fetches are 1 s
+apart, a 304 or a skipped channel never waits (as before). A circle starts at
+most once an hour (`circle_rest_seconds`; the rest was a flat 10 min after a
+~58 min circle): a faster circle must not mean 3-4x the requests to the feed
+hosts. A circle that did not finish retries after 10 min, not an hour. The
+time this frees is what makes it affordable to poll more channels.
+Locks: `python app/jobs/test_circle_pace.py` (CD gate),
+`python app/jobs/test_updater_circle.py` (the real loop, needs the bot's
+requirements).
+
 ## Send workers (current contract)
 
 Configured in `threads_config`:

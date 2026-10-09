@@ -26,6 +26,7 @@ from app.controller.builders.adminModule import send_message_to_creator
 from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message, format_feed_notice
 from app.jobs.circle_health import mark_circle_finished, mark_circle_started
+from app.jobs.circle_pace import HostPacer, circle_rest_seconds
 from app.jobs.feed_health import (
     should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold,
     paid_targets_behind, feed_version, refetch_allowed, note_refetched,
@@ -71,6 +72,9 @@ def main(interval=120):
     ).start(bot_token=token)
     thonbot.disconnect()
 
+    # Polite to each host, not slow to all (app/jobs/circle_pace.py).
+    pacer = HostPacer()
+
     stopped_cleanly = consume_clean_stop()
     while True:
         if not server:
@@ -78,6 +82,7 @@ def main(interval=120):
             time.sleep(60 * 60)
             storage.set_last_channel_id(1)
 
+        circle_seconds = 0  # the rest below is computed even when the circle raised
         try:
             # если поток упал, то пропустить то, что уронило;
             # после деплоя (SIGTERM) пройти тот же канал заново и молчать
@@ -125,6 +130,10 @@ def main(interval=120):
 
                 storage.set_last_channel_id(channel['id'])
 
+                # The same host is not fetched in full again within 6 s.
+                feed_url_to_pace = _channel_feed_url(channel)
+                pacer.wait(feed_url_to_pace)
+
                 update_result = ChannelUpdateResult(False, 'skipped')
                 try:
                     if connections is not None:
@@ -147,16 +156,17 @@ def main(interval=120):
                 else:
                     logger.log("Next channel is:", channel['id'])
 
-                # 6s только после реальной загрузки фида, чтобы не молотить хосты.
-                # 304 и каналы без получателей — сразу к следующему.
+                # Не молотить хосты: после реальной загрузки фида тот же хост
+                # ждёт 6 с (pacer.wait выше), остальные — нет. 304 и каналы без
+                # получателей пауз не ставят, как и раньше.
                 if update_result.outcome == 'fetched':
-                    time.sleep(6)
-                # time.sleep(60 * 60)
+                    pacer.fetched(feed_url_to_pace)
 
             storage.set_last_channel_id(1)
             storage.set_last_channel_restarted(False)
 
             circle_result = mark_circle_finished()
+            circle_seconds = circle_result['duration_sec']
             logger.log(
                 "Circle finished, digest pending:", pending_count(),
                 "; duration_sec:", circle_result['duration_sec'],
@@ -171,7 +181,11 @@ def main(interval=120):
         except Exception as e:
             logger.err("podcastsUpdater/circle: ", e)
 
-        time.sleep(interval * 60)
+        # The circle is shorter now; a circle still starts about once an hour,
+        # so the feed hosts are asked as often as before.
+        rest_seconds = circle_rest_seconds(circle_seconds, interval)
+        logger.log("Circle rest, sec:", int(rest_seconds))
+        time.sleep(rest_seconds)
 
 
 def send_new_records_by_channel(
