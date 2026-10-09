@@ -363,7 +363,7 @@ def test_listener_groups(work_dir):
             (4, 4, 3, 500, NULL, 400), (5, 5, 3, 500, -1, 400), (6, 6, 3, 500, -1, 400);
         INSERT INTO user_channel_cs (user_telegram_id, channel_id, notify) VALUES
             (9001, 7, 1), (9002, 7, 1), (9003, 7, 1), (9004, 7, 1), (9005, 7, 1), (9006, 7, 0),
-            (9001, 8, 1);
+            (9001, 8, 1), (9003, 9, 1);
         INSERT INTO bot_runtime_kv VALUES ('channel_feed_failures_7', '4'),
             ('channel_feed_dead_until_7', '1790000000.0');
     """)
@@ -380,6 +380,15 @@ def test_listener_groups(work_dir):
         _assert_in("feed failures counted: 4, dead until:", text, "the failure policy state is shown")
         _assert_in("feed failures counted: 0, dead until: -",
                    diag.as_text(diag.describe_listeners, ro, 8), "a channel with no failures")
+        orphans = diag.as_text(diag.orphan_listeners, ro)
+        _assert_in("in neither list: 2 users, 3 subscriptions", orphans,
+                   "the two users with no usable tariff, on all their subscriptions")
+        _assert_in("no tariff row tariff_id NULL  notify_count NULL  time_left NULL : 1 users", orphans,
+                   "a user with no tariff row at all")
+        _assert_in("tariff row   tariff_id set   notify_count NULL  time_left set  : 1 users", orphans,
+                   "a user whose tariff row has a NULL notify_count")
+        _assert_in("every live listener is in neither list): 1", orphans,
+                   "channel 9 is polled and never fetched; channel 7 has a paid listener")
     finally:
         ro.close()
 

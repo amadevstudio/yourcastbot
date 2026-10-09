@@ -491,6 +491,8 @@ def digest_stats(conn, out=print, hours=6, now=None):
         "INNER JOIN channels c ON c.id = ucc.channel_id WHERE ucc.notify = 1 "
         "AND (ucc.last_guid IS NULL OR ucc.last_guid IN ('__', '', 'None')) "
         "GROUP BY ucc.channel_id ORDER BY n DESC").fetchall()
+    out("")
+    orphan_listeners(conn, out)
     out("\n== Empty cursors (\"__\") with notifications left: %d on %d channels" % (
         sum(r["n"] for r in rows), len(rows)))
     for r in rows[:10]:
@@ -626,6 +628,46 @@ def listener_groups(conn, channel_id) -> dict:
             "nosub": nosub, "neither": live - paid - nosub}
 
 
+def orphan_listeners(conn, out=print):
+    """Live users the circle and the digest never reach: counts and tariff-row shapes.
+
+    On every one of their subscriptions the user is in neither of the updater's
+    two lists (see _LIVE_LISTENERS), so nothing is ever sent for them and a
+    channel with only such listeners is polled but never fetched.
+    """
+    base = (
+        "FROM user_channel_cs uc "
+        "JOIN users u ON u.telegramId = uc.user_telegram_id AND u.deleted_at IS NULL "
+        "LEFT JOIN user_tariff_cs ut ON ut.uid = u.id "
+        "WHERE uc.notify = 1")
+    # NULL-safe: NOT (NULL) is NULL, which would drop exactly these users.
+    neither = (" AND COALESCE(ut.notify_count != 0 AND ut.time_left > 0 AND ut.tariff_id > 0, 0) = 0"
+               " AND COALESCE(ut.notify_count = 0 OR ut.time_left = 0 OR ut.tariff_id = 0, 0) = 0")
+    try:
+        users, subs = conn.execute(
+            "SELECT count(DISTINCT uc.user_telegram_id), count(*) " + base + neither).fetchone()
+    except sqlite3.OperationalError as e:
+        out("== Live users in neither list: %s" % e)
+        return
+    out("== Live users with notifications on, in neither list: %d users, %d subscriptions" % (users, subs))
+    shapes = conn.execute(
+        "SELECT ut.id IS NULL AS no_row, ut.tariff_id IS NULL AS no_tariff, "
+        "ut.notify_count IS NULL AS no_count, ut.time_left IS NULL AS no_left, "
+        "count(DISTINCT uc.user_telegram_id) AS n " + base + neither +
+        " GROUP BY 1, 2, 3, 4 ORDER BY n DESC").fetchall()
+    for r in shapes:
+        out("  %-12s tariff_id %-5s notify_count %-5s time_left %-5s: %d users" % (
+            "no tariff row" if r["no_row"] else "tariff row",
+            "NULL" if r["no_tariff"] else "set", "NULL" if r["no_count"] else "set",
+            "NULL" if r["no_left"] else "set", r["n"]))
+    channels = conn.execute(
+        "SELECT count(*) FROM (SELECT uc.channel_id, "
+        "sum(CASE WHEN ut.notify_count != 0 AND ut.time_left > 0 AND ut.tariff_id > 0 THEN 1 ELSE 0 END) AS paid, "
+        "sum(CASE WHEN ut.notify_count = 0 OR ut.time_left = 0 OR ut.tariff_id = 0 THEN 1 ELSE 0 END) AS nosub "
+        + base + " GROUP BY uc.channel_id) WHERE paid = 0 AND nosub = 0").fetchone()[0]
+    out("  channels polled but never fetched (every live listener is in neither list): %d" % channels)
+
+
 def _kv(conn, key):
     try:
         row = conn.execute("SELECT value FROM bot_runtime_kv WHERE key = ?", (key,)).fetchone()
@@ -635,7 +677,11 @@ def _kv(conn, key):
 
 
 def describe_listeners(conn, channel_id, out=print):
-    groups = listener_groups(conn, channel_id)
+    try:
+        groups = listener_groups(conn, channel_id)
+    except sqlite3.OperationalError as e:
+        out("  listeners: %s" % e)
+        return
     out("  listeners with notifications: %d (blocked the bot: %d)" % (
         groups["notify_on"], groups["blocked"]))
     out("    paid, sent by the circle: %d" % groups["paid"])
