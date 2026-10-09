@@ -342,6 +342,58 @@ def test_errors(work_dir):
     _assert_eq("5550002" in text, False, "q: chat ids masked")
 
 
+def test_listener_groups(work_dir):
+    """Paid / without a tariff / in neither list, as the updater sees them."""
+    from db.sqliteAdapter import SQLighter
+    path = os.path.join(work_dir, "listeners.db")
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER UNIQUE, lang TEXT,
+            deleted_at TEXT, nosub_digest_sent_at TEXT, created_at TEXT);
+        CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER,
+            balance INTEGER, notify_count INTEGER, time_left INTEGER);
+        CREATE TABLE user_channel_cs (id INTEGER PRIMARY KEY, user_telegram_id INTEGER,
+            channel_id INTEGER, last_guid TEXT, last_date TEXT, notify INTEGER);
+        CREATE TABLE bot_runtime_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        -- 1 paid, 2 expired (time_left 0), 3 no tariff row, 4 NULL notify_count,
+        -- 5 blocked the bot, 6 notifications off
+        INSERT INTO users (id, telegramId) VALUES (1, 9001), (2, 9002), (3, 9003), (4, 9004), (5, 9005), (6, 9006);
+        UPDATE users SET deleted_at = '2026-10-01 10:00:00' WHERE id = 5;
+        INSERT INTO user_tariff_cs VALUES (1, 1, 3, 500, -1, 400), (2, 2, 3, 500, -1, 0),
+            (4, 4, 3, 500, NULL, 400), (5, 5, 3, 500, -1, 400), (6, 6, 3, 500, -1, 400);
+        INSERT INTO user_channel_cs (user_telegram_id, channel_id, notify) VALUES
+            (9001, 7, 1), (9002, 7, 1), (9003, 7, 1), (9004, 7, 1), (9005, 7, 1), (9006, 7, 0),
+            (9001, 8, 1);
+        INSERT INTO bot_runtime_kv VALUES ('channel_feed_failures_7', '4'),
+            ('channel_feed_dead_until_7', '1790000000.0');
+    """)
+    conn.commit()
+    conn.close()
+    ro = diag.connect_ro(path)
+    try:
+        groups = diag.listener_groups(ro, 7)
+        _assert_eq(groups, {"notify_on": 5, "blocked": 1, "paid": 1, "nosub": 1, "neither": 2},
+                   "paid, without a tariff, blocked, and the two the circle never sees")
+        text = diag.as_text(diag.describe_listeners, ro, 7)
+        _assert_in("in neither list, the circle skips the channel for them: 2", text,
+                   "the report names the listeners nothing is sent to")
+        _assert_in("feed failures counted: 4, dead until:", text, "the failure policy state is shown")
+        _assert_in("feed failures counted: 0, dead until: -",
+                   diag.as_text(diag.describe_listeners, ro, 8), "a channel with no failures")
+    finally:
+        ro.close()
+
+    # The report and the updater must agree: the same two lists.
+    db = SQLighter(path)
+    try:
+        paid = db.get_uccs_by_channel(7, have_subscription=True, notifications_enabled=True)
+        nosub = db.get_uccs_by_channel(7, have_subscription=False, notifications_enabled=True)
+    finally:
+        db.close()
+    _assert_eq((len(paid), len(nosub)), (groups["paid"], groups["nosub"]),
+               "the breakdown equals what get_uccs_by_channel hands the updater")
+
+
 def main():
     work_dir = tempfile.mkdtemp(prefix="yourcast_diag_")
     path = _prepare(work_dir)
@@ -353,6 +405,7 @@ def main():
     test_refetches(path, work_dir)
     test_digest_stats(path)
     test_outbox_stats(work_dir)
+    test_listener_groups(work_dir)
     test_errors(work_dir)
     print("all diag checks passed")
 

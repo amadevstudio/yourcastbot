@@ -597,6 +597,60 @@ def _describe_feed(url, get, out):
         out("  newest item child tags: %s" % sorted({str(c.tag) for c in items[0]})[:15])
 
 
+# The updater's two lists (SQLighter.get_uccs_by_channel), as SQL: paid and
+# "without a tariff". A listener whose tariff row is missing, or whose
+# notify_count / time_left / tariff_id is NULL, is in neither (NULL != 0 is not
+# true): the circle skips the channel for them. test_diag.py locks these to
+# get_uccs_by_channel.
+_LIVE_LISTENERS = (
+    "FROM user_channel_cs uc "
+    "LEFT JOIN user_tariff_cs ut ON ut.uid = (SELECT id FROM users u "
+    "WHERE u.telegramId = uc.user_telegram_id) "
+    "WHERE uc.channel_id = ? AND uc.notify = 1 AND NOT EXISTS ("
+    "SELECT 1 FROM users du WHERE du.telegramId = uc.user_telegram_id "
+    "AND du.deleted_at IS NOT NULL)")
+_PAID = " AND (ut.notify_count != 0 AND ut.time_left > 0 AND ut.tariff_id > 0)"
+_NOSUB = " AND (ut.notify_count = 0 OR ut.time_left = 0 OR ut.tariff_id = 0)"
+
+
+def listener_groups(conn, channel_id) -> dict:
+    """How the updater sees the channel's listeners; counts only, no ids."""
+    def count(sql, *args):
+        return conn.execute("SELECT count(*) " + sql, (channel_id,) + args).fetchone()[0]
+
+    notify_on = count("FROM user_channel_cs uc WHERE uc.channel_id = ? AND uc.notify = 1")
+    live = count(_LIVE_LISTENERS)
+    paid = count(_LIVE_LISTENERS + _PAID)
+    nosub = count(_LIVE_LISTENERS + _NOSUB)
+    return {"notify_on": notify_on, "blocked": notify_on - live, "paid": paid,
+            "nosub": nosub, "neither": live - paid - nosub}
+
+
+def _kv(conn, key):
+    try:
+        row = conn.execute("SELECT value FROM bot_runtime_kv WHERE key = ?", (key,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return row[0] if row else None
+
+
+def describe_listeners(conn, channel_id, out=print):
+    groups = listener_groups(conn, channel_id)
+    out("  listeners with notifications: %d (blocked the bot: %d)" % (
+        groups["notify_on"], groups["blocked"]))
+    out("    paid, sent by the circle: %d" % groups["paid"])
+    out("    without a tariff, digest only: %d" % groups["nosub"])
+    out("    in neither list, the circle skips the channel for them: %d" % groups["neither"])
+    failures = _kv(conn, "channel_feed_failures_%s" % channel_id)
+    dead_until = _kv(conn, "channel_feed_dead_until_%s" % channel_id)
+    try:
+        dead = datetime.datetime.fromtimestamp(float(dead_until)).strftime("%m-%d %H:%M") \
+            if dead_until else None
+    except (TypeError, ValueError):
+        dead = dead_until
+    out("  feed failures counted: %s, dead until: %s" % (failures or 0, dead or "-"))
+
+
 def feed_probe(conn, channel_id, out=print, get=None, itunes=None):
     """Fetch a channel's feed as the updater does; say why it parses or not.
 
@@ -625,6 +679,7 @@ def feed_probe(conn, channel_id, out=print, get=None, itunes=None):
         "SELECT count(*) FROM user_channel_cs WHERE channel_id = ? AND notify = 1",
         (channel_id,)).fetchone()[0]
     out("== Channel #%s %s (%d listeners with notifications)" % (row["id"], row["name"], listeners))
+    describe_listeners(conn, channel_id, out)
     out("  stored latest: %r | %r" % (row["last_guid"], row["last_date"]))
     if "http_etag" in keys:
         out("  stored validators: etag %r, last_modified %r" % (
