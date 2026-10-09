@@ -126,7 +126,11 @@ def remove_sub(u_tg_id, podcast_id, service_id, service_name='itunes') -> Tuple[
     pc_name = db_users.remove_sub(u_tg_id, podcast_id, service_id, service_name)
     db_users.close()
 
+    # The state may be gone (an old message): the unsubscription is already
+    # done in the database, so it must not end in a TypeError (as add_sub).
     podcast_data = storage.get_user_state_data(u_tg_id, 'podcast')
+    if podcast_data is None:
+        podcast_data = {}
     podcast_data["id"] = None
     podcast_data["subscribed"] = False
     podcast_data["notify"] = False

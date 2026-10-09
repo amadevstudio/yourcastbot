@@ -759,24 +759,25 @@ messages = {
     },
     # The screen's saved state is gone (an old message, a restarted state
     # store): say so and give a way back instead of leaving "Loading...".
+    # Any screen (a podcast, a Telegram channel), so no noun in the text.
     "screenOutdated": {
         "ru": {
-            "ro_msg": "Экран устарел. Откройте подкаст заново."
+            "ro_msg": "Экран устарел. Откройте его заново."
         },
         "en": {
-            "ro_msg": "This screen is out of date. Open the podcast again."
+            "ro_msg": "This screen is out of date. Please open it again."
         },
         "pt-BR": {
-            "ro_msg": "Esta tela está desatualizada. Abra o podcast novamente."
+            "ro_msg": "Esta tela está desatualizada. Abra-a novamente."
         },
         "es": {
-            "ro_msg": "Esta pantalla está desactualizada. Abre el podcast de nuevo."
+            "ro_msg": "Esta pantalla está desactualizada. Ábrela de nuevo."
         },
         "de": {
-            "ro_msg": "Dieser Bildschirm ist veraltet. Öffne den Podcast erneut."
+            "ro_msg": "Dieser Bildschirm ist veraltet. Öffne ihn erneut."
         },
         "he": {
-            "ro_msg": "המסך אינו עדכני. פתחו את הפודקאסט שוב."
+            "ro_msg": "המסך אינו עדכני. פתחו אותו שוב."
         }
     },
     "amountTooSmall": {

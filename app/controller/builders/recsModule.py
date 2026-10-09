@@ -12,7 +12,7 @@ from lib.markup import telegram_html
 import lib.tools.time_tools.general
 from lib.requests.url import normalize_url
 from app.controller.builders.podcastModule import PodcastStateData
-from app.controller.general.notify import notify
+from app.controller.general.notify import notify, render_outdated_screen
 from app.controller.types_helpers.recs import RecResult, RecsStateData, RecordsDataType, \
     rec_callback_data_identifier, RecDataType
 from app.core.balancers import recordSender
@@ -21,7 +21,8 @@ from app.core.message.navigationBuilder import determine_search_query_and_page, 
 from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message, standartSymbols, emojiCodes, get_message_rtd
 from app.repository.storage import storage
-from app.routes.message_tools import go_back_inline_markup, outdated_screen_message
+from app.routes.message_tools import go_back_inline_markup
+from app.routes.screen_state import state_lost
 from app.routes.ptypes import ControllerParams
 from app.routes.routes_list import AvailableRoutes
 from config import db_path, std_bitrate, maxPodcastDateCallDataHexLen, perPage
@@ -52,12 +53,9 @@ def start_record_balancer():
 
 def open_recs(data: ControllerParams):
     podcast_data: PodcastStateData | None = storage.get_user_state_data(data['chat_id'], 'podcast')
-    if not podcast_data:
+    if state_lost(podcast_data, 'service_id'):
         # The podcast screen's state is gone: a button of an old message.
-        render_messages(
-            data['chat_id'], outdated_screen_message(data['language_code']),
-            resending=data['callback'] is None)
-        return False
+        return render_outdated_screen(data)
 
     render_messages(data['chat_id'], [{
         'type': 'text',

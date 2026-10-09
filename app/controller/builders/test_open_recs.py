@@ -13,6 +13,7 @@ installed (it imports recsModule, without connecting to Telegram).
 Run from the repo root: python app/controller/builders/test_open_recs.py
 """
 import ast
+import importlib
 import os
 import sys
 import tempfile
@@ -52,31 +53,29 @@ def test_guard_comes_first():
     load, guard = fn.body[0], fn.body[1]
     _assert(isinstance(load, (ast.Assign, ast.AnnAssign)) and "get_user_state_data" in ast.dump(load),
             "open_recs reads the podcast state first")
-    _assert(isinstance(guard, ast.If) and isinstance(guard.test, ast.UnaryOp)
-            and isinstance(guard.test.op, ast.Not) and "podcast_data" in ast.dump(guard.test),
+    _assert(isinstance(guard, ast.If) and "state_lost" in ast.dump(guard.test)
+            and "podcast_data" in ast.dump(guard.test),
             "and checks it right away, before the loading text and any .get on it")
-    _assert("outdated_screen_message" in ast.dump(guard)
-            and isinstance(guard.body[-1], ast.Return)
-            and getattr(guard.body[-1].value, "value", None) is False,
+    _assert("render_outdated_screen" in ast.dump(guard) and isinstance(guard.body[-1], ast.Return),
             "a lost state answers with the outdated-screen message and stops")
     _assert("loading" not in ast.dump(guard), "without a 'Loading...' first")
 
 
-def _import_recs_module():
-    """recsModule, or None where the bot's requirements are not installed."""
+def import_builder(name):
+    """app.controller.builders.<name>, or None where the bot's requirements are
+    not installed (the module imports telebot and Telethon, it does not connect)."""
     import config
-    config.db_path = os.path.join(tempfile.mkdtemp(prefix="yourcast_open_recs_"), "t.db")
+    config.db_path = os.path.join(tempfile.mkdtemp(prefix="yourcast_screen_state_"), "t.db")
     stub = types.ModuleType("agent.bot_telethon")
     stub.thobot_session_handler = ""
     sys.modules["agent.bot_telethon"] = stub
     try:
-        from app.controller.builders import recsModule
+        return importlib.import_module("app.controller.builders." + name)
     except ModuleNotFoundError as e:
         if (e.name or "").split(".")[0] in _OURS:
             raise
         print("skip  behaviour: %s is not installed (the bot's requirements)" % e.name)
         return None
-    return recsModule
 
 
 class _Stop(Exception):
@@ -84,9 +83,12 @@ class _Stop(Exception):
 
 
 def test_behaviour(recs):
+    from app.controller.general import notify as notify_module
     renders = []
-    recs.render_messages = lambda chat_id, structures, **kw: renders.append(
+    capture = lambda chat_id, structures, **kw: renders.append(  # noqa: E731
         (chat_id, structures, kw.get("resending")))
+    recs.render_messages = capture
+    notify_module.render_messages = capture
 
     def data(callback):
         return {'chat_id': 4001, 'language_code': 'en', 'callback': callback, 'message': None,
@@ -133,7 +135,7 @@ def main():
     for case in (test_texts, test_guard_comes_first):
         print("-- %s" % case.__name__)
         case()
-    recs = _import_recs_module()
+    recs = import_builder("recsModule")
     if recs is not None:
         print("-- test_behaviour")
         test_behaviour(recs)

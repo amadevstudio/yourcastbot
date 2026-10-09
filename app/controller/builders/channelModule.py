@@ -3,7 +3,8 @@ import typing
 from typing import TypedDict, Required
 
 from agent.bot_telebot import bot
-from app.controller.general.notify import notify
+from app.controller.general.notify import notify, notify_outdated_screen, render_outdated_screen
+from app.routes.screen_state import state_lost
 import app.i18n.messages
 import app.service.user.language
 from lib.markup import telegram_html
@@ -292,6 +293,8 @@ def delete_channel(data: ControllerParams):
 def open_channel_subs(data: ControllerParams):
     tg_channel_data = typing.cast(
         TgChannelDataType, storage.get_user_state_data(data['chat_id'], 'myTgChannel'))
+    if state_lost(tg_channel_data, 'id'):
+        return render_outdated_screen(data)
     stop_deleting_channel(tg_channel_data)
 
     current_state_data = determine_search_query_and_page(data['callback'], data['message'], data['united_data'])
@@ -356,6 +359,8 @@ def get_channel_sub_list_message(language_code, message_navigation: FullMessageN
 def change_channel_sub_active(data: ControllerParams):
     tg_channel_data = typing.cast(
         TgChannelDataType, storage.get_user_state_data(data['chat_id'], 'myTgChannel'))
+    if state_lost(tg_channel_data, 'id') or state_lost(data['united_data'], 'id'):
+        return notify_outdated_screen(data)
 
     channel_id = tg_channel_data['id']
 

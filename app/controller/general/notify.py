@@ -8,6 +8,23 @@ from app.routes.ptypes import Callback, Message
 from lib.telegram.general.message_master import render_messages, MessageStructuresInterface
 
 
+# A button of an old screen: its saved state is gone (app/routes/screen_state.py).
+# The handler returns one of these, so it ends with False like its other failure
+# paths. A page (a list) replaces the screen; an action (a toggle) shows a toast.
+def render_outdated_screen(data) -> Literal[False]:
+    render_messages(data['chat_id'], [{
+        'type': 'text',
+        'text': get_message('screenOutdated', data['language_code']),
+        'reply_markup': go_back_inline_markup(data['language_code']),
+    }], resending=data['callback'] is None)
+    return False
+
+
+def notify_outdated_screen(data) -> Literal[False]:
+    notify(data['callback'], data['message'], get_message('screenOutdated', data['language_code']), alert=True)
+    return False
+
+
 def notify(
         call: Callback | None,
         message: Message | None,

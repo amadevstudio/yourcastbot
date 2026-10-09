@@ -8,7 +8,8 @@ import typing
 from datetime import datetime
 from typing import TypedDict, Literal
 
-from app.controller.general.notify import notify
+from app.controller.general.notify import notify, notify_outdated_screen
+from app.routes.screen_state import state_lost
 import app.service.podcast.card
 import app.service.podcast.podcast
 import app.service.podcast.subscription
@@ -436,6 +437,10 @@ def switch_subscription(data: ControllerParams):
             data['callback'], data['message'], get_message("parsingError", data['language_code']), alert=True)
         return False
 
+    # The keys below are subscripted on both paths (subscribe and unsubscribe).
+    if state_lost(data['united_data'], 'id', 'service_id', 'service_name'):
+        return notify_outdated_screen(data)
+
     if 'subscribed' in data['united_data']:
         action = not data['united_data'].get('subscribed')
     else:
@@ -505,10 +510,8 @@ def switch_subscription(data: ControllerParams):
 
 
 def change_channel_notify(data: ControllerParams):
-    if data['united_data'] is None:
-        notify(
-            data['callback'], data['message'], get_message("parsingError", data['language_code']), alert=True)
-        return False
+    if state_lost(data['united_data'], 'notify'):
+        return notify_outdated_screen(data)
 
     updated_state_data: PodcastStateData = (copy.deepcopy(data['united_data'])
                                             | {'notify': not data['united_data']['notify']})

@@ -122,14 +122,23 @@ Lock: `python app/service/podcast/test_card.py` (CD gate),
 
 ## Screen state
 
-A route that reads its screen state (`storage.get_user_state_data`) meets
-`None` when the state is gone: a button of an old message, a restarted
-state store. It answers with `outdated_screen_message` (`screenOutdated`
-and a back button, `app/routes/message_tools.py`) before any "Loading...",
-never an AttributeError that leaves the chat on "Loading..." (`open_recs`
-did, once a day). `get_user_state_data` keeps returning `None`: other
-callers test for it.
-Lock: `python app/controller/builders/test_open_recs.py` (CD gate; the
+The saved state of a screen is gone when a button of an old message is
+tapped, or the state store was restarted. `storage.get_user_state_data`
+then answers `None` and the central loader hands handlers `{}`: a lost
+state is `None` or missing keys, never something a handler can read. A
+handler that subscripts the state asks `state_lost(state, *keys)`
+(`app/routes/screen_state.py`) for the keys it uses anyway, before any
+database access, and answers with `render_outdated_screen` (a page: the
+screen is replaced, with a back button, before any "Loading...") or
+`notify_outdated_screen` (an action: a toast), both in
+`app/controller/general/notify.py`, text `screenOutdated`. Never a
+KeyError/TypeError (`open_recs` left the chat on "Loading..."; `remove_sub`
+failed after the unsubscription was written). Ask for keys, not truthiness:
+a podcast not in the database has `id` None and is a live state; ask only
+for keys the handler subscripts anyway, so a live state is never refused.
+`get_user_state_data` keeps returning `None`: other callers test for it.
+Locks: `python app/controller/builders/test_open_recs.py`,
+`python app/controller/builders/test_screen_state.py` (CD gate; the
 behaviour part runs where the bot's requirements are installed).
 
 ## Episode cursor
