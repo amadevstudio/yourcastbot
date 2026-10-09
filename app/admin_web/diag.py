@@ -660,6 +660,16 @@ def orphan_listeners(conn, out=print):
             "no tariff row" if r["no_row"] else "tariff row",
             "NULL" if r["no_tariff"] else "set", "NULL" if r["no_count"] else "set",
             "NULL" if r["no_left"] else "set", r["n"]))
+    # Who they are: when they registered, and whether a language was ever set
+    # (SQLighter.get_user_by_tg's fallback creates a user without one).
+    when = conn.execute(
+        "SELECT substr(u.created_at, 1, 7) AS month, count(DISTINCT u.id) AS n, "
+        "sum(CASE WHEN u.lang IS NULL THEN 1 ELSE 0 END) AS no_lang FROM ("
+        "SELECT DISTINCT uc.user_telegram_id AS tg " + base + neither + ") o "
+        "JOIN users u ON u.telegramId = o.tg GROUP BY 1 ORDER BY 1 DESC LIMIT 14").fetchall()
+    out("  registered (month: users, of them without a language):")
+    for r in when:
+        out("    %s: %d, %d" % (r["month"] or "unknown", r["n"], r["no_lang"]))
     channels = conn.execute(
         "SELECT count(*) FROM (SELECT uc.channel_id, "
         "sum(CASE WHEN ut.notify_count != 0 AND ut.time_left > 0 AND ut.tariff_id > 0 THEN 1 ELSE 0 END) AS paid, "

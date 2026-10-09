@@ -387,6 +387,8 @@ def test_listener_groups(work_dir):
                    "a user with no tariff row at all")
         _assert_in("tariff row   tariff_id set   notify_count NULL  time_left set  : 1 users", orphans,
                    "a user whose tariff row has a NULL notify_count")
+        _assert_in("registered (month: users, of them without a language):", orphans,
+                   "when the users without a tariff registered")
         _assert_in("every live listener is in neither list): 1", orphans,
                    "channel 9 is polled and never fetched; channel 7 has a paid listener")
     finally:
