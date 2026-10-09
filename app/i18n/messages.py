@@ -757,6 +757,28 @@ messages = {
             "ro_msg": "מצטערים, אירעו שגיאות בקבלת המידע."
         }
     },
+    # The screen's saved state is gone (an old message, a restarted state
+    # store): say so and give a way back instead of leaving "Loading...".
+    "screenOutdated": {
+        "ru": {
+            "ro_msg": "Экран устарел. Откройте подкаст заново."
+        },
+        "en": {
+            "ro_msg": "This screen is out of date. Open the podcast again."
+        },
+        "pt-BR": {
+            "ro_msg": "Esta tela está desatualizada. Abra o podcast novamente."
+        },
+        "es": {
+            "ro_msg": "Esta pantalla está desactualizada. Abre el podcast de nuevo."
+        },
+        "de": {
+            "ro_msg": "Dieser Bildschirm ist veraltet. Öffne den Podcast erneut."
+        },
+        "he": {
+            "ro_msg": "המסך אינו עדכני. פתחו את הפודקאסט שוב."
+        }
+    },
     "amountTooSmall": {
         "ru": {
             "ro_msg": "Значение слишком маленькое"

@@ -120,6 +120,18 @@ Only `telegram_html` imports `lib.markup.cleaner`.
 Lock: `python app/service/podcast/test_card.py` (CD gate),
 `python app/service/record/test_caption.py`.
 
+## Screen state
+
+A route that reads its screen state (`storage.get_user_state_data`) meets
+`None` when the state is gone: a button of an old message, a restarted
+state store. It answers with `outdated_screen_message` (`screenOutdated`
+and a back button, `app/routes/message_tools.py`) before any "Loading...",
+never an AttributeError that leaves the chat on "Loading..." (`open_recs`
+did, once a day). `get_user_state_data` keeps returning `None`: other
+callers test for it.
+Lock: `python app/controller/builders/test_open_recs.py` (CD gate; the
+behaviour part runs where the bot's requirements are installed).
+
 ## Episode cursor
 
 Which episodes the circle sends is decided by one cursor per subscription

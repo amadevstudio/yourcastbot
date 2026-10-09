@@ -21,7 +21,7 @@ from app.core.message.navigationBuilder import determine_search_query_and_page, 
 from app.core.sender import outbox, send_record_helper
 from app.i18n.messages import get_message, standartSymbols, emojiCodes, get_message_rtd
 from app.repository.storage import storage
-from app.routes.message_tools import go_back_inline_markup
+from app.routes.message_tools import go_back_inline_markup, outdated_screen_message
 from app.routes.ptypes import ControllerParams
 from app.routes.routes_list import AvailableRoutes
 from config import db_path, std_bitrate, maxPodcastDateCallDataHexLen, perPage
@@ -51,12 +51,18 @@ def start_record_balancer():
 
 
 def open_recs(data: ControllerParams):
+    podcast_data: PodcastStateData | None = storage.get_user_state_data(data['chat_id'], 'podcast')
+    if not podcast_data:
+        # The podcast screen's state is gone: a button of an old message.
+        render_messages(
+            data['chat_id'], outdated_screen_message(data['language_code']),
+            resending=data['callback'] is None)
+        return False
+
     render_messages(data['chat_id'], [{
         'type': 'text',
         'text': get_message('loading', data['language_code']),
     }], resending=data['callback'] is None)
-
-    podcast_data: PodcastStateData = storage.get_user_state_data(data['chat_id'], 'podcast')
 
     recs_data = determine_search_query_and_page(data['callback'], data['message'], data['united_data'])
     search_query = recs_data.get('search', None)

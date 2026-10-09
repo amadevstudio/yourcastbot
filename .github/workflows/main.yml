@@ -40,6 +40,7 @@ jobs:
           python3 app/service/record/test_caption.py
           python3 app/service/record/test_delivery.py
           python3 app/service/podcast/test_card.py
+          python3 app/controller/builders/test_open_recs.py
           python3 lib/requests/test_url.py
           python3 lib/requests/test_download_resume.py
           python3 lib/net/test_enclosure.py
