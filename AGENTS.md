@@ -53,6 +53,14 @@ remove plan management or hide Bronze/Silver.
   `python app/jobs/test_relay_remind.py`).
 - Do not write a test that a live SKU or the picker is gone. The lock
   is `python app/service/payment/test_storefront.py`.
+- The D-3 reminder and the daemon's "not prolonged" notice name the plan
+  that ends, the user's own (`plan_ending_text` / `plan_off_text` in
+  `app/service/payment/storefront.py`), not always Relay. Relay's text stays
+  as it is; Bronze and Silver get neutral ones that name the plan as an
+  apposition (localized plan names have a gender, they cannot replace
+  "Relay" inside a sentence). Both still offer Relay first, with change-plan
+  next to it. Locks: `python app/jobs/test_relay_remind.py`,
+  `python app/i18n/test_relay_copy.py`.
 
 ## Tariff clock
 
@@ -188,6 +196,17 @@ paying user read as free (see Tariff clock).
   and is never parsed, so its first good parse came with the next
   episode, and the quiet start skipped exactly that episode (6 Minute
   English, ~1.3k channels after the parser fix).
+- A live listener with no `user_tariff_cs` row (or NULL in it) is in
+  neither list of `SQLighter.get_uccs_by_channel`: `NULL != 0` is not true,
+  so they are neither "paid" nor "without a tariff". `_get_channel_to_poll`
+  still picks their channels (any live `notify=1` listener), the circle then
+  finds both lists empty and skips the channel: no fetch, no failure counted,
+  nothing sent to them. On 2026-10-09: 653 legacy users (registered before
+  `created_at`), 1116 channels. They are most of the "empty latest id" count.
+  `/api/diag/feed?channel=` and `/api/diag/digest` show it. Giving them a
+  list means fetching those channels: ~540 more full downloads per circle at
+  6 s each, about +55 min on a circle of about an hour. Decide the cost
+  before changing the lists.
 - A free listener is reminded of a later episode, not of a different id
   (`nosub_users_behind` with dates): the same episode's id changes when
   the host re-renders its pubDate (`+0300` vs `GMT`) or edits a title, and
