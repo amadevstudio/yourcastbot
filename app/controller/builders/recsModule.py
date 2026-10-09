@@ -105,7 +105,7 @@ def open_recs(data: ControllerParams):
         if message_navigation['page_data']['error'] == 'empty':
             error_text_getter = 'empty' if search_query is None else 'empty_when_search'
             error_message = get_message_rtd(
-                ['subs', 'errors', 'paging', error_text_getter], data['language_code'])
+                ['recs', 'errors', 'paging', error_text_getter], data['language_code'])
         else:
             error_message = get_message_rtd(['errors', 'unknown'], data['language_code'])
         notify(data['callback'], data['message'], text=error_message, resending=True)
@@ -119,29 +119,22 @@ def open_recs(data: ControllerParams):
     storage.set_user_state_data(data['chat_id'], data['route_name'],
                                 {**recs_data, 'p': message_navigation['page_data']['current_page']})
 
-    # Update last date and pgd
-    # Get last date
-    if records_info['lastDate'] != "" and podcast_info['lastDate'] is None:
-        last_date = records_info['lastDate']
-    else:
-        last_date = podcast_info['lastDate']
-    # не всегда в rss присутствует lastBuildDate
-    last_date = app.service.podcast.podcast.set_last_date(last_date, records_info['globalLastPubDate'])
-    pgd = app.service.record.helpers.get_record_uniq_id(
-        records_info['lastGuid'], records_info['lastPubDate'], records_info['lastRecordTitle'])
-    db_users = SQLighter(db_path)
-    channel = db_users.get_channel_by_service_tg(
-        id, podcast_data["service_id"], podcast_data["service_name"])
     # при открытии записей считать подкаст просмотренным
-    if channel is not None and recs_data['p'] == 1:
-        db_users.update_sub_last_guid_and_date(
-            id, channel['id'], pgd, last_date)
-        db_users.update_channel_last_guid_date(
-            channel['id'], pgd, last_date)
-        podcast_data["have_new_episodes"] = False
-        podcast_data["last_user_guid"] = pgd
-    db_users.close()
-    storage.set_user_state_data(id, 'podcast', podcast_data)
+    # (устарело: до 2026-10 не работало вовсе — сюда передавалась встроенная
+    # функция id вместо chat_id, курсор не двигался. Курсор строился из ленты
+    # в своём формате и писался ещё и в channels.last_*; теперь подписка
+    # берёт курсор канала, а платным с уведомлениями его двигает рассылка —
+    # см. SQLighter.mark_sub_seen)
+    if recs_data['p'] == 1 and podcast_data.get("id") is not None:
+        db_users = SQLighter(db_path)
+        try:
+            seen = db_users.mark_sub_seen(data['chat_id'], podcast_data["id"])
+        finally:
+            db_users.close()
+        if seen is not None:
+            podcast_data["have_new_episodes"] = False
+            podcast_data["last_user_guid"], podcast_data["last_user_date"] = seen
+            storage.set_user_state_data(data['chat_id'], 'podcast', podcast_data)
 
 
 # Load from external services rss root and itunes info

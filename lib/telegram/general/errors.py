@@ -119,6 +119,21 @@ def file_refused(error):
 	return audio_source_gone(error) or request_entity_too_large(error) or media_fetch_failed(error)
 
 
+# Telegram's own gateway failed (502 Bad Gateway, 500, 504). Transient: the same
+# request usually goes through a second later. The card a user tapped on 3 Oct
+# failed twice with 502 and the user got nothing.
+_SERVER_ERROR = re.compile(r"Error code: 5\d\d\b")
+
+
+def telegram_server_error(error) -> bool:
+	if error is None:
+		return False
+	code = getattr(error, "error_code", None)
+	if isinstance(code, int):
+		return 500 <= code <= 599
+	return _SERVER_ERROR.search(str(error)) is not None
+
+
 def expected_send_noise(error) -> bool:
 	"""Blocked user, flood, stale edit, dead enclosure — not a process bug."""
 	if error is None:
@@ -130,6 +145,8 @@ def expected_send_noise(error) -> bool:
 	if get_timeout_from_error_bot(error) or get_timeout_from_error_client(error):
 		return True
 	if media_fetch_failed(error) or audio_source_gone(error):
+		return True
+	if telegram_server_error(error):
 		return True
 	return False
 

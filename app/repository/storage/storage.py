@@ -1,13 +1,11 @@
 import json
 import os
-import shelve
 import threading
 import time
 from functools import wraps
 from typing import Mapping, Any, Sequence
 
 from app.routes.routes_list import AvailableRoutes
-from config import shelve_name
 from db import runtime_kv
 from lib.net.enclosure import (
     COOL_SECONDS, FAULT_WINDOW_SECONDS, FAULTS_BEFORE_COOL, enclosure_hosts,
@@ -15,60 +13,77 @@ from lib.net.enclosure import (
 from lib.tools.logger import logger
 
 _thread_lock = threading.RLock()
-_shelve_init_lock = threading.Lock()
-_shelve_db = None
+
+# Menu states ("<chat>_states", "<chat>_states_data") under this prefix in
+# bot_runtime_kv. They lived in a gdbm shelve: it never gives space back
+# (10 MB of states in a 448 MB file) and could only be compacted with the
+# bot stopped.
+FSM_KEY_PREFIX = "fsm:"
 
 
 def _role():
     return os.environ.get("YOURCAST_ROLE") or ""
 
 
-def _shelve_allowed():
-    # Unset role = legacy single process. After the split, only bot opens gdbm.
+def _fsm_allowed():
+    # The menu belongs to the bot process (unset role = legacy single process);
+    # updater/jobs touching it would be a bug, as it was with the shelve.
     return _role() in ("", "bot")
 
 
-def _get_shelve():
-    global _shelve_db
-    if not _shelve_allowed():
-        raise RuntimeError(
-            "FSM shelve is opened only in the bot process; "
-            "updater/jobs must use sqlite (runtime_kv)")
-    with _shelve_init_lock:
-        if _shelve_db is None:
-            _shelve_db = shelve.open(shelve_name)
-        return _shelve_db
+class _FsmStore:
+    """Dict-like view of the menu states; same interface the shelve had.
 
+    One connection per thread, kept open: a screen reads and writes states
+    several times, and opening SQLite for each access cost ~8 ms.
+    """
 
-class _LazyShelve:
+    def __init__(self, database=None):
+        self.database = database
+        self._local = threading.local()
+
+    def _conn(self):
+        if not _fsm_allowed():
+            raise RuntimeError(
+                "menu states are used only in the bot process")
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = runtime_kv._connect(self.database)
+            self._local.conn = conn
+        return conn
+
     def __getitem__(self, key):
-        return _get_shelve()[key]
+        row = self._conn().execute(
+            "SELECT value FROM bot_runtime_kv WHERE key = ?",
+            (FSM_KEY_PREFIX + key,)).fetchone()
+        if row is None:
+            raise KeyError(key)
+        return row["value"]
 
     def __setitem__(self, key, value):
-        _get_shelve()[key] = value
+        # Autocommit: one statement, one transaction
+        self._conn().execute(
+            "INSERT INTO bot_runtime_kv (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (FSM_KEY_PREFIX + key, str(value)))
 
     def __delitem__(self, key):
-        del _get_shelve()[key]
+        cursor = self._conn().execute(
+            "DELETE FROM bot_runtime_kv WHERE key = ?", (FSM_KEY_PREFIX + key,))
+        if cursor.rowcount == 0:
+            raise KeyError(key)
 
     def sync(self):
-        db = _shelve_db
-        if db is not None:
-            db.sync()
+        pass
 
     def close(self):
-        global _shelve_db
-        with _shelve_init_lock:
-            db = _shelve_db
-            _shelve_db = None
-        if db is not None:
-            try:
-                db.sync()
-                db.close()
-            except Exception:
-                pass
+        conn = getattr(self._local, "conn", None)
+        self._local.conn = None
+        if conn is not None:
+            conn.close()
 
 
-storage = _LazyShelve()
+storage = _FsmStore()
 
 
 def _locked(fn):
@@ -131,21 +146,29 @@ def del_user_resend_flag(chat_id):
 
 
 # состояния
+def _load_states(chat_id) -> list | None:
+    """The screen stack; None when there is none.
+
+    About a third of the stored stacks (4.7k on 6 Oct 2026) are an old shape,
+    {"states": [...]}: read as a list they made the current screen unknown,
+    reset the stack with an ERR on the next tap, and broke "Back" (dict.pop).
+    """
+    try:
+        states = json.loads(storage[str(chat_id) + "_states"])
+    except Exception:
+        return None
+    if isinstance(states, dict):
+        states = states.get("states")
+    if not isinstance(states, list):
+        return None
+    return states
+
+
 @_locked
 def add_user_state(chat_id, state: AvailableRoutes):
-    curr_state = get_user_curr_state(chat_id)
-    if curr_state == state:
+    curr_states = _load_states(chat_id) or []
+    if curr_states and curr_states[-1] == state:
         return
-
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-    except Exception:
-        curr_states = []
-
-    # TODO: bug when curr_states is {'states': []}, added workaround
-    if type(curr_states) is not list:
-        logger.custom_err(f"Curr states for user #{chat_id} isn't list:", curr_states)
-        curr_states = []
 
     curr_states.append(state)
     storage[str(chat_id) + "_states"] = json.dumps(curr_states)
@@ -153,51 +176,37 @@ def add_user_state(chat_id, state: AvailableRoutes):
 
 @_locked
 def get_user_states(chat_id) -> list[AvailableRoutes] | None:
-    try:
-        return json.loads(storage[str(chat_id) + "_states"])
-    except Exception:
-        return None
+    return _load_states(chat_id)
 
 
 @_locked
 def get_user_curr_state(chat_id) -> AvailableRoutes | None:
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-        return curr_states[len(curr_states) - 1]
-    except Exception:
-        return None
+    curr_states = _load_states(chat_id)
+    return curr_states[-1] if curr_states else None
 
 
 @_locked
 def get_user_prev_state(chat_id) -> AvailableRoutes | None:
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-        return curr_states[len(curr_states) - 2]
-    except Exception:
-        return None
+    curr_states = _load_states(chat_id)
+    return curr_states[-2] if curr_states and len(curr_states) >= 2 else None
 
 
 @_locked
 def get_user_prev_curr_states(chat_id) -> tuple[AvailableRoutes | None, AvailableRoutes | None]:
-    try:
-        curr_states = json.loads(storage[str(chat_id) + '_states'])
-        if len(curr_states) >= 2:
-            return curr_states[-2], curr_states[-1]
-        elif len(curr_states) == 1:
-            return None, curr_states[0]
-        else:
-            return None, None
-    except Exception:
+    curr_states = _load_states(chat_id)
+    if not curr_states:
         return None, None
+    if len(curr_states) == 1:
+        return None, curr_states[0]
+    return curr_states[-2], curr_states[-1]
 
 
 @_locked
 def del_user_curr_state(chat_id):
-    try:
-        curr_states = json.loads(storage[str(chat_id) + "_states"])
-    except Exception:
+    curr_states = _load_states(chat_id)
+    if curr_states is None:
         return
-    if curr_states is not None:
+    if curr_states:
         curr_states.pop()
     storage[str(chat_id) + "_states"] = json.dumps(curr_states)
 
@@ -447,6 +456,6 @@ def clear_new_podcast_available_flags():
 def close_storage():
     try:
         storage.close()
-        logger.log("Storage shelve closed")
+        logger.log("Storage closed")
     except Exception as e:
-        logger.err("Error closing storage shelve:", e)
+        logger.err("Error closing storage:", e)

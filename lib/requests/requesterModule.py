@@ -58,6 +58,13 @@ class Requester:
         return session.get(
             url_base, params=params, verify=verify, headers=session_headers, allow_redirects=True, timeout=timeout)
 
+    # A stall in the middle of a big file (a 670 MB video from a CDN that
+    # went quiet for 30 s) is resumed from the byte it stopped at, not failed.
+    # Bounded: a retry that brought no bytes is the last one, and a stall
+    # before the first byte gets exactly one more plain GET, so a CDN that is
+    # really dead still ends the job after two quiet read-timeouts.
+    MAX_RESUMES = 3
+
     def download_chunked(
             self, url_base, destination, verify=False, stream=True, headers=None,
             callback=None, chunk_size=1024, timeout=None):
@@ -75,26 +82,74 @@ class Requester:
             url_base, headers=session_headers, verify=verify, stream=stream,
             timeout=timeout, allow_redirects=True)
 
-        headers = r.headers
         try:
-            file_size = int(headers.get("Content-Length"))
-        except Exception as e:
+            file_size = int(r.headers.get("Content-Length"))
+        except Exception:
             # The value may be empty (eq None)
             file_size = None
+        # Same file or no resume: If-Range makes the server answer 200 (the
+        # whole file) when it changed, and that is not appended.
+        validator = r.headers.get("ETag") or r.headers.get("Last-Modified")
+        can_resume = "bytes" in str(r.headers.get("Accept-Ranges", "")).lower() \
+            and file_size is not None and r.headers.get("Content-Encoding") is None
 
         r.raise_for_status()
+        downloaded = 0
+        resumes = 0
         with open(destination, 'wb') as f:
-            downloaded = 0
-            for chunk in r.iter_content(chunk_size=chunk_size):
-                # If you have chunk encoded response uncomment if
-                # and set chunk_size parameter to None.
-                # if chunk:
-                f.write(chunk)
+            while True:
+                before = downloaded
+                try:
+                    for chunk in r.iter_content(chunk_size=chunk_size):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if callback is not None:
+                            callback(downloaded, file_size)
+                    r.close()
+                    return
+                except (requests.exceptions.ConnectionError,
+                        requests.exceptions.ChunkedEncodingError,
+                        requests.exceptions.Timeout):
+                    r.close()
+                    progressed = downloaded > before
+                    first_quiet_start = downloaded == 0 and resumes == 0
+                    if resumes >= self.MAX_RESUMES or not (progressed or first_quiet_start):
+                        raise
+                    if downloaded == 0:
+                        # Not a byte yet: one more plain GET, same as the first.
+                        r = self.__reopen(session, url_base, session_headers, verify, timeout)
+                    elif can_resume and validator and downloaded < file_size:
+                        r = self.__reopen(
+                            session, url_base, session_headers, verify, timeout,
+                            offset=downloaded, validator=validator)
+                    else:
+                        raise
+                    resumes += 1
+                    if r is None:
+                        raise
 
-                downloaded += chunk_size
-                if callback is not None:
-                    callback(downloaded, file_size)
-        r.close()
+    def __reopen(self, session, url, base_headers, verify, timeout, offset=0, validator=None):
+        """GET again (from `offset` when given). None unless the answer is the one
+        wanted: 206 starting at `offset`, or 200 for a restart from zero."""
+        headers = dict(base_headers)
+        if offset:
+            headers["Range"] = "bytes=%d-" % offset
+            headers["If-Range"] = validator
+        try:
+            r = session.get(
+                url, headers=headers, verify=verify, stream=True,
+                timeout=timeout, allow_redirects=True)
+        except requests.exceptions.RequestException:
+            return None
+        if offset:
+            ok = r.status_code == 206 and str(r.headers.get("Content-Range", "")).startswith(
+                "bytes %d-" % offset)
+        else:
+            ok = r.status_code == 200
+        if not ok:
+            r.close()
+            return None
+        return r
 
     def get_headers(self, link, verify=False, headers=None, timeout=None):
         # HEAD with no timeout hangs a rec worker forever: heartbeat keeps the

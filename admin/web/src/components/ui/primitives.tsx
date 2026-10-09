@@ -8,7 +8,7 @@ export const Input = React.forwardRef<
   <input
     ref={ref}
     className={cn(
-      "flex h-10 w-full min-w-0 max-w-full rounded-lg border border-line bg-ink px-3 text-sm text-zinc-100 placeholder:text-zinc-500 file:mr-3 file:h-10 file:cursor-pointer file:border-0 file:bg-brand file:px-4 file:text-sm file:font-semibold file:text-brand-fg hover:file:bg-brand-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50",
+      "flex h-10 w-full min-w-0 max-w-full rounded-lg border border-line bg-ink px-3 text-sm text-zinc-100 placeholder:text-zinc-500 file:mr-3 file:h-10 file:cursor-pointer file:border-0 file:bg-brand file:px-4 file:text-sm file:font-semibold file:text-brand-fg hover:file:bg-brand-dim focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50",
       className,
     )}
     {...props}
@@ -23,7 +23,7 @@ export const Textarea = React.forwardRef<
   <textarea
     ref={ref}
     className={cn(
-      "flex min-h-[140px] w-full min-w-0 max-w-full resize-y rounded-lg border border-line bg-ink px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50",
+      "flex min-h-[140px] w-full min-w-0 max-w-full resize-y rounded-lg border border-line bg-ink px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50",
       className,
     )}
     {...props}
@@ -49,7 +49,7 @@ export function Hint({
 }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p
-      className={cn("text-xs leading-5 text-zinc-500 [overflow-wrap:anywhere]", className)}
+      className={cn("text-xs leading-5 text-zinc-500 wrap-anywhere", className)}
       {...props}
     />
   );

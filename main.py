@@ -55,6 +55,12 @@ def _install_shutdown():
             return
         _shutting_down = True
         logger.log(f"Received signal {signum}, shutting down...")
+        if os.environ.get("YOURCAST_ROLE") == "updater":
+            try:
+                from app.jobs.updater_resume import mark_clean_stop
+                mark_clean_stop()
+            except Exception as e:
+                logger.err("Shutdown mark clean stop:", e)
         try:
             _close_open_storage()
         except Exception as e:
@@ -206,6 +212,12 @@ def main(argv=None):
             migrate_updater_state_from_shelve()
         except Exception as e:
             logger.err("Updater cursor migrate skipped:", e)
+        # Menu states and the Telegram cache leave gdbm for sqlite (once)
+        try:
+            from app.repository.storage.shelve_migration import migrate_shelves_to_sqlite
+            migrate_shelves_to_sqlite()
+        except Exception as e:
+            logger.err("Shelve move skipped:", e)
         try:
             from db.hot_indexes import build_hot_path_indexes
             build_hot_path_indexes()

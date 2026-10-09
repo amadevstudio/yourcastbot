@@ -3,6 +3,7 @@ from config import (
     tariff_ref_notifies, tariff_ref_sub_period, max_subscriptions_without_tariff,
     donate_link, botName)
 from lib.markup.telegram_html import href
+from app.i18n.translations_extra import EXTRA_TRANSLATIONS
 
 
 def get_language(lang_code):
@@ -74,10 +75,9 @@ def get_message_rtd(message_route, lang_code):
                     curr_route = routed_messages.get(r.lower())
                 else:
                     curr_route = curr_route.get(r.lower())
-            try:
-                msg = curr_route.get(lang_code)
-            except Exception:
-                msg = curr_route.get("en")
+            # .get() answers None for a missing language, it does not raise:
+            # fall back to English, or Telegram gets "" ("message text is empty")
+            msg = curr_route.get(lang_code) or curr_route.get("en")
         except AttributeError:
             msg = str(message_route.pop())
 
@@ -3707,7 +3707,7 @@ messages = {
     },
     "patreonShort": {
         "en": {
-            "ro_msg": "<a gref='%s'>%s</a>" % (donate_link, donate_link)
+            "ro_msg": "<a href='%s'>%s</a>" % (donate_link, donate_link)
         }
     },
     "openThePodcast": {
@@ -3927,7 +3927,7 @@ messages = {
             "ro_msg": emojiCodes.get('crown') + "\nТоп жанра"
         },
         "en": {
-            "ro_msg": emojiCodes.get('crown') + "\nТоп жанра"
+            "ro_msg": emojiCodes.get('crown') + "\nGenre top"
         },
         "pt-BR": {
             "ro_msg": emojiCodes.get('crown') + "\nTop gêneros"
@@ -4217,6 +4217,30 @@ routed_messages = {
                 'empty_when_search': {
                     'en': "Subscriptions not found, narrow your search",
                     'ru': "Подписок не найдено, сузьте поиск"
+                }
+            }
+        },
+    },
+
+    # Episode list of one podcast (route "recs"): not subscriptions
+    'recs': {
+        'errors': {
+            'paging': {
+                'empty': {
+                    'en': "This podcast has no episodes yet",
+                    'ru': "В этом подкасте пока нет выпусков",
+                    'pt-BR': "Este podcast ainda não tem episódios",
+                    'es': "Este pódcast aún no tiene episodios",
+                    'de': "Dieser Podcast hat noch keine Folgen",
+                    'he': "לפודקאסט הזה אין עדיין פרקים"
+                },
+                'empty_when_search': {
+                    'en': "No episodes found, try another search",
+                    'ru': "Выпусков не найдено, попробуйте другой запрос",
+                    'pt-BR': "Nenhum episódio encontrado, tente outra busca",
+                    'es': "No se encontraron episodios, prueba con otra búsqueda",
+                    'de': "Keine Folgen gefunden, versuche eine andere Suche",
+                    'he': "לא נמצאו פרקים, נסו חיפוש אחר"
                 }
             }
         },
@@ -4514,3 +4538,158 @@ routed_messages = {
         }
     }
 }
+
+
+# pt-BR / es / de / he for the routed texts that had only en/ru. Kept apart so
+# the originals above stay as they were; a key already translated there wins.
+_ROUTED_TRANSLATIONS = {
+    'errors': {
+        'unknown': {
+            'pt-BR': "Ocorreu um erro desconhecido, fale com o administrador",
+            'es': "Se produjo un error desconocido, contacta con el administrador",
+            'de': "Ein unbekannter Fehler ist aufgetreten, wende dich an den Administrator",
+            'he': "אירעה שגיאה לא ידועה, פנו למנהל",
+        },
+    },
+    'search': {
+        'empty': {
+            'pt-BR': "Nada encontrado, tente refinar a busca",
+            'es': "Sin resultados, prueba a afinar la búsqueda",
+            'de': "Keine Ergebnisse, versuche die Suche einzugrenzen",
+            'he': "אין תוצאות, נסו לצמצם את החיפוש",
+        },
+    },
+    'subs': {
+        'errors': {
+            'paging': {
+                'empty': {
+                    'pt-BR': "Você ainda não tem inscrições, adicione a primeira pelo menu",
+                    'es': "Aún no tienes suscripciones, añade la primera desde el menú",
+                    'de': "Du hast noch keine Abos, füge das erste über das Menü hinzu",
+                    'he': "אין לכם עדיין מינויים, הוסיפו את הראשון דרך התפריט",
+                },
+                'empty_when_search': {
+                    'pt-BR': "Nenhuma inscrição encontrada, refine a busca",
+                    'es': "No se encontraron suscripciones, afina la búsqueda",
+                    'de': "Keine Abos gefunden, grenze die Suche ein",
+                    'he': "לא נמצאו מינויים, צמצמו את החיפוש",
+                },
+            },
+        },
+    },
+    'buttons': {
+        'back': {'pt-BR': "Voltar", 'es': "Atrás", 'de': "Zurück", 'he': "חזרה"},
+        'cancel': {'pt-BR': "Cancelar", 'es': "Cancelar", 'de': "Abbrechen", 'he': "ביטול"},
+    },
+    'file_processing': {
+        'getting_file_size': {
+            'pt-BR': "Verificando o tamanho do arquivo", 'es': "Obteniendo el tamaño del archivo",
+            'de': "Dateigröße wird ermittelt", 'he': "בודקים את גודל הקובץ"},
+        'compressing': {
+            'pt-BR': "Comprimindo...", 'es': "Comprimiendo...",
+            'de': "Wird komprimiert...", 'he': "דוחסים..."},
+        'uploading': {
+            'pt-BR': "Enviando", 'es': "Subiendo", 'de': "Wird hochgeladen", 'he': "מעלים"},
+        'downloading': {
+            'pt-BR': "Baixando", 'es': "Descargando", 'de': "Wird heruntergeladen", 'he': "מורידים"},
+        'uploading_to_telegram_servers': {
+            'pt-BR': "Enviando para os servidores do Telegram",
+            'es': "Subiendo a los servidores de Telegram",
+            'de': "Wird auf die Telegram-Server hochgeladen",
+            'he': "מעלים לשרתי טלגרם"},
+    },
+    # Apple Podcasts category names
+    'genres': {
+        'alternative health': {'pt-BR': "Saúde alternativa", 'es': "Salud alternativa", 'de': "Alternative Gesundheit", 'he': "רפואה משלימה"},
+        'arts': {'es': "Arte", 'de': "Kunst", 'he': "אמנות"},
+        'astronomy': {'pt-BR': "Astronomia", 'es': "Astronomía", 'de': "Astronomie", 'he': "אסטרונומיה"},
+        'books': {'pt-BR': "Livros", 'es': "Libros", 'de': "Bücher", 'he': "ספרים"},
+        'business': {'es': "Negocios", 'de': "Wirtschaft", 'he': "עסקים"},
+        'careers': {'pt-BR': "Carreira", 'es': "Carreras profesionales", 'de': "Karriere", 'he': "קריירה"},
+        'comedy': {'es': "Comedia", 'de': "Comedy", 'he': "קומדיה"},
+        'comedy fiction': {'pt-BR': "Ficção de humor", 'es': "Ficción de comedia", 'de': "Comedy-Fiction", 'he': "סיפורת קומית"},
+        'comedy interviews': {'pt-BR': "Entrevistas de humor", 'es': "Entrevistas de comedia", 'de': "Comedy-Interviews", 'he': "ראיונות קומיים"},
+        'christianity': {'pt-BR': "Cristianismo", 'es': "Cristianismo", 'de': "Christentum", 'he': "נצרות"},
+        'daily news': {'pt-BR': "Notícias diárias", 'es': "Noticias diarias", 'de': "Tägliche Nachrichten", 'he': "חדשות יומיות"},
+        'design': {'pt-BR': "Design", 'es': "Diseño", 'de': "Design", 'he': "עיצוב"},
+        'documentary': {'pt-BR': "Documentário", 'es': "Documental", 'de': "Dokumentation", 'he': "תיעודי"},
+        'drama': {'pt-BR': "Drama", 'es': "Drama", 'de': "Drama", 'he': "דרמה"},
+        'earth sciences': {'pt-BR': "Ciências da Terra", 'es': "Ciencias de la Tierra", 'de': "Geowissenschaften", 'he': "מדעי כדור הארץ"},
+        'education': {'es': "Educación", 'de': "Bildung", 'he': "חינוך"},
+        'entertainment news': {'pt-BR': "Notícias de entretenimento", 'es': "Noticias de entretenimiento", 'de': "Unterhaltungsnachrichten", 'he': "חדשות בידור"},
+        'entrepreneurship': {'pt-BR': "Empreendedorismo", 'es': "Emprendimiento", 'de': "Unternehmertum", 'he': "יזמות"},
+        'fashion & beauty': {'pt-BR': "Moda e beleza", 'es': "Moda y belleza", 'de': "Mode & Beauty", 'he': "אופנה ויופי"},
+        'fiction': {'pt-BR': "Ficção", 'es': "Ficción", 'de': "Fiktion", 'he': "סיפורת"},
+        'film reviews': {'pt-BR': "Críticas de filmes", 'es': "Críticas de cine", 'de': "Filmkritiken", 'he': "ביקורות סרטים"},
+        'fitness': {'pt-BR': "Fitness", 'es': "Fitness", 'de': "Fitness", 'he': "כושר"},
+        'football': {'pt-BR': "Futebol americano", 'es': "Fútbol americano", 'de': "American Football", 'he': "פוטבול"},
+        'government': {'pt-BR': "Governo", 'es': "Gobierno", 'de': "Regierung", 'he': "ממשל"},
+        'health & fitness': {'es': "Salud y forma física", 'de': "Gesundheit & Fitness", 'he': "בריאות וכושר"},
+        'history': {'pt-BR': "História", 'es': "Historia", 'de': "Geschichte", 'he': "היסטוריה"},
+        'hobbies': {'pt-BR': "Hobbies", 'es': "Aficiones", 'de': "Hobbys", 'he': "תחביבים"},
+        'how to': {'pt-BR': "Tutoriais", 'es': "Tutoriales", 'de': "Anleitungen", 'he': "מדריכים"},
+        'improv': {'pt-BR': "Improviso", 'es': "Improvisación", 'de': "Improvisation", 'he': "אימפרוביזציה"},
+        'investing': {'es': "Inversiones", 'de': "Investieren", 'he': "השקעות"},
+        'islam': {'pt-BR': "Islamismo", 'es': "Islam", 'de': "Islam", 'he': "אסלאם"},
+        'judaism': {'pt-BR': "Judaísmo", 'es': "Judaísmo", 'de': "Judentum", 'he': "יהדות"},
+        'language learning': {'es': "Idiomas", 'de': "Sprachen lernen", 'he': "לימוד שפות"},
+        'leisure': {'es': "Ocio", 'de': "Freizeit", 'he': "פנאי"},
+        'life sciences': {'es': "Ciencias de la vida", 'de': "Biowissenschaften", 'he': "מדעי החיים"},
+        'marketing': {'pt-BR': "Marketing", 'es': "Marketing", 'de': "Marketing", 'he': "שיווק"},
+        'mental health': {'es': "Salud mental", 'de': "Psychische Gesundheit", 'he': "בריאות הנפש"},
+        'music': {'pt-BR': "Música", 'es': "Música", 'de': "Musik", 'he': "מוזיקה"},
+        'music interviews': {'pt-BR': "Entrevistas musicais", 'es': "Entrevistas musicales", 'de': "Musik-Interviews", 'he': "ראיונות מוזיקה"},
+        'natural sciences': {'es': "Ciencias naturales", 'de': "Naturwissenschaften", 'he': "מדעי הטבע"},
+        'news': {'es': "Noticias", 'de': "Nachrichten", 'he': "חדשות"},
+        'news commentary': {'pt-BR': "Comentário de notícias", 'es': "Análisis de noticias", 'de': "Nachrichtenkommentar", 'he': "פרשנות חדשות"},
+        'medicine': {'es': "Medicina", 'de': "Medizin", 'he': "רפואה"},
+        'performing arts': {'pt-BR': "Artes cênicas", 'es': "Artes escénicas", 'de': "Darstellende Kunst", 'he': "אמנויות הבמה"},
+        'personal journals': {'pt-BR': "Diários pessoais", 'es': "Diarios personales", 'de': "Persönliche Tagebücher", 'he': "יומנים אישיים"},
+        'philosophy': {'pt-BR': "Filosofia", 'es': "Filosofía", 'de': "Philosophie", 'he': "פילוסופיה"},
+        'places & travel': {'pt-BR': "Lugares e viagens", 'es': "Lugares y viajes", 'de': "Orte & Reisen", 'he': "מקומות וטיולים"},
+        'politics': {'es': "Política", 'de': "Politik", 'he': "פוליטיקה"},
+        'religion & spirituality': {'es': "Religión y espiritualidad", 'de': "Religion & Spiritualität", 'he': "דת ורוחניות"},
+        'running': {'es': "Running", 'de': "Laufen", 'he': "ריצה"},
+        'science': {'es': "Ciencia", 'de': "Wissenschaft", 'he': "מדע"},
+        'self-improvement': {'es': "Superación personal", 'de': "Persönliche Entwicklung", 'he': "שיפור עצמי"},
+        'society & culture': {'es': "Sociedad y cultura", 'de': "Gesellschaft & Kultur", 'he': "חברה ותרבות"},
+        'sports': {'es': "Deportes", 'de': "Sport", 'he': "ספורט"},
+        'tech news': {'es': "Noticias de tecnología", 'de': "Tech-News", 'he': "חדשות טכנולוגיה"},
+        'technology': {'es': "Tecnología", 'de': "Technologie", 'he': "טכנולוגיה"},
+        'true crime': {'es': "Crímenes reales", 'de': "True Crime", 'he': "פשע אמיתי"},
+        'video games': {'pt-BR': "Videogames", 'es': "Videojuegos", 'de': "Videospiele", 'he': "משחקי וידאו"},
+    },
+}
+
+
+def _merge_translations(target, extra):
+    for key, value in extra.items():
+        node = target.get(key)
+        if node is None:
+            continue  # a translation for a text that no longer exists
+        if isinstance(value, dict) and all(isinstance(v, str) for v in value.values()):
+            for lang, text in value.items():
+                node.setdefault(lang, text)
+        else:
+            _merge_translations(node, value)
+
+
+_merge_translations(routed_messages, _ROUTED_TRANSLATIONS)
+
+
+def _merge_message_translations(target, extra):
+    """Fill languages `messages` lacks; a text already written there wins."""
+    for key, by_lang in extra.items():
+        node = target.get(key)
+        if node is None:
+            continue  # a translation for a text that no longer exists
+        for lang, text in by_lang.items():
+            if not (node.get(lang) or {}).get("ro_msg"):
+                node[lang] = {"ro_msg": text}
+
+
+_merge_message_translations(messages, EXTRA_TRANSLATIONS)
+
+# a bare link reads the same in every language
+for _lang in ("ru", "pt-BR", "es", "de", "he"):
+    messages["patreonShort"].setdefault(_lang, dict(messages["patreonShort"]["en"]))

@@ -1,6 +1,6 @@
-# How to
+# How to (the full guide is docs/DEPLOY.md; this script is the shell part of it)
 # 1. Clone bot as /home/yourcast/yourcast and yourcast_auxiliary as /home/yourcast/server
-# 2. Move db and shelve
+# 2. Move db/yourcast.db (menu states and the Telegram cache live in it too)
 # 3. Move let's encrypt certificate /etc/letsencrypt
 # 4. Create yourcast/constants.py, yourcast/constant_texts.py and server/config.php
 # -5. Add to visudo (NO NEED)
@@ -11,7 +11,7 @@ sudo apt update
 sudo apt install curl
 
 # Database
-sudo apt install python3.11-gdbm sqlite3
+sudo apt install sqlite3
 
 # Install Python via pyenv
 #sudo apt install build-essential zlib1g-dev
@@ -68,8 +68,8 @@ sudo add-apt-repository universe
 sudo apt install php7.4-fpm php7.4-sqlite3
 
 # Certbot
-sudo apt install cerbot python3-certbot-nginx
-sudo certbot --nginx -d yourcast.tk -d www.yourcast.tk
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d example.org -d www.example.org  # your domain
 
 # Supervisor
 cd ../yourcast
@@ -81,7 +81,7 @@ supervisorctl reread
 supervisorctl update
 
 # Actions
-cp /home/yourcast/yourcast/pull_restart_clean.sh /home/yourcast/pull_restart_clean.sh
-chmod u+x pull_restart_clean.sh
+# Manual deploy, if GitHub Actions is down: /home/yourcast/yourcast/pull_restart_clean.sh
+chmod u+x /home/yourcast/yourcast/pull_restart_clean.sh
 
 supervisorctl restart yourcast

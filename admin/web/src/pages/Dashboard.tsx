@@ -97,7 +97,7 @@ export default function Dashboard() {
               <Skeleton className="h-4 w-1/2" />
             </div>
           ) : (
-            <div className="space-y-1 text-sm text-zinc-300 [overflow-wrap:anywhere]">
+            <div className="space-y-1 text-sm text-zinc-300 wrap-anywhere">
               <div>
                 Обход: {data.updater_channel_id} / {data.max_channel_id}
               </div>

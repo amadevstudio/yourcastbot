@@ -14,7 +14,7 @@ if _ROOT not in sys.path:
 from lib.telegram.general.errors import (  # noqa: E402
     message_to_edit_not_found, user_unavailable_error,
     audio_source_gone, expected_send_noise, message_to_delete_not_found,
-    entities_parse_error, file_refused)
+    entities_parse_error, file_refused, telegram_server_error)
 
 
 def _assert_eq(got, expected, label):
@@ -61,6 +61,15 @@ def main():
     _assert_eq(
         message_to_edit_not_found("Too Many Requests: retry after 3"),
         False, "flood is not a stale edit")
+    gateway = ("A request to the Telegram API was unsuccessful. Error code: 502. "
+               "Description: Bad Gateway")
+    _assert_eq(telegram_server_error(gateway), True, "502 is a telegram server error")
+    _assert_eq(expected_send_noise(gateway), True, "502 is expected noise (WARN)")
+    _assert_eq(
+        telegram_server_error("Error code: 400. Description: Bad Request: message text is empty"),
+        False, "400 is our bug, not telegram's")
+    _assert_eq(telegram_server_error("Error code: 5023"), False, "no false 5xx match")
+
     _assert_eq(
         expected_send_noise("Forbidden: bot was blocked by the user"),
         True, "blocked is expected noise")

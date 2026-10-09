@@ -1009,7 +1009,12 @@ class Sender:
         except Exception:
             outer_sender(chat_id, [{'type': 'text', 'text': error_text}])
 
-        self.logger.warn("Unavailable: ", str(self.link))
+        # One line per episode, not per chat: a dead link in a circle of 60
+        # chats wrote the same warning 60 times.
+        if not getattr(self, "_unavailable_logged", False):
+            self._unavailable_logged = True
+            self.logger.warn(
+                "Unavailable for", len(self.chats), "chats:", str(self.link))
 
     def print_failure_message_stack(self, chat_id, attempt=1):
 

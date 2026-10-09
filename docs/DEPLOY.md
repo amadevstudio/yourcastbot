@@ -26,7 +26,7 @@ $bot_path = '/home/yourcast/yourcast';
 $site_path = '/home/yourcast/server';
 ```
 
-SQLite — `db/yourcast.db`. Логи юнита: `/home/yourcast/out.log`, `/home/yourcast/err.log`. Платёжный лог: `log/payment.log`.
+SQLite — `db/yourcast.db`. Логи приложения — `log/out_ДД_ММ_ГГГГ.log`, `log/updater_…`, `log/sender_…` (хранятся 3 дня). Вывод самого процесса для supervisor — `/home/yourcast/out.log`, `/home/yourcast/err.log`. Платёжный лог: `log/payment.log`.
 
 ## Как связаны PHP и Python
 
@@ -113,7 +113,7 @@ Stars и Patreon через PHP **не** ходят. Stars — апдейт вн
 7. php-fpm user должен запускать venv python и писать sqlite/лог (см. [связку](#как-связаны-php-и-python)).
 8. `supervisorctl start yourcast`.
 9. Проверки:
-   - `curl -fsS https://wrkt.ru/api/health` → `{"ok":true,"role":"admin"}`
+   - `curl -fsS https://wrkt.ru/api/health` → `{"ok":true}`
    - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/app/` → `200`
    - `curl -o /dev/null -w '%{http_code}\n' -X POST https://wrkt.ru/payment/crypto-bot/listener.php` → не 5xx (мусорный POST без подписи = 400, это нормально)
    - `curl -o /dev/null -w '%{http_code}\n' https://wrkt.ru/payment/robokassa/result.php` → `200`
@@ -127,12 +127,15 @@ Stars и Patreon через PHP **не** ходят. Stars — апдейт вн
 1. `git fetch` + `git reset --hard origin/main`
 2. `pip install -r requirements.txt`
 3. сборка `admin/web`
-4. nginx-сниппет админки, `deploy/install_payment_php.py` (копирует hardened `listener.php` / `result.php` в дерево лендинга), `nginx -t`
-5. `supervisorctl restart yourcast`
+4. nginx-сниппет админки, `deploy/install_payment_php.py` (копирует hardened `listener.php` / `result.php` в дерево лендинга), `nginx -t`, `systemctl reload nginx`
+5. `supervisor.conf` → `/etc/supervisor/conf.d/yourcast.conf`, `supervisorctl reread && update`
+6. `supervisorctl restart yourcast`
+
+Перед этим воркфлоу прогоняет тесты (`storefront-guards`); если они красные, на сервер ничего не уходит.
 
 Лендинг целиком этим воркфлоу не обновляется — только платёжные PHP из `deploy/payment/`. Уберите из visudo `scripts/send_message.py`, если он ещё есть: старая PHP-админка больше не шлёт рассылку.
 
-Секреты Actions: `SERVER_IP`, `SERVER_USERNAME`, `SERVER_PASSWORD`, `PROJECT_PATH` (= `/home/yourcast/yourcast`). Пароли бота и админки туда не кладутся.
+Секреты Actions: `SERVER_IP`, `SERVER_USERNAME`, `SERVER_SSH_KEY` (приватный ключ, публичная часть — в `authorized_keys` пользователя деплоя), `PROJECT_PATH` (= `/home/yourcast/yourcast`). Парольного входа по SSH нет (`PasswordAuthentication no`), пароли бота и админки в Actions не кладутся.
 
 ## Платежи
 

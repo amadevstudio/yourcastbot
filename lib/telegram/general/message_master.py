@@ -2,13 +2,14 @@ import copy
 import enum
 import json
 import os
+import time
 import typing
 from io import TextIOWrapper
 from typing import TypedDict, Literal, Required, Sequence
 
 from app.routes.routes_list import AvailableActions, AvailableRoutes
 from lib.telegram.general.errors import bot_blocked_reaction, get_timeout_from_error_bot, \
-    media_fetch_failed, message_to_edit_not_found, log_caught
+    media_fetch_failed, message_to_edit_not_found, log_caught, telegram_server_error
 from lib.telegram.telebot import types as telegram_types
 
 from agent.bot_telebot import bot
@@ -17,6 +18,8 @@ from lib.telegram.telebot.types import InputMedia, ApiTelegramException, Message
 from lib.tools.logger import logger
 
 MESSAGE_TYPES = Literal['text', 'image', 'audio']
+
+SERVER_ERROR_RETRY_SECONDS = 1.5
 
 
 class MasterMessages(enum.Enum):
@@ -244,6 +247,12 @@ def render_messages(chat_id: int,
 
         elif message_to_edit_not_found(e) and not _retry:
             return render_messages(chat_id, message_structures, resending=True, _retry=True)
+
+        # Telegram's gateway hiccuped (502): try once more instead of leaving the
+        # user without an answer; a second failure is logged as WARN, not ERR
+        elif telegram_server_error(e) and not _retry:
+            time.sleep(SERVER_ERROR_RETRY_SECONDS)
+            return render_messages(chat_id, message_structures, resending=resending, _retry=True)
 
         else:
             log_caught(logger, error=e)
