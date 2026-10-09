@@ -601,10 +601,10 @@ def _describe_feed(url, get, out):
 
 
 # The updater's two lists (SQLighter.get_uccs_by_channel), as SQL: paid and
-# "without a tariff". A listener whose tariff row is missing, or whose
-# notify_count / time_left / tariff_id is NULL, is in neither (NULL != 0 is not
-# true): the circle skips the channel for them. test_diag.py locks these to
-# get_uccs_by_channel.
+# "without a tariff" (its exact, NULL-safe complement: a user with no tariff row,
+# or a NULL in it, is free). "In neither list" must stay 0; it was 653 users
+# while the free list was `notify_count = 0 OR ...` (NULL != 0 is not true).
+# test_diag.py locks these to get_uccs_by_channel.
 _LIVE_LISTENERS = (
     "FROM user_channel_cs uc "
     "LEFT JOIN user_tariff_cs ut ON ut.uid = (SELECT id FROM users u "
@@ -613,7 +613,7 @@ _LIVE_LISTENERS = (
     "SELECT 1 FROM users du WHERE du.telegramId = uc.user_telegram_id "
     "AND du.deleted_at IS NOT NULL)")
 _PAID = " AND (ut.notify_count != 0 AND ut.time_left > 0 AND ut.tariff_id > 0)"
-_NOSUB = " AND (ut.notify_count = 0 OR ut.time_left = 0 OR ut.tariff_id = 0)"
+_NOSUB = " AND COALESCE(ut.notify_count != 0 AND ut.time_left > 0 AND ut.tariff_id > 0, 0) = 0"
 
 
 def listener_groups(conn, channel_id) -> dict:
@@ -630,11 +630,12 @@ def listener_groups(conn, channel_id) -> dict:
 
 
 def orphan_listeners(conn, out=print):
-    """Live users the circle and the digest never reach: counts and tariff-row shapes.
+    """Live users with no usable tariff row (none, or NULL in it): counts and row shapes.
 
-    On every one of their subscriptions the user is in neither of the updater's
-    two lists (see _LIVE_LISTENERS), so nothing is ever sent for them and a
-    channel with only such listeners is polled but never fetched.
+    Until 2026-10 such a user was in neither of the updater's two lists, so
+    nothing was sent for them and a channel with only such listeners was polled
+    but never fetched. The free list takes them now and db/tariff_rows.py gives
+    each one the "no tariff" row at start: this should read 0 after a restart.
     """
     base = (
         "FROM user_channel_cs uc "
@@ -648,9 +649,9 @@ def orphan_listeners(conn, out=print):
         users, subs = conn.execute(
             "SELECT count(DISTINCT uc.user_telegram_id), count(*) " + base + neither).fetchone()
     except sqlite3.OperationalError as e:
-        out("== Live users in neither list: %s" % e)
+        out("== Live users with no usable tariff row: %s" % e)
         return
-    out("== Live users with notifications on, in neither list: %d users, %d subscriptions" % (users, subs))
+    out("== Live users with notifications on and no usable tariff row: %d users, %d subscriptions" % (users, subs))
     shapes = conn.execute(
         "SELECT ut.id IS NULL AS no_row, ut.tariff_id IS NULL AS no_tariff, "
         "ut.notify_count IS NULL AS no_count, ut.time_left IS NULL AS no_left, "
@@ -676,7 +677,7 @@ def orphan_listeners(conn, out=print):
         "sum(CASE WHEN ut.notify_count != 0 AND ut.time_left > 0 AND ut.tariff_id > 0 THEN 1 ELSE 0 END) AS paid, "
         "sum(CASE WHEN ut.notify_count = 0 OR ut.time_left = 0 OR ut.tariff_id = 0 THEN 1 ELSE 0 END) AS nosub "
         + base + " GROUP BY uc.channel_id) WHERE paid = 0 AND nosub = 0").fetchone()[0]
-    out("  channels polled but never fetched (every live listener is in neither list): %d" % channels)
+    out("  channels whose every live listener has no usable tariff row: %d" % channels)
 
 
 def plans_in_force(conn, out=print):
@@ -718,7 +719,7 @@ def describe_listeners(conn, channel_id, out=print):
         groups["notify_on"], groups["blocked"]))
     out("    paid, sent by the circle: %d" % groups["paid"])
     out("    without a tariff, digest only: %d" % groups["nosub"])
-    out("    in neither list, the circle skips the channel for them: %d" % groups["neither"])
+    out("    in neither list, the circle skips the channel for them (must be 0): %d" % groups["neither"])
     failures = _kv(conn, "channel_feed_failures_%s" % channel_id)
     dead_until = _kv(conn, "channel_feed_dead_until_%s" % channel_id)
     try:

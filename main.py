@@ -223,6 +223,12 @@ def main(argv=None):
             build_hot_path_indexes()
         except Exception as e:
             logger.err("Hot path indexes skipped:", e)
+        # Every user has a tariff row ("no tariff" when never given one)
+        try:
+            from db.tariff_rows import ensure_tariff_rows
+            ensure_tariff_rows()
+        except Exception as e:
+            logger.err("Tariff rows skipped:", e)
         run_supervisor()
         return
     os.environ.setdefault("YOURCAST_ROLE", args.role)

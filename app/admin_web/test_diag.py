@@ -374,16 +374,15 @@ def test_listener_groups(work_dir):
     ro = diag.connect_ro(path)
     try:
         groups = diag.listener_groups(ro, 7)
-        _assert_eq(groups, {"notify_on": 5, "blocked": 1, "paid": 1, "nosub": 1, "neither": 2},
-                   "paid, without a tariff, blocked, and the two the circle never sees")
+        _assert_eq(groups, {"notify_on": 5, "blocked": 1, "paid": 1, "nosub": 3, "neither": 0},
+                   "paid, free (no row and a NULL included), blocked: nobody is in neither list")
         text = diag.as_text(diag.describe_listeners, ro, 7)
-        _assert_in("in neither list, the circle skips the channel for them: 2", text,
-                   "the report names the listeners nothing is sent to")
+        _assert_in("(must be 0): 0", text, "the report keeps watch on 'in neither list'")
         _assert_in("feed failures counted: 4, dead until:", text, "the failure policy state is shown")
         _assert_in("feed failures counted: 0, dead until: -",
                    diag.as_text(diag.describe_listeners, ro, 8), "a channel with no failures")
         orphans = diag.as_text(diag.orphan_listeners, ro)
-        _assert_in("in neither list: 2 users, 3 subscriptions", orphans,
+        _assert_in("no usable tariff row: 2 users, 3 subscriptions", orphans,
                    "the two users with no usable tariff, on all their subscriptions")
         _assert_in("no tariff row tariff_id NULL  notify_count NULL  time_left NULL : 1 users", orphans,
                    "a user with no tariff row at all")
@@ -391,8 +390,8 @@ def test_listener_groups(work_dir):
                    "a user whose tariff row has a NULL notify_count")
         _assert_in("registered (month: users, of them without a language):", orphans,
                    "when the users without a tariff registered")
-        _assert_in("every live listener is in neither list): 1", orphans,
-                   "channel 9 is polled and never fetched; channel 7 has a paid listener")
+        _assert_in("every live listener has no usable tariff row: 1", orphans,
+                   "channel 9 has only such listeners; channel 7 has a paid one")
     finally:
         ro.close()
 

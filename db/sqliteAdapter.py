@@ -659,10 +659,13 @@ class SQLighter:
                             AND ut.time_left > 0 \
                             AND ut.tariff_id > 0)"
                 else:
-                    query += " AND (\
-                        ut.notify_count = 0 \
-                            OR ut.time_left = 0 \
-                            OR ut.tariff_id = 0)"
+                    # not paid: the exact complement of the branch above, and
+                    # NULL-safe: no tariff row (or NULL in it) is "without a tariff"
+                    # (NOT (NULL) is NULL: such a user was in neither list)
+                    query += " AND COALESCE(\
+                        ut.notify_count != 0 \
+                            AND ut.time_left > 0 \
+                            AND ut.tariff_id > 0, 0) = 0"
             if notifications_enabled is not None:
                 if notifications_enabled:
                     query += " AND uc.notify = 1"

@@ -196,17 +196,20 @@ paying user read as free (see Tariff clock).
   and is never parsed, so its first good parse came with the next
   episode, and the quiet start skipped exactly that episode (6 Minute
   English, ~1.3k channels after the parser fix).
-- A live listener with no `user_tariff_cs` row (or NULL in it) is in
-  neither list of `SQLighter.get_uccs_by_channel`: `NULL != 0` is not true,
-  so they are neither "paid" nor "without a tariff". `_get_channel_to_poll`
-  still picks their channels (any live `notify=1` listener), the circle then
-  finds both lists empty and skips the channel: no fetch, no failure counted,
-  nothing sent to them. On 2026-10-09: 653 legacy users (registered before
-  `created_at`), 1116 channels. They are most of the "empty latest id" count.
-  `/api/diag/feed?channel=` and `/api/diag/digest` show it. Giving them a
-  list means fetching those channels: ~540 more full downloads per circle at
-  6 s each, about +55 min on a circle of about an hour. Decide the cost
-  before changing the lists.
+- Every live listener is paid or free. A user with no `user_tariff_cs` row
+  (or NULL in it) used to be in neither list of `SQLighter.get_uccs_by_channel`
+  (`NULL != 0` is not true): their channels were polled and skipped, the feed
+  never fetched, nothing sent (653 legacy users and 1116 channels on
+  2026-10-09, most of the "empty latest id" count). Now the free list is the
+  exact NULL-safe complement of the paid one, and the supervisor gives every
+  user without a row the "no tariff" row at start (`db/tariff_rows.py`:
+  tariff_id 0, no balance, no days, as the product writes it when a plan is
+  switched off). These users are free: they are polled with their channels
+  and get the weekly digest (one per user, mute button). Polling those
+  channels is paid for by Circle pace. `/api/diag/feed?channel=` and
+  `/api/diag/digest` show a user with no usable tariff row again (it reads 0
+  after a restart; "in neither list" must stay 0).
+  Lock: `python db/test_tariff_rows.py` (CD gate).
 - A free listener is reminded of a later episode, not of a different id
   (`nosub_users_behind` with dates): the same episode's id changes when
   the host re-renders its pubDate (`+0300` vs `GMT`) or edits a title, and
