@@ -168,6 +168,13 @@ def decode_tariff(tariff_lvl, language_code):
     return tariff_str
 
 
+def notify_count_after_referral(notify_count, bonus) -> int:
+    """Referral bonus on top of the current notify_count; -1 is unlimited and stays so."""
+    if int(notify_count) == -1:
+        return -1
+    return int(notify_count) + int(bonus)
+
+
 # Дать подарок за приглашение или начало использование
 def giveAward(refer_tg_id, refered_tg_id, mode):
     if not mode:
@@ -197,7 +204,8 @@ def giveAward(refer_tg_id, refered_tg_id, mode):
                 refer_tg_id, current_subscription['tariff_id'],
                 current_subscription['balance'],
                 int(current_subscription['time_left']) + int(tariff_ref_period),
-                int(current_subscription['notify_count'] + int(tariff_ref_notifies)))
+                notify_count_after_referral(
+                    current_subscription['notify_count'], tariff_ref_notifies))
             # по вышей ссылке зарегался, текущие условия улучшены
             message += get_message("award_with_s_new_user", language_code)
 
