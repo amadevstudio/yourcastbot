@@ -1,4 +1,5 @@
 import datetime
+import html
 import json
 import os
 import threading
@@ -11,7 +12,7 @@ from lib.telegram.telebot.types import Message, ApiException, InlineKeyboardButt
 from agent import bot_telethon
 from agent.bot_telebot import bot
 from app.controller.builders.adminModule import send_message_to_creator
-from app.controller.builders.channelModule import bot_removed_from_channel_reaction
+from app.controller.builders.channelModule import bot_removed_from_channel_reaction, get_channel_title
 from app.controller.types_helpers.recs import rec_callback_data_identifier
 from app.core.sender import outbox
 from app.i18n.messages import (
@@ -47,6 +48,7 @@ requester = requesterModule.Requester(attempts=0, total_attempts=0)
 logger = Logger(file="sender")
 
 MB_NUMBER = 1048576  # 1024 * 1024
+MAX_LISTED_CHANNELS = 10
 
 # One per bot process: every rec and circle worker thread reserves from it.
 disk_budget = DiskBudget(os.path.join(work_dir, "records"))
@@ -161,6 +163,7 @@ class Sender:
         self._last_outbox_touch = None
         self._quota_charged = set()
         self._host_fault_noted = False
+        self._quota_notified = set()
 
         self.successfully_sent_to = []
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
@@ -311,12 +314,26 @@ class Sender:
         if chat_id in self.blocked_chats:
             return
         self._quota_charged.add(chat_id)
+        # A channel has no tariff of its own: its deliveries count against the
+        # owner, whose notify_count gated the send in the first place.
+        billed_id = (self.chats.get(chat_id) or {}).get('based_on_user_id') or chat_id
         from db.sqliteAdapter import SQLighter
+        before = None
         left = None
+        owner_lang = None
         db_users = SQLighter(db_path)
         try:
-            db_users.decrease_notify_count(chat_id, 1)
-            subscription = db_users.getUserSubscriptionByTg(chat_id)
+            owner = db_users.get_user_by_tg(billed_id)
+            if owner is not None:
+                owner_lang = owner['lang']
+            subscription = db_users.getUserSubscriptionByTg(billed_id)
+            if subscription is not None:
+                try:
+                    before = int(subscription['notify_count'])
+                except (TypeError, ValueError, KeyError):
+                    before = None
+            db_users.decrease_notify_count(billed_id, 1)
+            subscription = db_users.getUserSubscriptionByTg(billed_id)
             if subscription is not None:
                 try:
                     left = int(subscription['notify_count'])
@@ -327,22 +344,57 @@ class Sender:
             return
         finally:
             db_users.close()
-        if left != 0:
+        # Tell the billed user once, only on the 1 -> 0 transition.
+        if left != 0 or before is None or before <= 0:
             return
-        lang = self.lang_codes_by_utg.get(chat_id)
+        if billed_id in self._quota_notified:
+            return
+        self._quota_notified.add(billed_id)
+        lang = owner_lang or self.lang_codes_by_utg.get(billed_id) or self.lang_codes_by_utg.get(chat_id)
         if not lang:
             return
+        if billed_id != chat_id:
+            text = self._channels_limit_text(billed_id, chat_id, lang)
+        else:
+            text = get_message("notificationsEnded", lang)
         try:
-            outer_sender(chat_id, [{
+            # To the owner's bot chat, never to the channel itself: channel
+            # buttons are ignored by the bot, and the owner is who can upgrade.
+            outer_sender(billed_id, [{
                 'type': 'text',
-                'text': get_message("notificationsEnded", lang),
+                'text': text,
                 'reply_markup': [[{
                     'text': get_message("tariffs", lang),
                     'callback_data': {'tp': 'bs_trfs'},
                 }]],
             }])
         except Exception as e:
-            self.logger.err("notificationsEnded:", chat_id, e)
+            self.logger.err("notificationsEnded:", billed_id, e)
+
+    def _channels_limit_text(self, owner_id, exhausted_channel_id, lang):
+        """Limit notice for a channel delivery: which channel, and all connected ones."""
+        from db.sqliteAdapter import SQLighter
+        channel_tg_ids = []
+        db_users = SQLighter(db_path)
+        try:
+            rows = db_users.get_user_tg_channels(
+                owner_id, 'ORDER BY ch.tg_id DESC', MAX_LISTED_CHANNELS + 1, 0)
+            channel_tg_ids = [row['tg_id'] for row in rows]
+        except Exception as e:
+            self.logger.err("limit notice channels:", owner_id, e)
+        finally:
+            db_users.close()
+        if exhausted_channel_id not in channel_tg_ids:
+            channel_tg_ids.insert(0, exhausted_channel_id)
+
+        def title_of(tg_id):
+            return html.escape(str(get_channel_title(tg_id) or tg_id))
+
+        lines = ["\u2022 " + title_of(tg_id) for tg_id in channel_tg_ids[:MAX_LISTED_CHANNELS]]
+        if len(channel_tg_ids) > MAX_LISTED_CHANNELS:
+            lines.append("\u2026")
+        return get_message("notificationsEndedChannels", lang) % (
+            title_of(exhausted_channel_id), "\n".join(lines))
 
     def _outbox_job_complete(self):
         if self.outbox_id is None:
