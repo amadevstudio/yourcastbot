@@ -8,6 +8,11 @@ on:
   push:
     branches: [ main ]
 
+  # The guards run on a pull request before it merges; only a push to main
+  # (or a manual run) deploys.
+  pull_request:
+    branches: [ main ]
+
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -32,6 +37,7 @@ jobs:
       - name: Storefront and copy guards
         run: |
           python3 app/service/payment/test_storefront.py
+          python3 app/service/payment/test_referral_award.py
           python3 app/i18n/test_relay_copy.py
           python3 app/i18n/test_routed_fallback.py
           python3 app/jobs/test_circle_health.py
@@ -65,6 +71,7 @@ jobs:
 
   deploy-build-restart:
     needs: storefront-guards
+    if: github.event_name != 'pull_request'
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
