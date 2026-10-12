@@ -318,41 +318,27 @@ class Sender:
         # owner, whose notify_count gated the send in the first place.
         billed_id = (self.chats.get(chat_id) or {}).get('based_on_user_id') or chat_id
         from db.sqliteAdapter import SQLighter
-        before = None
-        left = None
+        charged, left = False, None
         owner_lang = None
         db_users = SQLighter(db_path)
         try:
             owner = db_users.get_user_by_tg(billed_id)
             if owner is not None:
                 owner_lang = owner['lang']
-            subscription = db_users.getUserSubscriptionByTg(billed_id)
-            if subscription is not None:
-                try:
-                    before = int(subscription['notify_count'])
-                except (TypeError, ValueError, KeyError):
-                    before = None
-            db_users.decrease_notify_count(billed_id, 1)
-            subscription = db_users.getUserSubscriptionByTg(billed_id)
-            if subscription is not None:
-                try:
-                    left = int(subscription['notify_count'])
-                except (TypeError, ValueError, KeyError):
-                    left = None
+            charged, left = db_users.charge_notify_count(billed_id, 1)
         except Exception as e:
             self.logger.err("circle notify_count:", chat_id, e)
             return
         finally:
             db_users.close()
-        # Tell the billed user once, only on the 1 -> 0 transition.
-        if left != 0 or before is None or before <= 0:
+        # Tell the billed user once, on the charge that took the last one.
+        if not charged or left != 0:
             return
         if billed_id in self._quota_notified:
             return
         self._quota_notified.add(billed_id)
-        lang = owner_lang or self.lang_codes_by_utg.get(billed_id) or self.lang_codes_by_utg.get(chat_id)
-        if not lang:
-            return
+        lang = owner_lang or self.lang_codes_by_utg.get(billed_id) \
+            or self.lang_codes_by_utg.get(chat_id) or 'en'
         if billed_id != chat_id:
             text = self._channels_limit_text(billed_id, chat_id, lang)
         else:

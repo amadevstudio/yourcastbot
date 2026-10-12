@@ -398,7 +398,10 @@ def send_new_records_by_channel(
     if tg_channel_connections is not None:
         all_target_connections += tg_channel_connections
 
+    # Notifications left, per billed user: a channel is billed to its owner, so
+    # the owner and all their channels draw from one budget.
     notify_left_tg = {}
+    billed_to: dict[int, int] = {}  # chat_id -> billed user's id
     last_saved_guids_map: dict[str, list[int]] = {}  # guid -> [chat_id]
     last_saved_dates_map: dict[str, list[int]] = {}  # date -> [chat_id]
     target_users_tg_set: dict[int, ChatParamsType] = {}  # chat_id ->
@@ -453,10 +456,15 @@ def send_new_records_by_channel(
             last_saved_dates_map[cursor_date].append(
                 connection['user_telegram_id'])
 
+        billed_id = connection['user_telegram_id']
+        if 'user_type' in connection.keys() and \
+                connection['user_type'] == 'channel' and 'owner_id' in connection.keys():
+            billed_id = connection['owner_id']
+        billed_to[connection['user_telegram_id']] = billed_id
         if connection['notify_count'] is None:
-            notify_left_tg[connection['user_telegram_id']] = 0
+            notify_left_tg[billed_id] = 0
         else:
-            notify_left_tg[connection['user_telegram_id']] = connection['notify_count']
+            notify_left_tg[billed_id] = connection['notify_count']
 
     # для пользователей без подписки, аналогично
     nosub_connections_to_pgd = {}
@@ -685,12 +693,17 @@ def send_new_records_by_channel(
                         ).encode('utf-8'))
 
         if not manual:
-            # notify_left_tg уменьшается в этом же проходе после каждого выпуска,
-            # поэтому ноль на втором эпизоде — штатное состояние. Без list()
-            # del во время итерации роняет поток апдейтера RuntimeError.
+            # notify_left_tg уменьшается в этом же проходе, поэтому ноль на втором
+            # эпизоде — штатное состояние. Один выпуск резервирует по одному
+            # уведомлению на получателя: владелец и его каналы делят один счётчик
+            # (-1 — безлимит, не уменьшается). Без list() del во время итерации
+            # роняет поток апдейтера RuntimeError.
             for utg in list(last_guids_to_users[pgd]):
-                if notify_left_tg[utg] == 0:
+                billed_id = billed_to.get(utg, utg)
+                if notify_left_tg[billed_id] == 0:
                     del last_guids_to_users[pgd][utg]
+                elif notify_left_tg[billed_id] > 0:
+                    notify_left_tg[billed_id] -= 1
         if len(last_guids_to_users[pgd]) == 0:
             continue
         new_recs_flag = True
@@ -761,13 +774,6 @@ def send_new_records_by_channel(
                 'consume_notify': not manual,
             },
         })
-
-        if not manual:
-            # Same-channel episode cap for this circle. DB notify_count
-            # decreases when Telegram ACKs, not here.
-            for user_tg_id in recipients:
-                if notify_left_tg[user_tg_id] > 0:
-                    notify_left_tg[user_tg_id] -= 1
 
         logger.log("ENQUEUED AUTOMATICALLY! To: ", list(recipients))
 
