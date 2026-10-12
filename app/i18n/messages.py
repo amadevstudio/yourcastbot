@@ -3573,6 +3573,37 @@ messages = {
                       "wechsle in eine höhere Preisklasse mit mehr Benachrichtigungen."
         }
     },
+    "notificationsEndedChannels": {
+        "ru": {
+            "ro_msg": "\U0001F4E2 Лимит уведомлений исчерпан в канале «%s».\n"
+                      "Автоматическая отправка выпусков вам и в подключённые каналы "
+                      "приостановлена до нового срока.\n\n"
+                      "Подключённые каналы:\n%s\n\n"
+                      "Дождитесь нового срока или перейдите на тариф с большим лимитом."
+        },
+        "en": {
+            "ro_msg": "\U0001F4E2 The notification limit ran out on the channel \u201c%s\u201d.\n"
+                      "Automatic delivery of new episodes to you and to your connected "
+                      "channels is paused until the next period.\n\n"
+                      "Connected channels:\n%s\n\n"
+                      "Wait for a new deadline or switch to a tariff with a higher limit."
+        },
+        "pt-BR": {
+            "ro_msg": "\U0001F4E2 O limite de notificações acabou no canal \u201c%s\u201d.\n"
+                      "O envio automático de novos episódios para você e para os seus "
+                      "canais conectados está pausado até o próximo período.\n\n"
+                      "Canais conectados:\n%s\n\n"
+                      "Espere por um novo período ou mude para um plano com um limite maior."
+        },
+        "de": {
+            "ro_msg": "\U0001F4E2 Das Benachrichtigungslimit wurde im Kanal \u201e%s\u201c erreicht.\n"
+                      "Neue Folgen werden an dich und an deine verbundenen Kanäle "
+                      "bis zur nächsten Periode nicht mehr automatisch gesendet.\n\n"
+                      "Verbundene Kanäle:\n%s\n\n"
+                      "Warte auf die nächste Periode oder wechsle in eine höhere Preisklasse "
+                      "mit mehr Benachrichtigungen."
+        }
+    },
     "award_without_s_new_user": {
         "ru": {
             "ro_msg": "По вашей ссылке зарегистрировался новый пользователь, вы были "

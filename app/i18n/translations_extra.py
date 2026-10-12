@@ -286,6 +286,10 @@ EXTRA_TRANSLATIONS = {
         "es": "Se alcanzó el límite de notificaciones dentro de este plazo.\nEspere al nuevo plazo o cambie a un plan con un límite mayor.",
         "he": "הגעת למגבלת ההתראות בתוך תקופת התוקף הזו.\nהמתן לתקופה חדשה או עבור למסלול עם מגבלה גבוהה יותר.",
     },
+    "notificationsEndedChannels": {
+        "es": "\U0001F4E2 Se alcanzó el límite de notificaciones en el canal \u00ab%s\u00bb.\nEl envío automático de nuevos episodios a usted y a sus canales conectados está en pausa hasta el próximo plazo.\n\nCanales conectados:\n%s\n\nEspere al nuevo plazo o cambie a un plan con un límite mayor.",
+        "he": "\U0001F4E2 הגעת למגבלת ההתראות בערוץ \u201c%s\u201d.\nשליחה אוטומטית של פרקים חדשים אליך ואל הערוצים המחוברים שלך מושהית עד התקופה הבאה.\n\nערוצים מחוברים:\n%s\n\nהמתן לתקופה חדשה או עבור למסלול עם מגבלה גבוהה יותר.",
+    },
     "award_without_s_new_user": {
         "es": "¡Un nuevo usuario se registró con su enlace y quedó suscrito al plan! Condiciones actuales:",
         "he": "משתמש חדש נרשם דרך הקישור שלך, ונרשמת למסלול! התנאים הנוכחיים:",
