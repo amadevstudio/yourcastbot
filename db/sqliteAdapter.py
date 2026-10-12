@@ -1835,6 +1835,34 @@ class SQLighter:
                 (str(count), str(telegramId),))
             self.connection.commit()
 
+    def charge_notify_count(self, telegramId, count):
+        """Take `count` notifications from a user's plan.
+
+        Returns (charged, left): `charged` is False when nothing was left to
+        take (unlimited -1 and 0 are never touched); `left` is what the plan
+        holds right after this charge, read in the same transaction, so two
+        workers cannot both see the step to 0.
+        """
+        with self.connection:
+            self.cursor.execute(
+                "UPDATE user_tariff_cs \
+                SET notify_count = notify_count - ? \
+                WHERE uid = (SELECT id FROM users WHERE telegramId = ?) \
+                    AND notify_count > 0",
+                (str(count), str(telegramId),))
+            charged = self.cursor.rowcount > 0
+            row = self.cursor.execute(
+                "SELECT notify_count FROM user_tariff_cs \
+                WHERE uid = (SELECT id FROM users WHERE telegramId = ?)",
+                (str(telegramId),)).fetchone()
+        left = None
+        if row is not None:
+            try:
+                left = int(row['notify_count'])
+            except (TypeError, ValueError, KeyError):
+                left = None
+        return charged, left
+
     def delete_payment_records_without_user(self):
         with self.connection:
             self.cursor.execute(
