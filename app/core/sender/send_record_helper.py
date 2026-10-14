@@ -331,6 +331,9 @@ class Sender:
             return
         finally:
             db_users.close()
+        if billed_id != chat_id:
+            self.logger.log("Channel delivery charged to owner:", chat_id, "owner:", billed_id,
+                            "charged:", charged, "left:", left)
         # Tell the billed user once, on the charge that took the last one.
         if not charged or left != 0:
             return
@@ -354,6 +357,7 @@ class Sender:
                     'callback_data': {'tp': 'bs_trfs'},
                 }]],
             }])
+            self.logger.log("Limit notice sent to:", billed_id, "for:", chat_id)
         except Exception as e:
             self.logger.err("notificationsEnded:", billed_id, e)
 

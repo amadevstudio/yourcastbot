@@ -50,6 +50,7 @@ jobs:
           python3 app/controller/builders/test_screen_state.py
           python3 lib/requests/test_url.py
           python3 lib/requests/test_download_resume.py
+          python3 lib/tools/test_logger_place.py
           python3 lib/net/test_enclosure.py
           python3 app/jobs/test_feed_health.py
           python3 app/repository/storage/test_sqlite_storage.py

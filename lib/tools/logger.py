@@ -79,15 +79,21 @@ class Logger:
             self.__out_log(*args, level="debug")
 
     # works only in error
-    # args (for self.__out_log) = [arg1, arg2, | Details:, exc_type, exc_obj, fename, :, exc_tb.tb_lineno]
+    # args (for self.__out_log) = [arg1, arg2, | Details:, exc_type exc_obj caught.py:N > raised.py:M]
     def err(self, *args, dont_raise: bool = True):
         if dont_raise or config.server:
             exc_type, exc_obj, exc_tb = sys.exc_info()
 
             details = str(exc_type) + " " + str(exc_obj)
             if exc_tb is not None:
-                fename = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-                details += " " + str(fename) + ":" + str(exc_tb.tb_lineno)
+                details += " " + _tb_place(exc_tb)
+                # Where it was raised, not only where it was caught: a handler
+                # that logs a whole route's failure otherwise names only itself
+                inner_tb = exc_tb
+                while inner_tb.tb_next is not None:
+                    inner_tb = inner_tb.tb_next
+                if inner_tb is not exc_tb:
+                    details += " > " + _tb_place(inner_tb)
 
             self.__out_log(
                 *args, "| Details:", details, "\n", level="err")
@@ -96,6 +102,11 @@ class Logger:
 
     def custom_err(self, *args):
         self.__out_log(*args, level="err")
+
+
+
+def _tb_place(tb) -> str:
+    return os.path.split(tb.tb_frame.f_code.co_filename)[1] + ":" + str(tb.tb_lineno)
 
 
 logger = Logger()
