@@ -30,7 +30,13 @@ def _assert_eq(got, expected, label):
     print("ok  %s = %r" % (label, got))
 
 
+LOGGED = []
+
+
 class _Logger:
+    def log(self, *args):
+        LOGGED.append(" ".join(str(arg) for arg in args))
+
     def err(self, *args):
         raise AssertionError("logged an error: %r" % (args,))
 
@@ -67,6 +73,7 @@ def _left(path):
 def _run(path, chats, order, utg_langs=None):
     """Charge `order` through a Sender; returns the (chat, text) notices sent."""
     sent = []
+    del LOGGED[:]
     srh.db_path = path
     srh.outer_sender = lambda chat_id, msgs: sent.append((chat_id, msgs[0]['text']))
     srh.get_channel_title = lambda tg_id: 'Show %d' % -tg_id
@@ -102,6 +109,10 @@ def main():
         _assert_eq([chat for chat, _ in sent], [OWNER], "one notice, to the owner's bot chat")
         _assert_eq('Show 1005001' in sent[0][1] and 'Show 1005002' in sent[0][1], True,
                    "the notice names the channel that ran out and lists the others")
+        _assert_eq([line.split(" for:")[0] for line in LOGGED if line.startswith("Limit notice")],
+                   ["Limit notice sent to: %d" % OWNER], "the notice is in the log")
+        _assert_eq([line.split("charged:")[1] for line in LOGGED if line.startswith("Channel delivery")],
+                   [" True left: 0", " False left: 0"], "each channel charge is logged, one each")
 
         path = os.path.join(tmp, 'b.db')
         _db(path, 2)
