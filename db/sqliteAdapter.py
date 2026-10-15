@@ -316,9 +316,10 @@ _users_episode_format_lock = threading.Lock()
 def ensure_users_episode_format_columns(
         connection: sqlite3.Connection, database=None) -> None:
     # episode_format: NULL = the default (a rich message), 'separate' = the audio
-    # and a collapsible description after it. rich_hint_sent: the one-time note
-    # on how to switch was shown. Deploy git-pulls and restarts without running
-    # migrations, so the columns are created here as well.
+    # and a collapsible description after it. flags: JSON of one-off per-user
+    # marks ({"rich_hint_sent": 1}), so a new flag is a key, not a column.
+    # Deploy git-pulls and restarts without running migrations, so the columns
+    # are created here as well.
     key = database
     if key is not None and key in _users_episode_format_ready:
         return
@@ -336,13 +337,23 @@ def ensure_users_episode_format_columns(
                         "ALTER TABLE users ADD COLUMN episode_format TEXT"):
                     logger.warn(
                         "users.episode_format was missing and has been created")
-            if 'rich_hint_sent' not in columns:
+            if 'flags' not in columns:
                 if _add_users_column(
                         connection,
-                        "ALTER TABLE users ADD COLUMN "
-                        "rich_hint_sent INTEGER NOT NULL DEFAULT 0"):
+                        "ALTER TABLE users ADD COLUMN flags TEXT"):
                     logger.warn(
-                        "users.rich_hint_sent was missing and has been created")
+                        "users.flags was missing and has been created")
+            if 'rich_hint_sent' in columns:
+                # The first version kept this flag in a column of its own.
+                # SQLite cannot drop it here: copy it into flags, leave it unused.
+                moved = connection.execute(
+                    "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), "
+                    "'$.rich_hint_sent', 1) WHERE rich_hint_sent = 1 "
+                    "AND json_extract(COALESCE(flags, '{}'), '$.rich_hint_sent') IS NULL"
+                ).rowcount
+                connection.commit()
+                if moved:
+                    logger.warn("users.rich_hint_sent moved into flags:", moved)
             if key is not None:
                 _users_episode_format_ready.add(key)
         except Exception as e:
@@ -1264,7 +1275,8 @@ class SQLighter:
         for start in range(0, len(ids), 500):
             chunk = ids[start:start + 500]
             rows = self.cursor.execute(
-                "SELECT telegramId, episode_format, rich_hint_sent FROM users "
+                "SELECT telegramId, episode_format, "
+                "json_extract(COALESCE(flags, '{}'), '$.rich_hint_sent') FROM users "
                 "WHERE telegramId IN (%s)" % ",".join("?" * len(chunk)), chunk).fetchall()
             for row in rows:
                 found[int(row[0])] = (row[1], bool(row[2]))
@@ -1277,12 +1289,17 @@ class SQLighter:
                 (value, str(telegramId)))
             self.connection.commit()
 
-    def mark_rich_hint_sent(self, telegramId) -> None:
+    def set_user_flag(self, telegramId, name, value=1) -> None:
+        """One key of users.flags, in one statement: the other keys stay."""
         with self.connection:
             self.cursor.execute(
-                "UPDATE users SET rich_hint_sent = 1 WHERE telegramId = ?",
-                (str(telegramId),))
+                "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), ?, ?) "
+                "WHERE telegramId = ?",
+                ('$.' + name, value, str(telegramId)))
             self.connection.commit()
+
+    def mark_rich_hint_sent(self, telegramId) -> None:
+        self.set_user_flag(telegramId, 'rich_hint_sent')
 
     def get_user_by_tg(self, telegramId):
         with self.connection:

@@ -25,22 +25,31 @@ def _assert_eq(got, expected, label):
 def main():
     path = os.path.join(tempfile.mkdtemp(prefix="yourcast_format_"), "db.sqlite")
     old = sqlite3.connect(path)  # a users table from before the columns
-    old.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, telegramId TEXT UNIQUE)")
+    # The first version had rich_hint_sent as a column of its own: user 103 saw the note then.
+    old.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, telegramId TEXT UNIQUE, "
+                "episode_format TEXT, rich_hint_sent INTEGER NOT NULL DEFAULT 0)")
     old.executemany("INSERT INTO users (telegramId) VALUES (?)", [("101",), ("102",)])
+    old.execute("INSERT INTO users (telegramId, rich_hint_sent) VALUES ('103', 1)")
     old.commit()
     old.close()
 
     db = SQLighter(path)
     try:
         columns = [row[1] for row in db.connection.execute("PRAGMA table_info(users)")]
-        _assert_eq('episode_format' in columns and 'rich_hint_sent' in columns, True,
-                   "opening the database adds both columns")
-        _assert_eq(db.get_episode_formats([101, 102, 999]), {101: (None, False), 102: (None, False)},
-                   "existing users: default format, hint not shown; unknown ids are absent")
+        _assert_eq('episode_format' in columns and 'flags' in columns, True,
+                   "opening the database adds the flags column")
+        _assert_eq(db.get_episode_formats([101, 102, 103, 999]),
+                   {101: (None, False), 102: (None, False), 103: (None, True)},
+                   "existing users: default format; the old column's flag moved into flags; unknown ids absent")
         db.set_episode_format(101, SEPARATE)
         db.mark_rich_hint_sent(102)
         _assert_eq(db.get_episode_formats([101, 102]), {101: ('separate', False), 102: (None, True)},
                    "switch and hint are stored per user")
+        db.set_user_flag(102, 'other', 5)
+        db.mark_rich_hint_sent(102)
+        flags = db.connection.execute("SELECT flags FROM users WHERE telegramId = '102'").fetchone()[0]
+        _assert_eq(__import__('json').loads(flags), {'rich_hint_sent': 1, 'other': 5},
+                   "a flag is one key: setting it keeps the others")
     finally:
         db.close()
 
