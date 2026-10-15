@@ -5,6 +5,7 @@ from app.controller.builders import welcomeModule, menuModule, subsModule, searc
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
+from app.service.record.text_format import EPISODE_FORMAT_ACTIONS, EPISODE_FORMAT_HINT_ACTION
 from app.service.payment import (
     paymentModule,
     patreonPaymentModule,
@@ -188,7 +189,15 @@ class RouteMap:
                 'digestToggle': {
                     'method': settingsModule.toggle_digest_reminders,
                     'state_independent': True,
-                }
+                },
+                EPISODE_FORMAT_HINT_ACTION: {
+                    'method': settingsModule.use_separate_episode_format,
+                    'state_independent': True,
+                },
+                **{action: {
+                    'method': settingsModule.set_episode_format_handler(episode_format),
+                    'state_independent': True,
+                } for action, episode_format in EPISODE_FORMAT_ACTIONS.items()},
             }
         },
 

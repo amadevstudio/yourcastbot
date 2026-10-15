@@ -44,6 +44,7 @@ jobs:
           python3 app/jobs/test_relay_remind.py
           python3 app/jobs/test_tariff_tick.py
           python3 app/service/record/test_caption.py
+          python3 lib/telegram/test_rich_message.py
           python3 app/service/record/test_delivery.py
           python3 app/service/podcast/test_card.py
           python3 app/controller/builders/test_open_recs.py
@@ -61,6 +62,7 @@ jobs:
           python3 db/test_send_outbox.py
           python3 app/core/sender/test_circle_charge.py
           python3 db/test_mark_sub_seen.py
+          python3 db/test_episode_format.py
           python3 db/test_tariff_rows.py
           python3 app/core/balancers/test_record_balancer.py
           python3 app/admin_web/test_diag.py

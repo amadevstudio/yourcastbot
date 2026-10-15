@@ -1870,6 +1870,166 @@ messages = {
             "ro_msg": "טוב. אפשר לשנות את זה בהגדרות."
         }
     },
+    "richHint": {
+        "ru": {
+            "ro_msg": "Теперь описание эпизода приходит одним сообщением вместе с плеером, без обрезки. Если оно у вас не читается или выглядит странно (старая версия Telegram), переключите формат кнопкой ниже или в /settings."
+        },
+        "en": {
+            "ro_msg": "The episode text now arrives as one message together with the player, without cutting. If you can't read it or it looks odd (an old Telegram version), switch the format with the button below or in /settings."
+        },
+        "pt-BR": {
+            "ro_msg": "Agora o texto do episódio chega em uma única mensagem junto com o player, sem cortes. Se você não consegue ler ou ela aparece estranha (versão antiga do Telegram), mude o formato no botão abaixo ou em /settings."
+        },
+        "es": {
+            "ro_msg": "Ahora el texto del episodio llega en un solo mensaje junto con el reproductor, sin recortes. Si no puedes leerlo o se ve raro (versión antigua de Telegram), cambia el formato con el botón de abajo o en /settings."
+        },
+        "de": {
+            "ro_msg": "Der Text der Folge kommt jetzt in einer Nachricht zusammen mit dem Player, ungekürzt. Wenn er sich nicht lesen lässt oder seltsam aussieht (alte Telegram-Version), wechsle das Format mit der Schaltfläche unten oder in /settings."
+        },
+        "he": {
+            "ro_msg": "טקסט הפרק מגיע עכשיו בהודעה אחת יחד עם הנגן, בלי קיצוץ. אם אי אפשר לקרוא אותו או שהוא נראה מוזר (גרסה ישנה של טלגרם), החליפו את הפורמט בכפתור למטה או ב-/settings."
+        }
+    },
+    "richHintButton": {
+        "ru": {
+            "ro_msg": "Присылать текст отдельным сообщением"
+        },
+        "en": {
+            "ro_msg": "Send the text as a separate message"
+        },
+        "pt-BR": {
+            "ro_msg": "Enviar o texto em mensagem separada"
+        },
+        "es": {
+            "ro_msg": "Enviar el texto en un mensaje aparte"
+        },
+        "de": {
+            "ro_msg": "Text als eigene Nachricht senden"
+        },
+        "he": {
+            "ro_msg": "לשלוח את הטקסט בהודעה נפרדת"
+        }
+    },
+    "richHintDone": {
+        "ru": {
+            "ro_msg": "Готово: текст придёт отдельным сообщением, его можно свернуть. Поменять формат можно в /settings."
+        },
+        "en": {
+            "ro_msg": "Done: the text will come as a separate message that you can collapse. You can change the format in /settings."
+        },
+        "pt-BR": {
+            "ro_msg": "Pronto: o texto virá em uma mensagem separada, que pode ser recolhida. Você pode mudar o formato em /settings."
+        },
+        "es": {
+            "ro_msg": "Listo: el texto llegará en un mensaje aparte que puedes contraer. Puedes cambiar el formato en /settings."
+        },
+        "de": {
+            "ro_msg": "Erledigt: Der Text kommt als eigene Nachricht, die sich einklappen lässt. Das Format kannst du in /settings ändern."
+        },
+        "he": {
+            "ro_msg": "בוצע: הטקסט יגיע בהודעה נפרדת שאפשר לצמצם. אפשר לשנות את הפורמט ב-/settings."
+        }
+    },
+    "episodeFormatHelp": {
+        "ru": {
+            "ro_msg": "Как приходит описание эпизода. Одно сообщение: плеер и всё описание, без обрезки. Отдельное: аудио, а всё описание следом в сворачиваемой цитате (если одно сообщение у вас отображается плохо). Подпись: старый вариант, описание обрезается под лимит подписи. Заголовок: только название, дата и ссылка."
+        },
+        "en": {
+            "ro_msg": "How the episode text arrives. One message: the player and the whole description, without cutting. Separate: the audio, then the whole description in a collapsible quote (if the one message doesn't show well for you). Caption: the old way, the description is cut to fit a caption. Title only: just the show, title, date and link."
+        },
+        "pt-BR": {
+            "ro_msg": "Como o texto do episódio chega. Uma mensagem: o player e a descrição inteira, sem cortes. Separado: o áudio e depois a descrição inteira em uma citação recolhível (se a mensagem única aparecer mal). Legenda: o jeito antigo, a descrição é cortada para caber. Só o título: apenas programa, título, data e link."
+        },
+        "es": {
+            "ro_msg": "Cómo llega el texto del episodio. Un mensaje: el reproductor y toda la descripción, sin recortes. Aparte: el audio y luego toda la descripción en una cita plegable (si el mensaje único se ve mal). Pie: la forma antigua, la descripción se recorta para caber. Solo el título: solo programa, título, fecha y enlace."
+        },
+        "de": {
+            "ro_msg": "Wie der Text der Folge ankommt. Eine Nachricht: Player und ganze Beschreibung, ungekürzt. Getrennt: das Audio, danach die ganze Beschreibung in einem einklappbaren Zitat (wenn die eine Nachricht schlecht aussieht). Beschriftung: die alte Art, die Beschreibung wird gekürzt. Nur Titel: nur Sendung, Titel, Datum und Link."
+        },
+        "he": {
+            "ro_msg": "איך מגיע טקסט הפרק. הודעה אחת: הנגן וכל התיאור, בלי קיצוץ. נפרד: האודיו ואחריו כל התיאור בציטוט מתקפל (אם ההודעה האחת לא מוצגת טוב). כיתוב: הדרך הישנה, התיאור נחתך. רק כותרת: רק התוכנית, הכותרת, התאריך והקישור."
+        }
+    },
+    "episodeFormatRich": {
+        "ru": {
+            "ro_msg": "Одно сообщение, весь текст"
+        },
+        "en": {
+            "ro_msg": "One message, whole text"
+        },
+        "pt-BR": {
+            "ro_msg": "Uma mensagem, texto inteiro"
+        },
+        "es": {
+            "ro_msg": "Un mensaje, texto completo"
+        },
+        "de": {
+            "ro_msg": "Eine Nachricht, ganzer Text"
+        },
+        "he": {
+            "ro_msg": "הודעה אחת, כל הטקסט"
+        }
+    },
+    "episodeFormatSeparate": {
+        "ru": {
+            "ro_msg": "Отдельное сообщение со сворачиванием"
+        },
+        "en": {
+            "ro_msg": "Separate message, collapsible"
+        },
+        "pt-BR": {
+            "ro_msg": "Mensagem separada, recolhível"
+        },
+        "es": {
+            "ro_msg": "Mensaje aparte, plegable"
+        },
+        "de": {
+            "ro_msg": "Eigene Nachricht, einklappbar"
+        },
+        "he": {
+            "ro_msg": "הודעה נפרדת, מתקפלת"
+        }
+    },
+    "episodeFormatCaption": {
+        "ru": {
+            "ro_msg": "Подпись, текст обрезан"
+        },
+        "en": {
+            "ro_msg": "Caption, text cut"
+        },
+        "pt-BR": {
+            "ro_msg": "Legenda, texto cortado"
+        },
+        "es": {
+            "ro_msg": "Pie, texto recortado"
+        },
+        "de": {
+            "ro_msg": "Beschriftung, Text gekürzt"
+        },
+        "he": {
+            "ro_msg": "כיתוב, הטקסט נחתך"
+        }
+    },
+    "episodeFormatMeta": {
+        "ru": {
+            "ro_msg": "Только заголовок, без описания"
+        },
+        "en": {
+            "ro_msg": "Title only, no description"
+        },
+        "pt-BR": {
+            "ro_msg": "Só o título, sem descrição"
+        },
+        "es": {
+            "ro_msg": "Solo el título, sin descripción"
+        },
+        "de": {
+            "ro_msg": "Nur Titel, ohne Beschreibung"
+        },
+        "he": {
+            "ro_msg": "רק כותרת, בלי תיאור"
+        }
+    },
     "nosubDigestRemindersHelp": {
         "ru": {
             "ro_msg": "Раз в неделю напоминаем, что вышли новые выпуски. Только без подписки на бота: с подпиской выпуски приходят файлом."

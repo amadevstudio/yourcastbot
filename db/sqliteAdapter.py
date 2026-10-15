@@ -309,6 +309,45 @@ def ensure_users_created_at_column(
         except Exception as e:
             logger.err("Could not ensure users.created_at column:", e)
 
+_users_episode_format_ready: set = set()
+_users_episode_format_lock = threading.Lock()
+
+
+def ensure_users_episode_format_columns(
+        connection: sqlite3.Connection, database=None) -> None:
+    # episode_format: NULL = the default (a rich message), 'separate' = the audio
+    # and a collapsible description after it. rich_hint_sent: the one-time note
+    # on how to switch was shown. Deploy git-pulls and restarts without running
+    # migrations, so the columns are created here as well.
+    key = database
+    if key is not None and key in _users_episode_format_ready:
+        return
+
+    with _users_episode_format_lock:
+        if key is not None and key in _users_episode_format_ready:
+            return
+        try:
+            columns = _pragma_user_columns(connection)
+            if not columns:
+                return
+            if 'episode_format' not in columns:
+                if _add_users_column(
+                        connection,
+                        "ALTER TABLE users ADD COLUMN episode_format TEXT"):
+                    logger.warn(
+                        "users.episode_format was missing and has been created")
+            if 'rich_hint_sent' not in columns:
+                if _add_users_column(
+                        connection,
+                        "ALTER TABLE users ADD COLUMN "
+                        "rich_hint_sent INTEGER NOT NULL DEFAULT 0"):
+                    logger.warn(
+                        "users.rich_hint_sent was missing and has been created")
+            if key is not None:
+                _users_episode_format_ready.add(key)
+        except Exception as e:
+            logger.err("Could not ensure users episode format columns:", e)
+
 
 def helper_remove_proto_from_link(link):
     link_tester = re.compile(r'(?:https?)?:\/\/((?:[a-z0-9-_\.]+)*\/.*)')
@@ -331,6 +370,7 @@ class SQLighter:
         _ensure_channel_http_validators_columns(self.connection)
         ensure_users_nosub_digest_columns(self.connection, database)
         ensure_users_created_at_column(self.connection, database)
+        ensure_users_episode_format_columns(self.connection, database)
         ensure_send_outbox_table(self.connection, database)
         ensure_bot_runtime_kv_table(self.connection, database)
         ensure_digest_outbox_table(self.connection, database)
@@ -1216,6 +1256,33 @@ class SQLighter:
         with self.connection:
             return self.cursor.execute(
                 "SELECT * FROM users WHERE id = ?", (str(user_id),)).fetchone()
+
+    def get_episode_formats(self, telegram_ids) -> dict:
+        """chat id -> (episode_format, rich_hint_sent) for the ids that are users."""
+        ids = [str(i) for i in telegram_ids]
+        found = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            rows = self.cursor.execute(
+                "SELECT telegramId, episode_format, rich_hint_sent FROM users "
+                "WHERE telegramId IN (%s)" % ",".join("?" * len(chunk)), chunk).fetchall()
+            for row in rows:
+                found[int(row[0])] = (row[1], bool(row[2]))
+        return found
+
+    def set_episode_format(self, telegramId, value) -> None:
+        with self.connection:
+            self.cursor.execute(
+                "UPDATE users SET episode_format = ? WHERE telegramId = ?",
+                (value, str(telegramId)))
+            self.connection.commit()
+
+    def mark_rich_hint_sent(self, telegramId) -> None:
+        with self.connection:
+            self.cursor.execute(
+                "UPDATE users SET rich_hint_sent = 1 WHERE telegramId = ?",
+                (str(telegramId),))
+            self.connection.commit()
 
     def get_user_by_tg(self, telegramId):
         with self.connection:

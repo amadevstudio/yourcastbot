@@ -38,6 +38,39 @@ methods, admin commands, Telegram heartbeats. A new default (Relay,
 Stars first) is copy and button order. It is not permission to hide
 an old plan, an old pay method, or a management screen.
 
+## Episode text
+
+A caption holds 1024 characters, and the bot owner's Telegram Premium does
+not raise that for bots (Bot API 10.3 checked: Premium only allows custom
+emoji). The description used to be cut to ~1000. Now (`app/service/record/text_format.py`,
+`users.episode_format`):
+
+- **rich** (default, NULL in the column): one `sendRichMessage` with the
+  player and the whole description (`lib/telegram/rich_message.py`, up to
+  32768 characters; pyTelegramBotAPI 4.11 has no such method, it goes
+  through `apihelper._make_request`). The first one a user gets is followed
+  once by a note on how to switch (`users.rich_hint_sent`, button
+  `episodeFormatSeparate`).
+- **separate** (Settings, or the note's button): the audio with a header-only
+  caption, then the description in `<blockquote expandable>` (one message,
+  under 4096).
+- **caption** (Settings): the old way, the description cut to the caption.
+- **meta** (Settings): the header only, no description, as in channels.
+- Channels and chats with `description_mode` none are not users here: no
+  format lookup, the caption as before. Settings shows four buttons (one per
+  format, the current marked); the note after the first rich message has its
+  own action (`episodeFormatHint`) because it also closes the note.
+- A rich message that fails for a reason of its own (not a blocked user, not
+  a flood, not a refused file) falls back to separate for that chat and
+  counts toward a 10-minute pause of rich messages (`rich_message.available`):
+  the text is never lost and a broken method is not hammered.
+- Over 50 MB the agent uploads a plain audio: header caption, description
+  after it as in separate; chats that reuse the cached `file_id` get the rich
+  message. A refused URL is a refused file (download, then rich upload), never
+  a reason for the old caption.
+- Locks: `python lib/telegram/test_rich_message.py`,
+  `python db/test_episode_format.py`, `python app/core/sender/test_record_delivery.py`.
+
 ## Subscription storefront
 
 `/subscription` sells Relay first (Stars). That is not permission to
