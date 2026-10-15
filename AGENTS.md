@@ -49,7 +49,7 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
   player and the whole description (`lib/telegram/rich_message.py`, up to
   32768 characters; pyTelegramBotAPI 4.11 has no such method, it goes
   through `apihelper._make_request`). The first one a user gets is followed
-  once by a note on how to switch (`users.rich_hint_sent`, button
+  once by a note on how to switch (`users.flags` JSON key `rich_hint_sent`: one-off per-user marks are keys there, not columns; button
   `episodeFormatSeparate`).
 - **separate** (Settings, or the note's button): the audio with a header-only
   caption, then the description in `<blockquote expandable>` (one message,
