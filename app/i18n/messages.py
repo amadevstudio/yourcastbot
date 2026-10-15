@@ -2050,6 +2050,26 @@ messages = {
             "ro_msg": "📨 טקסט הפרק"
         }
     },
+    "settingsPickSection": {
+        "ru": {
+            "ro_msg": "Выберите раздел:"
+        },
+        "en": {
+            "ro_msg": "Choose a section:"
+        },
+        "pt-BR": {
+            "ro_msg": "Escolha uma seção:"
+        },
+        "es": {
+            "ro_msg": "Elige una sección:"
+        },
+        "de": {
+            "ro_msg": "Wähle einen Bereich:"
+        },
+        "he": {
+            "ro_msg": "בחרו קטגוריה:"
+        }
+    },
     "settingsRemindersTitle": {
         "ru": {
             "ro_msg": "🔔 Напоминания"

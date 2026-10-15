@@ -49,6 +49,8 @@ jobs:
           python3 app/service/podcast/test_card.py
           python3 app/controller/builders/test_open_recs.py
           python3 app/controller/builders/test_screen_state.py
+          python3 app/controller/builders/test_settings_screens.py
+          python3 app/core/navigation/test_go_back.py
           python3 lib/requests/test_url.py
           python3 lib/requests/test_download_resume.py
           python3 lib/tools/test_logger_place.py
