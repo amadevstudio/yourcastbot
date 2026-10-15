@@ -188,7 +188,15 @@ class RouteMap:
                 'digestToggle': {
                     'method': settingsModule.toggle_digest_reminders,
                     'state_independent': True,
-                }
+                },
+                'episodeFormatToggle': {
+                    'method': settingsModule.toggle_episode_format,
+                    'state_independent': True,
+                },
+                'episodeFormatSeparate': {
+                    'method': settingsModule.use_separate_episode_format,
+                    'state_independent': True,
+                },
             }
         },
 

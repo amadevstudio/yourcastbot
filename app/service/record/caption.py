@@ -79,6 +79,44 @@ def record_caption(
     return (header + telegram_html.escape(description)).rstrip()
 
 
+# The whole message may hold 4096 characters; tags and the quote are not counted by Telegram.
+SEPARATE_DESCRIPTION_CHARS = 3800
+
+
+def _full_description(descr, limit) -> str:
+    """Feed text as plain text, cut after a sentence or a line only when it exceeds limit."""
+    text = telegram_html.plain_text(descr or '').strip()
+    return prepare_message_text(text, max_length=limit, clear_markup=False).strip()
+
+
+def record_rich_html(
+        lang_code, channel_link, ch_name, title, channel_id, pub_date, descr, service_name, service_id,
+        show_updated_text=True, bot_reference=True, bot_reference_botname=True,
+        description_chars=20000) -> str:
+    """Episode text for a rich message (HTML of Bot API rich messages): header, then the whole
+    description in paragraphs. Feed text is escaped, never parsed."""
+    header = _record_header(
+        lang_code, channel_link, ch_name, title, channel_id, pub_date, service_name, service_id,
+        on_error=False, show_updated_text=show_updated_text,
+        bot_reference=bot_reference, bot_reference_botname=bot_reference_botname)
+    blocks = [block for block in header.strip().split('\n\n') if block.strip()]
+    result = ''.join('<p>' + block.replace('\n', '<br>') + '</p>' for block in blocks)
+    # Our bot link has no scheme; a rich message wants an absolute URL.
+    result = result.replace('href="t.me/', 'href="https://t.me/')
+    for paragraph in re.split(r'\n\s*\n', _full_description(descr, description_chars)):
+        if paragraph.strip():
+            result += '<p>' + telegram_html.escape(paragraph.strip()).replace('\n', '<br>') + '</p>'
+    return result
+
+
+def record_description_message(descr, limit=SEPARATE_DESCRIPTION_CHARS) -> str:
+    """The description alone, as a collapsible quote for a message after the audio ('' if none)."""
+    text = _full_description(descr, limit)
+    if not text:
+        return ''
+    return '<blockquote expandable>' + telegram_html.escape(text) + '</blockquote>'
+
+
 def _record_header(
         lang_code, channel_link, ch_name, title, channel_id, pub_date, service_name, service_id,
         on_error, show_updated_text, bot_reference, bot_reference_botname) -> str:

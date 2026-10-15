@@ -18,7 +18,10 @@ from app.core.sender import outbox
 from app.i18n.messages import (
     get_message, get_message_rtd, emojiCodes, format_record_unavailable)
 from app.repository.storage import storage, telegram_cache
-from app.service.record.caption import DescriptionModeOptions, record_caption
+from app.service.record.caption import (
+    DescriptionModeOptions, record_caption, record_description_message, record_rich_html)
+from app.service.record.text_format import (
+    CAPTION, EPISODE_FORMAT_SEPARATE_ACTION, RICH, SEPARATE, user_format)
 from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
 from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path, \
     trust_rss_podcasts
@@ -27,7 +30,7 @@ from lib.markup import telegram_html
 from lib.requests import requesterModule
 from lib.system import space
 from lib.system.disk_budget import BudgetedDownload, DiskBudget, DiskBusy, DiskTooSmall
-from lib.telegram import limits
+from lib.telegram import limits, rich_message
 from lib.net.enclosure import enclosure_host_fault
 from lib.telegram.general.errors import get_timeout_from_error_client, get_timeout_from_error_bot, bot_blocked_reaction, \
     user_unavailable_error, message_to_edit_not_found, audio_source_gone, request_entity_too_large, log_caught, \
@@ -110,6 +113,25 @@ class OutcomeMessageType(TypedDict, total=False):
     errors: OutcomeMessageErrorType
 
 
+def read_episode_formats(chat_ids) -> dict:
+    """chat id -> (stored format, hint shown) for the chats that are users."""
+    from db.sqliteAdapter import SQLighter
+    db_users = SQLighter(db_path)
+    try:
+        return db_users.get_episode_formats(chat_ids)
+    finally:
+        db_users.close()
+
+
+def remember_rich_hint(chat_id) -> None:
+    from db.sqliteAdapter import SQLighter
+    db_users = SQLighter(db_path)
+    try:
+        db_users.mark_rich_hint_sent(chat_id)
+    finally:
+        db_users.close()
+
+
 class ChatParamsType(TypedDict, total=False):
     silent: bool
     dont_set_resend: bool
@@ -164,6 +186,9 @@ class Sender:
         self._quota_charged = set()
         self._host_fault_noted = False
         self._quota_notified = set()
+        # chat id -> how its episode text arrives (users only; the rest keep the caption)
+        self.text_formats: dict[int, str] = {}
+        self._rich_hint_pending: set[int] = set()
 
         self.successfully_sent_to = []
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
@@ -190,6 +215,7 @@ class Sender:
 
     def prepare(self):
         self.logger.log("Start sending: ", datetime.datetime.now())
+        self._load_text_formats()
 
         for chat_id in self.chats:
             self.outcome_messages.setdefault(chat_id, {})
@@ -418,6 +444,39 @@ class Sender:
                 storage.set_user_resend_flag(chat_id)
             except Exception as e:
                 self.logger.err(e)
+
+    def _load_text_formats(self):
+        """Users choose how the text arrives (rich message or a separate quote); channels,
+        silent chats and chats without a description keep the caption."""
+        ids = [chat_id for chat_id in self.chats
+               if not self.__chat_is_silent(chat_id) and self.__description_mode(chat_id) != 'none']
+        if not ids:
+            return
+        try:
+            stored = read_episode_formats(ids)
+        except Exception as e:
+            self.logger.warn("Episode formats unavailable, captions are used:", e)
+            return
+        for chat_id, (value, hint_sent) in stored.items():
+            if chat_id not in self.chats:
+                continue
+            self.text_formats[chat_id] = user_format(value)
+            if self.text_formats[chat_id] == RICH and not hint_sent:
+                self._rich_hint_pending.add(chat_id)
+
+    def _chat_format(self, chat_id) -> str:
+        fmt = self.text_formats.get(chat_id, CAPTION)
+        if fmt == RICH and not rich_message.available():
+            return SEPARATE  # rich messages keep failing: still no cut text
+        return fmt
+
+    def _caption_mode(self, chat_id, via_agent=False) -> DescriptionModeOptions:
+        """Header only when the description travels apart (a separate quote, or the agent's
+        upload, which is a plain audio message)."""
+        fmt = self._chat_format(chat_id)
+        if fmt == SEPARATE or (fmt == RICH and via_agent):
+            return 'none'
+        return self.__description_mode(chat_id)
 
     def __description_mode(self, chat_id) -> DescriptionModeOptions:
         available_modes: list[DescriptionModeOptions] = ['default', 'short', 'none']
@@ -813,8 +872,10 @@ class Sender:
                     return
                 sent = bot_telethon.send_uploaded(self.thonbot, self._agent_message(chat_id, caption), uploaded)
                 self._remember_agent_file_id(sent)
+                if self._chat_format(chat_id) != CAPTION:
+                    self._send_description_message(chat_id)
 
-            group_delivered, refusal = self._send_each(targets, send_one, "success_l ")
+            group_delivered, refusal = self._send_each(targets, send_one, "success_l ", via_agent=True)
             delivered.extend(group_delivered)
             if refusal is not None:
                 break
@@ -873,7 +934,7 @@ class Sender:
         self.cached_file_id = file_id
         telegram_cache.add_file_id(self.link, file_id, 'audio', self.cache_expiration_date)
 
-    def _send_each(self, chat_ids, send_one, success_tag):
+    def _send_each(self, chat_ids, send_one, success_tag, via_agent=False):
         """Per-chat loop shared by the URL, Bot API and agent sends.
 
         send_one(chat_id, caption) delivers or raises. A blocked chat is marked
@@ -886,7 +947,7 @@ class Sender:
             # Each chat is progress: a long fanout (Telegram fetching the URL
             # per chat) must not read as a stuck worker (outbox.release_stalled).
             self._touch_outbox()
-            caption = self.prepare_record_text(chat_id, mode=self.__description_mode(chat_id))
+            caption = self.prepare_record_text(chat_id, mode=self._caption_mode(chat_id, via_agent))
             try:
                 send_one(chat_id, caption)
             except outbox.OutboxRetryableError:
@@ -926,6 +987,23 @@ class Sender:
         :param record_message_text:
         :return: File id or None
         """
+        fmt = self._chat_format(chat_id)
+        if fmt == RICH:
+            try:
+                file_id = self._send_rich_audio(chat_id, audio)
+            except Exception as e:
+                if user_unavailable_error(e) or file_refused(e) or get_timeout_from_error_bot(e):
+                    raise
+                rich_message.note_failure()
+                self.logger.warn(e, "Fail to send rich message, sending the audio and the text apart")
+                self._rewind(audio)
+                fmt = SEPARATE
+                record_message_text = self.prepare_record_text(chat_id, mode='none')
+            else:
+                rich_message.note_success()
+                self._send_rich_hint(chat_id)
+                return file_id
+
         # audio with caption
         message: Message
         try:
@@ -945,11 +1023,7 @@ class Sender:
                 raise
 
             self.logger.warn(e, "Fail to send with caption")
-            if hasattr(audio, 'seek'):
-                try:
-                    audio.seek(0)
-                except Exception:
-                    pass
+            self._rewind(audio)
             message = self.bot.send_audio(
                 chat_id=chat_id, audio=audio,
                 duration=self.podcast_info['duration_sec'],
@@ -969,10 +1043,72 @@ class Sender:
                 self.logger.err(e, "Fail to send caption, but success record")
                 self.logger.log(record_message_text)
 
+        if fmt == SEPARATE:
+            self._send_description_message(chat_id)
+
         if message.audio is None:
             return None
 
         return message.audio.file_id
+
+    @staticmethod
+    def _rewind(audio):
+        if hasattr(audio, 'seek'):
+            try:
+                audio.seek(0)
+            except Exception:
+                pass
+
+    def _send_rich_audio(self, chat_id, audio) -> str | None:
+        """The episode and its whole text as one rich message. Raises like send_audio."""
+        chat = self.chats[chat_id]
+        html_text = record_rich_html(
+            self.lang_codes_by_utg[chat_id], self.podcast_info['channelLink'], self.podcast_info['chName'],
+            self.podcast_info['title'], self.podcast_info['id'], self.podcast_info['pubDate'],
+            self.podcast_info['descr'], self.podcast_info['service_name'], self.podcast_info['service_id'],
+            show_updated_text=('show_updated_text' not in chat or chat['show_updated_text'] is True),
+            bot_reference=('bot_reference' not in chat or chat['bot_reference'] is True),
+            description_chars=rich_message.DESCRIPTION_CHARS)
+        return rich_message.send_audio(
+            self.bot, chat_id, audio, html_text,
+            duration=self.podcast_info['duration_sec'],
+            performer=telegram_html.plain_text(self.podcast_info['chName']),
+            title=telegram_html.plain_text(self.podcast_info['title']),
+            reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id]))
+
+    def _send_description_message(self, chat_id):
+        """The description after the audio, as a collapsible quote. The audio is already
+        delivered: a failure here is only logged."""
+        text = record_description_message(self.podcast_info['descr'])
+        if not text:
+            return
+        try:
+            self.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        except Exception as e:
+            self.logger.warn(e, "Fail to send the description after the audio")
+
+    def _send_rich_hint(self, chat_id):
+        """Once per user, after the first rich message: how to switch if it does not show."""
+        if chat_id not in self._rich_hint_pending:
+            return
+        self._rich_hint_pending.discard(chat_id)
+        lang = self.lang_codes_by_utg[chat_id]
+        try:
+            outer_sender(chat_id, [{
+                'type': 'text',
+                'text': get_message("richHint", lang),
+                'reply_markup': [[{
+                    'text': get_message("richHintButton", lang),
+                    'callback_data': {'tp': EPISODE_FORMAT_SEPARATE_ACTION},
+                }]],
+            }])
+        except Exception as e:
+            self.logger.warn(e, "Fail to send the rich message hint")
+            return
+        try:
+            remember_rich_hint(chat_id)
+        except Exception as e:
+            self.logger.warn(e, "Fail to remember the rich message hint")
 
     def __send_too_big_record(self, targets=None):
         if targets is None:

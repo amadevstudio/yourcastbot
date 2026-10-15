@@ -115,8 +115,11 @@ class FakeBot:
         self.blocked_chat = blocked_chat
         self.flood_once_chat = flood_once_chat
         self.audio = []  # (chat_id, 'url' | 'upload' | 'file_id')
+        self.captions = {}  # chat_id -> caption of its audio
+        self.messages = []  # (chat_id, text, parse_mode) of send_message
 
     def send_audio(self, chat_id, audio, **kwargs):
+        self.captions[chat_id] = kwargs.get('caption')
         if chat_id == self.blocked_chat:
             self.audio.append((chat_id, 'blocked'))
             raise ApiTelegramException("Forbidden: bot was blocked by the user")
@@ -138,7 +141,7 @@ class FakeBot:
         return _ns(audio=_ns(file_id='BOT_FID'))
 
     def send_message(self, *args, **kwargs):
-        pass
+        self.messages.append((kwargs.get('chat_id'), kwargs.get('text'), kwargs.get('parse_mode')))
 
     def forward_message(self, chat_id, from_chat_id, message_id):
         return _ns(audio=_ns(file_id='AGENT_FID'), document=None, message_id=99)
@@ -147,10 +150,43 @@ class FakeBot:
         pass
 
 
+class FakeRich:
+    """lib.telegram.rich_message: records what was sent as a rich message."""
+    DESCRIPTION_CHARS = 20000
+
+    def __init__(self, error=None, error_chat=None):
+        self.error = error
+        self.error_chat = error_chat
+        self.url_error = None
+        self.sent = []  # (chat_id, 'url' | 'upload' | 'file_id', html)
+        self.failures = 0
+        self.successes = 0
+
+    def available(self):
+        return True
+
+    def note_success(self):
+        self.successes += 1
+
+    def note_failure(self):
+        self.failures += 1
+
+    def send_audio(self, bot, chat_id, audio, html, **kwargs):
+        kind = ('url' if isinstance(audio, str) and audio.startswith('http')
+                else 'upload' if hasattr(audio, 'read') else 'file_id')
+        self.sent.append((chat_id, kind, html))
+        if kind == 'url' and self.url_error:
+            raise ApiTelegramException(self.url_error)
+        if self.error and self.error_chat in (None, chat_id):
+            raise ApiTelegramException(self.error)
+        return 'RICH_FID'
+
+
 class FakeAgent:
     def __init__(self, unreachable_chat=None, send_error=None):
         self.uploads = 0
         self.sent_to = []
+        self.captions = {}
         self.unreachable_chat = unreachable_chat
         self.send_error = send_error  # every send fails: the agent itself is down
 
@@ -164,6 +200,7 @@ class FakeAgent:
         if data['chat_id'] == self.unreachable_chat:
             raise ValueError("Could not find the input entity for PeerUser")
         self.sent_to.append(data['chat_id'])
+        self.captions[data['chat_id']] = data['message_text']
         return {'message_id': 1, 'chat_id': data['chat_id']}
 
 
@@ -220,10 +257,14 @@ class World:
                  disk_free_mb=10_000, reserved_mb=0, with_outbox=False, flood_chat=None,
                  agent_unreachable_chat=None, bot_refuse_chat=None,
                  blocked_chat=None, flood_once_chat=None, size_known=True, trust_rss=False,
-                 head_error=None, agent_send_error=None):
+                 head_error=None, agent_send_error=None, formats=None, rich_error=None,
+                 rich_error_chat=None):
         self.tmp = tempfile.mkdtemp(prefix="yourcast_delivery_")
         os.makedirs(os.path.join(self.tmp, "records"))
         self.bot = FakeBot(url_error, flood_chat, bot_refuse_chat, blocked_chat, flood_once_chat)
+        self.rich = FakeRich(rich_error, rich_error_chat)
+        self.stored_formats = formats or {}  # chat id -> (stored format, hint shown)
+        self.hints_remembered = []
         self.blocked_marked = []
         self.slept = []
         self.agent = FakeAgent(agent_unreachable_chat, agent_send_error)
@@ -241,7 +282,10 @@ class World:
             return []
 
         patches = {
-            'bot': self.bot, 'bot_telethon': self.agent, 'requester': self.requester,
+            'bot': self.bot, 'bot_telethon': self.agent, 'rich_message': self.rich,
+            'read_episode_formats': lambda ids: {i: self.stored_formats[i] for i in ids
+                                                 if i in self.stored_formats},
+            'remember_rich_hint': self.hints_remembered.append, 'requester': self.requester,
             'disk_budget': self.budget, 'logger': self.logger, 'work_dir': self.tmp,
             'outbox': self.outbox, 'storageChatId': 42,
             'storage': _ns(enclosure_host_is_cool=lambda link: False,
@@ -269,9 +313,9 @@ class World:
             return True
         return False
 
-    def sender(self, chats=(1, 2, 3), itunes_listed=True, attempts=1):
+    def sender(self, chats=(1, 2, 3), itunes_listed=True, attempts=1, descr='Mix.', chat_params=None):
         podcast_info = {
-            'id': 28, 'title': 'Record Club #1', 'descr': 'Mix.', 'itunesLink': '',
+            'id': 28, 'title': 'Record Club #1', 'descr': descr, 'itunesLink': '',
             'channelLink': 'https://radiorecord.ru', 'chName': 'Radio Record',
             'pubDate': '2026-09-13T00:00:00', 'duration_sec': 3600,
             'service_name': 'rss', 'service_id': 'https://radiorecord.ru/rss',
@@ -281,7 +325,7 @@ class World:
             podcast_info['itunes_listed'] = itunes_listed
         return srh.Sender(
             None, 'https://itunes.radiorecord.ru/tmp_audio/ep.mp3',
-            {chat_id: {} for chat_id in chats},
+            {chat_id: dict((chat_params or {}).get(chat_id, {})) for chat_id in chats},
             {chat_id: 'en' for chat_id in chats},
             {chat_id: None for chat_id in chats},
             podcast_info, with_status_message=False, consume_notify=False,
@@ -289,6 +333,85 @@ class World:
 
     def records_left(self):
         return [name for name in os.listdir(os.path.join(self.tmp, "records"))]
+
+
+def _check_episode_text_formats():
+    """One rich message by default, a separate quote on request, the caption for channels."""
+    long_text = "Opening sentence. " + ("Body of the show notes. " * 150) + "THE END."
+    assert len(long_text) > 3000
+    hint = 'switch the format'
+
+    # Chat 1: default (rich), first time. Chat 2: rich, hint shown before. Chat 3: not a
+    # user row (a channel), the caption as before.
+    world = World(size_mb=12, formats={1: (None, False), 2: (None, True)})
+    sent = world.sender(descr=long_text, chat_params={3: {'description_mode': 'none'}}).send_record()
+    _assert(sorted(sent) == [1, 2, 3], "rich: everyone is delivered")
+    _assert([(c, k) for c, k, _ in world.rich.sent] == [(1, 'url'), (2, 'url')],
+            "rich: users get a rich message, Telegram fetches the URL")
+    _assert([c for c, _ in world.bot.audio] == [3], "rich: a chat without a user row keeps the audio caption")
+    _assert(all('THE END.' in html and 'Opening sentence.' in html for _, _, html in world.rich.sent),
+            "rich: the whole description, not cut")
+    _assert('Record Club #1' in world.rich.sent[0][2] and 'href="https://radiorecord.ru"' in world.rich.sent[0][2],
+            "rich: header with the show link and the title")
+    _assert([c for c, t in world.notices if hint in t] == [1] and world.hints_remembered == [1],
+            "rich: the how-to-switch note goes once, to the user who never saw it")
+    _assert(world.bot.messages == [], "rich: no separate description message")
+
+    # Same user again: remembered, no second note
+    world = World(size_mb=12, formats={1: (None, True)})
+    world.sender(chats=(1,)).send_record()
+    _assert([t for _, t in world.notices if hint in t] == [] and world.hints_remembered == [],
+            "rich: no note once it was shown")
+
+    # Separate: the audio with the header, the whole description in a collapsible quote
+    world = World(size_mb=12, formats={1: ('separate', True)})
+    sent = world.sender(chats=(1,), descr=long_text).send_record()
+    _assert(sent == [1] and world.rich.sent == [], "separate: no rich message")
+    _assert('Record Club #1' in world.bot.captions[1] and 'Opening sentence' not in world.bot.captions[1],
+            "separate: caption is the header only")
+    chat_id, text, parse_mode = world.bot.messages[0]
+    _assert(chat_id == 1 and parse_mode == 'HTML' and text.startswith('<blockquote expandable>')
+            and text.endswith('</blockquote>') and 'Opening sentence.' in text and len(text) < 4096,
+            "separate: collapsible quote that fits one message")
+    _assert(world.hints_remembered == [], "separate: no rich note")
+
+    # A rich message that fails for a reason of its own: audio and quote, the text is not lost
+    world = World(size_mb=12, formats={1: (None, False)}, rich_error="Bad Request: rich messages are not supported")
+    sent = world.sender(chats=(1,), descr=long_text).send_record()
+    _assert(sent == [1] and [c for c, _ in world.bot.audio] == [1], "rich refused: the audio is delivered anyway")
+    _assert(len(world.bot.messages) == 1 and 'Opening sentence.' in world.bot.messages[0][1],
+            "rich refused: the description follows as a quote")
+    _assert(world.rich.failures == 1 and world.rich.successes == 0, "rich refused: counted for the pause")
+    _assert([t for _, t in world.notices if hint in t] == [], "rich refused: no 'how to switch' note")
+
+    # A blocked user is not a failure of rich messages
+    world = World(size_mb=12, formats={1: (None, True), 2: (None, True)},
+                  rich_error="Forbidden: bot was blocked by the user", rich_error_chat=1)
+    sent = world.sender(chats=(1, 2)).send_record()
+    _assert(sent == [2], "blocked on rich: the other chat is delivered")
+    _assert(world.rich.failures == 0 and world.blocked_marked == [1] and world.bot.audio == [],
+            "blocked on rich: marked, no fallback send, not counted against rich messages")
+
+    # Over 50 MB the agent uploads a plain audio: header, then the description apart;
+    # the chats that reuse the file_id get the rich message
+    world = World(size_mb=389, formats={1: (None, True), 2: (None, True)})
+    sent = world.sender(chats=(1, 2), descr=long_text).send_record()
+    _assert(sorted(sent) == [1, 2] and world.agent.sent_to == [1], "agent: first chat by the agent")
+    _assert('Opening sentence' not in world.agent.captions[1], "agent: caption is the header only")
+    _assert([m[0] for m in world.bot.messages] == [1] and 'THE END.' in world.bot.messages[0][1],
+            "agent: the whole description follows as a quote")
+    _assert([(c, k) for c, k, _ in world.rich.sent] == [(2, 'file_id')],
+            "agent: the next chat reuses the file_id in a rich message")
+
+    # Rich upload from disk (Telegram refused the URL)
+    world = World(size_mb=12, formats={1: (None, True), 2: (None, True)})
+    world.rich.url_error = "Bad Request: failed to get HTTP URL content"
+    sent = world.sender(chats=(1, 2)).send_record()
+    _assert(sorted(sent) == [1, 2] and world.requester.downloads == 1,
+            "rich, URL refused by Telegram: downloaded once")
+    _assert([(c, k) for c, k, _ in world.rich.sent] == [(1, 'url'), (1, 'upload'), (2, 'file_id')]
+            and world.bot.audio == [],
+            "rich: a refused URL is a refused file (upload, then file_id), never the old caption")
 
 
 def main():
@@ -480,6 +603,7 @@ def main():
     _assert(sorted(sent) == list(chats) and world.outbox.touches >= len(chats) + 1,
             "fanout by URL touches the outbox for every chat")
 
+    _check_episode_text_formats()
     print("all record delivery checks passed")
 
 
