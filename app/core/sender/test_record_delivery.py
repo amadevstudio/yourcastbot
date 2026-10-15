@@ -375,6 +375,24 @@ def _check_episode_text_formats():
             "separate: collapsible quote that fits one message")
     _assert(world.hints_remembered == [], "separate: no rich note")
 
+    # Caption: the old way, cut. Meta: the header only. Neither is a rich message or a quote.
+    world = World(size_mb=12, formats={1: ('caption', True), 2: ('meta', True)})
+    sent = world.sender(chats=(1, 2), descr=long_text).send_record()
+    _assert(sorted(sent) == [1, 2] and world.rich.sent == [] and world.bot.messages == [],
+            "caption and meta: plain audio, no rich message, no quote")
+    _assert('Opening sentence.' in world.bot.captions[1] and 'THE END.' not in world.bot.captions[1],
+            "caption: the old cut description")
+    _assert('Record Club #1' in world.bot.captions[2] and 'Opening sentence' not in world.bot.captions[2],
+            "meta: the header only")
+    _assert([t for _, t in world.notices if hint in t] == [] and world.hints_remembered == [],
+            "caption and meta: no rich note")
+
+    # Over 50 MB the agent's caption follows the same choice: meta gets no description after it
+    world = World(size_mb=389, formats={1: ('meta', True), 2: ('caption', True)})
+    world.sender(chats=(1, 2), descr=long_text).send_record()
+    _assert('Opening sentence' not in world.agent.captions[1] and world.bot.messages == [],
+            "agent, meta: header only, nothing after")
+
     # A rich message that fails for a reason of its own: audio and quote, the text is not lost
     world = World(size_mb=12, formats={1: (None, False)}, rich_error="Bad Request: rich messages are not supported")
     sent = world.sender(chats=(1,), descr=long_text).send_record()

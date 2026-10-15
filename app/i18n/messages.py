@@ -1932,62 +1932,102 @@ messages = {
     },
     "episodeFormatHelp": {
         "ru": {
-            "ro_msg": "Как приходит описание эпизода. Одно сообщение: плеер и всё описание вместе, без обрезки. Отдельное: аудио с короткой подписью, а всё описание следом, в сворачиваемой цитате. Если одно сообщение у вас отображается плохо, выберите отдельное."
+            "ro_msg": "Как приходит описание эпизода. Одно сообщение: плеер и всё описание, без обрезки. Отдельное: аудио, а всё описание следом в сворачиваемой цитате (если одно сообщение у вас отображается плохо). Подпись: старый вариант, описание обрезается под лимит подписи. Заголовок: только название, дата и ссылка."
         },
         "en": {
-            "ro_msg": "How the episode text arrives. One message: the player and the whole description together, without cutting. Separate: the audio with a short caption, then the whole description in a collapsible quote. If the one message doesn't show well for you, pick separate."
+            "ro_msg": "How the episode text arrives. One message: the player and the whole description, without cutting. Separate: the audio, then the whole description in a collapsible quote (if the one message doesn't show well for you). Caption: the old way, the description is cut to fit a caption. Title only: just the show, title, date and link."
         },
         "pt-BR": {
-            "ro_msg": "Como o texto do episódio chega. Uma mensagem: o player e a descrição inteira juntos, sem cortes. Separado: o áudio com legenda curta e depois a descrição inteira em uma citação recolhível. Se a mensagem única aparecer mal, escolha separado."
+            "ro_msg": "Como o texto do episódio chega. Uma mensagem: o player e a descrição inteira, sem cortes. Separado: o áudio e depois a descrição inteira em uma citação recolhível (se a mensagem única aparecer mal). Legenda: o jeito antigo, a descrição é cortada para caber. Só o título: apenas programa, título, data e link."
         },
         "es": {
-            "ro_msg": "Cómo llega el texto del episodio. Un mensaje: el reproductor y toda la descripción juntos, sin recortes. Aparte: el audio con un pie corto y luego toda la descripción en una cita plegable. Si el mensaje único se ve mal, elige aparte."
+            "ro_msg": "Cómo llega el texto del episodio. Un mensaje: el reproductor y toda la descripción, sin recortes. Aparte: el audio y luego toda la descripción en una cita plegable (si el mensaje único se ve mal). Pie: la forma antigua, la descripción se recorta para caber. Solo el título: solo programa, título, fecha y enlace."
         },
         "de": {
-            "ro_msg": "Wie der Text der Folge ankommt. Eine Nachricht: Player und ganze Beschreibung zusammen, ungekürzt. Getrennt: das Audio mit kurzer Beschriftung, danach die ganze Beschreibung in einem einklappbaren Zitat. Wenn die eine Nachricht bei dir schlecht aussieht, wähle getrennt."
+            "ro_msg": "Wie der Text der Folge ankommt. Eine Nachricht: Player und ganze Beschreibung, ungekürzt. Getrennt: das Audio, danach die ganze Beschreibung in einem einklappbaren Zitat (wenn die eine Nachricht schlecht aussieht). Beschriftung: die alte Art, die Beschreibung wird gekürzt. Nur Titel: nur Sendung, Titel, Datum und Link."
         },
         "he": {
-            "ro_msg": "איך מגיע טקסט הפרק. הודעה אחת: הנגן וכל התיאור יחד, בלי קיצוץ. נפרד: האודיו עם כיתוב קצר ואחריו כל התיאור בציטוט מתקפל. אם ההודעה האחת לא מוצגת טוב, בחרו נפרד."
+            "ro_msg": "איך מגיע טקסט הפרק. הודעה אחת: הנגן וכל התיאור, בלי קיצוץ. נפרד: האודיו ואחריו כל התיאור בציטוט מתקפל (אם ההודעה האחת לא מוצגת טוב). כיתוב: הדרך הישנה, התיאור נחתך. רק כותרת: רק התוכנית, הכותרת, התאריך והקישור."
         }
     },
     "episodeFormatRich": {
         "ru": {
-            "ro_msg": "Текст эпизода: одно сообщение"
+            "ro_msg": "Одно сообщение, весь текст"
         },
         "en": {
-            "ro_msg": "Episode text: one message"
+            "ro_msg": "One message, whole text"
         },
         "pt-BR": {
-            "ro_msg": "Texto do episódio: uma mensagem"
+            "ro_msg": "Uma mensagem, texto inteiro"
         },
         "es": {
-            "ro_msg": "Texto del episodio: un mensaje"
+            "ro_msg": "Un mensaje, texto completo"
         },
         "de": {
-            "ro_msg": "Text der Folge: eine Nachricht"
+            "ro_msg": "Eine Nachricht, ganzer Text"
         },
         "he": {
-            "ro_msg": "טקסט הפרק: הודעה אחת"
+            "ro_msg": "הודעה אחת, כל הטקסט"
         }
     },
     "episodeFormatSeparate": {
         "ru": {
-            "ro_msg": "Текст эпизода: отдельное сообщение"
+            "ro_msg": "Отдельное сообщение со сворачиванием"
         },
         "en": {
-            "ro_msg": "Episode text: separate message"
+            "ro_msg": "Separate message, collapsible"
         },
         "pt-BR": {
-            "ro_msg": "Texto do episódio: mensagem separada"
+            "ro_msg": "Mensagem separada, recolhível"
         },
         "es": {
-            "ro_msg": "Texto del episodio: mensaje aparte"
+            "ro_msg": "Mensaje aparte, plegable"
         },
         "de": {
-            "ro_msg": "Text der Folge: eigene Nachricht"
+            "ro_msg": "Eigene Nachricht, einklappbar"
         },
         "he": {
-            "ro_msg": "טקסט הפרק: הודעה נפרדת"
+            "ro_msg": "הודעה נפרדת, מתקפלת"
+        }
+    },
+    "episodeFormatCaption": {
+        "ru": {
+            "ro_msg": "Подпись, текст обрезан"
+        },
+        "en": {
+            "ro_msg": "Caption, text cut"
+        },
+        "pt-BR": {
+            "ro_msg": "Legenda, texto cortado"
+        },
+        "es": {
+            "ro_msg": "Pie, texto recortado"
+        },
+        "de": {
+            "ro_msg": "Beschriftung, Text gekürzt"
+        },
+        "he": {
+            "ro_msg": "כיתוב, הטקסט נחתך"
+        }
+    },
+    "episodeFormatMeta": {
+        "ru": {
+            "ro_msg": "Только заголовок, без описания"
+        },
+        "en": {
+            "ro_msg": "Title only, no description"
+        },
+        "pt-BR": {
+            "ro_msg": "Só o título, sem descrição"
+        },
+        "es": {
+            "ro_msg": "Solo el título, sin descripción"
+        },
+        "de": {
+            "ro_msg": "Nur Titel, ohne Beschreibung"
+        },
+        "he": {
+            "ro_msg": "רק כותרת, בלי תיאור"
         }
     },
     "nosubDigestRemindersHelp": {

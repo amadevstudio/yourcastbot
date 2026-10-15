@@ -21,7 +21,7 @@ from app.repository.storage import storage, telegram_cache
 from app.service.record.caption import (
     DescriptionModeOptions, record_caption, record_description_message, record_rich_html)
 from app.service.record.text_format import (
-    CAPTION, EPISODE_FORMAT_SEPARATE_ACTION, RICH, SEPARATE, user_format)
+    CAPTION, EPISODE_FORMAT_HINT_ACTION, META, RICH, SEPARATE, user_format)
 from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
 from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path, \
     trust_rss_podcasts
@@ -472,9 +472,9 @@ class Sender:
 
     def _caption_mode(self, chat_id, via_agent=False) -> DescriptionModeOptions:
         """Header only when the description travels apart (a separate quote, or the agent's
-        upload, which is a plain audio message)."""
+        upload, which is a plain audio message) or the user wants none (meta)."""
         fmt = self._chat_format(chat_id)
-        if fmt == SEPARATE or (fmt == RICH and via_agent):
+        if fmt in (SEPARATE, META) or (fmt == RICH and via_agent):
             return 'none'
         return self.__description_mode(chat_id)
 
@@ -872,7 +872,7 @@ class Sender:
                     return
                 sent = bot_telethon.send_uploaded(self.thonbot, self._agent_message(chat_id, caption), uploaded)
                 self._remember_agent_file_id(sent)
-                if self._chat_format(chat_id) != CAPTION:
+                if self._chat_format(chat_id) in (RICH, SEPARATE):
                     self._send_description_message(chat_id)
 
             group_delivered, refusal = self._send_each(targets, send_one, "success_l ", via_agent=True)
@@ -1099,7 +1099,7 @@ class Sender:
                 'text': get_message("richHint", lang),
                 'reply_markup': [[{
                     'text': get_message("richHintButton", lang),
-                    'callback_data': {'tp': EPISODE_FORMAT_SEPARATE_ACTION},
+                    'callback_data': {'tp': EPISODE_FORMAT_HINT_ACTION},
                 }]],
             }])
         except Exception as e:

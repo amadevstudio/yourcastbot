@@ -54,7 +54,12 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
 - **separate** (Settings, or the note's button): the audio with a header-only
   caption, then the description in `<blockquote expandable>` (one message,
   under 4096).
-- **caption**: channels and chats with `description_mode` none, as before.
+- **caption** (Settings): the old way, the description cut to the caption.
+- **meta** (Settings): the header only, no description, as in channels.
+- Channels and chats with `description_mode` none are not users here: no
+  format lookup, the caption as before. Settings shows four buttons (one per
+  format, the current marked); the note after the first rich message has its
+  own action (`episodeFormatHint`) because it also closes the note.
 - A rich message that fails for a reason of its own (not a blocked user, not
   a flood, not a refused file) falls back to separate for that chat and
   counts toward a 10-minute pause of rich messages (`rich_message.available`):

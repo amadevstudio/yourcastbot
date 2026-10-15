@@ -12,7 +12,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from app.service.record.text_format import RICH, SEPARATE, other_format, user_format  # noqa: E402
+from app.service.record.text_format import CAPTION, META, RICH, SEPARATE, user_format  # noqa: E402
 from db.sqliteAdapter import SQLighter  # noqa: E402
 
 
@@ -51,9 +51,9 @@ def main():
     finally:
         db.close()
 
-    _assert_eq([user_format(v) for v in (None, '', 'rich', 'junk', 'separate')],
-               [RICH, RICH, RICH, RICH, SEPARATE], "stored value to format: rich unless separate")
-    _assert_eq((other_format(None), other_format('separate')), (SEPARATE, RICH), "the toggle")
+    _assert_eq([user_format(v) for v in (None, '', 'rich', 'junk', 'separate', 'caption', 'meta')],
+               [RICH, RICH, RICH, RICH, SEPARATE, CAPTION, META],
+               "stored value to format: the four choices, rich for anything else")
     print("all episode format checks passed")
 
 

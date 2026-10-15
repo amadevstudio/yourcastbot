@@ -4,8 +4,7 @@ from app.jobs.nosub_digest import DIGEST_TOGGLE_ACTION, digest_enabled
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams
 from app.service.record.text_format import (
-    EPISODE_FORMAT_TOGGLE_ACTION, SEPARATE,
-    other_format, user_format)
+    EPISODE_FORMAT_ACTIONS, SEPARATE, user_format)
 from config import db_path
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import (
@@ -20,9 +19,23 @@ def reminders_button_text(language_code, enabled: bool) -> str:
     return mark + " " + get_message(key, language_code)
 
 
-def episode_format_button_text(language_code, value) -> str:
-    key = "episodeFormatSeparate" if user_format(value) == SEPARATE else "episodeFormatRich"
-    return get_message(key, language_code)
+def episode_format_label(language_code, episode_format) -> str:
+    return get_message(
+        next(action for action, fmt in EPISODE_FORMAT_ACTIONS.items() if fmt == episode_format),
+        language_code)
+
+
+def episode_format_buttons(language_code, value) -> list[list[InlineButtonData]]:
+    """One button per choice; the current one is marked."""
+    current = user_format(value)
+    rows: list[list[InlineButtonData]] = []
+    for action, episode_format in EPISODE_FORMAT_ACTIONS.items():
+        mark = emojiCodes['whiteHeavyCheckMark'] + " " if episode_format == current else ""
+        rows.append([{
+            'text': mark + episode_format_label(language_code, episode_format),
+            'callback_data': {'tp': action},
+        }])
+    return rows
 
 
 def _stored_episode_format(user):
@@ -54,10 +67,7 @@ def construct_settings_message(language_code, chat_id) -> list[MessageStructures
     text = "<b>" + get_message("bot_settings", language_code) + "</b>"
     keyboard: list[list[InlineButtonData]] = []
     text += "\n\n" + get_message("episodeFormatHelp", language_code)
-    keyboard.append([{
-        'text': episode_format_button_text(language_code, _stored_episode_format(user)),
-        'callback_data': {'tp': EPISODE_FORMAT_TOGGLE_ACTION},
-    }])
+    keyboard += episode_format_buttons(language_code, _stored_episode_format(user))
     if show_digest_reminder_settings(has_bot_subscription):
         text += "\n\n" + get_message("nosubDigestRemindersHelp", language_code)
         toggle_button: InlineButtonData = {
@@ -139,16 +149,20 @@ def _show_settings_again(data: ControllerParams):
     render_messages(data['chat_id'], [settings_message])
 
 
-def toggle_episode_format(data: ControllerParams):
-    db_users = SQLighter(db_path)
-    try:
-        value = other_format(_stored_episode_format(db_users.get_user_by_tg(data['chat_id'])))
-        db_users.set_episode_format(data['chat_id'], value)
-    finally:
-        db_users.close()
+def set_episode_format_handler(episode_format):
+    def set_episode_format(data: ControllerParams):
+        db_users = SQLighter(db_path)
+        try:
+            db_users.set_episode_format(data['chat_id'], episode_format)
+            db_users.mark_rich_hint_sent(data['chat_id'])
+        finally:
+            db_users.close()
 
-    notify(data['callback'], data['message'], episode_format_button_text(data['language_code'], value))
-    _show_settings_again(data)
+        notify(data['callback'], data['message'],
+               episode_format_label(data['language_code'], episode_format))
+        _show_settings_again(data)
+
+    return set_episode_format
 
 
 def use_separate_episode_format(data: ControllerParams):
@@ -161,7 +175,7 @@ def use_separate_episode_format(data: ControllerParams):
         db_users.close()
 
     done = get_message("richHintDone", data['language_code'])
-    notify(data['callback'], data['message'], episode_format_button_text(data['language_code'], SEPARATE))
+    notify(data['callback'], data['message'], episode_format_label(data['language_code'], SEPARATE))
     if data['callback'] is not None and data['callback'].message is not None:
         try:
             from agent.bot_telebot import bot

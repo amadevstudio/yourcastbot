@@ -2,24 +2,34 @@
 """How an episode's text reaches a user: one rich message, or the audio and a separate quote.
 
 A caption holds 1024 characters (Telegram Premium of the bot's owner does not
-change that). 'rich' is the default for everyone: one message with the player
-and the whole description. A user whose Telegram cannot show it switches to
-'separate': the audio with a short caption, then the description in a
-collapsible quote. 'caption' is the old way and stays for channels and for
-every case where a rich message could not be sent.
+change that). A user picks one of four (Settings):
+
+- 'rich' (the default): one message with the player and the whole description.
+- 'separate': the audio with a header caption, then the description in a
+  collapsible quote (for a Telegram that cannot show a rich message).
+- 'caption': the old way, the description cut to fit the caption.
+- 'meta': the header only (show, title, date, link), no description, as in channels.
+
+Channels always get 'meta' semantics through description_mode 'none'.
 """
 RICH = 'rich'
 SEPARATE = 'separate'
 CAPTION = 'caption'
+META = 'meta'
 
-EPISODE_FORMAT_TOGGLE_ACTION = "episodeFormatToggle"
-EPISODE_FORMAT_SEPARATE_ACTION = "episodeFormatSeparate"
+FORMATS = (RICH, SEPARATE, CAPTION, META)
+
+# Callback action of each choice in Settings; the note after the first rich
+# message has its own action: it also closes the note.
+EPISODE_FORMAT_ACTIONS = {
+    "episodeFormatRich": RICH,
+    "episodeFormatSeparate": SEPARATE,
+    "episodeFormatCaption": CAPTION,
+    "episodeFormatMeta": META,
+}
+EPISODE_FORMAT_HINT_ACTION = "episodeFormatHint"
 
 
 def user_format(value) -> str:
     """A stored value (None, '', junk) is the default: rich."""
-    return SEPARATE if value == SEPARATE else RICH
-
-
-def other_format(value) -> str:
-    return RICH if user_format(value) == SEPARATE else SEPARATE
+    return value if value in FORMATS else RICH
