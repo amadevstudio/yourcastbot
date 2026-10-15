@@ -57,9 +57,12 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
 - **caption** (Settings): the old way, the description cut to the caption.
 - **meta** (Settings): the header only, no description, as in channels.
 - Channels and chats with `description_mode` none are not users here: no
-  format lookup, the caption as before. Settings shows four buttons (one per
-  format, the current marked); the note after the first rich message has its
-  own action (`episodeFormatHint`) because it also closes the note.
+  format lookup, the caption as before. `/settings` is a list of sections (Episode text;
+  Reminders, without a plan only), each a page of its own (`settsText`,
+  `settsRem`) and each button names what is set; the episode text page has
+  four buttons (one per format, the current marked). The note after the first
+  rich message has its own action (`episodeFormatHint`) because it also closes
+  the note. Lock: `python app/controller/builders/test_settings_screens.py`.
 - A rich message that fails for a reason of its own (not a blocked user, not
   a flood, not a refused file) falls back to separate for that chat and
   counts toward a 10-minute pause of rich messages (`rich_message.available`):
@@ -181,6 +184,15 @@ for keys the handler subscripts anyway, so a live state is never refused.
 Locks: `python app/controller/builders/test_open_recs.py`,
 `python app/controller/builders/test_screen_state.py` (CD gate; the
 behaviour part runs where the bot's requirements are installed).
+
+## Back
+
+A stored screen stack outlives the code: about a third of them (3.9k of 11.7k,
+Oct 2026) hold names from the bot before its rewrite (`pc`, `srch`, `welc`),
+and `empty` is a route with no screen. "Back" to a name that is not a screen
+(`goBackModule.is_screen`) opens the main menu on a clean stack, as a command
+does; it was a `KeyError` or `'NoneType' has no attribute 'get'` with no answer.
+Lock: `python app/core/navigation/test_go_back.py`.
 
 ## Episode cursor
 

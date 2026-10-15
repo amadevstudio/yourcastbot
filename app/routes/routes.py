@@ -181,6 +181,7 @@ class RouteMap:
             'method': settingsModule.open_settings,
             'available_from': ['command', 'call'],
             'commands': ['settings'],
+            'routes': ['settsText', 'settsRem'],
             'actions': {
                 'digestMute': {
                     'method': settingsModule.mute_digest_reminders,
@@ -199,6 +200,16 @@ class RouteMap:
                     'state_independent': True,
                 } for action, episode_format in EPISODE_FORMAT_ACTIONS.items()},
             }
+        },
+
+        'settsText': {
+            'method': settingsModule.open_episode_text_settings,
+            'available_from': ['call'],
+        },
+
+        'settsRem': {
+            'method': settingsModule.open_reminder_settings,
+            'available_from': ['call'],
         },
 
         'addChByRss': {

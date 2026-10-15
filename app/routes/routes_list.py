@@ -14,7 +14,7 @@ AvailableRoutes = Literal[
     'bs_stars', 'bs_stars_pay',
     'bs_robokassa', 'bs_robokassa_input',
     'help',
-    'setts',
+    'setts', 'settsText', 'settsRem',
     'addChByRss', 'addBRss',
     'MyTgChannels', 'addTgChannel', 'myTgChnlList', 'myTgChannel', 'myTgChSubs',
     'topGnrs', 'top_ch',
