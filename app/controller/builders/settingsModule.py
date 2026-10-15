@@ -65,11 +65,13 @@ def construct_settings_message(language_code, chat_id) -> list[MessageStructures
         db_users.close()
 
     text = "<b>" + get_message("bot_settings", language_code) + "</b>"
+    text += "\n\n<b>" + get_message("settingsEpisodeTextTitle", language_code) + "</b>\n"
+    text += get_message("episodeFormatHelp", language_code)
     keyboard: list[list[InlineButtonData]] = []
-    text += "\n\n" + get_message("episodeFormatHelp", language_code)
     keyboard += episode_format_buttons(language_code, _stored_episode_format(user))
     if show_digest_reminder_settings(has_bot_subscription):
-        text += "\n\n" + get_message("nosubDigestRemindersHelp", language_code)
+        text += "\n\n<b>" + get_message("settingsRemindersTitle", language_code) + "</b>\n"
+        text += get_message("nosubDigestRemindersHelp", language_code)
         toggle_button: InlineButtonData = {
             'text': reminders_button_text(language_code, digest_enabled(user)),
             'callback_data': {'tp': DIGEST_TOGGLE_ACTION},

@@ -1930,26 +1930,6 @@ messages = {
             "ro_msg": "בוצע: הטקסט יגיע בהודעה נפרדת שאפשר לצמצם. אפשר לשנות את הפורמט ב-/settings."
         }
     },
-    "episodeFormatHelp": {
-        "ru": {
-            "ro_msg": "Как приходит описание эпизода. Одно сообщение: плеер и всё описание, без обрезки. Отдельное: аудио, а всё описание следом в сворачиваемой цитате (если одно сообщение у вас отображается плохо). Подпись: старый вариант, описание обрезается под лимит подписи. Заголовок: только название, дата и ссылка."
-        },
-        "en": {
-            "ro_msg": "How the episode text arrives. One message: the player and the whole description, without cutting. Separate: the audio, then the whole description in a collapsible quote (if the one message doesn't show well for you). Caption: the old way, the description is cut to fit a caption. Title only: just the show, title, date and link."
-        },
-        "pt-BR": {
-            "ro_msg": "Como o texto do episódio chega. Uma mensagem: o player e a descrição inteira, sem cortes. Separado: o áudio e depois a descrição inteira em uma citação recolhível (se a mensagem única aparecer mal). Legenda: o jeito antigo, a descrição é cortada para caber. Só o título: apenas programa, título, data e link."
-        },
-        "es": {
-            "ro_msg": "Cómo llega el texto del episodio. Un mensaje: el reproductor y toda la descripción, sin recortes. Aparte: el audio y luego toda la descripción en una cita plegable (si el mensaje único se ve mal). Pie: la forma antigua, la descripción se recorta para caber. Solo el título: solo programa, título, fecha y enlace."
-        },
-        "de": {
-            "ro_msg": "Wie der Text der Folge ankommt. Eine Nachricht: Player und ganze Beschreibung, ungekürzt. Getrennt: das Audio, danach die ganze Beschreibung in einem einklappbaren Zitat (wenn die eine Nachricht schlecht aussieht). Beschriftung: die alte Art, die Beschreibung wird gekürzt. Nur Titel: nur Sendung, Titel, Datum und Link."
-        },
-        "he": {
-            "ro_msg": "איך מגיע טקסט הפרק. הודעה אחת: הנגן וכל התיאור, בלי קיצוץ. נפרד: האודיו ואחריו כל התיאור בציטוט מתקפל (אם ההודעה האחת לא מוצגת טוב). כיתוב: הדרך הישנה, התיאור נחתך. רק כותרת: רק התוכנית, הכותרת, התאריך והקישור."
-        }
-    },
     "episodeFormatRich": {
         "ru": {
             "ro_msg": "Одно сообщение, весь текст"
@@ -2028,6 +2008,66 @@ messages = {
         },
         "he": {
             "ro_msg": "רק כותרת, בלי תיאור"
+        }
+    },
+    "episodeFormatHelp": {
+        "ru": {
+            "ro_msg": "Как приходит описание эпизода:\n\n• <b>Одно сообщение</b>: плеер и всё описание, без обрезки\n• <b>Отдельное</b>: аудио, а описание следом в сворачиваемой цитате (если одно сообщение у вас отображается плохо)\n• <b>Подпись</b>: как раньше, описание обрезается под лимит подписи\n• <b>Только заголовок</b>: название, дата и ссылка"
+        },
+        "en": {
+            "ro_msg": "How the episode text arrives:\n\n• <b>One message</b>: the player and the whole description, without cutting\n• <b>Separate</b>: the audio, then the description in a collapsible quote (if the one message doesn't show well for you)\n• <b>Caption</b>: the old way, the description is cut to fit a caption\n• <b>Title only</b>: the show, title, date and link"
+        },
+        "pt-BR": {
+            "ro_msg": "Como o texto do episódio chega:\n\n• <b>Uma mensagem</b>: o player e a descrição inteira, sem cortes\n• <b>Separado</b>: o áudio e depois a descrição em uma citação recolhível (se a mensagem única aparecer mal)\n• <b>Legenda</b>: o jeito antigo, a descrição é cortada para caber\n• <b>Só o título</b>: programa, título, data e link"
+        },
+        "es": {
+            "ro_msg": "Cómo llega el texto del episodio:\n\n• <b>Un mensaje</b>: el reproductor y toda la descripción, sin recortes\n• <b>Aparte</b>: el audio y luego la descripción en una cita plegable (si el mensaje único se ve mal)\n• <b>Pie</b>: la forma antigua, la descripción se recorta para caber\n• <b>Solo el título</b>: programa, título, fecha y enlace"
+        },
+        "de": {
+            "ro_msg": "Wie der Text der Folge ankommt:\n\n• <b>Eine Nachricht</b>: Player und ganze Beschreibung, ungekürzt\n• <b>Getrennt</b>: das Audio, danach die Beschreibung in einem einklappbaren Zitat (wenn die eine Nachricht schlecht aussieht)\n• <b>Beschriftung</b>: die alte Art, die Beschreibung wird gekürzt\n• <b>Nur Titel</b>: Sendung, Titel, Datum und Link"
+        },
+        "he": {
+            "ro_msg": "איך מגיע טקסט הפרק:\n\n• <b>הודעה אחת</b>: הנגן וכל התיאור, בלי קיצוץ\n• <b>נפרד</b>: האודיו ואחריו התיאור בציטוט מתקפל (אם ההודעה האחת לא מוצגת טוב)\n• <b>כיתוב</b>: הדרך הישנה, התיאור נחתך\n• <b>רק כותרת</b>: התוכנית, הכותרת, התאריך והקישור"
+        }
+    },
+    "settingsEpisodeTextTitle": {
+        "ru": {
+            "ro_msg": "📨 Текст эпизода"
+        },
+        "en": {
+            "ro_msg": "📨 Episode text"
+        },
+        "pt-BR": {
+            "ro_msg": "📨 Texto do episódio"
+        },
+        "es": {
+            "ro_msg": "📨 Texto del episodio"
+        },
+        "de": {
+            "ro_msg": "📨 Text der Folge"
+        },
+        "he": {
+            "ro_msg": "📨 טקסט הפרק"
+        }
+    },
+    "settingsRemindersTitle": {
+        "ru": {
+            "ro_msg": "🔔 Напоминания"
+        },
+        "en": {
+            "ro_msg": "🔔 Reminders"
+        },
+        "pt-BR": {
+            "ro_msg": "🔔 Lembretes"
+        },
+        "es": {
+            "ro_msg": "🔔 Avisos"
+        },
+        "de": {
+            "ro_msg": "🔔 Erinnerungen"
+        },
+        "he": {
+            "ro_msg": "🔔 תזכורות"
         }
     },
     "nosubDigestRemindersHelp": {
