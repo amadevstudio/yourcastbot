@@ -4,6 +4,17 @@ from app.routes.routes import RouteMap
 from app.routes.routes_list import AvailableRoutes
 from app.routes.ptypes import ControllerParams
 from app.repository.storage import storage
+from lib.tools.logger import logger
+
+
+def is_screen(route, routes) -> bool:
+    """A route "Back" can open: known, and with a method.
+
+    A stored stack outlives the code. About a third of them (3.9k of 11.7k
+    on 15 Oct 2026) hold names from the bot before its rewrite ('pc', 'srch',
+    'welc'), and 'empty' is a route with no screen at all.
+    """
+    return bool((routes.get(route) or {}).get('method'))
 
 
 def go_back(data: ControllerParams, custom_prev: AvailableRoutes = None):
@@ -15,10 +26,16 @@ def go_back(data: ControllerParams, custom_prev: AvailableRoutes = None):
     if active_prev is None:
         return
 
-    method = RouteMap.ROUTES[active_prev].get('method', None)
-    if method is None:
-        # TODO: show error
-        return
+    if not is_screen(active_prev, RouteMap.ROUTES):
+        # Nothing to go back to: the main menu, on a clean stack (as a command does)
+        logger.warn("Back to a screen that does not exist:", active_prev)
+        storage.clear_user_storage(data['chat_id'])
+        storage.add_user_state(data['chat_id'], 'menu')
+        RouteMap.ROUTES['menu']['method'](controller.construct_params(
+            data['callback'], data['message'], 'menu', is_step_back=True))
+        return False
+
+    method = RouteMap.ROUTES[active_prev]['method']
 
     method(controller.construct_params(data['callback'], data['message'], active_prev, is_step_back=True))
 
