@@ -119,6 +119,17 @@ def main():
     _assert('#id7' in text, "the podcast id tag")
     _assert('href="https://t.me/' in text and 'href="t.me/' not in text, "the bot link is absolute")
 
+    text = caption.record_rich_html(**_fields(descr=(
+        '<p>Members: <a href="https://example.com/a?x=1&amp;y=2">Click here</a>.</p>'
+        '<p><a href=\'https://example.com/b\'><em>Open</em> lesson_1</a> and '
+        '<a href="javascript:alert(1)">bad</a> <a href="https://example.com/c"></a></p>')))
+    _assert('<a href="https://example.com/a?x=1&amp;y=2">Click here</a>.' in text,
+            "description keeps its links, with the visible text")
+    _assert('<a href="https://example.com/b">Open lesson 1</a> and bad</p>' in text,
+            "single quotes and inner tags in a link")
+    _assert('javascript' not in text and 'href="https://example.com/c"' not in text,
+            "other schemes and empty links are text only")
+
     long_description = 'Sentence number one. ' * 2000  # 42000 characters
     text = caption.record_rich_html(**_fields(descr=long_description))
     _assert(len(text) < 32768, "even a huge description fits a rich message")

@@ -14,6 +14,7 @@ shown. Only this module uses lib.markup.cleaner.
 Lock: app/service/podcast/test_card.py.
 """
 import html
+import re
 
 from lib.markup.cleaner import html_cleaner, markdown_cleaner
 
@@ -46,3 +47,32 @@ def href(url: str | None) -> str:
 def visible_length(markup: str) -> int:
     """Characters Telegram counts against the caption limit."""
     return len(plain_text(markup))
+
+
+_ANCHOR = re.compile(r'<a\s[^>]*?href\s*=\s*(["\'])(.*?)\1[^>]*>(.*?)</a\s*>', re.IGNORECASE | re.DOTALL)
+_LINK_OPEN, _LINK_CLOSE = '\ue000', '\ue001'
+_LINK_TOKEN = re.compile(_LINK_OPEN + r'(\d+)' + _LINK_CLOSE)
+
+
+def protect_links(raw: str) -> tuple[str, list[str]]:
+    """For text that keeps its links (a rich message): every http(s) anchor of the feed becomes
+    a token holding its visible text, so plain_text() and trimming cannot touch it.
+    Returns the text and the finished '<a href>' tags; restore_links() puts them back
+    into the escaped text. Other schemes and empty anchors stay plain text."""
+    links: list[str] = []
+
+    def take(match):
+        url = html.unescape(match.group(2)).strip()
+        label = escape(plain_text(match.group(3)).strip())
+        if not re.match(r'https?://', url, re.IGNORECASE) or not label:
+            return match.group(3)
+        links.append('<a href="' + href(url) + '">' + label + '</a>')
+        return _LINK_OPEN + str(len(links) - 1) + _LINK_CLOSE
+
+    return _ANCHOR.sub(take, str(raw)), links
+
+
+def restore_links(escaped: str, links: list[str]) -> str:
+    """Tokens back to their anchors; a token cut by trimming is dropped."""
+    escaped = _LINK_TOKEN.sub(lambda m: links[int(m.group(1))] if int(m.group(1)) < len(links) else '', escaped)
+    return escaped.replace(_LINK_OPEN, '').replace(_LINK_CLOSE, '')
