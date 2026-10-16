@@ -51,6 +51,10 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
   through `apihelper._make_request`). The first one a user gets is followed
   once by a note on how to switch (`users.flags` JSON key `rich_hint_sent`: one-off per-user marks are keys there, not columns; button
   `episodeFormatSeparate`).
+  The description keeps its http(s) links (`telegram_html.protect_links` /
+  `restore_links`); other schemes and empty anchors are text. Past 32000
+  characters the links go and the text stays. Separate/caption/meta show plain
+  text. Lock: `python lib/telegram/test_rich_message.py`.
 - **separate** (Settings, or the note's button): the audio with a header-only
   caption, then the description in `<blockquote expandable>` (one message,
   under 4096).

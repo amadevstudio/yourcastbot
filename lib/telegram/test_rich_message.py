@@ -130,6 +130,12 @@ def main():
     _assert('javascript' not in text and 'href="https://example.com/c"' not in text,
             "other schemes and empty links are text only")
 
+    many = ''.join('<p>Item %d <a href="https://example.com/%s">link</a>.</p>' % (i, 'x' * 200)
+                   for i in range(400))
+    text = caption.record_rich_html(**_fields(descr=many))
+    _assert(len(text) < 32768 and 'Item 399' in text,
+            "hundreds of links: the text fits a rich message (links dropped, text kept)")
+
     long_description = 'Sentence number one. ' * 2000  # 42000 characters
     text = caption.record_rich_html(**_fields(descr=long_description))
     _assert(len(text) < 32768, "even a huge description fits a rich message")
