@@ -103,9 +103,11 @@ def record_rich_html(
     result = ''.join('<p>' + block.replace('\n', '<br>') + '</p>' for block in blocks)
     # Our bot link has no scheme; a rich message wants an absolute URL.
     result = result.replace('href="t.me/', 'href="https://t.me/')
-    for paragraph in re.split(r'\n\s*\n', _full_description(descr, description_chars)):
+    protected, links = telegram_html.protect_links(descr or '')
+    for paragraph in re.split(r'\n\s*\n', _full_description(protected, description_chars)):
         if paragraph.strip():
-            result += '<p>' + telegram_html.escape(paragraph.strip()).replace('\n', '<br>') + '</p>'
+            result += '<p>' + telegram_html.restore_links(
+                telegram_html.escape(paragraph.strip()), links).replace('\n', '<br>') + '</p>'
     return result
 
 
