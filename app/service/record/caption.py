@@ -104,11 +104,24 @@ def record_rich_html(
     # Our bot link has no scheme; a rich message wants an absolute URL.
     result = result.replace('href="t.me/', 'href="https://t.me/')
     protected, links = telegram_html.protect_links(descr or '')
-    for paragraph in re.split(r'\n\s*\n', _full_description(protected, description_chars)):
+    body = _rich_paragraphs(protected, links, description_chars)
+    if len(result) + len(body) > RICH_MESSAGE_CHARS:
+        # Tags of many links add their URLs to the 20000 plain characters: keep the text, not the links.
+        body = _rich_paragraphs(telegram_html.plain_text(descr or ''), [], description_chars)
+    return result + body
+
+
+# A rich message holds 32768 characters (lib/telegram/rich_message.py); keep some for the player tag.
+RICH_MESSAGE_CHARS = 32000
+
+
+def _rich_paragraphs(text, links, limit) -> str:
+    body = ''
+    for paragraph in re.split(r'\n\s*\n', _full_description(text, limit)):
         if paragraph.strip():
-            result += '<p>' + telegram_html.restore_links(
+            body += '<p>' + telegram_html.restore_links(
                 telegram_html.escape(paragraph.strip()), links).replace('\n', '<br>') + '</p>'
-    return result
+    return body
 
 
 def record_description_message(descr, limit=SEPARATE_DESCRIPTION_CHARS) -> str:
