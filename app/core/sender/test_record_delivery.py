@@ -601,6 +601,10 @@ def main():
     sent = world.sender(itunes_listed=False).send_record()
     _assert(sorted(sent) == [1, 2, 3] and world.requester.downloads == 0,
             "RSS-only, unknown size: URL is tried, not a blind too-big")
+    _assert(not [t for level, t in world.logger.lines if level == 'err'],
+            "unknown size is a WARN, not an ERR (17 Oct: a delivered 80 MB file left an ERR line)")
+    _assert([t for level, t in world.logger.lines if level == 'warn' and 'Content-Length' in t],
+            "unknown size is still said in the log")
 
     world = World(size_mb=389, trust_rss=True)
     sent = world.sender(itunes_listed=False).send_record()
