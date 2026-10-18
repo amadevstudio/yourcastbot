@@ -69,6 +69,20 @@ def test_raw_markup_is_escaped():
     _assert("5 > 3" in _visible(text), "an entity in the feed is decoded once")
 
 
+def test_long_description_fits_a_message():
+    sentence = "A long note about the show &amp; its guests. "
+    for descr in (sentence * 500, "x" * 9000, "<p>" + sentence * 300 + "</p>"):
+        text = card.channel_card_text(_channel(descr=descr), "en", "yourcastbot")
+        _assert(len(_visible(text)) <= 4096, "the card fits 4096 characters (%d)" % len(_visible(text)))
+        _assert(telegram_rejects(text) is None, "a cut card is still valid HTML")
+    cut = _visible(card.channel_card_text(_channel(descr=sentence * 500), "en", "yourcastbot"))
+    _assert(cut.rstrip().endswith("guests."), "the description is cut after a sentence")
+    huge = card.channel_card_text(_channel(title="T" * 5000, descr="Short."), "en", "yourcastbot")
+    _assert(huge.endswith("\n\n") or huge.endswith("\n"), "a huge title leaves no description, no crash")
+    short = card.channel_card_text(_channel(), "en", "yourcastbot")
+    _assert(_visible(short).endswith("candid look at the hobby."), "a short description is kept whole")
+
+
 def test_site_link_is_not_markdown_escaped():
     text = card.channel_card_text(
         _channel(channelLink="https://example.com/my_show?a=1&b=2"), "en", "yourcastbot")
@@ -154,7 +168,7 @@ def test_one_way_in():
 
 
 def main():
-    for case in (test_entities_are_decoded, test_raw_markup_is_escaped,
+    for case in (test_entities_are_decoded, test_raw_markup_is_escaped, test_long_description_fits_a_message,
                  test_site_link_is_not_markdown_escaped, test_card_layout_is_kept,
                  test_genre_names_are_escaped, test_records_header, test_search_card_is_html,
                  test_one_way_in):

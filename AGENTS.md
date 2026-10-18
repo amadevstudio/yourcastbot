@@ -165,6 +165,9 @@ and a stray `<` rejects the message. Job payloads keep the raw feed text;
 it is decoded once, where it is shown. Cards are built in
 `app/service/podcast/card.py`, captions in `app/service/record/caption.py`.
 Only `telegram_html` imports `lib.markup.cleaner`.
+A podcast page holds 4096 characters: the description is cut to
+`card.CARD_TEXT_LIMIT` after a sentence (Persian show 1886700489 sent 4061
+characters, most of them blank lines and dots: `MESSAGE_TOO_LONG`, no page).
 Lock: `python app/service/podcast/test_card.py` (CD gate),
 `python app/service/record/test_caption.py`.
 

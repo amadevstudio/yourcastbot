@@ -16,6 +16,12 @@ from app.service.record.helpers import prepare_podcast_update_time
 from lib.markup import telegram_html
 
 
+# A message holds 4096 characters as the reader sees them (tags are not counted).
+# Some feeds put a whole show's notes in <channel><description>: the page got
+# MESSAGE_TOO_LONG and the person tapping it got nothing (17 Oct 2026).
+CARD_TEXT_LIMIT = 4000
+
+
 def genres_html(genres, language_code) -> str:
     """'<b>Main</b>, Other' from (genre key, is main) pairs; names from i18n."""
     names = []
@@ -80,7 +86,11 @@ def channel_card_text(channel_data, language_code, bot_name) -> str:
             message += emojiCodes["trophy"] + " " + f"{value}/5 ({rating['count']})\n"
         message += "\n"
 
-    return message + telegram_html.text(channel_data.get("descr"))
+    budget = CARD_TEXT_LIMIT - telegram_html.visible_length(message)
+    descr = prepare_message_text(
+        telegram_html.plain_text(channel_data.get("descr")), max_length=max(budget, 0),
+        clear_markup=False)
+    return message + telegram_html.escape(descr)
 
 
 def records_header_text(podcast_data, count, routing_helper_message, language_code) -> str:

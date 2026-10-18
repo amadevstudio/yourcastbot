@@ -82,6 +82,10 @@ def transform_duration(duration):
     return duration_sec
 
 
+class SizeUnknown(ValueError):
+    """The host sent no Content-Length (HEAD and GET). Not a fault: the size comes from the file."""
+
+
 def get_file_size_HTTP(link: str) -> int:
     meta = requester.get_headers(link)
     content_type = meta.get('Content-Type') or ''
@@ -95,7 +99,7 @@ def get_file_size_HTTP(link: str) -> int:
         content_length = meta.get('Content-Length')
 
     if not content_length:
-        raise ValueError("Content-Length is missing")
+        raise SizeUnknown("Content-Length is missing")
     return int(content_length)
 
 
@@ -248,6 +252,9 @@ class Sender:
                 self.recordSize = get_file_size_HTTP(self.link)
                 self.recordSizeMb = self.recordSize / MB_NUMBER
                 self.__set_percent_step_dynamic()
+        except SizeUnknown as e:
+            # Chunked CDNs answer without a size; the upload order is taken from the file on disk.
+            self.logger.warn(e, "- size is taken from the file")
         except Exception as e:
             log_caught(self.logger, error=e)
             self._note_host_fault(e)
