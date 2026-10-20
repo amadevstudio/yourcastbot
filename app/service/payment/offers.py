@@ -6,6 +6,7 @@ The balance is credited at full price (price * months) and the hourly tick
 renews month by month from it, as from any top-up. Only the charge is
 discounted, so nothing else (renewal, D-3, plan change) knows about offers.
 """
+from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
 from config import db_path, prepay_bundles, winback_offer_discount
 
 # the payload's "o" for the win-back offer; its single use is users.flags[WINBACK_OFFER_FLAG]
@@ -19,6 +20,18 @@ def bundle_discount(months) -> int | None:
     if months == 1:
         return 0
     return dict(prepay_bundles).get(months)
+
+
+def longest_bundle():
+    """(months, % off) of the longest prepaid bundle, the one the /subscription page shows."""
+    return max(prepay_bundles)
+
+
+def prepaid_months_sold(current_level, plan_running) -> bool:
+    """Relay's prepaid months go to a Relay plan or to a user with no plan
+    running (the payment turns Relay on). A running Bronze or Silver would
+    renew itself from that balance: its owner changes plan first."""
+    return int(current_level or 0) == SHOWCASE_TARIFF_LEVEL or not plan_running
 
 
 def offer_discount(months, offer="") -> int | None:

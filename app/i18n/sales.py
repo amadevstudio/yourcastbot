@@ -36,6 +36,13 @@ ROWS = {
         '📅 Relay por {months} meses · −{discount}% · {stars} ⭐',
         '📅 Relay für {months} Monate · −{discount}% · {stars} ⭐',
         '📅 Relay ל-{months} חודשים · −{discount}% · {stars} ⭐'),
+    'prepayLongestButton': (
+        '📅 Relay на {months} мес. со скидкой {discount}%',
+        '📅 Relay for {months} months, {discount}% off',
+        '📅 Relay por {months} meses com {discount}% de desconto',
+        '📅 Relay por {months} meses con {discount}% de descuento',
+        '📅 Relay für {months} Monate mit {discount}% Rabatt',
+        '📅 Relay ל-{months} חודשים בהנחה של {discount}%'),
     'telegram_stars_bundle_description': (
         'Relay на {months} мес. со скидкой {discount}%: на баланс {balance}$ за {stars} ⭐. Продление каждый месяц с баланса. Курс: 1000 ⭐ ≈ {rate}$.',
         'Relay for {months} months, {discount}% off: ${balance} to your balance for {stars} ⭐. Renews monthly from the balance. Rate: 1000 ⭐ ≈ ${rate}.',

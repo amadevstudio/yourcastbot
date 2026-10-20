@@ -105,6 +105,10 @@ def channel_limit(channel):
     page = channel.get_connecting_channel_message(
         'en', {'id': 0, 'level': 0, 'price': 0}, [TARIFFS[1]])
     _assert_eq(_first_cta(page['markup']), PAYWALL, "the channel page carries the invoice")
+    page = channel.get_connecting_channel_message(
+        'en', {'id': 1, 'level': 1, 'price': 50}, [TARIFFS[1]], plan_running=True)
+    _assert_eq(_first_cta(page['markup']), [{'tp': 'bs_stars'}, {'tp': 'bs_trfs'}],
+               "a running Bronze is not billed Relay (it would be a top-up): Stars page, change-plan")
 
 
 def invoice_defaults_to_relay(stars):
@@ -116,7 +120,8 @@ def invoice_defaults_to_relay(stars):
             patch.object(stars.bot, 'send_invoice', lambda *a, **kw: invoices.append(a)):
         stars.send_invoice(data)
         stars.send_invoice(dict(data, united_data={'v': 1}))
-    _assert_eq(json.loads(invoices[0][3])['b'], 500, "a button without an id bills Relay's price")
+    _assert_eq((json.loads(invoices[0][3])['b'], json.loads(invoices[0][3])['v']), (500, 3),
+               "a button without an id bills Relay's price, for Relay")
     _assert_eq(json.loads(invoices[1][3])['b'], 50, "a button with an id bills that plan")
 
 

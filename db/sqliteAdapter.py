@@ -1687,10 +1687,16 @@ class SQLighter:
 
     def applyPaymentReplenishmentOnce(
             self, user, serviceType, invoiceId, paidAt, amountCents,
-            tariff_period, invoiceHash=None, status=None, userFlag=None
+            tariff_period, invoiceHash=None, status=None, userFlag=None, planId=None
     ):
         """userFlag: a users.flags key set with the payment, in its transaction
-        (a one-time offer is spent exactly when its money is credited)."""
+        (a one-time offer is spent exactly when its money is credited).
+
+        planId: the plan the invoice was for. With no plan running the payment
+        switches to it and turns it on when the balance covers it (a free user
+        who paid for Relay gets Relay, not a balance and "choose a plan"). A
+        running plan is only topped up, as before: a mid-period change has its
+        price difference and is the change-plan page's job."""
         try:
             self.cursor.execute("BEGIN IMMEDIATE")
             user_id = user['id']
@@ -1734,6 +1740,28 @@ class SQLighter:
                     'id': 0, 'level': 0, 'price': 0,
                     'notify_count': 0, 'compression': 0
                 }
+
+            plan = None
+            if planId and (current_subscription is None
+                           or not (current_subscription['tariff_id'] > 0
+                                   and current_subscription['time_left'] > 0)):
+                plan = self.cursor.execute(
+                    'SELECT * FROM tariffs WHERE id = ? AND price > 0',
+                    (str(planId),)).fetchone()
+            if plan is not None:
+                current_tariff = plan
+                if current_subscription is None:
+                    self.cursor.execute(
+                        """
+                            INSERT INTO user_tariff_cs
+                                (uid, tariff_id, balance, time_left, notify_count)
+                            VALUES (?, ?, 0, 0, 0)
+                        """,
+                        (str(user_id), str(plan['id']),))
+                    current_subscription = {
+                        'id': self.cursor.lastrowid, 'uid': user_id,
+                        'tariff_id': plan['id'], 'balance': 0,
+                        'time_left': 0, 'notify_count': 0}
 
             if current_subscription is None or current_subscription.get('id') == 0:
                 tariff_id = 0
@@ -1788,10 +1816,11 @@ class SQLighter:
                 self.cursor.execute(
                     """
                         UPDATE user_tariff_cs
-                        SET balance = ?, time_left = ?, notify_count = ?
+                        SET tariff_id = ?, balance = ?, time_left = ?, notify_count = ?
                         WHERE uid = ?
                     """,
-                    (str(new_balance), str(new_time_left),
+                    (str(current_subscription['tariff_id'] if plan is None else plan['id']),
+                     str(new_balance), str(new_time_left),
                      str(new_notify_count), str(user_id),))
                 current_subscription['balance'] = new_balance
                 current_subscription['time_left'] = new_time_left

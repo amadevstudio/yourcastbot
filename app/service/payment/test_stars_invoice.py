@@ -4,6 +4,9 @@ credit the full one, once per charge; a payload cannot pick its own discount;
 top-up invoices sent before bundles existed still pass; the win-back offer
 is billed only to a user it was sent to, closes at the pre-checkout once
 spent, and a payment that went through is credited whatever happened since.
+A payment turns on the plan it was for when no plan runs (a running one is
+only topped up); prepaid months are not sold to a running Bronze or Silver,
+and the longest bundle is one tap from /subscription.
 
 Needs the bot's requirements (starsPaymentModule imports telebot).
 Run from the repo root: python app/service/payment/test_stars_invoice.py
@@ -43,11 +46,16 @@ def _assert_eq(got, expected, label):
 
 
 class _TariffsDB:
+    subscription = None  # the payer's user_tariff_cs row
+
     def __init__(self, _path):
         pass
 
     def getTariffs(self, channel_control=None):
         return TARIFFS
+
+    def getUserSubscriptionByTg(self, _chat_id):
+        return self.subscription
 
     def close(self):
         pass
@@ -86,6 +94,13 @@ def bundle_invoice(stars):
                "prepaid months are Relay's only")
     _assert_eq(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 3, 'm': 5}), [],
                "months that are not sold get no invoice")
+    _assert_eq(payload['v'], 3, "the invoice names the plan it is for")
+    bronze = {'tariff_id': 1, 'balance': 0, 'time_left': 100, 'notify_count': 30}
+    with patch.object(_TariffsDB, 'subscription', bronze):
+        _assert_eq(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 3, 'm': 12}), [],
+                   "a running Bronze is not sold Relay's months (it would renew Bronze)")
+        _assert_eq(len(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 3})), 1,
+                   "but can top up as before")
 
 
 def precheckout(stars):
@@ -130,6 +145,47 @@ def _temp_db():
     db.subscribeUserToTariffByTg(603, 3, 0, 0, -1)  # the Relay trial has ended
     db.close()
     return path
+
+
+def _pay(stars, path, chat_id, payload, charge):
+    with patch.object(stars.config, 'db_path', path), \
+            patch.object(stars, 'outer_sender', lambda *a, **kw: True), \
+            patch.object(stars, 'award_referrer_for_payment', lambda _tg: (None, None)):
+        return stars.process_successful_payment(
+            chat_id, 'XTR', json.loads(payload)['s'], payload, charge)
+
+
+def plan_turns_on(stars):
+    from db.sqliteAdapter import SQLighter
+    path = _temp_db()
+    db = SQLighter(path)
+    try:
+        for tg in (611, 612, 613, 614):
+            db.register_new_user(tg, 'en')
+        db.subscribeUserToTariffByTg(612, 1, 0, 0, 0)      # Bronze has ended
+        db.subscribeUserToTariffByTg(613, 1, 0, 100, 30)   # Bronze runs
+    finally:
+        db.close()
+    relay = stars.stars_for_balance(500, RATE)
+    try:
+        _pay(stars, path, 611, stars.create_payload(611, 500, relay, RATE, plan_id=3), 'c-611')
+        _pay(stars, path, 612, stars.create_payload(612, 500, relay, RATE, plan_id=3), 'c-612')
+        _pay(stars, path, 613, stars.create_payload(613, 500, relay, RATE, plan_id=3), 'c-613')
+        legacy = json.dumps({'t': 614, 'b': 500, 's': relay, 'r': RATE, 'p': 'old'})
+        _pay(stars, path, 614, legacy, 'c-614')
+        db = SQLighter(path)
+        try:
+            plans = {tg: db.getUserSubscriptionByTg(tg) for tg in (611, 612, 613, 614)}
+        finally:
+            db.close()
+        state = {tg: (p['tariff_id'], p['time_left'], p['balance']) for tg, p in plans.items()}
+        period = stars.config.tariff_period
+        _assert_eq(state[611], (3, period, 0), "a free user who paid for Relay has Relay on")
+        _assert_eq(state[612], (3, period, 0), "an ended Bronze paid for Relay switches to Relay")
+        _assert_eq(state[613], (1, 100, 500), "a running Bronze is only topped up")
+        _assert_eq(state[614], (0, 0, 500), "an invoice from before keeps the old top-up")
+    finally:
+        os.remove(path)
 
 
 def credit_once(stars):
@@ -198,13 +254,25 @@ def winback_offer(stars):
 
 
 def page_rows(stars):
-    def tps(tariff_id, level):
-        markup = stars.get_sub_message('en', tariff_id, level, 0, 0, 0, 0, RATE)['markup']
-        return [row[0]['callback_data'].get('m') for row in markup if 'callback_data' in row[0]]
+    from app.service.payment import paymentModule
+
+    def months(tariff_id, level, time_left):
+        markup = stars.get_sub_message('en', tariff_id, level, 0, 0, time_left, 0, RATE)['markup']
+        return [row[0]['callback_data'].get('m') for row in markup
+                if row[0]['callback_data'].get('m')]
+
+    def main_page(level, time_left):
+        markup = paymentModule.get_sub_message(1, 'en', level, 0, 0, time_left, 0)['markup']
+        return [row[0]['callback_data'] for row in markup
+                if row[0]['callback_data'].get('m')]
     with patch.object(stars, 'SQLighter', _TariffsDB):
-        relay, bronze = tps(3, 3), tps(1, 1)
-    _assert_eq([m for m in relay if m], [3, 6, 12], "a Relay plan sees the prepaid months")
-    _assert_eq([m for m in bronze if m], [], "another plan does not")
+        _assert_eq(months(3, 3, 100), [3, 6, 12], "a Relay plan sees the prepaid months")
+        _assert_eq(months(0, 0, 0), [3, 6, 12], "so does a user with no plan running")
+        _assert_eq(months(1, 1, 0), [3, 6, 12], "and one whose Bronze has ended")
+        _assert_eq(months(1, 1, 100), [], "a running Bronze does not")
+    _assert_eq(main_page(0, 0), [{'tp': 'bs_stars_pay', 'm': 12}],
+               "/subscription bills the longest bundle in one tap")
+    _assert_eq(main_page(1, 100), [], "but not to a running Bronze")
 
 
 def main():
@@ -216,6 +284,7 @@ def main():
     bundle_invoice(stars)
     precheckout(stars)
     credit_once(stars)
+    plan_turns_on(stars)
     winback_offer(stars)
     page_rows(stars)
     print("all Stars invoice checks passed")

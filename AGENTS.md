@@ -115,9 +115,18 @@ remove plan management or hide Bronze/Silver.
   the share sheet with the user's own link) goes in D-3, plan-off and after a
   Stars payment, below Stars and change-plan.
   Lock: `python app/service/payment/test_referral_award.py`.
+- A Stars invoice names its plan (payload `v`). With no plan running the
+  payment switches to that plan and turns it on when the balance covers it
+  (`applyPaymentReplenishmentOnce(planId=...)`): before, a free user who paid
+  for Relay got a balance and "choose a plan", and an ended Bronze paid for
+  Relay renewed Bronze. A running plan is only topped up, as before (a
+  mid-period change has a price difference: the change-plan page). An
+  invoice without `v` (sent before) is the old top-up.
 - The free limits (the 16th podcast, the manual update, the channel page)
   carry `relay_nudge_markup(invoice=True)`: Relay's invoice in one tap
   (`bs_stars_pay` without `v` bills the showcase plan) and change-plan.
+  The channel page of a running Bronze or Silver keeps the Stars page there
+  (an invoice would only top up the running plan).
   D-3, plan-off and the digest keep the Stars page of every plan.
   Locks: `python app/service/payment/test_paywall.py` (bot requirements),
   `python app/service/payment/test_storefront.py`.
@@ -127,8 +136,11 @@ remove plan management or hide Bronze/Silver.
   `m` / `d` / `o`; the pre-checkout accepts only `offer_discount(m, o)` and,
   for an offer, `offer_open`. `process_successful_payment` checks the payment
   matches its invoice and nothing else: money Telegram took is credited as
-  sold. A plain top-up keeps the old payload. Months are sold on a Relay plan
-  only (on Bronze/Silver the balance would renew that plan for years).
+  sold. A plain top-up keeps `m` / `d` / `o` out of the payload. Months are
+  sold to a Relay plan or to a user with no plan running
+  (`prepaid_months_sold`), never to a running Bronze or Silver (the balance
+  would renew that plan for years). The longest bundle is also a button on
+  /subscription, after the pay methods.
   Lock: `python app/service/payment/test_stars_invoice.py` (bot requirements).
 - Win-back (`app/jobs/winback.py`, `db/winback.py`): a schedule starts only
   from the tick's plan-off list, for Relay (`start_winback`); the old

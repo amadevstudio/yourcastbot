@@ -21,10 +21,12 @@ from app.routes.ptypes import ControllerParams
 from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_description_and_button_text)
 from app.service.payment.paymentSafeModule import (
-    award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg, prepare_price)
+    award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg,
+    is_subscription_active, prepare_price)
 from app.service.payment.referral import invite_row
 from app.service.payment.offers import (
-    WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open)
+    WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open,
+    prepaid_months_sold)
 from app.service.payment.storefront import (
     SHOWCASE_TARIFF_LEVEL, showcase_tariff, tariffs_for_storefront)
 from config import db_path, prepay_bundles
@@ -57,6 +59,7 @@ class StarsPayload(TypedDict):
     m: int  # months of the plan in b (prepaid bundle), 1 for a top-up
     d: int  # % off the charge (offers.offer_discount)
     o: str  # offer the discount comes from ("" or offers.WINBACK_OFFER)
+    v: int  # plan the invoice is for, turned on if none runs (0: an invoice from before)
 
 
 def _json_value_to_py(value):
@@ -137,7 +140,7 @@ def stars_to_charge(balance_amount: int, rate_x1000: int, discount: int = 0) -> 
 
 
 def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1000: int,
-                   months: int = 1, discount: int = 0, offer: str = "") -> str:
+                   months: int = 1, discount: int = 0, offer: str = "", plan_id: int = 0) -> str:
     payload = {
         "t": int(chat_id),
         "b": int(balance_amount),
@@ -150,6 +153,8 @@ def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1
         payload.update(m=int(months), d=int(discount))
     if offer:
         payload["o"] = str(offer)
+    if plan_id:
+        payload["v"] = int(plan_id)
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -171,6 +176,7 @@ def parse_payload(payload: bytes | str) -> StarsPayload | None:
             "m": int(data.get("m", 1)),
             "d": int(data.get("d", 0)),
             "o": str(data.get("o", "")),
+            "v": int(data.get("v", 0)),
         }
     except Exception:
         return None
@@ -252,9 +258,8 @@ def get_sub_message(
             'text': button_text,
             'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id']}
         }])
-        if tariff['id'] == tariff_id and tariff_lvl == SHOWCASE_TARIFF_LEVEL:
-            # Prepaid months only for a Relay plan: on another plan the balance
-            # would renew that plan (a plan change is the change-plan page's job).
+        if tariff['level'] == SHOWCASE_TARIFF_LEVEL and prepaid_months_sold(
+                tariff_lvl, tariff_id > 0 and time_left > 0):
             menu_keyboard += bundle_rows(tariff, language_code, rate_x1000)
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
@@ -285,8 +290,12 @@ def send_invoice(data: ControllerParams):
     db_users = SQLighter(db_path)
     try:
         tariffs = db_users.getTariffs()
+        subscription = db_users.getUserSubscriptionByTg(data['chat_id'])
     finally:
         db_users.close()
+    plan_running = is_subscription_active(subscription)
+    current_level = next((t['level'] for t in tariffs if subscription is not None
+                          and t['id'] == subscription['tariff_id']), 0)
 
     if 'v' not in data['united_data']:
         # RELAY_INVOICE_CALLBACK: a paywall button bills Relay without naming it
@@ -305,7 +314,8 @@ def send_invoice(data: ControllerParams):
     except (TypeError, ValueError):
         discount = None
     if (selected_tariff is None or selected_tariff['price'] <= 0 or discount is None
-            or ((months != 1 or discount) and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)):
+            or ((months != 1 or discount) and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)
+            or (months != 1 and not prepaid_months_sold(current_level, plan_running))):
         notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
         return False
 
@@ -323,7 +333,8 @@ def send_invoice(data: ControllerParams):
     amount_stars = stars_to_charge(amount_balance, rate_x1000, discount)
 
     payload = create_payload(
-        data['chat_id'], amount_balance, amount_stars, rate_x1000, months, discount, offer)
+        data['chat_id'], amount_balance, amount_stars, rate_x1000, months, discount, offer,
+        selected_tariff['id'])
     title = get_message("telegram_stars_invoice_title", data['language_code'])
     description = get_message(
         "telegram_stars_bundle_description" if discount else "telegram_stars_invoice_description",
@@ -405,7 +416,8 @@ def process_successful_payment(
             payload_data["b"], config.tariff_period,
             invoiceHash=f"{payload_data['p']}:{payload_data['r']}:{provider_charge_id or ''}",
             status="paid",
-            userFlag=WINBACK_OFFER_FLAG if payload_data['o'] == WINBACK_OFFER else None)
+            userFlag=WINBACK_OFFER_FLAG if payload_data['o'] == WINBACK_OFFER else None,
+            planId=payload_data['v'] or None)
         if result_data['already_processed']:
             return False
     finally:
