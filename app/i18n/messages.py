@@ -5046,3 +5046,5 @@ for _lang in ("ru", "pt-BR", "es", "de", "he"):
 
 from app.i18n.listening import TRANSLATIONS as _LISTENING_TRANSLATIONS
 messages.update(_LISTENING_TRANSLATIONS)
+from app.i18n.sales import TRANSLATIONS as _SALES_TRANSLATIONS
+messages.update(_SALES_TRANSLATIONS)

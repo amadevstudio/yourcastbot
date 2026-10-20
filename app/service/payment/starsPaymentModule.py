@@ -21,7 +21,8 @@ from app.routes.ptypes import ControllerParams
 from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_description_and_button_text)
 from app.service.payment.paymentSafeModule import (
-    get_tariff_info_message, get_tariff_params_by_tg, giveAward, prepare_price)
+    award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg, prepare_price)
+from app.service.payment.referral import invite_row
 from app.service.payment.storefront import tariffs_for_storefront
 from config import db_path
 from db.sqliteAdapter import SQLighter
@@ -336,6 +337,9 @@ def process_successful_payment(
     finally:
         db.close()
 
+    # the balance is in; the referral bonus goes before any message can fail
+    refer_tg_id, award_message = award_referrer_for_payment(user['telegramId'])
+
     language_code = user['lang'] if user['lang'] is not None else 'en'
     message = _payment_result_message(
         result_data['result_mode'], result_data['current_tariff'],
@@ -343,13 +347,14 @@ def process_successful_payment(
     buttons = [[
         {'text': get_message('tariffs', language_code), 'callback_data': {'tp': 'bs_trfs'}},
         {'text': get_message('goBackMenu', language_code), 'callback_data': {'tp': 'menu'}}
-    ]]
+    ], invite_row(chat_id, language_code)]
     outer_sender(chat_id, [{'type': 'text', 'text': message, 'reply_markup': buttons}])
 
-    if user['ref_id'] is not None:
-        award_message = giveAward(user['ref_id'], user['telegramId'], 'replenished')
-        if award_message is not None:
-            outer_sender(user['ref_id'], [{'type': 'text', 'text': award_message}])
+    if award_message is not None:
+        try:
+            outer_sender(refer_tg_id, [{'type': 'text', 'text': award_message}])
+        except Exception as e:
+            logger.warn("referral award notice:", type(e).__name__)
 
     if config.server:
         from app.controller.builders.adminModule import send_message_to_creator

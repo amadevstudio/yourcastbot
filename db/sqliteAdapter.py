@@ -1219,12 +1219,25 @@ class SQLighter:
             self.connection.commit()
         return new_user, by_refer
 
-    def user_clear_refer(self, telegramId):
-        with self.connection:
-            self.cursor.execute(
-                'UPDATE users SET ref_id = ? WHERE telegramId = ?',
-                (None,))
+    def claim_referrer(self, telegramId):
+        """The inviter of telegramId, taken once: ref_id is cleared in the same
+        transaction, so a second payment or a webhook retry gets None.
+        A user who "invited" themselves is nobody's referral."""
+        try:
+            self.cursor.execute("BEGIN IMMEDIATE")
+            row = self.cursor.execute(
+                'SELECT ref_id FROM users WHERE telegramId = ?',
+                (str(telegramId),)).fetchone()
+            refer_id = None if row is None or row['ref_id'] is None else int(row['ref_id'])
+            if refer_id is not None:
+                self.cursor.execute(
+                    'UPDATE users SET ref_id = NULL WHERE telegramId = ?',
+                    (str(telegramId),))
             self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return None if refer_id == int(telegramId) else refer_id
 
     def update_bitrate_by_tg(self, telegramId, bitrate):
         with self.connection:
@@ -1425,6 +1438,13 @@ class SQLighter:
                 print('user restored ' + str(telegramId), flush=True)
 
             return restored
+
+    def user_exists_tg(self, telegramId) -> bool:
+        """Unlike get_user_by_tg, never creates the row."""
+        with self.connection:
+            return self.cursor.execute(
+                'SELECT 1 FROM users WHERE telegramId = ?',
+                (str(telegramId),)).fetchone() is not None
 
     def is_user_deleted_tg(self, telegramId) -> bool:
         with self.connection:

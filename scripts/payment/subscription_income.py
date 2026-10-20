@@ -33,7 +33,7 @@ import config
 import app.service.user.language
 from app.i18n.messages import get_message
 
-from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, giveAward
+from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, award_referrer_for_payment
 from scripts.payment.webhook_input import robokassa_result
 
 getps = base64.b64decode(sys.argv[1]).decode('utf-8')
@@ -270,11 +270,10 @@ if isOk:
 					psl.write(
 						"robokassa paid uid=%s inv=%s\n" % (
 							params.get("Shp_uid"), inv_id))
-		if user['ref_id'] is not None:
-			message = giveAward(user['ref_id'], user['telegramId'], 'replenished')
-			if message is not None:
-				with bot:
-					bot.loop.run_until_complete(notify_refer(user['ref_id'], message))
+		refer_id, message = award_referrer_for_payment(user['telegramId'])
+		if message is not None:
+			with bot:
+				bot.loop.run_until_complete(notify_refer(refer_id, message))
 
 	except Exception as e:
 		exc_type, exc_obj, exc_tb = sys.exc_info()

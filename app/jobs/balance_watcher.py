@@ -7,6 +7,7 @@ from app.jobs.relay_remind import (
 from app.jobs.tariff_tick import run_tariff_tick
 from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
+from app.service.payment.referral import invite_row
 from app.service.payment.storefront import plan_off_text
 from config import tariff_period
 from lib.telegram.general.message_master import outer_sender
@@ -71,7 +72,8 @@ def balance_watcher(update_time):
                 outer_sender(npu['telegramId'], [{
                     'type': 'text',
                     'text': message,
-                    'reply_markup': relay_nudge_markup(lang),
+                    'reply_markup': relay_nudge_markup(
+                        lang, extra_row=invite_row(npu['telegramId'], lang)),
                 }])
             except Exception as e:
                 logger.err(e)

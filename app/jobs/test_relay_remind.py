@@ -102,7 +102,7 @@ def _plans(sent):
         _assert_eq(by_user[203][1], get_message("relay_trial_ending", "en") % 2,
                    "the Relay text is exactly what it was")
         for chat_id in (201, 202, 203):
-            _assert_eq([row[0]["callback_data"]["tp"] for row in by_user[chat_id][2]], ["bs_stars", "bs_trfs"],
+            _assert_eq([row[0]["callback_data"]["tp"] for row in by_user[chat_id][2][:2]], ["bs_stars", "bs_trfs"],
                        "%s: still Stars first, change-plan next to it" % chat_id)
     finally:
         os.remove(path)
@@ -155,9 +155,12 @@ def main():
         _assert("Relay" in sent[0][1] or "ends" in sent[0][1].lower()
                 or "days" in sent[0][1].lower(),
                 "D-3 copy is about Relay ending")
-        nudge_types = [row[0]["callback_data"]["tp"] for row in sent[0][2]]
+        markup = sent[0][2]
+        nudge_types = [row[0]["callback_data"]["tp"] for row in markup[:2]]
         _assert_eq(nudge_types[0], "bs_stars", "D-3 still offers Stars")
         _assert_eq(nudge_types[1], "bs_trfs", "D-3 still offers change-plan")
+        _assert("start%3D101" in markup[2][0]["url"],
+                "D-3 offers to invite a friend with the user's own link")
 
         second = relay_remind.send_relay_d3_reminders(database=path)
         _assert_eq(second, 0, "second hourly tick does not spam")

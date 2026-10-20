@@ -4,6 +4,7 @@
 Runs from the existing hourly balance_watcher. Does not touch payment apply.
 """
 from app.i18n.messages import get_message
+from app.service.payment.referral import invite_row
 from app.service.payment.storefront import CHANGE_PLAN_CALLBACK, plan_ending_text
 from config import db_path
 from db import runtime_kv
@@ -88,7 +89,9 @@ def send_relay_d3_reminders(database=None):
             _send(telegram_id, [{
                 "type": "text",
                 "text": text,
-                "reply_markup": relay_nudge_markup(lang),
+                # a friend's sign-up adds days: the cheapest way to keep the plan
+                "reply_markup": relay_nudge_markup(
+                    lang, extra_row=invite_row(telegram_id, lang)),
             }])
         except Exception as e:
             logger.err("relay_d3:", telegram_id, e)

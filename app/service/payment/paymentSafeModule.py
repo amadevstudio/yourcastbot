@@ -5,7 +5,7 @@ from app.i18n.messages import get_message
 from config import db_path
 from config import (
     tariff_ref_period, tariff_ref_no_subscription_period,
-    tariff_ref_notifies, tariff_ref_sub_period,
+    tariff_ref_notifies, tariff_ref_sub_period, tariff_ref_invitee_period,
     tariff_new_user_period, tariff_secret_start_cmd_period,
     tariff_period)
 from db.sqliteAdapter import SQLighter
@@ -175,8 +175,25 @@ def notify_count_after_referral(notify_count, bonus) -> int:
     return int(notify_count) + int(bonus)
 
 
+def award_referrer_for_payment(invitee_tg_id):
+    """(referrer chat id, message) for an invitee's payment, or (None, None).
+
+    Once per invitee, whatever the pay method: the referrer is taken off the
+    invitee (claim_referrer) before the award, so a webhook retry or a second
+    payment awards nothing. A crash in between loses one bonus, never doubles it.
+    """
+    db = SQLighter(db_path)
+    try:
+        refer_tg_id = db.claim_referrer(invitee_tg_id)
+    finally:
+        db.close()
+    if refer_tg_id is None:
+        return None, None
+    return refer_tg_id, giveAward(refer_tg_id, invitee_tg_id, 'replenished')
+
+
 # Дать подарок за приглашение или начало использование
-def giveAward(refer_tg_id, refered_tg_id, mode):
+def giveAward(refer_tg_id, refered_tg_id, mode, invited=False):
     if not mode:
         mode = 'reged'
 
@@ -227,7 +244,6 @@ def giveAward(refer_tg_id, refered_tg_id, mode):
                 extreme['notify_count'])
             # реферал купил подписку, тариф улучшен до максимального и продлён на х
             message += get_message("award_with_s_subscribed", language_code)
-        db.user_clear_refer(refered_tg_id)
 
     # новым пользователям — подписка
     elif mode == 'new':
@@ -235,6 +251,11 @@ def giveAward(refer_tg_id, refered_tg_id, mode):
 
         if pc_count == 0:
             on_period = tariff_new_user_period
+            if invited:
+                # a friend's link: the welcome plan is longer
+                on_period += tariff_ref_invitee_period
+                message += get_message("award_welcome_invited", language_code).format(
+                    days=tariff_ref_invitee_period // 24) + "\n\n"
             message += get_message("award_welcome", language_code)
         else:
             on_period = tariff_secret_start_cmd_period
