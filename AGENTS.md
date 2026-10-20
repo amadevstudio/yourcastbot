@@ -279,16 +279,24 @@ Feed errors pause a feed, never `user_channel_cs.notify`. `feed_recovery`
 stores coalesced repair jobs, leases, daily retries and pause notices. A
 404/410 queues a check immediately; other repeated failures queue at the
 existing threshold. Manual refresh failures also queue a check. The jobs
-role checks iTunes by the exact collection id, validates the returned RSS
-and falls back to rechecking the stored URL. RSS-only feeds are only
-rechecked. Manual checks have a five-minute gap.
+role validates the stored URL first; only when it fails does it ask iTunes
+(exact collection id) and validate the returned RSS. A feed that answers
+keeps its address: "Check feed" on a healthy show must not move it to the
+catalog's URL (other guids/dates there break every cursor). RSS-only feeds
+are only rechecked. Manual checks have a five-minute gap.
 
-A repaired URL clears HTTP validators, the failure cooldown and refetch
-guard. It never changes channel/subscription cursors or delivery queues:
+The stored URL answering again ends the failure cooldown and keeps the
+validators. A new URL also clears the validators and the refetch guard.
+Neither changes channel/subscription cursors or delivery queues:
 the normal circle catches up, with its existing quiet-start/order/limit
 rules. Leases fence stale workers; a concurrent URL edit wins over repair.
 Old failure markers seed repair jobs without changing old `notify=0`
-preferences or sending historical notices. Status and check buttons live
+preferences or sending historical notices. Pause notices go to paid
+listeners with notify on, as before the pause (free ones have the digest),
+one per feed, and not again for a week if the feed flaps
+(`NOTICE_REPEAT_SECONDS`). Repair jobs, the bookmark of the latest episode
+and digest flags are side tasks of the circle: a failure there is a WARN,
+never a lost delivery. Status and check buttons live
 under Subscriptions (`/delivery_status`); checks require a subscription.
 Locks: `python db/test_feed_recovery.py`, `python db/test_channel_poll.py`,
 `python app/jobs/test_updater_not_modified.py` (real loop, bot requirements).
@@ -297,7 +305,9 @@ Locks: `python db/test_feed_recovery.py`, `python db/test_channel_poll.py`,
 holds the latest episode per show, up to five shows per message, keeping
 Relay/change-plan/mute controls and rechecking tariff/notify at send time.
 ACK deletes only the revision shown. `listen_later` is personal, capped at
-200 entries, and survives pruning/restarts. Playback uses the ordinary rec
+200 entries, survives pruning/restarts and goes with a hard user delete.
+The episode list remembers its page in one write; if that fails the page
+shows without Save. Playback uses the ordinary rec
 path and searches by hash from the start (positions change). Saving,
 removing and playing work without saved screen state; removing/playing
 require ownership. Incidental snapshots expire after 90 days; saved ones

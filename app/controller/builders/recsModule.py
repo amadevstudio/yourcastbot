@@ -234,14 +234,25 @@ def construct_records_message(
     # Keyboard
     records_keyboard: list[list[InlineButtonData]] = []
 
+    page = message_navigation['page_data']['data']
+    callbacks = [rec_callback_data_identifier(podcast_data['id'], podcast_data['service_id'],
+                                              podcast_data['service_name'], res['dh'], res['num'])
+                 for res in page]
+    # "Save" needs the episode remembered. One write per page; if it fails,
+    # the list is shown without the button rather than not at all.
+    episode_ids = [None] * len(page)
+    if page and (callbacks[0].get('id') is not None or callbacks[0].get('iid') is not None):
+        try:
+            episode_ids = listening.remember_page(
+                [(res['title'], podcast_data['title'], cb) for res, cb in zip(page, callbacks)])
+        except Exception as e:
+            logger.warn("recsModule/rememberPage:", e)
+
     res: RecResult
-    for res in message_navigation['page_data']['data']:
+    for res, callback, episode_id in zip(page, callbacks, episode_ids):
         new_ep_text = standartSymbols.get("newItem", "") + " " if res['is_new_episode'] else ""
-        callback = rec_callback_data_identifier(podcast_data['id'], podcast_data['service_id'],
-                                                podcast_data['service_name'], res['dh'], res['num'])
         bookmark = []
-        if callback.get('id') is not None or callback.get('iid') is not None:
-            episode_id = listening.remember(res['title'], podcast_data['title'], callback)
+        if episode_id is not None:
             bookmark = [{'text': get_message('saveLater', language_code),
                          'callback_data': {'tp': 'saveLater', 'e': episode_id}}]
         records_keyboard.append([

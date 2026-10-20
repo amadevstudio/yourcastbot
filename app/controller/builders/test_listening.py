@@ -79,6 +79,29 @@ class ListeningScreens(unittest.TestCase):
         self.assertIn('Episode one &amp; two', screen['text'])
         self.assertNotIn('<i>', screen['text'])
 
+    def records_page(self):
+        from app.controller.builders import recsModule
+        nav = {'page_data': {'page_count': 1, 'count': 2, 'data': [
+                   {'title': 'One', 'file_size': '', 'is_new_episode': False, 'dh': 'aaa', 'num': 1},
+                   {'title': 'Two', 'file_size': '', 'is_new_episode': False, 'dh': 'bbb', 'num': 2}]},
+               'nav_layout_parts': {'navigation_row': [{}, {}, {}]},
+               'routing_helper_message': ''}
+        with patch.object(recsModule.app.service.podcast.card, 'records_header_text', return_value=''):
+            screen = recsModule.construct_records_message(
+                {'show_file_sizes': False}, {'id': 17, 'service_id': None, 'service_name': None,
+                                             'title': 'Show'}, 'recs', nav, 'en')[0]
+        return screen['reply_markup'][:2]
+
+    def test_episode_list_saves_in_one_write_and_survives_a_locked_database(self):
+        rows = self.records_page()
+        ids = [row[1]['callback_data']['e'] for row in rows]
+        self.assertEqual([listening.add_saved(101, e, self.db) for e in ids], ['savedLater'] * 2)
+        import sqlite3
+        with patch.object(listening, 'remember_page',
+                          side_effect=sqlite3.OperationalError('database is locked')):
+            rows = self.records_page()
+        self.assertEqual([[b['callback_data']['tp'] for b in row] for row in rows], [['rec'], ['rec']])
+
     def test_digest_content_and_existing_payment_and_mute_controls(self):
         from app.jobs.digest_watcher import digest_message
         episode = self.episode()

@@ -21,13 +21,16 @@ class RecoveryTest(unittest.TestCase):
                     http_etag TEXT,http_last_modified TEXT,last_guid TEXT,last_date TEXT,name TEXT);
                 CREATE TABLE user_channel_cs(id INTEGER PRIMARY KEY,user_telegram_id INTEGER,
                     channel_id INTEGER,notify INTEGER,last_guid TEXT,last_date TEXT);
-                CREATE TABLE users(telegramId INTEGER,lang TEXT,deleted_at TEXT);
+                CREATE TABLE users(id INTEGER,telegramId INTEGER,lang TEXT,deleted_at TEXT);
+                CREATE TABLE user_tariff_cs(uid INTEGER,tariff_id INTEGER,notify_count INTEGER,
+                    time_left INTEGER);
                 CREATE TABLE bot_runtime_kv(key TEXT PRIMARY KEY,value TEXT);
                 INSERT INTO channels VALUES(17,'123456','https://old.example/feed','etag','date',
                     'channel-cursor','channel-date','Test show');
                 INSERT INTO user_channel_cs VALUES(1,101,17,1,'paid-cursor','paid-date');
                 INSERT INTO user_channel_cs VALUES(2,102,17,0,'muted-cursor','muted-date');
-                INSERT INTO users VALUES(101,'ru',NULL),(102,'en',NULL);
+                INSERT INTO users VALUES(1,101,'ru',NULL),(2,102,'en',NULL);
+                INSERT INTO user_tariff_cs VALUES(1,3,-1,100),(2,3,-1,100);
                 INSERT INTO bot_runtime_kv VALUES('feed_refetch_17','old');
                 INSERT INTO bot_runtime_kv VALUES('channel_feed_dead_until_17','9999');
             ''')
@@ -41,7 +44,8 @@ class RecoveryTest(unittest.TestCase):
     def test_replace_only_url_and_validators(self):
         self.enqueue(now=100, paused=True)
         self.assertTrue(process_one(database=self.db, now=101,
-            lookup=lambda _: 'https://new.example/https%3A%2F%2Ffeed', validate=lambda _: True))
+            lookup=lambda _: 'https://new.example/https%3A%2F%2Ffeed',
+            validate=lambda url: 'new.example' in url))
         with jobs.connect(self.db) as c:
             row = c.execute('SELECT * FROM channels').fetchone()
             self.assertEqual(row['rss_link'], 'https://new.example/https%3A%2F%2Ffeed')
@@ -53,6 +57,23 @@ class RecoveryTest(unittest.TestCase):
                 [(1,'paid-cursor','paid-date'), (0,'muted-cursor','muted-date')])
             self.assertEqual(c.execute('SELECT count(*) FROM bot_runtime_kv').fetchone()[0], 0)
         self.assertEqual(jobs.statuses([17], self.db)[17]['paused'], 0)
+
+    def test_working_stored_url_is_kept_whatever_the_catalog_says(self):
+        # A tap on "Check feed" for a healthy show must not move it to the
+        # catalog's URL: other guids/dates there would break every cursor.
+        self.enqueue(now=100, paused=True)
+        def no_catalog(_):
+            self.fail('a working stored URL needs no catalog lookup')
+        self.assertTrue(process_one(database=self.db, now=101,
+            lookup=no_catalog, validate=lambda url: True))
+        with jobs.connect(self.db) as c:
+            row = c.execute('SELECT * FROM channels').fetchone()
+            self.assertEqual((row['rss_link'], row['http_etag'], row['http_last_modified']),
+                             ('https://old.example/feed', 'etag', 'date'))
+            self.assertEqual([r[0] for r in c.execute('SELECT key FROM bot_runtime_kv')],
+                             ['feed_refetch_17'])
+        state = jobs.statuses([17], self.db)[17]
+        self.assertEqual((state['status'], state['paused']), ('healthy', 0))
 
     def test_duplicate_failure_does_not_extend_lease_or_create_jobs(self):
         self.enqueue(now=100)
@@ -145,23 +166,42 @@ class RecoveryTest(unittest.TestCase):
     def test_notice_only_active_private_opted_in_listeners_and_once(self):
         with jobs.connect(self.db) as c:
             c.executescript('''
-                INSERT INTO users VALUES(-100,'en',NULL),(104,'en','deleted');
-                INSERT INTO user_channel_cs VALUES(3,-100,17,1,'x','x'),(4,104,17,1,'x','x');
+                INSERT INTO users VALUES(3,-100,'en',NULL),(4,104,'en','deleted'),
+                    (5,105,'en',NULL),(6,106,'en',NULL);
+                INSERT INTO user_tariff_cs VALUES(3,3,-1,100),(4,3,-1,100),(5,0,0,0),(6,3,-1,0);
+                INSERT INTO user_channel_cs VALUES(3,-100,17,1,'x','x'),(4,104,17,1,'x','x'),
+                    (5,105,17,1,'x','x'),(6,106,17,1,'x','x');
             ''')
         self.enqueue(now=100, paused=True)
         notice = jobs.next_notice(self.db, now=101)
+        # 105 is free and 106's plan has run out: the digest is theirs, not a notice
         self.assertEqual(notice['user_telegram_id'], 101)
         self.assertIsNone(jobs.next_notice(self.db, now=102))
         jobs.finish_notice(notice, database=self.db, now=103)
         self.assertIsNone(jobs.next_notice(self.db, now=104))
 
+    def test_flapping_feed_does_not_notify_again_within_a_week(self):
+        self.enqueue(now=100, paused=True)
+        notice = jobs.next_notice(self.db, now=101)
+        jobs.finish_notice(notice, database=self.db, now=102)
+        self.assertIsNone(jobs.next_notice(self.db, now=103))
+        jobs.note_ok(17, self.db, now=200)
+        self.enqueue(now=300, paused=True)
+        self.assertIsNone(jobs.next_notice(self.db, now=301))
+        jobs.note_ok(17, self.db, now=400)
+        later = 102 + jobs.NOTICE_REPEAT_SECONDS
+        self.enqueue(now=later, paused=True)
+        self.assertEqual(jobs.next_notice(self.db, now=later + 1)['user_telegram_id'], 101)
+
     def test_old_notice_ack_cannot_consume_a_new_pause(self):
         self.enqueue(now=100, paused=True)
         old = jobs.next_notice(self.db, now=101)
         jobs.note_ok(17, self.db, now=102)
-        self.enqueue(now=103, paused=True)
-        jobs.finish_notice(old, database=self.db, now=104)
-        new = jobs.next_notice(self.db, now=105)
+        # the old send never acknowledged; a pause a week on starts afresh
+        later = 161 + jobs.NOTICE_REPEAT_SECONDS
+        self.enqueue(now=later, paused=True)
+        jobs.finish_notice(old, database=self.db, now=later + 1)
+        new = jobs.next_notice(self.db, now=later + 2)
         self.assertEqual(new['sub_id'], old['sub_id'])
         self.assertNotEqual(new['token'], old['token'])
 

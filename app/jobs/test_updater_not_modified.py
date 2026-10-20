@@ -14,6 +14,7 @@ locks the decision in app/jobs/test_feed_health.py.
 Run from the repo root: python app/jobs/test_updater_not_modified.py
 """
 import os
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -459,6 +460,19 @@ def main():
         _assert_eq((state['status'],state['paused']), ('pending',0),
                    'manual failure schedules recovery without pausing notifications')
         _assert_eq(_cursor(PAYER_A), _pgd(2), 'manual failure preserves the current cursor')
+
+        # The digest bookmark is a side task: a locked database there must
+        # not cost the circle its delivery, nor the free cursor its move.
+        FEED['version'] = 1
+        _setup(feed_url)
+        _circle()
+        FEED['version'] = 2
+        locked = sqlite3.OperationalError('database is locked')
+        with patch.object(updater, 'remember_latest', side_effect=locked), \
+                patch.object(updater.listening, 'flag_digest', side_effect=locked):
+            sent, requests = _circle()
+        _assert_eq(sent, [('Tuesday',[PAYER_A,PAYER_B])], 'bookmark failure still delivers')
+        _assert_eq(_cursor(FREE_C), _pgd(2), 'bookmark failure still moves the free cursor')
     finally:
         server.shutdown()
     print("all updater 304 checks passed")

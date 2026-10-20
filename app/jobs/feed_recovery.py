@@ -9,6 +9,7 @@ from lib.tools.logger import Logger
 logger = Logger(file='feed_recovery')
 requester = Requester(attempts=0, total_attempts=0)
 IDLE_SECONDS = 10
+JOB_GAP_SECONDS = 2
 
 
 def lookup_url(itunes_id):
@@ -32,6 +33,14 @@ def valid_feed(url):
         for item in root.findall('item'))
 
 
+def _valid(validate, url, channel_id):
+    try:
+        return bool(url) and validate(url)
+    except Exception as e:
+        logger.warn('feed validation failed for channel', channel_id, type(e).__name__)
+        return False
+
+
 def process_one(database=None, lookup=lookup_url, validate=valid_feed, now=None):
     job = jobs.claim(database=database, now=now)
     if job is None:
@@ -40,22 +49,20 @@ def process_one(database=None, lookup=lookup_url, validate=valid_feed, now=None)
     candidate = None
     result = 'unavailable'
     try:
-        if channel is not None:
-            if channel['itunes_id']:
-                try:
-                    candidate = lookup(channel['itunes_id'])
-                except Exception as e:
-                    logger.warn('catalog lookup failed for channel', job['channel_id'], type(e).__name__)
-                    result = 'catalog_unavailable'
-            candidates = list(dict.fromkeys(u for u in (candidate, channel['rss_link']) if u))
-            candidate = None
-            for url in candidates:
-                try:
-                    if validate(url):
-                        candidate = url
-                        break
-                except Exception as e:
-                    logger.warn('feed validation failed for channel', job['channel_id'], type(e).__name__)
+        # The stored URL first. A feed that answers keeps its address: the
+        # catalog's feedUrl may render other guids/dates, and every cursor
+        # of the channel would read as "behind" or skip an episode.
+        if channel is not None and _valid(validate, channel['rss_link'], job['channel_id']):
+            candidate = channel['rss_link']
+        elif channel is not None and channel['itunes_id']:
+            found = None
+            try:
+                found = lookup(channel['itunes_id'])
+            except Exception as e:
+                logger.warn('catalog lookup failed for channel', job['channel_id'], type(e).__name__)
+                result = 'catalog_unavailable'
+            if found and found != channel['rss_link'] and _valid(validate, found, job['channel_id']):
+                candidate = found
     except Exception as e:
         candidate = None
         logger.warn('feed validation failed for channel', job['channel_id'], type(e).__name__)
@@ -69,11 +76,14 @@ def process_one(database=None, lookup=lookup_url, validate=valid_feed, now=None)
 def recovery_watcher():
     jobs.seed_legacy()
     while True:
+        busy = False
         try:
-            process_one()
+            busy = process_one()
         except Exception as e:
             logger.err('feed recovery job failed:', e)
-        time.sleep(IDLE_SECONDS)
+        # A backlog after a CDN outage drains at one check per JOB_GAP_SECONDS,
+        # still gentle on iTunes lookup and the feed hosts.
+        time.sleep(JOB_GAP_SECONDS if busy else IDLE_SECONDS)
 
 
 def send_pause_notice(database=None):

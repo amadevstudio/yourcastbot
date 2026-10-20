@@ -58,6 +58,34 @@ class ListeningTest(unittest.TestCase):
         c.close()
         self.assertEqual(listening.digest(101, self.db), [])
 
+    def test_page_is_remembered_as_one_by_one(self):
+        first = self.episode()
+        ids = listening.remember_page([
+            ('Title', 'Show', {'tp':'rec','id':17,'dh_n':'aaa_3'}),
+            ('Other', 'Show', {'tp':'rec','id':17,'dh_n':'ccc_4'})], self.db)
+        self.assertEqual(ids[0], first)
+        self.assertEqual(len(set(ids)), 2)
+
+    def test_hard_delete_takes_the_personal_lists(self):
+        try:
+            from db.sqliteAdapter import SQLighter
+        except ImportError:
+            self.skipTest('bot requirements are not installed')
+        c = listening.connect(self.db)
+        with c:
+            c.executescript('CREATE TABLE users(id INTEGER PRIMARY KEY,telegramId INTEGER,'
+                            "lang TEXT,deleted_at TEXT);INSERT INTO users VALUES(1,101,'en',NULL);")
+        c.close()
+        listening.add_saved(101, self.episode(), self.db)
+        listening.flag_digest([101], 17, 'cursor', self.db)
+        db = SQLighter(self.db)
+        try:
+            db.delete_user_tg(101, hard=True)
+        finally:
+            db.close()
+        self.assertEqual(listening.saved(101, self.db), [])
+        self.assertFalse(listening.has_digest(101, self.db))
+
     def test_cursor_match_and_concurrent_ack(self):
         self.episode()
         listening.flag_digest([101], 17, 'wrong-cursor', self.db)

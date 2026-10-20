@@ -10,6 +10,7 @@ from db.connection import connect_sqlite
 RECHECK_SECONDS = 24 * 60 * 60
 MANUAL_GAP_SECONDS = 5 * 60
 LEASE_SECONDS = 5 * 60
+NOTICE_REPEAT_SECONDS = 7 * 24 * 60 * 60
 _ready = set()
 _lock = threading.Lock()
 
@@ -69,15 +70,19 @@ def enqueue(channel_id, reason, paused=False, manual=False, now=None, database=N
                 due = max(stamp, (row['checked_at'] or 0) + MANUAL_GAP_SECONDS)
             elif manual and status != 'leased':
                 due = min(due, max(stamp, (row['checked_at'] or 0) + MANUAL_GAP_SECONDS))
+            # A new pause notifies again, unless this feed's listeners heard of
+            # one within NOTICE_REPEAT_SECONDS: a feed that dies and comes back
+            # must not message them every time (notice_after is the last send).
+            renotice = paused and not row['paused'] and (
+                row['notice_after'] <= stamp - NOTICE_REPEAT_SECONDS)
             conn.execute(
                 "UPDATE feed_recovery SET status=?, paused=max(paused,?), reason=?, "
-                "available_at=?,notice_done=CASE WHEN paused=0 AND ?=1 THEN 0 "
-                "ELSE notice_done END,notice_cursor=CASE WHEN paused=0 AND ?=1 THEN 0 "
-                "ELSE notice_cursor END,notice_after=CASE WHEN paused=0 AND ?=1 THEN 0 "
-                "ELSE notice_after END,notice_token=CASE WHEN paused=0 AND ?=1 THEN NULL "
-                "ELSE notice_token END WHERE channel_id=?",
-                (status, int(paused), reason, due, int(paused), int(paused),
-                 int(paused), int(paused), channel_id))
+                "available_at=? WHERE channel_id=?",
+                (status, int(paused), reason, due, channel_id))
+            if renotice:
+                conn.execute(
+                    "UPDATE feed_recovery SET notice_done=0,notice_cursor=0,notice_after=0,"
+                    "notice_token=NULL WHERE channel_id=?", (channel_id,))
             return status != 'leased' and due <= stamp
     finally:
         conn.close()
@@ -159,13 +164,17 @@ def finish(job, channel_before, new_url=None, result='unavailable', database=Non
                              "WHERE channel_id=?", (stamp, job['channel_id']))
                 return False
             if new_url and unchanged:
+                keys = ['channel_feed_dead_until_', 'channel_feed_failures_']
+                if new_url != current['rss_link']:
+                    conn.execute(
+                        "UPDATE channels SET rss_link=?,http_etag=NULL,http_last_modified=NULL "
+                        "WHERE id=?", (new_url, job['channel_id']))
+                    keys.append('feed_refetch_')
+                # The stored URL answering again keeps its validators and the
+                # refetch guard: only the failure cooldown ends.
                 conn.execute(
-                    "UPDATE channels SET rss_link=?,http_etag=NULL,http_last_modified=NULL "
-                    "WHERE id=?", (new_url, job['channel_id']))
-                conn.execute(
-                    "DELETE FROM bot_runtime_kv WHERE key IN (?,?,?)",
-                    tuple(prefix + str(job['channel_id']) for prefix in (
-                        'channel_feed_dead_until_', 'channel_feed_failures_', 'feed_refetch_')))
+                    "DELETE FROM bot_runtime_kv WHERE key IN (%s)" % ','.join('?' * len(keys)),
+                    tuple(prefix + str(job['channel_id']) for prefix in keys))
                 conn.execute(
                     "UPDATE feed_recovery SET status='healthy',paused=0,checked_at=?, "
                     "recovered_at=?,result='recovered',leased_until=NULL,lease_token=NULL "
@@ -218,11 +227,16 @@ def next_notice(database=None, now=None):
                 "AND notice_after<=? ORDER BY notice_after,channel_id LIMIT 1", (stamp,)).fetchone()
             if state is None:
                 return None
+            # Paid listeners only, as before the pause: a free listener's new
+            # episodes go to the weekly digest, and a CDN outage pausing many
+            # feeds must not become a mass mailing.
             row = conn.execute(
                 "SELECT s.id AS sub_id,s.user_telegram_id,u.lang,c.name "
                 "FROM user_channel_cs s JOIN users u ON u.telegramId=s.user_telegram_id "
+                "JOIN user_tariff_cs t ON t.uid=u.id "
                 "JOIN channels c ON c.id=s.channel_id WHERE s.channel_id=? "
                 "AND s.id>? AND s.notify=1 AND u.deleted_at IS NULL "
+                "AND t.notify_count!=0 AND t.time_left>0 AND t.tariff_id>0 "
                 "AND s.user_telegram_id>0 ORDER BY s.id LIMIT 1",
                 (state['channel_id'], state['notice_cursor'])).fetchone()
             if row is None:

@@ -30,7 +30,7 @@ from app.jobs.circle_pace import HostPacer, circle_rest_seconds
 from app.jobs.feed_health import (
     should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold,
     paid_targets_behind, feed_version, refetch_allowed, note_refetched,
-    channel_feed_url)
+    channel_feed_url, queue_feed_recovery)
 from app.jobs.digest_outbox import pending_count
 from app.jobs.updater_resume import consume_clean_stop, resume_point
 from app.jobs.nosub_digest import (
@@ -41,7 +41,7 @@ from config import (
     another_projects_texts, max_subscriptions_without_tariff,
     app_api_id, app_api_hash, token, botName)
 from db.sqliteAdapter import SQLighter
-from db import listening, feed_recovery
+from db import listening
 from app.service.podcast.listening import remember_latest
 from lib.tools.logger import Logger
 from app.routes.ptypes import ControllerParams
@@ -272,7 +272,7 @@ def send_new_records_by_channel(
         # пользователь не должен терять уведомления из-за того,
         # что нажал 'обновить' в неудачный момент.
         if manual:
-            feed_recovery.enqueue(channel['id'], failure_reason, manual=True)
+            queue_feed_recovery(channel['id'], failure_reason, manual=True)
             logger.log(
                 "Feed is not available for channel", channel['id'],
                 "; reason:", failure_reason,
@@ -341,7 +341,11 @@ def send_new_records_by_channel(
     note_feed_ok(channel['id'])
     _persist_channel_http_validators(channel, pc_info)
 
-    remember_latest(root, channel)
+    # A digest bookmark: it must never cost this circle its delivery.
+    try:
+        remember_latest(root, channel)
+    except Exception as e:
+        logger.warn("podcastsUpdater/rememberLatest:", channel['id'], e)
 
     if service_name == 'itunes':
         # # flag = True
@@ -853,7 +857,12 @@ def flag_nosubs_for_digest(
         db_users = SQLighter(db_path)
     try:
         remind = set(behind)  # TED alone has ~10k free listeners: no list scans
-        listening.flag_digest(behind, channel_id, latest_pgd, database=db_path)
+        # Without its episode the digest falls back to the generic text;
+        # the flags and cursors below must still be written.
+        try:
+            listening.flag_digest(behind, channel_id, latest_pgd, database=db_path)
+        except Exception as e:
+            logger.warn("podcastsUpdater/flagDigest:", channel_id, e)
         for user_tg_id in behind + quiet:
             if user_tg_id in remind:
                 storage.set_new_podcast_available_flag(user_tg_id)

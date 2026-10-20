@@ -47,27 +47,41 @@ def connect(database=None):
     return c
 
 
-def remember(title, show_name, callback, database=None, channel_id=None, cursor=None):
+def _remember(c, title, show_name, callback):
     """Callbacks contain only a podcast identifier and hash/position, never arbitrary URLs."""
     source = ('id:' + str(callback['id']) if callback.get('id') is not None
               else 'itunes:' + str(callback['iid']))
     episode_hash = callback['dh_n'].split('_')[0]
+    c.execute('INSERT INTO listening_episodes '
+        '(source,episode_hash,title,show_name,callback_json,seen_at) VALUES (?,?,?,?,?,?) '
+        'ON CONFLICT(source,episode_hash) DO UPDATE SET title=excluded.title,'
+        'show_name=excluded.show_name,callback_json=excluded.callback_json,seen_at=excluded.seen_at',
+        (source, episode_hash, str(title)[:1000], str(show_name)[:500],
+         json.dumps(callback, separators=(',', ':')), time.time()))
+    return c.execute('SELECT id FROM listening_episodes WHERE source=? AND episode_hash=?',
+                     (source, episode_hash)).fetchone()['id']
+
+
+def remember(title, show_name, callback, database=None, channel_id=None, cursor=None):
     c = connect(database)
     try:
         with c:
-            c.execute('INSERT INTO listening_episodes '
-                '(source,episode_hash,title,show_name,callback_json,seen_at) VALUES (?,?,?,?,?,?) '
-                'ON CONFLICT(source,episode_hash) DO UPDATE SET title=excluded.title,'
-                'show_name=excluded.show_name,callback_json=excluded.callback_json,seen_at=excluded.seen_at',
-                (source, episode_hash, str(title)[:1000], str(show_name)[:500],
-                 json.dumps(callback, separators=(',', ':')), time.time()))
-            row = c.execute('SELECT id FROM listening_episodes WHERE source=? AND episode_hash=?',
-                            (source, episode_hash)).fetchone()
+            episode_id = _remember(c, title, show_name, callback)
             if channel_id is not None and cursor is not None:
                 c.execute('INSERT INTO channel_episode VALUES (?,?,?) ON CONFLICT(channel_id) '
                           'DO UPDATE SET episode_id=excluded.episode_id,episode_cursor=excluded.episode_cursor',
-                          (channel_id, row['id'], cursor))
-            return row['id']
+                          (channel_id, episode_id, cursor))
+            return episode_id
+    finally:
+        c.close()
+
+
+def remember_page(items, database=None):
+    """One page of an episode list, (title, show_name, callback) each: one transaction."""
+    c = connect(database)
+    try:
+        with c:
+            return [_remember(c, *item) for item in items]
     finally:
         c.close()
 
