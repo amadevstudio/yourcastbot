@@ -74,10 +74,15 @@ def process_one(database=None, lookup=lookup_url, validate=valid_feed, now=None)
 
 
 def recovery_watcher():
-    jobs.seed_legacy()
+    # A dead thread restarts the whole jobs role: a locked database at start
+    # retries the seed on the next turn instead.
+    seeded = False
     while True:
         busy = False
         try:
+            if not seeded:
+                jobs.seed_legacy()
+                seeded = True
             busy = process_one()
         except Exception as e:
             logger.err('feed recovery job failed:', e)
