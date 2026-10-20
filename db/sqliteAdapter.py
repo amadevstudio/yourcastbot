@@ -678,12 +678,15 @@ class SQLighter:
             self.connection.commit()
 
     def update_channel_http_validators(
-            self, podcastId, etag, last_modified):
+            self, podcastId, etag, last_modified, expected_rss_link=...):
         with self.connection:
-            self.cursor.execute(
-                'UPDATE channels SET http_etag = ?, http_last_modified = ? \
-                WHERE id = ?',
-                (etag, last_modified, str(podcastId),))
+            query = 'UPDATE channels SET http_etag = ?, http_last_modified = ? WHERE id = ?'
+            params = [etag, last_modified, str(podcastId)]
+            if expected_rss_link is not ...:
+                # A recovery job may have replaced the URL during this fetch.
+                query += ' AND rss_link IS ?'
+                params.append(expected_rss_link)
+            self.cursor.execute(query, params)
             self.connection.commit()
 
     def get_uccs_by_channel(

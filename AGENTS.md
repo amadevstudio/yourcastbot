@@ -273,6 +273,43 @@ paying user read as free (see Tariff clock).
   `python app/jobs/test_updater_not_modified.py` (needs the bot's
   requirements).
 
+## Feed recovery and listening lists
+
+Feed errors pause a feed, never `user_channel_cs.notify`. `feed_recovery`
+stores coalesced repair jobs, leases, daily retries and pause notices. A
+404/410 queues a check immediately; other repeated failures queue at the
+existing threshold. Manual refresh failures also queue a check. The jobs
+role checks iTunes by the exact collection id, validates the returned RSS
+and falls back to rechecking the stored URL. RSS-only feeds are only
+rechecked. Manual checks have a five-minute gap.
+
+A repaired URL clears HTTP validators, the failure cooldown and refetch
+guard. It never changes channel/subscription cursors or delivery queues:
+the normal circle catches up, with its existing quiet-start/order/limit
+rules. Leases fence stale workers; a concurrent URL edit wins over repair.
+Old failure markers seed repair jobs without changing old `notify=0`
+preferences or sending historical notices. Status and check buttons live
+under Subscriptions (`/delivery_status`); checks require a subscription.
+Locks: `python db/test_feed_recovery.py`, `python db/test_channel_poll.py`,
+`python app/jobs/test_updater_not_modified.py` (real loop, bot requirements).
+
+`db/listening.py` stores text/callback references, not audio. The digest
+holds the latest episode per show, up to five shows per message, keeping
+Relay/change-plan/mute controls and rechecking tariff/notify at send time.
+ACK deletes only the revision shown. `listen_later` is personal, capped at
+200 entries, and survives pruning/restarts. Playback uses the ordinary rec
+path and searches by hash from the start (positions change). Saving,
+removing and playing work without saved screen state; removing/playing
+require ownership. Incidental snapshots expire after 90 days; saved ones
+stay until removed. Locks: `python db/test_listening.py`,
+`python app/controller/builders/test_listening.py`.
+
+RSS failures and Python/library exceptions go to dated `rss`/`runtime_*`
+logs, visible through the existing read-only diagnostics. `/api/diag/outbox`
+also reports recovery queue aggregates; no new write endpoint or token.
+Locks: `python lib/tools/test_runtime_logging.py`,
+`python app/admin_web/test_diag.py`.
+
 ## Updater restarts
 
 A deploy stops the updater mid-circle. That is not a problem: the SIGTERM

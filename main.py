@@ -46,6 +46,9 @@ _shutting_down = False
 
 
 def _install_shutdown():
+    from lib.tools.runtime_logging import install_runtime_logging
+    install_runtime_logging(os.environ.get('YOURCAST_ROLE') or 'main')
+
     def shutdown(signum, _frame):
         # Supervisor sends SIGTERM to the whole group, then again while
         # atexit (urllib3) is already running. A second sys.exit from
@@ -182,6 +185,16 @@ def run_jobs():
     t_digest_watcher.name = "Digest watcher"
     t_digest_watcher.start()
     watched.append(t_digest_watcher)
+
+    from app.jobs.feed_recovery import recovery_watcher, notice_watcher
+    t_feed_recovery = threading.Thread(
+        target=recovery_watcher, name="Feed recovery", daemon=True)
+    t_feed_recovery.start()
+    watched.append(t_feed_recovery)
+    t_feed_notices = threading.Thread(
+        target=notice_watcher, name="Feed pause notices", daemon=True)
+    t_feed_notices.start()
+    watched.append(t_feed_notices)
 
     from app.admin_web.mail_jobs import ensure_table as ensure_mail_table
     from app.admin_web.mailer import mailer_loop

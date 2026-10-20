@@ -27,6 +27,7 @@ from app.routes.ptypes import ControllerParams
 from app.routes.routes_list import AvailableRoutes
 from config import db_path, std_bitrate, maxPodcastDateCallDataHexLen, perPage
 from db.sqliteAdapter import SQLighter
+from db import listening
 from lib.telegram.general.message_master import render_messages, MessageStructuresInterface, \
     InlineButtonData
 from lib.tools.logger import logger
@@ -236,11 +237,17 @@ def construct_records_message(
     res: RecResult
     for res in message_navigation['page_data']['data']:
         new_ep_text = standartSymbols.get("newItem", "") + " " if res['is_new_episode'] else ""
+        callback = rec_callback_data_identifier(podcast_data['id'], podcast_data['service_id'],
+                                                podcast_data['service_name'], res['dh'], res['num'])
+        bookmark = []
+        if callback.get('id') is not None or callback.get('iid') is not None:
+            episode_id = listening.remember(res['title'], podcast_data['title'], callback)
+            bookmark = [{'text': get_message('saveLater', language_code),
+                         'callback_data': {'tp': 'saveLater', 'e': episode_id}}]
         records_keyboard.append([
             {'text': new_ep_text + res['file_size'] + telegram_html.plain_text(res['title']),
-             'callback_data': rec_callback_data_identifier(podcast_data['id'], podcast_data['service_id'],
-                                                           podcast_data['service_name'], res['dh'], res['num'])}
-        ])
+             'callback_data': callback}
+        ] + bookmark)
 
     # Add 1, last and < > buttons
     records_keyboard.append([

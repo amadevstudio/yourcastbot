@@ -192,6 +192,16 @@ def test_update_and_read_http_validators(db_path):
         row = db.get_channel(8)
         _assert_eq(row['http_etag'], '"fresh"', "etag updated on 200")
         _assert_eq(row['http_last_modified'], None, "last-modified cleared")
+        db.connection.execute("UPDATE channels SET rss_link='https://new.example/rss',"
+                              "http_etag=NULL WHERE id=8")
+        db.connection.commit()
+        db.update_channel_http_validators(8, '"stale"', None,
+                                         expected_rss_link='http://feed.example/rss')
+        _assert_eq(db.get_channel(8)['http_etag'], None,
+                   'an old in-flight fetch cannot restore validators after URL recovery')
+        db.update_channel_http_validators(8, '"new"', None,
+                                         expected_rss_link='https://new.example/rss')
+        _assert_eq(db.get_channel(8)['http_etag'], '"new"', 'new URL may store its own validators')
     finally:
         db.close()
 

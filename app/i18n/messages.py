@@ -5043,3 +5043,6 @@ _merge_message_translations(messages, EXTRA_TRANSLATIONS)
 # a bare link reads the same in every language
 for _lang in ("ru", "pt-BR", "es", "de", "he"):
     messages["patreonShort"].setdefault(_lang, dict(messages["patreonShort"]["en"]))
+
+from app.i18n.listening import TRANSLATIONS as _LISTENING_TRANSLATIONS
+messages.update(_LISTENING_TRANSLATIONS)

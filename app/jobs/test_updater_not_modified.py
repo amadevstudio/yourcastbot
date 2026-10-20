@@ -418,6 +418,47 @@ def main():
             latest_at=updater._when("list-view-date"))
         _assert_eq(digest_outbox.get_row(FREE_C, database=config.db_path) is not None, True,
                    "unknown channel date: a different id still reminds, as before")
+
+        # A stable feed failure pauses polling, never the listener's preference
+        # or cursor. The recovery job swaps URL/validators; the next circle
+        # catches up through its normal per-chat outbox path.
+        from unittest.mock import patch
+        from app.jobs.feed_recovery import process_one
+        from db import feed_recovery, listening
+        FEED['version'] = 2
+        _setup('https://old.example/rss')
+        feed_recovery.note_ok(CHANNEL_ID)
+        with patch.object(updater.app.service.podcast.podcast, 'fetch_channel_feed', return_value=(
+                False, {'failureReason':'gone'}, 'rss', 'https://old.example/rss')):
+            for _ in range(3):
+                _circle()
+        _assert_eq(feed_recovery.statuses([CHANNEL_ID])[CHANNEL_ID]['paused'], 1,
+                   'stable failure has a durable pause')
+        conn = connect_sqlite(config.db_path)
+        prefs = conn.execute('SELECT notify,last_guid FROM user_channel_cs ORDER BY user_telegram_id').fetchall()
+        conn.close()
+        _assert_eq([tuple(r) for r in prefs], [(1,_pgd(1))]*3,
+                   'failure preserves every opt-in and cursor')
+        process_one(lookup=lambda _: feed_url, validate=lambda url: url == feed_url)
+        # RSS-only feeds have no iTunes id: they are rechecked at their stored
+        # URL. Simulate the listed feed's catalogue move explicitly here.
+        conn = connect_sqlite(config.db_path)
+        conn.execute('UPDATE channels SET itunes_id=123456 WHERE id=?', (CHANNEL_ID,))
+        conn.commit()
+        conn.close()
+        feed_recovery.enqueue(CHANNEL_ID, 'manual', manual=True, now=100000000000)
+        process_one(lookup=lambda _: feed_url, validate=lambda url: url == feed_url, now=100000000001)
+        sent, requests = _circle()
+        _assert_eq(sent, [('Tuesday',[PAYER_A,PAYER_B])], 'repaired feed catches up for both payers')
+        _assert_eq(listening.digest(FREE_C)[0]['title'], 'Tuesday', 'free digest has the actual new episode')
+        with patch.object(updater.app.service.podcast.podcast, 'fetch_channel_feed', return_value=(
+                False, {'failureReason':'unavailable'}, 'rss', feed_url)), \
+                patch.object(updater, 'outer_sender', return_value=True):
+            _manual_refresh(PAYER_A)
+        state = feed_recovery.statuses([CHANNEL_ID])[CHANNEL_ID]
+        _assert_eq((state['status'],state['paused']), ('pending',0),
+                   'manual failure schedules recovery without pausing notifications')
+        _assert_eq(_cursor(PAYER_A), _pgd(2), 'manual failure preserves the current cursor')
     finally:
         server.shutdown()
     print("all updater 304 checks passed")

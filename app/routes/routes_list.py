@@ -3,7 +3,7 @@ from typing import Literal
 AvailableRoutes = Literal[
     'start', 'privacy',
     'menu',
-    'subs',
+    'subs', 'feedStatus', 'listenLater',
     'search',
     'podcast', 'recs',
     'another',
@@ -29,7 +29,7 @@ AvailableRoutes = Literal[
 AvailableCommands = Literal[
     'start',
     'menu',
-    'subscriptions',
+    'subscriptions', 'delivery_status', 'listen_later',
     'search',
     'subscription', 'payment',
     'top',
@@ -42,7 +42,7 @@ AvailableActions = Literal[
     'update',
     'subscription', 'notifications',
     'rate',
-    'rec', 'nrec',
+    'rec', 'nrec', 'feedCheck', 'saveLater', 'removeLater', 'playLater',
     'digestMute', 'digestToggle',
     'episodeFormatRich', 'episodeFormatSeparate', 'episodeFormatCaption', 'episodeFormatMeta',
     'episodeFormatHint',

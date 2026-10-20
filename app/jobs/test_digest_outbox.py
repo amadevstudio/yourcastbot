@@ -145,6 +145,9 @@ def test_paid_user_is_skipped_at_send(db_path):
                 notify_count INTEGER,
                 time_left INTEGER
             );
+            CREATE TABLE IF NOT EXISTS user_channel_cs (
+                user_telegram_id INTEGER,channel_id INTEGER,notify INTEGER
+            );
         """)
         db.connection.execute(
             "INSERT INTO users (telegramId, lang) VALUES (5005, 'en')")
@@ -182,6 +185,20 @@ def test_paid_user_is_skipped_at_send(db_path):
             digest_watcher.send_digest_to_user(5005, database=db_path),
             True, "expired user gets the digest")
         _assert_eq(sent, [5005], "digest sent once")
+        from db import listening
+        listening.remember('New episode', 'Test show',
+            {'tp':'rec','id':17,'dh_n':'abc_1'}, db_path, channel_id=17, cursor='new')
+        listening.flag_digest([5005], 17, 'new', db_path)
+        db = SQLighter(db_path)
+        try:
+            db.mark_nosub_digest_sent(5005, when='2000-01-01 00:00:00')
+            db.connection.execute('INSERT INTO user_channel_cs VALUES(5005,17,0)')
+            db.connection.commit()
+        finally:
+            db.close()
+        _assert_eq(digest_watcher.send_digest_to_user(5005, database=db_path), False,
+                   'muted since enqueue: no generic fallback reminder')
+        _assert_eq(sent, [5005], 'mute is re-read before sending')
     finally:
         digest_watcher.outer_sender = real_sender
 
