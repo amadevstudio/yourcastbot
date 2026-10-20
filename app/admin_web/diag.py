@@ -510,6 +510,7 @@ def outbox_stats(conn, out=print, hours=6, now=None):
     now = datetime.datetime.now() if now is None else now
     now_utc = local_to_utc_text(now)
     since = local_to_utc_text(now - datetime.timedelta(hours=hours))
+    recovery_stats(conn, out=out, now=now)
     out("== send_outbox rows created in the last %dh (since %s UTC), by status" % (
         hours, since))
     created = {}
@@ -550,6 +551,27 @@ def outbox_stats(conn, out=print, hours=6, now=None):
         if r["expired"]:
             line += ", %d with an expired lease (no worker renews it)" % r["expired"]
         out(line)
+
+
+def recovery_stats(conn, out=print, now=None):
+    """Read-only aggregates; older databases need no migration to serve diag."""
+    now = datetime.datetime.now() if now is None else now
+    stamp = now.timestamp()
+    out('== Feed recovery')
+    try:
+        rows = conn.execute(
+            'SELECT status,paused,count(*) AS n,'
+            'sum(CASE WHEN status=\'pending\' AND available_at<=? THEN 1 ELSE 0 END) AS due,'
+            'sum(CASE WHEN status=\'leased\' AND leased_until<=? THEN 1 ELSE 0 END) AS expired '
+            'FROM feed_recovery GROUP BY status,paused ORDER BY status,paused', (stamp, stamp)).fetchall()
+    except sqlite3.OperationalError:
+        out('  not initialized')
+        return
+    for row in rows:
+        out('  %s paused=%s: %s, due=%s, expired leases=%s' % (
+            row['status'], row['paused'], row['n'], row['due'], row['expired']))
+    if not rows:
+        out('  none')
 
 
 def _describe_feed(url, get, out):
@@ -728,6 +750,14 @@ def describe_listeners(conn, channel_id, out=print):
     except (TypeError, ValueError):
         dead = dead_until
     out("  feed failures counted: %s, dead until: %s" % (failures or 0, dead or "-"))
+    try:
+        recovery = conn.execute('SELECT status,paused,result FROM feed_recovery WHERE channel_id=?',
+                                (channel_id,)).fetchone()
+    except sqlite3.OperationalError:
+        recovery = None
+    if recovery:
+        out('  recovery: %s, paused=%s, last result=%s' % (
+            recovery['status'], recovery['paused'], recovery['result'] or '-'))
 
 
 def feed_probe(conn, channel_id, out=print, get=None, itunes=None):

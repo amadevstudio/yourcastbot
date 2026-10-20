@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Drain digest_outbox in the jobs process. Do not run this from updater."""
 import time
+import json
 
 import app.service.user.language
 from app.core.sender.outbox import OutboxRetryableError
@@ -11,11 +12,34 @@ from app.jobs.nosub_digest import DIGEST_MUTE_ACTION, should_send_nosub_digest
 from app.jobs.relay_remind import relay_nudge_markup
 from config import db_path
 from db.sqliteAdapter import SQLighter
+from db import listening
+from lib.markup import telegram_html
 from lib.telegram.general.message_master import outer_sender
 from lib.tools.logger import logger
 
 IDLE_SLEEP_SECONDS = 5
 SEND_PAUSE_SECONDS = 1
+
+
+def digest_message(entries, language):
+    text = get_message('youHaveNewEpisodes', language)
+    rows = []
+    if entries:
+        text += '\n\n<b>' + get_message('digestEpisodes', language) + '</b>'
+    for index, entry in enumerate(entries, 1):
+        text += '\n\n' + str(index) + '. <b>' + telegram_html.escape(
+            telegram_html.plain_text(entry['show_name'])[:90]) + '</b>\n'
+        text += telegram_html.escape(telegram_html.plain_text(entry['title'])[:150])
+        callback = json.loads(entry['callback_json'])
+        # Saved old positions can no longer be trusted; hash lookup starts at 0.
+        callback['dh_n'] = callback['dh_n'].split('_')[0] + '_1'
+        rows.append([{'text': str(index) + ' · ' + get_message('playLater', language),
+                      'callback_data': callback}])
+    rows += relay_nudge_markup(language, extra_row=[{
+        'text': get_message('nosubDigestMuteButton', language),
+        'callback_data': {'tp': DIGEST_MUTE_ACTION},
+    }])
+    return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}
 
 
 def send_digest_to_user(user_tg_id, database=None):
@@ -32,16 +56,15 @@ def send_digest_to_user(user_tg_id, database=None):
                 has_tariff=db_users.is_user_have_bot_subscription(user_tg_id)):
             return False
         user_language = app.service.user.language.user_language(user['lang'])
-        sent = outer_sender(user['telegramId'], [{
-            'type': 'text',
-            'text': get_message("youHaveNewEpisodes", user_language),
-            'reply_markup': relay_nudge_markup(user_language, extra_row=[{
-                'text': get_message("nosubDigestMuteButton", user_language),
-                'callback_data': {'tp': DIGEST_MUTE_ACTION},
-            }]),
-        }], on_flood='raise')
+        entries = listening.digest(user_tg_id, database)
+        if not entries and listening.has_digest(user_tg_id, database):
+            # Every queued show was muted/unsubscribed. Do not replace the
+            # suppressed episodes with a generic reminder of those same shows.
+            return False
+        sent = outer_sender(user['telegramId'], [digest_message(entries, user_language)], on_flood='raise')
         if sent:
             db_users.mark_nosub_digest_sent(user_tg_id)
+            listening.ack_digest(user_tg_id, entries, database)
             return True
         return False
     finally:
@@ -78,7 +101,7 @@ def digest_watcher():
             try:
                 did_send = send_digest_to_user(user_tg_id)
             except OutboxRetryableError as e:
-                logger.err("digest_watcher/flood:", user_tg_id, e)
+                logger.warn("digest_watcher/flood:", user_tg_id, e)
                 digest_outbox.fail_or_retry(
                     user_tg_id, error=e, attempts=attempts)
                 continue

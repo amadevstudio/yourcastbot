@@ -5,7 +5,8 @@ from __future__ import annotations
 import time
 
 from app.repository.storage import storage
-from db import runtime_kv
+from db import runtime_kv, feed_recovery
+from lib.tools.logger import logger
 
 # Разовый таймаут/503 не должен гасить уведомления.
 FEED_FAILURES_BEFORE_NOTIFY_OFF = 5
@@ -48,12 +49,27 @@ def should_skip_feed_fetch(
 
 def note_feed_ok(channel_id, database=None):
     storage.clear_channel_feed_dead(channel_id, database=database)
+    try:
+        feed_recovery.note_ok(channel_id, database=database)
+    except Exception as e:
+        logger.warn('feed_recovery/note_ok:', channel_id, e)
+
+
+def queue_feed_recovery(channel_id, reason, **kwargs):
+    """A repair job is a side task: a locked database must not cut the
+    circle's channel short, nor the failure count and the manual refresh."""
+    try:
+        feed_recovery.enqueue(channel_id, reason, **kwargs)
+    except Exception as e:
+        logger.warn('feed_recovery/enqueue:', channel_id, reason, e)
 
 
 def note_feed_failure(
         channel_id, reason, now=None, database=None) -> str:
     """counting | newly_dead | still_dead"""
     stamp = time.time() if now is None else float(now)
+    if reason == 'gone':
+        queue_feed_recovery(channel_id, reason, now=stamp, database=database)
     until = storage.get_channel_feed_dead_until(channel_id, database=database)
     if until is not None and stamp < until:
         return "still_dead"
@@ -67,6 +83,7 @@ def note_feed_failure(
         return "counting"
     storage.set_channel_feed_dead_until(
         channel_id, stamp + FEED_DEAD_PROBE_SECONDS, database=database)
+    queue_feed_recovery(channel_id, reason, paused=True, now=stamp, database=database)
     return "newly_dead"
 
 

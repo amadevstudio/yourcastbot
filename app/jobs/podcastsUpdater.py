@@ -30,7 +30,7 @@ from app.jobs.circle_pace import HostPacer, circle_rest_seconds
 from app.jobs.feed_health import (
     should_skip_feed_fetch, note_feed_ok, note_feed_failure, failures_threshold,
     paid_targets_behind, feed_version, refetch_allowed, note_refetched,
-    channel_feed_url)
+    channel_feed_url, queue_feed_recovery)
 from app.jobs.digest_outbox import pending_count
 from app.jobs.updater_resume import consume_clean_stop, resume_point
 from app.jobs.nosub_digest import (
@@ -41,6 +41,8 @@ from config import (
     another_projects_texts, max_subscriptions_without_tariff,
     app_api_id, app_api_hash, token, botName)
 from db.sqliteAdapter import SQLighter
+from db import listening
+from app.service.podcast.listening import remember_latest
 from lib.tools.logger import Logger
 from app.routes.ptypes import ControllerParams
 
@@ -270,6 +272,7 @@ def send_new_records_by_channel(
         # пользователь не должен терять уведомления из-за того,
         # что нажал 'обновить' в неудачный момент.
         if manual:
+            queue_feed_recovery(channel['id'], failure_reason, manual=True)
             logger.log(
                 "Feed is not available for channel", channel['id'],
                 "; reason:", failure_reason,
@@ -328,55 +331,21 @@ def send_new_records_by_channel(
             "Feed is stably unavailable for channel", channel['id'],
             "; reason:", failure_reason,
             "; consecutive failures:", failures,
-            "; turning notifications off for", len(connections), "subscribers and",
+            "; pausing delivery for", len(connections), "subscribers and",
             nosubs_n, "users without a tariff")
-
-        try:
-            if nosubs_connections is not None:
-                for connection in nosubs_connections:
-                    db_users = SQLighter(db_path)
-                    db_users.turn_notify_tg(
-                        connection['user_telegram_id'], connection['channel_id'], False)
-                    db_users.close()
-        except Exception:
-            pass
-
-        for connection in connections:
-            db_users = SQLighter(db_path)
-            user = db_users.get_user_by_tg(connection['user_telegram_id'])
-            user_language = app.service.user.language.user_language(user['lang'])
-            # Выключить уведомления для канала для пользователей с подпиской
-            db_users.turn_notify_tg(user['telegramId'], connection['channel_id'], False)
-            db_users.close()
-            collection_name = (pc_info or {}).get("collectionName") or channel["name"] or ""
-
-            try:
-                title = telegram_html.text(str(collection_name))
-                body = format_feed_notice(
-                    user_language, 'notificationsFCDisabled',
-                    _channel_feed_url(channel, pc_info))
-                text = ("<b>" + title + "</b>\n\n" + body) if title else body
-                outer_sender(connection['user_telegram_id'], [{
-                    'type': 'text', 'text': text
-                }])
-                storage.set_user_resend_flag(user['telegramId'])
-                new_recs_flag = True
-            except Exception as e:
-                logger.err("podcastsUpdater/whileNotifyUserAboutNtfDisabled: ", e)
-
-            try:
-                logger.log(
-                    "PARSING ERROR! In podcastUpdater2. ",
-                    "Notifications disabled for podcast ", collection_name)
-            except Exception as e:
-                logger.err(
-                    "PARSING ERROR! In podcastUpdater2. ",
-                    "Notifications disabled for podcast ", e)
+        # Recovery and user notices run in jobs. Keep notify and both cursors:
+        # the next healthy circle must still deliver to everyone who opted in.
         return ChannelUpdateResult(new_recs_flag, 'fetched')
 
     # фид получен — серия неудач прервана
     note_feed_ok(channel['id'])
     _persist_channel_http_validators(channel, pc_info)
+
+    # A digest bookmark: it must never cost this circle its delivery.
+    try:
+        remember_latest(root, channel)
+    except Exception as e:
+        logger.warn("podcastsUpdater/rememberLatest:", channel['id'], e)
 
     if service_name == 'itunes':
         # # flag = True
@@ -835,7 +804,7 @@ def _persist_channel_http_validators(channel, pc_info):
     db_users = SQLighter(db_path)
     try:
         db_users.update_channel_http_validators(
-            channel['id'], new_etag, new_lm)
+            channel['id'], new_etag, new_lm, expected_rss_link=channel['rss_link'])
     except Exception as e:
         logger.err("podcastsUpdater/persistHttpValidators: ", e)
     finally:
@@ -888,6 +857,12 @@ def flag_nosubs_for_digest(
         db_users = SQLighter(db_path)
     try:
         remind = set(behind)  # TED alone has ~10k free listeners: no list scans
+        # Without its episode the digest falls back to the generic text;
+        # the flags and cursors below must still be written.
+        try:
+            listening.flag_digest(behind, channel_id, latest_pgd, database=db_path)
+        except Exception as e:
+            logger.warn("podcastsUpdater/flagDigest:", channel_id, e)
         for user_tg_id in behind + quiet:
             if user_tg_id in remind:
                 storage.set_new_podcast_available_flag(user_tg_id)

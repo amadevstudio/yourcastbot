@@ -7,6 +7,9 @@ from lxml import etree
 from app.service.podcast.feed_xml import channel_element
 from lib.requests import requesterModule
 from lib.requests.requesterModule import STD_REQUEST_HEADERS
+from lib.tools.logger import Logger
+
+logger = Logger(file='rss')
 
 requester = requesterModule.Requester()
 
@@ -115,7 +118,7 @@ def get_rss_root_with_status(
         if all(status == FEED_STATUS_GONE for status in round_statuses):
             break
 
-    print('; '.join(errors), flush=True)
+    logger.warn('Feed fetch failed:', feed_url, '; '.join(errors))
 
     if statuses and all(status == FEED_STATUS_GONE for status in statuses):
         return False, FEED_STATUS_GONE, last_validators

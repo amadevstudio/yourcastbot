@@ -417,6 +417,24 @@ def main():
     test_refetches(path, work_dir)
     test_digest_stats(path)
     test_outbox_stats(work_dir)
+    from db.feed_recovery import connect as recovery_connect
+    c = recovery_connect(path)
+    with c:
+        c.execute("INSERT INTO feed_recovery(channel_id,status,paused,reason,available_at) "
+                  "VALUES(17,'pending',1,'gone',?)", (NOW.timestamp()-1,))
+        c.execute("INSERT INTO feed_recovery(channel_id,status,paused,reason,available_at,leased_until) "
+                  "VALUES(18,'leased',0,'manual',?,?)", (NOW.timestamp()-2,NOW.timestamp()-1))
+    c.close()
+    ro = diag.connect_ro(path)
+    try:
+        lines = []
+        diag.recovery_stats(ro, out=lines.append, now=NOW)
+        text = '\n'.join(lines)
+        _assert_in('pending paused=1: 1, due=1, expired leases=0', text, 'recovery due queue')
+        _assert_in('leased paused=0: 1, due=0, expired leases=1', text, 'recovery expired worker')
+        _assert_eq('17' in text or '18' in text, False, 'recovery diagnostics are aggregates only')
+    finally:
+        ro.close()
     test_listener_groups(work_dir)
     test_errors(work_dir)
     print("all diag checks passed")
