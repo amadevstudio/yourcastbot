@@ -18,7 +18,8 @@ from lib.requests.url import normalize_url
 from app.routes.message_tools import go_back_inline_markup
 from lib.telegram.general.errors import media_fetch_failed
 from lib.telegram.general.message_master import message_master, render_messages, MessageStructuresInterface, \
-    message_editor, InlineButtonData
+    message_editor, InlineButtonData, outer_sender
+from app.service.payment.storefront import relay_nudge_markup
 from lib.tools.logger import logger
 from app.i18n.messages import get_message, emojiCodes, standartSymbols
 from app.repository.storage import storage
@@ -465,9 +466,17 @@ def switch_subscription(data: ControllerParams):
             subscription is None
             or not (subscription['tariff_id'] > 0 and subscription['time_left'] > 0)) \
             and updated_state_data['subscribed']:
+        # An alert cannot carry a button: a short toast, then the limit as a
+        # message with Relay's invoice one tap away (the limit is where it sells).
         notify(
             data['callback'], data['message'],
-            get_message("withoutTariffSubscriptionsLimited", data['language_code']), alert=True)
+            get_message("freeLimitReached", data['language_code']).format(
+                limit=max_subscriptions_without_tariff))
+        outer_sender(data['chat_id'], [{
+            'type': 'text',
+            'text': get_message("withoutTariffSubscriptionsLimited", data['language_code']),
+            'reply_markup': relay_nudge_markup(data['language_code'], invoice=True),
+        }])
         return False
 
     # основная логика

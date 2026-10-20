@@ -136,7 +136,9 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
     @thonbot.on(events.Raw(tl_types.UpdateBotPrecheckoutQuery))
     async def telegram_stars_precheckout(update: tl_types.UpdateBotPrecheckoutQuery):
         try:
-            success, error = starsPaymentModule.validate_precheckout_payload(
+            # an offer's check reads the database: off the event loop
+            success, error = await asyncio.get_running_loop().run_in_executor(
+                None, starsPaymentModule.validate_precheckout_payload,
                 update.payload, update.user_id, update.currency, update.total_amount)
         except Exception as e:
             logger.err(e)

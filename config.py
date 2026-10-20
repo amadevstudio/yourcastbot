@@ -67,6 +67,13 @@ tariff_secret_start_cmd_period = 2 * 24
 tariff_ref_no_subscription_period = 3 * 24
 tariff_ref_notifies = 20
 tariff_ref_sub_period = 15 * 24
+# a new user who came by a friend's link: added to tariff_new_user_period
+tariff_ref_invitee_period = 7 * 24
+# prepaid months of Relay with Telegram Stars: (months, % off the charge)
+prepay_bundles = ((3, 10), (6, 15), (12, 25))
+# win-back after Relay stops: messages this many days after, and % off the first month (once per user)
+winback_after_days = (7, 30)
+winback_offer_discount = 30
 
 # максимальное число подписок и количества в обновлении
 max_subscriptions_without_tariff = 15

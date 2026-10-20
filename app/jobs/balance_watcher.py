@@ -7,6 +7,8 @@ from app.jobs.relay_remind import (
 from app.jobs.tariff_tick import run_tariff_tick
 from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
+from app.service.payment.referral import invite_row
+from app.jobs.winback import send_winback_messages, start_winback
 from app.service.payment.storefront import plan_off_text
 from config import tariff_period
 from lib.telegram.general.message_master import outer_sender
@@ -51,6 +53,11 @@ def balance_watcher(update_time):
                     tariff_str, balance, pu['tprice'], tariff_period, pu['tnc'], lang)
                 outer_sender(pu['telegramId'], [{'type': 'text', 'text': message}])
 
+        try:
+            start_winback(not_prolonged_users)
+        except Exception as e:
+            logger.warn("winback/start:", e)
+
         for npu in not_prolonged_users:
             lang = npu['lang']
             # The plan that stopped is the user's own (Bronze, Silver, Relay).
@@ -71,7 +78,8 @@ def balance_watcher(update_time):
                 outer_sender(npu['telegramId'], [{
                     'type': 'text',
                     'text': message,
-                    'reply_markup': relay_nudge_markup(lang),
+                    'reply_markup': relay_nudge_markup(
+                        lang, extra_row=invite_row(npu['telegramId'], lang)),
                 }])
             except Exception as e:
                 logger.err(e)
@@ -80,3 +88,8 @@ def balance_watcher(update_time):
             send_relay_d3_reminders()
         except Exception as e:
             logger.err("relay_d3_batch:", e)
+
+        try:
+            send_winback_messages()
+        except Exception as e:
+            logger.err("winback_batch:", e)

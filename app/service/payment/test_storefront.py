@@ -13,8 +13,8 @@ if _ROOT not in sys.path:
 
 from app.i18n.messages import get_message  # noqa: E402
 from app.service.payment.storefront import (  # noqa: E402
-    CHANGE_PLAN_CALLBACK, subscription_pay_rows, tariffs_for_change_plan,
-    tariffs_for_storefront)
+    CHANGE_PLAN_CALLBACK, relay_nudge_markup, showcase_tariff, subscription_pay_rows,
+    tariffs_for_change_plan, tariffs_for_storefront)
 
 
 def _assert(cond, label):
@@ -114,6 +114,17 @@ def main():
     _assert(len(ru_plan) <= 64, "change-plan button fits Telegram")
     _assert("план" in ru_plan.lower() or "тариф" in ru_plan.lower(),
             "RU change-plan button is readable")
+    # A limit the user just hit: Relay's invoice in one tap, change-plan kept.
+    paywall = relay_nudge_markup("en", invoice=True)
+    _assert_eq(paywall[0][0]["callback_data"], {"tp": "bs_stars_pay"},
+               "paywall CTA opens the Relay invoice, no tariff id needed")
+    _assert_eq(paywall[1][0]["callback_data"]["tp"], CHANGE_PLAN_CALLBACK,
+               "paywall keeps change-plan next to it")
+    _assert_eq(relay_nudge_markup("en")[0][0]["callback_data"], {"tp": "bs_stars"},
+               "other nudges still open the Stars page of every plan")
+    _assert_eq(showcase_tariff([_SqliteRow({"id": 1, "level": 1, "price": 50}),
+                                _SqliteRow({"id": 7, "level": 3, "price": 500})])["id"], 7,
+               "the invoice without an id bills the Relay row")
     print("all storefront checks passed")
 
 

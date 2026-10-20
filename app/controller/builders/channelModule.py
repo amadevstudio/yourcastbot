@@ -15,6 +15,7 @@ from lib.telegram.general.message_master import message_master, render_messages,
 from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage
 from app.service.payment import paymentModule
+from app.service.payment.storefront import relay_nudge_markup
 from config import db_path, maxTgChannelsPerAccount
 from db.sqliteAdapter import SQLighter
 from app.routes.ptypes import ControllerParams
@@ -31,14 +32,15 @@ def open_connecting_channel(data: ControllerParams):
     tariffs = db.getTariffs(channel_control=True)
     db.close()
 
-    conn_message = get_connecting_channel_message(data['language_code'], tariff, tariffs)
+    conn_message = get_connecting_channel_message(
+        data['language_code'], tariff, tariffs, plan_running=tariff['id'] > 0 and time_left > 0)
 
     render_messages(data['chat_id'], [{'type': 'text', 'text': conn_message['message'],
                                        'reply_markup': conn_message['markup']}])
 
 
 # сборка сообщения
-def get_connecting_channel_message(language_code, tariff, tariffs):
+def get_connecting_channel_message(language_code, tariff, tariffs, plan_running=False):
     message_text = ""
 
     keyboard: list[list[InlineButtonData]] = []
@@ -69,6 +71,10 @@ def get_connecting_channel_message(language_code, tariff, tariffs):
             + "\n\n" + get_message("cantConnectTgChannelMessage", language_code) % (
                             required_tariff_levels_message,
                             paymentModule.decode_tariff(tariff['level'], language_code))
+        # the limit is where Relay sells: its invoice is one tap away when no
+        # plan runs (the payment turns Relay on). A running Bronze or Silver
+        # would only be topped up: its owner gets the Stars page and change-plan.
+        keyboard += relay_nudge_markup(language_code, invoice=not plan_running)
 
     keyboard += go_back_inline_markup(language_code)
 

@@ -1219,12 +1219,25 @@ class SQLighter:
             self.connection.commit()
         return new_user, by_refer
 
-    def user_clear_refer(self, telegramId):
-        with self.connection:
-            self.cursor.execute(
-                'UPDATE users SET ref_id = ? WHERE telegramId = ?',
-                (None,))
+    def claim_referrer(self, telegramId):
+        """The inviter of telegramId, taken once: ref_id is cleared in the same
+        transaction, so a second payment or a webhook retry gets None.
+        A user who "invited" themselves is nobody's referral."""
+        try:
+            self.cursor.execute("BEGIN IMMEDIATE")
+            row = self.cursor.execute(
+                'SELECT ref_id FROM users WHERE telegramId = ?',
+                (str(telegramId),)).fetchone()
+            refer_id = None if row is None or row['ref_id'] is None else int(row['ref_id'])
+            if refer_id is not None:
+                self.cursor.execute(
+                    'UPDATE users SET ref_id = NULL WHERE telegramId = ?',
+                    (str(telegramId),))
             self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return None if refer_id == int(telegramId) else refer_id
 
     def update_bitrate_by_tg(self, telegramId, bitrate):
         with self.connection:
@@ -1300,6 +1313,14 @@ class SQLighter:
                 "WHERE telegramId = ?",
                 ('$.' + name, value, str(telegramId)))
             self.connection.commit()
+
+    def get_user_flag(self, telegramId, name):
+        """One key of users.flags, None when unset (or no such user)."""
+        with self.connection:
+            row = self.cursor.execute(
+                "SELECT json_extract(COALESCE(flags, '{}'), ?) FROM users WHERE telegramId = ?",
+                ('$.' + name, str(telegramId))).fetchone()
+        return None if row is None else row[0]
 
     def mark_rich_hint_sent(self, telegramId) -> None:
         self.set_user_flag(telegramId, 'rich_hint_sent')
@@ -1425,6 +1446,13 @@ class SQLighter:
                 print('user restored ' + str(telegramId), flush=True)
 
             return restored
+
+    def user_exists_tg(self, telegramId) -> bool:
+        """Unlike get_user_by_tg, never creates the row."""
+        with self.connection:
+            return self.cursor.execute(
+                'SELECT 1 FROM users WHERE telegramId = ?',
+                (str(telegramId),)).fetchone() is not None
 
     def is_user_deleted_tg(self, telegramId) -> bool:
         with self.connection:
@@ -1659,8 +1687,16 @@ class SQLighter:
 
     def applyPaymentReplenishmentOnce(
             self, user, serviceType, invoiceId, paidAt, amountCents,
-            tariff_period, invoiceHash=None, status=None
+            tariff_period, invoiceHash=None, status=None, userFlag=None, planId=None
     ):
+        """userFlag: a users.flags key set with the payment, in its transaction
+        (a one-time offer is spent exactly when its money is credited).
+
+        planId: the plan the invoice was for. With no plan running the payment
+        switches to it and turns it on when the balance covers it (a free user
+        who paid for Relay gets Relay, not a balance and "choose a plan"). A
+        running plan is only topped up, as before: a mid-period change has its
+        price difference and is the change-plan page's job."""
         try:
             self.cursor.execute("BEGIN IMMEDIATE")
             user_id = user['id']
@@ -1704,6 +1740,28 @@ class SQLighter:
                     'id': 0, 'level': 0, 'price': 0,
                     'notify_count': 0, 'compression': 0
                 }
+
+            plan = None
+            if planId and (current_subscription is None
+                           or not (current_subscription['tariff_id'] > 0
+                                   and current_subscription['time_left'] > 0)):
+                plan = self.cursor.execute(
+                    'SELECT * FROM tariffs WHERE id = ? AND price > 0',
+                    (str(planId),)).fetchone()
+            if plan is not None:
+                current_tariff = plan
+                if current_subscription is None:
+                    self.cursor.execute(
+                        """
+                            INSERT INTO user_tariff_cs
+                                (uid, tariff_id, balance, time_left, notify_count)
+                            VALUES (?, ?, 0, 0, 0)
+                        """,
+                        (str(user_id), str(plan['id']),))
+                    current_subscription = {
+                        'id': self.cursor.lastrowid, 'uid': user_id,
+                        'tariff_id': plan['id'], 'balance': 0,
+                        'time_left': 0, 'notify_count': 0}
 
             if current_subscription is None or current_subscription.get('id') == 0:
                 tariff_id = 0
@@ -1758,10 +1816,11 @@ class SQLighter:
                 self.cursor.execute(
                     """
                         UPDATE user_tariff_cs
-                        SET balance = ?, time_left = ?, notify_count = ?
+                        SET tariff_id = ?, balance = ?, time_left = ?, notify_count = ?
                         WHERE uid = ?
                     """,
-                    (str(new_balance), str(new_time_left),
+                    (str(current_subscription['tariff_id'] if plan is None else plan['id']),
+                     str(new_balance), str(new_time_left),
                      str(new_notify_count), str(user_id),))
                 current_subscription['balance'] = new_balance
                 current_subscription['time_left'] = new_time_left
@@ -1777,6 +1836,10 @@ class SQLighter:
                 (str(user_id), str(serviceType), str(invoiceId), invoiceHash,
                  status, int(amountCents) if amountCents is not None else amountCents,
                  str(paidAt),))
+            if userFlag:
+                self.cursor.execute(
+                    "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), ?, 1) "
+                    "WHERE id = ?", ('$.' + userFlag, str(user_id)))
             self.connection.commit()
 
             return {

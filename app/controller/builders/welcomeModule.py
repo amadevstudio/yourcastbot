@@ -27,11 +27,17 @@ def start(data: ControllerParams):
 def referral_processing(data: ControllerParams, refer_id: int | None, action_mode: bool = False):
     db_users = SQLighter(config.db_path)
 
+    # A link names its inviter: only an existing user other than oneself.
+    # get_user_by_tg (in giveAward) would create a row for any number in the link.
+    if refer_id is not None and (
+            int(refer_id) == int(data['chat_id']) or not db_users.user_exists_tg(refer_id)):
+        refer_id = None
+
     # регистрируем, если он ещё нет, с учётом рефералки
     is_new_user, is_by_refer = db_users.register_new_user(
         data['chat_id'], data['language_code'], refer_id)
 
-    if is_by_refer is True and refer_id is not None and int(refer_id) != int(data['chat_id']):
+    if is_by_refer is True and refer_id is not None:
         result_message_for_refer = paymentSafeModule.giveAward(refer_id, data['chat_id'], 'reged')
     else:
         result_message_for_refer = None
@@ -40,7 +46,9 @@ def referral_processing(data: ControllerParams, refer_id: int | None, action_mod
 
     # даём платную подписку на неделю новому или на пару дней при /start
     # подписываем их на Ted Talks Daily
-    welcome_message = paymentSafeModule.giveAward(data['chat_id'], 0, "new")
+    # a friend's link (an existing user, not oneself) makes the welcome plan longer
+    welcome_message = paymentSafeModule.giveAward(
+        data['chat_id'], 0, "new", invited=result_message_for_refer is not None)
     if welcome_message is not None:
         # подписка на ted talks daily (только при выдаче награды, то есть в первый раз)
         pc_name, _ = add_sub(data['chat_id'], 21, 160904630, 'itunes')

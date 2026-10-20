@@ -34,7 +34,7 @@ import config
 from app.i18n.messages import get_message
 
 from lib.api.payment.cryptoBotApi import CryptoBotApi
-from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, giveAward
+from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, award_referrer_for_payment
 from scripts.payment.webhook_input import crypto_invoice
 
 # TODO: refactor the file, make some tests
@@ -272,11 +272,10 @@ def income_processing():
 								"cryptoBot paid invoice=%s tgid=%s amount=%s\n"
 								% (invoice_id, chat_tg_id, amountCents))
 
-				if user['ref_id'] is not None:
-					message = giveAward(user['ref_id'], user['telegramId'], 'replenished')
-					if message is not None:
-						with bot:
-							bot.loop.run_until_complete(notify_refer(user['ref_id'], message))
+				refer_id, message = award_referrer_for_payment(user['telegramId'])
+				if message is not None:
+					with bot:
+						bot.loop.run_until_complete(notify_refer(refer_id, message))
 
 				with bot:
 					bot.loop.run_until_complete(
