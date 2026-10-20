@@ -22,6 +22,13 @@ ROWS = {
         'Escucho pódcasts en Telegram: los episodios nuevos llegan como archivo directo al chat. Con este enlace tienes {days} días gratis.',
         'Ich höre Podcasts in Telegram: neue Folgen kommen als Datei direkt in den Chat. Mit diesem Link hast du {days} Tage gratis.',
         'אני מאזין לפודקאסטים בטלגרם: פרקים חדשים מגיעים כקובץ ישר לצ׳אט. עם הקישור הזה מקבלים {days} ימים בחינם.'),
+    'freeLimitReached': (
+        'Лимит бесплатного плана: {limit} подкастов',
+        'Free plan limit: {limit} podcasts',
+        'Limite do plano grátis: {limit} podcasts',
+        'Límite del plan gratis: {limit} pódcasts',
+        'Limit des Gratis-Tarifs: {limit} Podcasts',
+        'מגבלת המסלול החינמי: {limit} פודקאסטים'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

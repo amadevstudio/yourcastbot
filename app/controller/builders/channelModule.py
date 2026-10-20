@@ -15,6 +15,7 @@ from lib.telegram.general.message_master import message_master, render_messages,
 from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage
 from app.service.payment import paymentModule
+from app.service.payment.storefront import relay_nudge_markup
 from config import db_path, maxTgChannelsPerAccount
 from db.sqliteAdapter import SQLighter
 from app.routes.ptypes import ControllerParams
@@ -69,6 +70,8 @@ def get_connecting_channel_message(language_code, tariff, tariffs):
             + "\n\n" + get_message("cantConnectTgChannelMessage", language_code) % (
                             required_tariff_levels_message,
                             paymentModule.decode_tariff(tariff['level'], language_code))
+        # the limit is where Relay sells: its invoice is one tap away
+        keyboard += relay_nudge_markup(language_code, invoice=True)
 
     keyboard += go_back_inline_markup(language_code)
 

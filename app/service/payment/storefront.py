@@ -14,6 +14,8 @@ from app.i18n.messages import get_message
 
 SHOWCASE_TARIFF_LEVEL = 3
 CHANGE_PLAN_CALLBACK = "bs_trfs"
+# no 'v': send_invoice bills the showcase plan, so a button needs no tariff id
+RELAY_INVOICE_CALLBACK = {"tp": "bs_stars_pay"}
 
 _MEDAL = re.compile(r"^[^\w]+")
 
@@ -93,6 +95,30 @@ def tariffs_for_storefront(tariffs, current_tariff_id=0):
         return ordered
     priced = [row for row in rows if int(row.get("price") or 0) > 0]
     return priced or rows
+
+
+def showcase_tariff(tariffs):
+    """The Relay row of the tariff table, or None."""
+    return next((_tariff_dict(t) for t in tariffs or []
+                 if int(_tariff_dict(t).get("level") or 0) == SHOWCASE_TARIFF_LEVEL), None)
+
+
+def relay_nudge_markup(language_code, extra_row=None, invoice=False):
+    """Stars first, then change-plan. Do not trap the user on one SKU.
+
+    invoice=True is for a limit the user has just hit: the Relay button opens
+    its Stars invoice at once (one tap to pay) instead of the page of plans.
+    """
+    rows = [[{
+        "text": get_message("relayEnableButton", language_code),
+        "callback_data": dict(RELAY_INVOICE_CALLBACK) if invoice else {"tp": "bs_stars"},
+    }], [{
+        "text": get_message("tariffs", language_code),
+        "callback_data": {"tp": CHANGE_PLAN_CALLBACK},
+    }]]
+    if extra_row:
+        rows.append(extra_row)
+    return rows
 
 
 def subscription_pay_rows(language_code, include_robokassa=False):

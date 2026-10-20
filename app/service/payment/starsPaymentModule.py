@@ -23,7 +23,7 @@ from app.service.payment.paymentModule import (
 from app.service.payment.paymentSafeModule import (
     award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg, prepare_price)
 from app.service.payment.referral import invite_row
-from app.service.payment.storefront import tariffs_for_storefront
+from app.service.payment.storefront import showcase_tariff, tariffs_for_storefront
 from config import db_path
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import InlineButtonData, outer_sender, render_messages
@@ -227,19 +227,22 @@ def get_sub_message(
 
 
 def send_invoice(data: ControllerParams):
-    try:
-        tariff_id = int(data['united_data'].get('v', 0))
-    except Exception:
-        notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
-        return False
-
     db_users = SQLighter(db_path)
     try:
         tariffs = db_users.getTariffs()
     finally:
         db_users.close()
 
-    selected_tariff = next((tariff for tariff in tariffs if tariff['id'] == tariff_id), None)
+    if 'v' not in data['united_data']:
+        # RELAY_INVOICE_CALLBACK: a paywall button bills Relay without naming it
+        selected_tariff = showcase_tariff(tariffs)
+    else:
+        try:
+            tariff_id = int(data['united_data']['v'])
+        except Exception:
+            notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
+            return False
+        selected_tariff = next((tariff for tariff in tariffs if tariff['id'] == tariff_id), None)
     if selected_tariff is None or selected_tariff['price'] <= 0:
         notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
         return False
