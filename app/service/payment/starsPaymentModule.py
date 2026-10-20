@@ -23,7 +23,8 @@ from app.service.payment.paymentModule import (
 from app.service.payment.paymentSafeModule import (
     award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg, prepare_price)
 from app.service.payment.referral import invite_row
-from app.service.payment.offers import bundle_discount, charged_cents
+from app.service.payment.offers import (
+    WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open)
 from app.service.payment.storefront import (
     SHOWCASE_TARIFF_LEVEL, showcase_tariff, tariffs_for_storefront)
 from config import db_path, prepay_bundles
@@ -54,7 +55,8 @@ class StarsPayload(TypedDict):
     r: int  # rate x1000 the charge was computed with
     p: str  # nonce
     m: int  # months of the plan in b (prepaid bundle), 1 for a top-up
-    d: int  # % off the charge for m months (offers.bundle_discount)
+    d: int  # % off the charge (offers.offer_discount)
+    o: str  # offer the discount comes from ("" or offers.WINBACK_OFFER)
 
 
 def _json_value_to_py(value):
@@ -135,7 +137,7 @@ def stars_to_charge(balance_amount: int, rate_x1000: int, discount: int = 0) -> 
 
 
 def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1000: int,
-                   months: int = 1, discount: int = 0) -> str:
+                   months: int = 1, discount: int = 0, offer: str = "") -> str:
     payload = {
         "t": int(chat_id),
         "b": int(balance_amount),
@@ -144,8 +146,10 @@ def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1
         "p": uuid.uuid4().hex[:16]
     }
     if months != 1 or discount:
-        # a plain top-up keeps the old payload, bundles add their terms
+        # a plain top-up keeps the old payload, bundles and offers add their terms
         payload.update(m=int(months), d=int(discount))
+    if offer:
+        payload["o"] = str(offer)
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -166,12 +170,31 @@ def parse_payload(payload: bytes | str) -> StarsPayload | None:
             "p": str(data["p"]),
             "m": int(data.get("m", 1)),
             "d": int(data.get("d", 0)),
+            "o": str(data.get("o", "")),
         }
     except Exception:
         return None
 
 
 def validate_precheckout_payload(
+        payload: bytes | str, user_id: int, currency: str, total_amount: int
+) -> tuple[bool, str | None]:
+    """Before Telegram takes the money: the payment matches its invoice, the
+    discount is the one sold for those terms, a one-time offer is still open.
+    The rules are checked only here: money taken is credited as it was sold,
+    even if the config or the offer changed in between."""
+    ok, error = validate_payment_payload(payload, user_id, currency, total_amount)
+    if not ok:
+        return ok, error
+    data = parse_payload(payload)
+    if data["d"] != offer_discount(data["m"], data["o"]):
+        return False, "Invalid payment offer"
+    if not offer_open(user_id, data["o"]):
+        return False, "Offer is no longer available"
+    return True, None
+
+
+def validate_payment_payload(
         payload: bytes | str, user_id: int, currency: str, total_amount: int
 ) -> tuple[bool, str | None]:
     data = parse_payload(payload)
@@ -183,8 +206,7 @@ def validate_precheckout_payload(
         return False, "Invalid payment user"
     if int(total_amount) != data["s"]:
         return False, "Invalid payment amount"
-    # the discount is the one sold for those months, not whatever a payload says
-    if data["d"] != bundle_discount(data["m"]):
+    if not 0 <= data["d"] < 100 or data["m"] < 1:
         return False, "Invalid payment offer"
     if data["s"] != stars_to_charge(data["b"], data["r"], data["d"]):
         return False, "Invalid balance amount"
@@ -276,14 +298,19 @@ def send_invoice(data: ControllerParams):
             notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
             return False
         selected_tariff = next((tariff for tariff in tariffs if tariff['id'] == tariff_id), None)
+    offer = str(data['united_data'].get('o', ''))
     try:
         months = int(data['united_data'].get('m', 1))
-        discount = bundle_discount(months)
+        discount = offer_discount(months, offer)
     except (TypeError, ValueError):
         discount = None
     if (selected_tariff is None or selected_tariff['price'] <= 0 or discount is None
-            or (months != 1 and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)):
+            or ((months != 1 or discount) and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)):
         notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
+        return False
+
+    if not offer_open(data['chat_id'], offer):
+        notify(data['callback'], data['message'], get_message('offerNotAvailable', data['language_code']), alert=True)
         return False
 
     amount_balance = int(selected_tariff['price']) * months
@@ -296,10 +323,10 @@ def send_invoice(data: ControllerParams):
     amount_stars = stars_to_charge(amount_balance, rate_x1000, discount)
 
     payload = create_payload(
-        data['chat_id'], amount_balance, amount_stars, rate_x1000, months, discount)
+        data['chat_id'], amount_balance, amount_stars, rate_x1000, months, discount, offer)
     title = get_message("telegram_stars_invoice_title", data['language_code'])
     description = get_message(
-        "telegram_stars_bundle_description" if months != 1 else "telegram_stars_invoice_description",
+        "telegram_stars_bundle_description" if discount else "telegram_stars_invoice_description",
         data['language_code']).format(
         balance=str(prepare_price(amount_balance)),
         stars=str(amount_stars),
@@ -357,7 +384,7 @@ def _payment_result_message(result, current_tariff, current_subscription, langua
 def process_successful_payment(
         chat_id: int, currency: str, total_amount: int, payload: bytes | str,
         charge_id: str, provider_charge_id: str | None = None):
-    ok, error = validate_precheckout_payload(payload, chat_id, currency, total_amount)
+    ok, error = validate_payment_payload(payload, chat_id, currency, total_amount)
     if not ok:
         logger.err(error)
         return False
@@ -377,7 +404,8 @@ def process_successful_payment(
             user, STARS_SERVICE_TYPE, charge_id, datetime.datetime.now(),
             payload_data["b"], config.tariff_period,
             invoiceHash=f"{payload_data['p']}:{payload_data['r']}:{provider_charge_id or ''}",
-            status="paid")
+            status="paid",
+            userFlag=WINBACK_OFFER_FLAG if payload_data['o'] == WINBACK_OFFER else None)
         if result_data['already_processed']:
             return False
     finally:

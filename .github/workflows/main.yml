@@ -44,6 +44,7 @@ jobs:
           python3 app/i18n/test_routed_fallback.py
           python3 app/jobs/test_circle_health.py
           python3 app/jobs/test_relay_remind.py
+          python3 app/jobs/test_winback.py
           python3 app/jobs/test_tariff_tick.py
           python3 app/service/record/test_caption.py
           python3 lib/telegram/test_rich_message.py

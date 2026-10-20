@@ -43,6 +43,41 @@ ROWS = {
         'Relay por {months} meses con {discount}% de descuento: {balance} US$ al saldo por {stars} ⭐. Se renueva cada mes desde el saldo. Cambio: 1000 ⭐ ≈ {rate} US$.',
         'Relay für {months} Monate mit {discount}% Rabatt: {balance} $ Guthaben für {stars} ⭐. Verlängert sich monatlich aus dem Guthaben. Kurs: 1000 ⭐ ≈ {rate} $.',
         'Relay ל-{months} חודשים בהנחה של {discount}%: ‎${balance} ליתרה תמורת {stars} ⭐. מתחדש כל חודש מהיתרה. שער: 1000 ⭐ ≈ ‎${rate}.'),
+    'winbackOffer': (
+        'Relay выключен уже неделю, и новые выпуски ваших подкастов не приходят файлом.\n\nВернуть автодоставку: первый месяц со скидкой {discount}%.',
+        'Relay has been off for a week, and new episodes of your podcasts no longer arrive as files.\n\nBring auto-delivery back: the first month is {discount}% off.',
+        'O Relay está desligado há uma semana, e os episódios novos dos seus podcasts não chegam mais como arquivo.\n\nVolte a receber: o primeiro mês sai com {discount}% de desconto.',
+        'Relay lleva una semana apagado y los episodios nuevos de tus pódcasts ya no llegan como archivo.\n\nRecupera la entrega automática: el primer mes con {discount}% de descuento.',
+        'Relay ist seit einer Woche aus, und neue Folgen deiner Podcasts kommen nicht mehr als Datei.\n\nHol dir die automatische Zustellung zurück: der erste Monat mit {discount}% Rabatt.',
+        'Relay כבוי כבר שבוע, ופרקים חדשים של הפודקאסטים שלך כבר לא מגיעים כקובץ.\n\nלהחזיר את המשלוח האוטומטי: החודש הראשון בהנחה של {discount}%.'),
+    'winbackOfferLast': (
+        'Скидка {discount}% на первый месяц Relay ещё ждёт вас.\n\nНовые выпуски снова будут приходить файлом прямо в чат и постом в ваш канал.',
+        'The {discount}% off your first month of Relay is still waiting.\n\nNew episodes will again arrive as files right here and as posts in your channel.',
+        'O desconto de {discount}% no primeiro mês do Relay ainda está esperando por você.\n\nOs episódios novos voltarão a chegar como arquivo aqui e como post no seu canal.',
+        'El descuento del {discount}% en tu primer mes de Relay aún te espera.\n\nLos episodios nuevos volverán a llegar como archivo aquí y como publicación en tu canal.',
+        'Die {discount}% Rabatt auf deinen ersten Relay-Monat warten noch.\n\nNeue Folgen kommen dann wieder als Datei hierher und als Beitrag in deinen Kanal.',
+        'ההנחה של {discount}% על החודש הראשון של Relay עדיין מחכה לך.\n\nפרקים חדשים יחזרו להגיע כקובץ לכאן וכפוסט בערוץ שלך.'),
+    'winbackOfferButton': (
+        '⭐ Вернуть Relay −{discount}%',
+        '⭐ Bring Relay back −{discount}%',
+        '⭐ Voltar ao Relay −{discount}%',
+        '⭐ Recuperar Relay −{discount}%',
+        '⭐ Relay zurückholen −{discount}%',
+        '⭐ להחזיר את Relay ‎−{discount}%'),
+    'winbackPlain': (
+        'Relay выключен, и новые выпуски ваших подкастов не приходят файлом.\n\nВернуть автодоставку можно в одно нажатие.',
+        'Relay is off, and new episodes of your podcasts no longer arrive as files.\n\nBring auto-delivery back in one tap.',
+        'O Relay está desligado, e os episódios novos dos seus podcasts não chegam mais como arquivo.\n\nReative a entrega automática com um toque.',
+        'Relay está apagado y los episodios nuevos de tus pódcasts ya no llegan como archivo.\n\nRecupera la entrega automática con un toque.',
+        'Relay ist aus, und neue Folgen deiner Podcasts kommen nicht mehr als Datei.\n\nHol dir die automatische Zustellung mit einem Tipp zurück.',
+        'Relay כבוי, ופרקים חדשים של הפודקאסטים שלך כבר לא מגיעים כקובץ.\n\nאפשר להחזיר את המשלוח האוטומטי בלחיצה אחת.'),
+    'offerNotAvailable': (
+        'Это предложение уже недоступно.',
+        'This offer is no longer available.',
+        'Esta oferta não está mais disponível.',
+        'Esta oferta ya no está disponible.',
+        'Dieses Angebot ist nicht mehr verfügbar.',
+        'ההצעה הזו כבר לא זמינה.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

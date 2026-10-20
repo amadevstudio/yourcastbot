@@ -1314,6 +1314,14 @@ class SQLighter:
                 ('$.' + name, value, str(telegramId)))
             self.connection.commit()
 
+    def get_user_flag(self, telegramId, name):
+        """One key of users.flags, None when unset (or no such user)."""
+        with self.connection:
+            row = self.cursor.execute(
+                "SELECT json_extract(COALESCE(flags, '{}'), ?) FROM users WHERE telegramId = ?",
+                ('$.' + name, str(telegramId))).fetchone()
+        return None if row is None else row[0]
+
     def mark_rich_hint_sent(self, telegramId) -> None:
         self.set_user_flag(telegramId, 'rich_hint_sent')
 
@@ -1679,8 +1687,10 @@ class SQLighter:
 
     def applyPaymentReplenishmentOnce(
             self, user, serviceType, invoiceId, paidAt, amountCents,
-            tariff_period, invoiceHash=None, status=None
+            tariff_period, invoiceHash=None, status=None, userFlag=None
     ):
+        """userFlag: a users.flags key set with the payment, in its transaction
+        (a one-time offer is spent exactly when its money is credited)."""
         try:
             self.cursor.execute("BEGIN IMMEDIATE")
             user_id = user['id']
@@ -1797,6 +1807,10 @@ class SQLighter:
                 (str(user_id), str(serviceType), str(invoiceId), invoiceHash,
                  status, int(amountCents) if amountCents is not None else amountCents,
                  str(paidAt),))
+            if userFlag:
+                self.cursor.execute(
+                    "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), ?, 1) "
+                    "WHERE id = ?", ('$.' + userFlag, str(user_id)))
             self.connection.commit()
 
             return {

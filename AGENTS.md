@@ -102,6 +102,45 @@ remove plan management or hide Bronze/Silver.
   next to it. Locks: `python app/jobs/test_relay_remind.py`,
   `python app/i18n/test_relay_copy.py`.
 
+## Referrals, paywall, prepaid months, win-back
+
+- A payment awards the inviter once per invitee, whatever the pay method
+  (Stars, the CryptoBot and Robokassa webhooks): `award_referrer_for_payment`
+  takes `users.ref_id` off the invitee (`claim_referrer`, one transaction)
+  before `giveAward('replenished')`. Never award before the claim: a crash in
+  between loses one bonus, never doubles it. A `/start` link names an
+  existing user other than oneself, or nobody (`user_exists_tg`):
+  `get_user_by_tg` creates a row for any number. An invitee's welcome plan is
+  `tariff_ref_invitee_period` longer. "Invite a friend" (`referral.invite_row`,
+  the share sheet with the user's own link) goes in D-3, plan-off and after a
+  Stars payment, below Stars and change-plan.
+  Lock: `python app/service/payment/test_referral_award.py`.
+- The free limits (the 16th podcast, the manual update, the channel page)
+  carry `relay_nudge_markup(invoice=True)`: Relay's invoice in one tap
+  (`bs_stars_pay` without `v` bills the showcase plan) and change-plan.
+  D-3, plan-off and the digest keep the Stars page of every plan.
+  Locks: `python app/service/payment/test_paywall.py` (bot requirements),
+  `python app/service/payment/test_storefront.py`.
+- Prepaid months and offers (`app/service/payment/offers.py`) credit the full
+  price and charge the discounted one; the tick renews month by month from
+  the balance, so nothing else knows about them. The Stars payload carries
+  `m` / `d` / `o`; the pre-checkout accepts only `offer_discount(m, o)` and,
+  for an offer, `offer_open`. `process_successful_payment` checks the payment
+  matches its invoice and nothing else: money Telegram took is credited as
+  sold. A plain top-up keeps the old payload. Months are sold on a Relay plan
+  only (on Bronze/Silver the balance would renew that plan for years).
+  Lock: `python app/service/payment/test_stars_invoice.py` (bot requirements).
+- Win-back (`app/jobs/winback.py`, `db/winback.py`): a schedule starts only
+  from the tick's plan-off list, for Relay (`start_winback`); the old
+  expiries (15.5k on 2026-10-20) are never mailed. Messages at
+  `winback_after_days`, each claimed before it is sent (at most once); a
+  flood wait gives it back for the next hour; the user is re-read when it
+  goes (back on a plan or gone ends the schedule). The first month at
+  `winback_offer_discount` % off is open once the offer was sent and until
+  `users.flags.winback_offer_used`, set in the payment's own transaction
+  (`applyPaymentReplenishmentOnce(userFlag=...)`).
+  Lock: `python app/jobs/test_winback.py`.
+
 ## Tariff clock
 
 `balance_watcher` ticks hourly through `run_tariff_tick`

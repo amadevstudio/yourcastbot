@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Stars invoices: prepaid months of Relay charge the discounted price and
 credit the full one, once per charge; a payload cannot pick its own discount;
-top-up invoices sent before bundles existed still pass.
+top-up invoices sent before bundles existed still pass; the win-back offer
+is billed only to a user it was sent to, closes at the pre-checkout once
+spent, and a payment that went through is credited whatever happened since.
 
 Needs the bot's requirements (starsPaymentModule imports telebot).
 Run from the repo root: python app/service/payment/test_stars_invoice.py
@@ -96,6 +98,12 @@ def precheckout(stars):
             "an invoice sent before bundles still passes")
     _assert_eq('m' in json.loads(stars.create_payload(602, 500, 385, RATE)), False,
                "a plain top-up keeps the old payload")
+    sold = stars.create_payload(602, 3000, stars.stars_to_charge(3000, RATE, 15), RATE, 6, 15)
+    with patch.object(stars, 'offer_discount', lambda *_: 20):
+        _assert_eq(stars.validate_precheckout_payload(sold, 602, 'XTR', json.loads(sold)['s'])[0],
+                   False, "after a discount change an old invoice is refused before payment")
+        _assert_eq(stars.validate_payment_payload(sold, 602, 'XTR', json.loads(sold)['s']),
+                   (True, None), "but one already paid is credited as it was sold")
 
 
 def _temp_db():
@@ -148,6 +156,47 @@ def credit_once(stars):
         os.remove(path)
 
 
+def winback_offer(stars):
+    from db import winback
+    from db.sqliteAdapter import SQLighter
+    from app.service.payment import offers
+    path = _temp_db()
+    try:
+        with patch.object(offers, 'db_path', path), patch.object(winback, 'db_path', path):
+            _assert_eq(_invoice(stars, 603, {'tp': 'bs_stars_pay', 'o': 'wb'}), [],
+                       "no offer invoice for a user who was not sent the offer")
+            winback.start(603, now=0)
+            winback.claim(603, 0)  # the first win-back message went out
+            sent = _invoice(stars, 603, {'tp': 'bs_stars_pay', 'o': 'wb'})
+            payload = json.loads(sent[0][3])
+            _assert_eq((payload['b'], payload['m'], payload['d'], payload['o']), (500, 1, 30, 'wb'),
+                       "the offer credits one month of Relay at 30% off")
+            _assert_eq(payload['s'], stars.stars_for_balance(350, RATE), "and charges 70%")
+            _assert(stars.validate_precheckout_payload(sent[0][3], 603, 'XTR', payload['s'])[0],
+                    "an open offer passes the pre-checkout")
+            with patch.object(stars.config, 'db_path', path), \
+                    patch.object(stars, 'outer_sender', lambda *a, **kw: True), \
+                    patch.object(stars, 'award_referrer_for_payment', lambda _tg: (None, None)):
+                _assert_eq(stars.process_successful_payment(
+                    603, 'XTR', payload['s'], sent[0][3], 'charge-wb-1'), True, "the offer is paid")
+                _assert_eq(stars.validate_precheckout_payload(
+                    sent[0][3], 603, 'XTR', payload['s']),
+                    (False, "Offer is no longer available"), "a spent offer closes at the pre-checkout")
+                _assert_eq(stars.process_successful_payment(
+                    603, 'XTR', payload['s'], sent[0][3], 'charge-wb-2'), True,
+                    "a second payment that got through anyway is still credited")
+            db = SQLighter(path)
+            try:
+                _assert_eq(db.get_user_flag(603, offers.WINBACK_OFFER_FLAG), 1,
+                           "the offer is spent with the payment that used it")
+                _assert_eq(db.getUserSubscriptionByTg(603)['balance'], 500,
+                           "both payments credited: Relay renewed and a month on the balance")
+            finally:
+                db.close()
+    finally:
+        os.remove(path)
+
+
 def page_rows(stars):
     def tps(tariff_id, level):
         markup = stars.get_sub_message('en', tariff_id, level, 0, 0, 0, 0, RATE)['markup']
@@ -167,6 +216,7 @@ def main():
     bundle_invoice(stars)
     precheckout(stars)
     credit_once(stars)
+    winback_offer(stars)
     page_rows(stars)
     print("all Stars invoice checks passed")
 
