@@ -39,6 +39,7 @@ jobs:
           python3 app/service/payment/test_storefront.py
           python3 app/service/payment/test_referral_award.py
           python3 app/service/payment/test_paywall.py
+          python3 app/service/payment/test_stars_invoice.py
           python3 app/i18n/test_relay_copy.py
           python3 app/i18n/test_routed_fallback.py
           python3 app/jobs/test_circle_health.py

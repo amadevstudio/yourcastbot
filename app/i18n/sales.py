@@ -29,6 +29,20 @@ ROWS = {
         'Límite del plan gratis: {limit} pódcasts',
         'Limit des Gratis-Tarifs: {limit} Podcasts',
         'מגבלת המסלול החינמי: {limit} פודקאסטים'),
+    'starsBundleButton': (
+        '📅 Relay на {months} мес. · −{discount}% · {stars} ⭐',
+        '📅 Relay for {months} mo · −{discount}% · {stars} ⭐',
+        '📅 Relay por {months} meses · −{discount}% · {stars} ⭐',
+        '📅 Relay por {months} meses · −{discount}% · {stars} ⭐',
+        '📅 Relay für {months} Monate · −{discount}% · {stars} ⭐',
+        '📅 Relay ל-{months} חודשים · −{discount}% · {stars} ⭐'),
+    'telegram_stars_bundle_description': (
+        'Relay на {months} мес. со скидкой {discount}%: на баланс {balance}$ за {stars} ⭐. Продление каждый месяц с баланса. Курс: 1000 ⭐ ≈ {rate}$.',
+        'Relay for {months} months, {discount}% off: ${balance} to your balance for {stars} ⭐. Renews monthly from the balance. Rate: 1000 ⭐ ≈ ${rate}.',
+        'Relay por {months} meses com {discount}% de desconto: US${balance} no saldo por {stars} ⭐. Renova todo mês pelo saldo. Câmbio: 1000 ⭐ ≈ US${rate}.',
+        'Relay por {months} meses con {discount}% de descuento: {balance} US$ al saldo por {stars} ⭐. Se renueva cada mes desde el saldo. Cambio: 1000 ⭐ ≈ {rate} US$.',
+        'Relay für {months} Monate mit {discount}% Rabatt: {balance} $ Guthaben für {stars} ⭐. Verlängert sich monatlich aus dem Guthaben. Kurs: 1000 ⭐ ≈ {rate} $.',
+        'Relay ל-{months} חודשים בהנחה של {discount}%: ‎${balance} ליתרה תמורת {stars} ⭐. מתחדש כל חודש מהיתרה. שער: 1000 ⭐ ≈ ‎${rate}.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

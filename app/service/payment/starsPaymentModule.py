@@ -23,8 +23,10 @@ from app.service.payment.paymentModule import (
 from app.service.payment.paymentSafeModule import (
     award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg, prepare_price)
 from app.service.payment.referral import invite_row
-from app.service.payment.storefront import showcase_tariff, tariffs_for_storefront
-from config import db_path
+from app.service.payment.offers import bundle_discount, charged_cents
+from app.service.payment.storefront import (
+    SHOWCASE_TARIFF_LEVEL, showcase_tariff, tariffs_for_storefront)
+from config import db_path, prepay_bundles
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import InlineButtonData, outer_sender, render_messages
 from lib.tools.logger import Logger
@@ -46,11 +48,13 @@ class StarsRateUnavailable(Exception):
 
 
 class StarsPayload(TypedDict):
-    t: int
-    b: int
-    s: int
-    r: int
-    p: str
+    t: int  # payer chat id
+    b: int  # balance credited, cents
+    s: int  # stars charged
+    r: int  # rate x1000 the charge was computed with
+    p: str  # nonce
+    m: int  # months of the plan in b (prepaid bundle), 1 for a top-up
+    d: int  # % off the charge for m months (offers.bundle_discount)
 
 
 def _json_value_to_py(value):
@@ -126,14 +130,22 @@ def pretty_stars_usd_rate(rate_x1000: int) -> str:
     return str(prepare_price(rate_x1000))
 
 
-def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1000: int) -> str:
-    payload: StarsPayload = {
+def stars_to_charge(balance_amount: int, rate_x1000: int, discount: int = 0) -> int:
+    return stars_for_balance(charged_cents(balance_amount, discount), rate_x1000)
+
+
+def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1000: int,
+                   months: int = 1, discount: int = 0) -> str:
+    payload = {
         "t": int(chat_id),
         "b": int(balance_amount),
         "s": int(stars_amount),
         "r": int(rate_x1000),
         "p": uuid.uuid4().hex[:16]
     }
+    if months != 1 or discount:
+        # a plain top-up keeps the old payload, bundles add their terms
+        payload.update(m=int(months), d=int(discount))
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -151,7 +163,9 @@ def parse_payload(payload: bytes | str) -> StarsPayload | None:
             "b": int(data["b"]),
             "s": int(data["s"]),
             "r": int(data["r"]),
-            "p": str(data["p"])
+            "p": str(data["p"]),
+            "m": int(data.get("m", 1)),
+            "d": int(data.get("d", 0)),
         }
     except Exception:
         return None
@@ -169,7 +183,10 @@ def validate_precheckout_payload(
         return False, "Invalid payment user"
     if int(total_amount) != data["s"]:
         return False, "Invalid payment amount"
-    if data["s"] != stars_for_balance(data["b"], data["r"]):
+    # the discount is the one sold for those months, not whatever a payload says
+    if data["d"] != bundle_discount(data["m"]):
+        return False, "Invalid payment offer"
+    if data["s"] != stars_to_charge(data["b"], data["r"], data["d"]):
         return False, "Invalid balance amount"
     return True, None
 
@@ -213,6 +230,10 @@ def get_sub_message(
             'text': button_text,
             'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id']}
         }])
+        if tariff['id'] == tariff_id and tariff_lvl == SHOWCASE_TARIFF_LEVEL:
+            # Prepaid months only for a Relay plan: on another plan the balance
+            # would renew that plan (a plan change is the change-plan page's job).
+            menu_keyboard += bundle_rows(tariff, language_code, rate_x1000)
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
     message_text += get_tariff_info_message(
@@ -224,6 +245,18 @@ def get_sub_message(
         "message": message_text,
         "markup": menu_keyboard
     }
+
+
+def bundle_rows(tariff, language_code, rate_x1000):
+    rows = []
+    for months, discount in prepay_bundles:
+        stars_amount = stars_to_charge(int(tariff['price']) * months, rate_x1000, discount)
+        rows.append([{
+            'text': get_message('starsBundleButton', language_code).format(
+                months=months, discount=discount, stars=stars_amount),
+            'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id'], 'm': months},
+        }])
+    return rows
 
 
 def send_invoice(data: ControllerParams):
@@ -243,25 +276,35 @@ def send_invoice(data: ControllerParams):
             notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
             return False
         selected_tariff = next((tariff for tariff in tariffs if tariff['id'] == tariff_id), None)
-    if selected_tariff is None or selected_tariff['price'] <= 0:
+    try:
+        months = int(data['united_data'].get('m', 1))
+        discount = bundle_discount(months)
+    except (TypeError, ValueError):
+        discount = None
+    if (selected_tariff is None or selected_tariff['price'] <= 0 or discount is None
+            or (months != 1 and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)):
         notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
         return False
 
-    amount_balance = int(selected_tariff['price'])
+    amount_balance = int(selected_tariff['price']) * months
     try:
         rate_x1000 = get_invoice_stars_withdraw_rate_x1000()
     except StarsRateUnavailable as e:
         logger.err(e)
         notify(data['callback'], data['message'], get_message('telegram_stars_invoice_error', data['language_code']), alert=True)
         return False
-    amount_stars = stars_for_balance(amount_balance, rate_x1000)
+    amount_stars = stars_to_charge(amount_balance, rate_x1000, discount)
 
-    payload = create_payload(data['chat_id'], amount_balance, amount_stars, rate_x1000)
+    payload = create_payload(
+        data['chat_id'], amount_balance, amount_stars, rate_x1000, months, discount)
     title = get_message("telegram_stars_invoice_title", data['language_code'])
-    description = get_message("telegram_stars_invoice_description", data['language_code']).format(
+    description = get_message(
+        "telegram_stars_bundle_description" if months != 1 else "telegram_stars_invoice_description",
+        data['language_code']).format(
         balance=str(prepare_price(amount_balance)),
         stars=str(amount_stars),
-        rate=pretty_stars_usd_rate(rate_x1000))
+        rate=pretty_stars_usd_rate(rate_x1000),
+        months=months, discount=discount)
 
     try:
         bot.send_invoice(
