@@ -34,9 +34,7 @@ def digest_message(entries, language):
         # Saved old positions can no longer be trusted; hash lookup starts at 0.
         callback['dh_n'] = callback['dh_n'].split('_')[0] + '_1'
         rows.append([{'text': str(index) + ' · ' + get_message('playLater', language),
-                      'callback_data': callback},
-                     {'text': get_message('saveLater', language),
-                      'callback_data': {'tp': 'saveLater', 'e': entry['id']}}])
+                      'callback_data': callback}])
     rows += relay_nudge_markup(language, extra_row=[{
         'text': get_message('nosubDigestMuteButton', language),
         'callback_data': {'tp': DIGEST_MUTE_ACTION},

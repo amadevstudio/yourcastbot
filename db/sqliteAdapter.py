@@ -1378,14 +1378,13 @@ class SQLighter:
                 self.cursor.execute(
                     'DELETE FROM users WHERE telegramId = ?',
                     (str(telegramId),))
-                # personal lists (db/listening.py); older databases have no tables yet
-                for table in ('listen_later', 'digest_episodes'):
-                    try:
-                        self.cursor.execute(
-                            'DELETE FROM ' + table + ' WHERE user_telegram_id = ?',
-                            (telegramId,))
-                    except sqlite3.OperationalError:
-                        pass
+                # queued digest episodes (db/listening.py); older databases have no table yet
+                try:
+                    self.cursor.execute(
+                        'DELETE FROM digest_episodes WHERE user_telegram_id = ?',
+                        (telegramId,))
+                except sqlite3.OperationalError:
+                    pass
                 self.connection.commit()
 
             print(

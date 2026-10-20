@@ -1,4 +1,4 @@
-"""Saved lists are personal and bounded; digest ACK cannot delete newer items."""
+"""Digest episodes follow notify, expire when nothing refers to them; ACK cannot delete newer items."""
 import os
 import sys
 import tempfile
@@ -27,25 +27,19 @@ class ListeningTest(unittest.TestCase):
         return listening.remember('A &amp; B <b>episode</b>', 'Test show',
             {'tp':'rec','id':17,'dh_n':key + '_12'}, self.db, channel_id=17, cursor=cursor)
 
-    def test_saved_idempotent_personal_and_survives_pruning(self):
-        episode = self.episode()
-        self.assertEqual(listening.add_saved(101, episode, self.db), 'savedLater')
-        self.assertEqual(listening.add_saved(101, episode, self.db), 'savedLater')
-        self.assertEqual(len(listening.saved(101, self.db)), 1)
-        self.assertEqual(listening.saved(102, self.db), [])
-        listening.remove_saved(102, episode, self.db)
-        self.episode('bbb', 'newer')
-        listening.prune(self.db, now=time.time() + 100 * 86400)
-        self.assertEqual(listening.saved(101, self.db)[0]['id'], episode)
-        listening.remove_saved(101, episode, self.db)
-        self.assertEqual(listening.saved(101, self.db), [])
-        self.assertEqual(listening.add_saved(101, 999, self.db), 'screenOutdated')
-
-    def test_bounded_saved_list(self):
-        for index in range(listening.MAX_SAVED):
-            episode = self.episode(str(index))
-            self.assertEqual(listening.add_saved(101, episode, self.db), 'savedLater')
-        self.assertEqual(listening.add_saved(101, self.episode('extra'), self.db), 'savedLimit')
+    def test_prune_keeps_what_a_channel_or_digest_still_refers_to(self):
+        old = self.episode()
+        listening.flag_digest([101], 17, 'cursor', self.db)
+        latest = self.episode('bbb', 'newer')
+        later = time.time() + 100 * 86400
+        listening.prune(self.db, now=later)
+        # the digest row itself is older than 90 days: gone, and its episode with it
+        self.assertFalse(listening.has_digest(101, self.db))
+        c = listening.connect(self.db)
+        ids = [r[0] for r in c.execute('SELECT id FROM listening_episodes')]
+        c.close()
+        self.assertEqual(ids, [latest])
+        self.assertNotIn(old, ids)
 
     def test_digest_rechecks_notify_and_subscription(self):
         self.episode()
@@ -58,15 +52,7 @@ class ListeningTest(unittest.TestCase):
         c.close()
         self.assertEqual(listening.digest(101, self.db), [])
 
-    def test_page_is_remembered_as_one_by_one(self):
-        first = self.episode()
-        ids = listening.remember_page([
-            ('Title', 'Show', {'tp':'rec','id':17,'dh_n':'aaa_3'}),
-            ('Other', 'Show', {'tp':'rec','id':17,'dh_n':'ccc_4'})], self.db)
-        self.assertEqual(ids[0], first)
-        self.assertEqual(len(set(ids)), 2)
-
-    def test_hard_delete_takes_the_personal_lists(self):
+    def test_hard_delete_takes_the_queued_digest(self):
         try:
             from db.sqliteAdapter import SQLighter
         except ImportError:
@@ -76,14 +62,13 @@ class ListeningTest(unittest.TestCase):
             c.executescript('CREATE TABLE users(id INTEGER PRIMARY KEY,telegramId INTEGER,'
                             "lang TEXT,deleted_at TEXT);INSERT INTO users VALUES(1,101,'en',NULL);")
         c.close()
-        listening.add_saved(101, self.episode(), self.db)
+        self.episode()
         listening.flag_digest([101], 17, 'cursor', self.db)
         db = SQLighter(self.db)
         try:
             db.delete_user_tg(101, hard=True)
         finally:
             db.close()
-        self.assertEqual(listening.saved(101, self.db), [])
         self.assertFalse(listening.has_digest(101, self.db))
 
     def test_cursor_match_and_concurrent_ack(self):

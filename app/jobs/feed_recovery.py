@@ -99,10 +99,6 @@ def send_pause_notice(database=None):
             'type': 'text',
             'text': '<b>' + telegram_html.escape(telegram_html.plain_text(notice['name'])[:150]) + '</b>\n\n'
                     + get_message('feedPausedNotice', notice['lang']),
-            'reply_markup': [[{
-                'text': get_message('deliveryStatus', notice['lang']),
-                'callback_data': {'tp': 'feedStatus'},
-            }]],
         }], on_flood='raise')
     except OutboxRetryableError as e:
         jobs.finish_notice(notice, retry_after=flood_wait_seconds(e) or 60, database=database)

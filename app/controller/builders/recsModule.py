@@ -27,7 +27,6 @@ from app.routes.ptypes import ControllerParams
 from app.routes.routes_list import AvailableRoutes
 from config import db_path, std_bitrate, maxPodcastDateCallDataHexLen, perPage
 from db.sqliteAdapter import SQLighter
-from db import listening
 from lib.telegram.general.message_master import render_messages, MessageStructuresInterface, \
     InlineButtonData
 from lib.tools.logger import logger
@@ -234,31 +233,14 @@ def construct_records_message(
     # Keyboard
     records_keyboard: list[list[InlineButtonData]] = []
 
-    page = message_navigation['page_data']['data']
-    callbacks = [rec_callback_data_identifier(podcast_data['id'], podcast_data['service_id'],
-                                              podcast_data['service_name'], res['dh'], res['num'])
-                 for res in page]
-    # "Save" needs the episode remembered. One write per page; if it fails,
-    # the list is shown without the button rather than not at all.
-    episode_ids = [None] * len(page)
-    if page and (callbacks[0].get('id') is not None or callbacks[0].get('iid') is not None):
-        try:
-            episode_ids = listening.remember_page(
-                [(res['title'], podcast_data['title'], cb) for res, cb in zip(page, callbacks)])
-        except Exception as e:
-            logger.warn("recsModule/rememberPage:", e)
-
     res: RecResult
-    for res, callback, episode_id in zip(page, callbacks, episode_ids):
+    for res in message_navigation['page_data']['data']:
         new_ep_text = standartSymbols.get("newItem", "") + " " if res['is_new_episode'] else ""
-        bookmark = []
-        if episode_id is not None:
-            bookmark = [{'text': get_message('saveLater', language_code),
-                         'callback_data': {'tp': 'saveLater', 'e': episode_id}}]
         records_keyboard.append([
             {'text': new_ep_text + res['file_size'] + telegram_html.plain_text(res['title']),
-             'callback_data': callback}
-        ] + bookmark)
+             'callback_data': rec_callback_data_identifier(podcast_data['id'], podcast_data['service_id'],
+                                                           podcast_data['service_name'], res['dh'], res['num'])}
+        ])
 
     # Add 1, last and < > buttons
     records_keyboard.append([

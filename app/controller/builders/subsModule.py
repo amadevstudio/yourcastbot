@@ -73,9 +73,6 @@ def construct_subs_message(message_navigation: FullMessageNavigation, language_c
             subs_keyboard += [message_navigation['nav_layout_parts']['exit_search_mode_row']]
         subs_keyboard += [message_navigation['nav_layout_parts']['navigation_row']]
 
-    subs_keyboard.append([{'text': get_message('deliveryStatus', language_code),
-                           'callback_data': {'tp': 'feedStatus'}}])
-
     return [{
         'type': 'text',
         'text':

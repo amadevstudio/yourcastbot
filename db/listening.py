@@ -1,7 +1,7 @@
-"""Episode references for weekly digests and a durable personal listening list.
+"""Episode references for the weekly digest.
 
-No audio cache: playback uses the ordinary rec worker and its delivery policy.
-Saved entries survive feed/catalog pruning; incidental snapshots expire in 90 days.
+No audio cache: "Listen" in a digest is the ordinary rec button and its
+delivery policy. Snapshots nothing refers to expire in 90 days.
 """
 import json
 import sqlite3
@@ -12,7 +12,6 @@ import uuid
 from config import db_path
 from db.connection import connect_sqlite
 
-MAX_SAVED = 200
 _ready = set()
 _lock = threading.Lock()
 SCHEMA = '''
@@ -20,10 +19,6 @@ CREATE TABLE IF NOT EXISTS listening_episodes (
     id INTEGER PRIMARY KEY, source TEXT NOT NULL, episode_hash TEXT NOT NULL,
     title TEXT NOT NULL, show_name TEXT NOT NULL, callback_json TEXT NOT NULL,
     seen_at REAL NOT NULL, UNIQUE(source,episode_hash)
-);
-CREATE TABLE IF NOT EXISTS listen_later (
-    user_telegram_id INTEGER NOT NULL, episode_id INTEGER NOT NULL, saved_at REAL NOT NULL,
-    PRIMARY KEY(user_telegram_id,episode_id)
 );
 CREATE TABLE IF NOT EXISTS channel_episode (
     channel_id INTEGER PRIMARY KEY, episode_id INTEGER NOT NULL, episode_cursor TEXT NOT NULL
@@ -47,80 +42,27 @@ def connect(database=None):
     return c
 
 
-def _remember(c, title, show_name, callback):
+def remember(title, show_name, callback, database=None, channel_id=None, cursor=None):
     """Callbacks contain only a podcast identifier and hash/position, never arbitrary URLs."""
     source = ('id:' + str(callback['id']) if callback.get('id') is not None
               else 'itunes:' + str(callback['iid']))
     episode_hash = callback['dh_n'].split('_')[0]
-    c.execute('INSERT INTO listening_episodes '
-        '(source,episode_hash,title,show_name,callback_json,seen_at) VALUES (?,?,?,?,?,?) '
-        'ON CONFLICT(source,episode_hash) DO UPDATE SET title=excluded.title,'
-        'show_name=excluded.show_name,callback_json=excluded.callback_json,seen_at=excluded.seen_at',
-        (source, episode_hash, str(title)[:1000], str(show_name)[:500],
-         json.dumps(callback, separators=(',', ':')), time.time()))
-    return c.execute('SELECT id FROM listening_episodes WHERE source=? AND episode_hash=?',
-                     (source, episode_hash)).fetchone()['id']
-
-
-def remember(title, show_name, callback, database=None, channel_id=None, cursor=None):
     c = connect(database)
     try:
         with c:
-            episode_id = _remember(c, title, show_name, callback)
+            c.execute('INSERT INTO listening_episodes '
+                '(source,episode_hash,title,show_name,callback_json,seen_at) VALUES (?,?,?,?,?,?) '
+                'ON CONFLICT(source,episode_hash) DO UPDATE SET title=excluded.title,'
+                'show_name=excluded.show_name,callback_json=excluded.callback_json,seen_at=excluded.seen_at',
+                (source, episode_hash, str(title)[:1000], str(show_name)[:500],
+                 json.dumps(callback, separators=(',', ':')), time.time()))
+            row = c.execute('SELECT id FROM listening_episodes WHERE source=? AND episode_hash=?',
+                            (source, episode_hash)).fetchone()
             if channel_id is not None and cursor is not None:
                 c.execute('INSERT INTO channel_episode VALUES (?,?,?) ON CONFLICT(channel_id) '
                           'DO UPDATE SET episode_id=excluded.episode_id,episode_cursor=excluded.episode_cursor',
-                          (channel_id, episode_id, cursor))
-            return episode_id
-    finally:
-        c.close()
-
-
-def remember_page(items, database=None):
-    """One page of an episode list, (title, show_name, callback) each: one transaction."""
-    c = connect(database)
-    try:
-        with c:
-            return [_remember(c, *item) for item in items]
-    finally:
-        c.close()
-
-
-def add_saved(chat_id, episode_id, database=None):
-    c = connect(database)
-    try:
-        with c:
-            c.execute('BEGIN IMMEDIATE')
-            if c.execute('SELECT 1 FROM listen_later WHERE user_telegram_id=? AND episode_id=?',
-                         (chat_id, episode_id)).fetchone():
-                return 'savedLater'
-            if not c.execute('SELECT 1 FROM listening_episodes WHERE id=?', (episode_id,)).fetchone():
-                return 'screenOutdated'
-            if c.execute('SELECT count(*) FROM listen_later WHERE user_telegram_id=?',
-                         (chat_id,)).fetchone()[0] >= MAX_SAVED:
-                return 'savedLimit'
-            c.execute('INSERT INTO listen_later VALUES (?,?,?)', (chat_id, episode_id, time.time()))
-            return 'savedLater'
-    finally:
-        c.close()
-
-
-def remove_saved(chat_id, episode_id, database=None):
-    c = connect(database)
-    try:
-        with c:
-            c.execute('DELETE FROM listen_later WHERE user_telegram_id=? AND episode_id=?',
-                      (chat_id, episode_id))
-    finally:
-        c.close()
-
-
-def saved(chat_id, database=None):
-    c = connect(database)
-    try:
-        return [dict(r) for r in c.execute('SELECT e.* FROM listen_later s '
-            'JOIN listening_episodes e ON e.id=s.episode_id WHERE s.user_telegram_id=? '
-            'ORDER BY s.saved_at DESC,e.id DESC', (chat_id,))]
+                          (channel_id, row['id'], cursor))
+            return row['id']
     finally:
         c.close()
 
@@ -183,7 +125,6 @@ def prune(database=None, now=None):
         with c:
             c.execute('DELETE FROM digest_episodes WHERE created_at<?', (cutoff,))
             c.execute('DELETE FROM listening_episodes WHERE seen_at<? '
-                'AND NOT EXISTS(SELECT 1 FROM listen_later s WHERE s.episode_id=listening_episodes.id) '
                 'AND NOT EXISTS(SELECT 1 FROM channel_episode e WHERE e.episode_id=listening_episodes.id) '
                 'AND NOT EXISTS(SELECT 1 FROM digest_episodes d WHERE d.episode_id=listening_episodes.id)', (cutoff,))
     finally:

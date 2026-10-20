@@ -1,7 +1,7 @@
 from typing import TypedDict, Callable, Literal, Dict, Optional, Required
 
 from app.controller.builders import welcomeModule, menuModule, subsModule, searchModule, podcastModule, recsModule, \
-    helpModule, channelModule, topModule, adminModule, settingsModule, listeningModule
+    helpModule, channelModule, topModule, adminModule, settingsModule
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
@@ -48,7 +48,7 @@ class RouteMap:
         'menu': {
             'method': menuModule.send_menu_message,
             'available_from': ['command', 'call'],
-            'routes': ['subs', 'search', 'another', 'update', 'botSub', 'help', 'addChByRss', 'myTgChannels', 'setts', 'listenLater'],
+            'routes': ['subs', 'search', 'another', 'update', 'botSub', 'help', 'addChByRss', 'myTgChannels', 'setts'],
         },
 
         'search': {
@@ -62,7 +62,7 @@ class RouteMap:
             'method': subsModule.show_subs,
             'available_from': ['command', 'call', 'message'],
             'commands': ['subscriptions'],
-            'routes': ['podcast', 'feedStatus'],
+            'routes': ['podcast'],
             'waits_for_input': True,
         },
 
@@ -81,23 +81,6 @@ class RouteMap:
                     'method': podcastModule.rate
                 }
             }
-        },
-        'feedStatus': {
-            'method': listeningModule.open_feed_status,
-            'available_from': ['command', 'call'],
-            'commands': ['delivery_status'],
-            'routes': ['podcast'],
-            'actions': {'feedCheck': {'method': listeningModule.check_feed, 'state_independent': True}},
-        },
-        'listenLater': {
-            'method': listeningModule.open_saved,
-            'available_from': ['command', 'call'],
-            'commands': ['listen_later'],
-            'actions': {
-                'saveLater': {'method': listeningModule.save_later, 'state_independent': True},
-                'removeLater': {'method': listeningModule.remove_later, 'state_independent': True},
-                'playLater': {'method': listeningModule.play_later, 'state_independent': True},
-            },
         },
         'recs': {
             'method': recsModule.open_recs,
