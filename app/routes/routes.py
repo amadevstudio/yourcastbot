@@ -37,7 +37,12 @@ class RouteMap:
         'start': {
             'method': welcomeModule.start,
             'available_from': ['command', 'call'],
-            'routes': ['menu', 'search', 'podcast']
+            'routes': ['menu', 'search', 'podcast'],
+            'actions': {
+                # the welcome checkboxes work from any screen: the first message stays in the chat
+                'wPick': {'method': welcomeModule.toggle_pick, 'state_independent': True},
+                'wSub': {'method': welcomeModule.subscribe_picked, 'state_independent': True},
+            },
         },
 
         'privacy': {

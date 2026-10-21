@@ -502,6 +502,22 @@ chats by load. A channel's deliveries count for the user who added it.
 Locks: `python db/test_usage.py`, `python app/admin_web/test_economics.py`
 (CD gate), `python app/core/sender/test_record_delivery.py`.
 
+## Welcome screen
+
+`/start` shows the top podcasts in the user's language (then worldwide) as
+checkboxes and one button subscribes to all ticked ones
+(`app/controller/builders/onboarding.py`, actions `wPick` / `wSub`,
+state independent: the welcome message stays in the chat). Telethon
+callbacks do not carry the keyboard, so each button holds the selection as
+a bitmask over the list plus a checksum of the list; the list is rebuilt
+on each tap and a changed list is redrawn, never subscribed to. Search and
+"skip to menu" stay on the screen. Subscribing keeps the free
+subscription limit. The new user's TED Talks Daily subscription
+(`referral_processing`) is unchanged: the digest audience comes from it.
+A link from Apple Podcasts typed into search opens that podcast.
+Lock: `python app/controller/builders/test_onboarding.py` (the behaviour
+runs where the bot's requirements are installed).
+
 ## Free weekly episodes
 
 A listener without a running plan gets `free_rec_per_week` (10) episodes

@@ -5048,3 +5048,5 @@ from app.i18n.listening import TRANSLATIONS as _LISTENING_TRANSLATIONS
 messages.update(_LISTENING_TRANSLATIONS)
 from app.i18n.sales import TRANSLATIONS as _SALES_TRANSLATIONS
 messages.update(_SALES_TRANSLATIONS)
+from app.i18n.onboarding import TRANSLATIONS as _ONBOARDING_TRANSLATIONS
+messages.update(_ONBOARDING_TRANSLATIONS)

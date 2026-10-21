@@ -3,15 +3,15 @@ import json
 from typing import TypedDict
 
 import config
-from app.controller.builders import podcastModule, recsModule
+from app.controller.builders import onboarding, podcastModule, recsModule
+from app.controller.general.notify import notify
 from app.i18n.messages import get_message
 from app.repository.storage import storage
 from app.routes.ptypes import ControllerParams
 from app.service.payment import paymentSafeModule
 from app.service.podcast.subscription import add_sub
-from config import db_path
 from db.sqliteAdapter import SQLighter
-from lib.telegram.general.message_master import render_messages, MessageStructuresInterface, InlineButtonData
+from lib.telegram.general.message_master import render_messages, message_editor, MessageStructuresInterface
 from lib.tools.logger import logger
 
 
@@ -164,54 +164,45 @@ def action_processing(data: ControllerParams, action: str | None, *action_params
 
 
 def construct_welcome_message(language_code) -> list[MessageStructuresInterface]:
-    welcome_elements_count = 6
-    db_users = SQLighter(db_path)
+    # popular podcasts in the user's language as checkboxes, one tap subscribes to the ticked ones
+    return onboarding.welcome_message(language_code, onboarding.top_podcasts(language_code))
 
-    top_list = db_users.select_top(
-        None,
-        language_code, True,
-        None, None, welcome_elements_count, 0)
 
-    founded_count = len(top_list)
-    top_list_glob = None
-    if founded_count < welcome_elements_count:
-        top_list_glob = db_users.select_top(
-            None,
-            language_code, False,
-            None, None, (welcome_elements_count - founded_count), 0)
+def _redraw(data: ControllerParams, screen: list[MessageStructuresInterface]):
+    if data['callback'] is not None and data['callback'].message is not None:
+        try:
+            message_editor(data['chat_id'], screen[0], data['callback'].message.message_id)
+            return
+        except Exception:
+            pass
+    render_messages(data['chat_id'], screen)
 
-    db_users.close()
 
-    if top_list_glob is not None:
-        for el in top_list_glob:
-            if el not in top_list:
-                top_list.append(el)
-
-    def top_button_row(channels: list):
-        return [{'text': channel["name"],
-                'callback_data': {"tp": "podcast", "id": channel["id"]}} for channel in channels]
-
-    welcome_channels = [top_button_row(top_list[i: i + 2]) for i in range(0, len(top_list), 2)]
-
-    menu_button: InlineButtonData = {
-        'text': get_message("skipWelcome", language_code),
-        'callback_data': {'tp': 'menu'}
-    }
-    if welcome_channels and len(welcome_channels[-1]) == 1:
-        welcome_channels[-1].append(menu_button)
+def toggle_pick(data: ControllerParams):
+    top_list = onboarding.top_podcasts(data['language_code'])
+    index, mask, checksum = onboarding.read_tap(data['callback'].data if data['callback'] else None)
+    if index is None or checksum != onboarding.list_checksum(top_list):
+        mask = 0  # the list changed since it was drawn: start over on the new one
     else:
-        welcome_channels.append([menu_button])
+        mask ^= 1 << index
+    notify(data['callback'], data['message'], '')
+    _redraw(data, onboarding.welcome_message(data['language_code'], top_list, mask))
 
-    search_button: InlineButtonData \
-        = {'text': get_message("goToSearch", language_code), 'callback_data': {'tp': 'search'}}
-    welcome_channels.append([search_button])
 
-    result: list[MessageStructuresInterface] = [{
-        'type': 'text',
-        'text': get_message("welcomeMessage", language_code),
-        'reply_markup': welcome_channels
-    }]
-    return result
+def subscribe_picked(data: ControllerParams):
+    top_list = onboarding.top_podcasts(data['language_code'])
+    _, mask, checksum = onboarding.read_tap(data['callback'].data if data['callback'] else None)
+    if checksum != onboarding.list_checksum(top_list):
+        notify(data['callback'], data['message'], get_message("screenOutdated", data['language_code']))
+        _redraw(data, onboarding.welcome_message(data['language_code'], top_list))
+        return
+    rows = onboarding.picked(top_list, mask)
+    if not rows:
+        notify(data['callback'], data['message'], get_message("welcomePickNothing", data['language_code']))
+        return
+    notify(data['callback'], data['message'], get_message("welcomeSubscribing", data['language_code']))
+    done, failed, over = onboarding.subscribe(data['chat_id'], rows)
+    _redraw(data, onboarding.result_message(data['language_code'], done, failed, over))
 
 
 def maintenance(data: ControllerParams):

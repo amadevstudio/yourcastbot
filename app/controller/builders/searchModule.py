@@ -42,10 +42,28 @@ from lib.tools.logger import logger
 PER_PAGE = 5
 
 
+APPLE_PODCAST_LINK = re.compile(r'https?://(?:podcasts|itunes)\.apple\.com/\S*?/id(\d+)')
+
+
+def apple_podcast_id(text) -> int | None:
+    """The iTunes id in a link from Apple Podcasts, or None."""
+    found = APPLE_PODCAST_LINK.search(str(text or ''))
+    return int(found.group(1)) if found else None
+
+
 def search(data: ControllerParams):
     current_state_data = determine_search_query_and_page(
         data['callback'], data['message'], data['united_data'], numbers_are_pages=False)
     search_query = current_state_data.get('search', None)
+
+    # a link from Apple Podcasts opens that podcast: subscriptions move over one link at a time
+    itunes_id = apple_podcast_id(search_query) if data['message'] is not None else None
+    if itunes_id is not None:
+        data['route_name'] = 'podcast'
+        data['message'].text = json.dumps({'sId': itunes_id, 'sName': 'itunes'})
+        channel_query(data)
+        storage.add_user_state(data['chat_id'], 'podcast')
+        return False
 
     if search_query is None:
         render_messages(data['chat_id'], [{
