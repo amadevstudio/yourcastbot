@@ -95,7 +95,9 @@ def start_related_options(data: ControllerParams) -> StartRelatedParamsType:
     refer_id = None
     action_params = []
 
-    if data['route_name'] != 'start':
+    # a button of the welcome screen (wPick, wSub) is routed as 'start' too: its message is the
+    # bot's own text, not a /start command, and its parameters must not be read from it
+    if data['route_name'] != 'start' or data['callback'] is not None:
         return {
             'action': None,
             'is_new_user': False,

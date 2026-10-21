@@ -10,6 +10,7 @@ Run from the repo root: python app/controller/builders/test_onboarding.py
 import json
 import os
 import sys
+import types
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if _ROOT not in sys.path:
@@ -122,12 +123,32 @@ def test_apple_link(search):
     _assert(search.apple_podcast_id('ted talks') is None, "a plain query is a search")
 
 
+def test_taps_reach_the_handler(welcome):
+    """A welcome button is routed as 'start': it must not be read as a /start link."""
+    called = []
+    saved = (welcome.referral_processing, welcome.action_processing)
+    welcome.referral_processing = lambda *args: called.append('referral') or (False, False)
+    welcome.action_processing = lambda *args: called.append('action')
+    try:
+        tap = {'route_name': 'start', 'callback': object(),
+               'message': types.SimpleNamespace(text='Welcome!\nTick the podcasts you like')}
+        _assert(welcome.start_related_options(tap)['action'] is None and called == [],
+                "a tap goes to its handler: the bot's text is no /start parameter")
+        command = {'route_name': 'start', 'callback': None, 'message': types.SimpleNamespace(text='/start podcast_5')}
+        _assert(welcome.start_related_options(command)['action'] == 'podcast', "a /start link still opens its podcast")
+    finally:
+        welcome.referral_processing, welcome.action_processing = saved
+
+
 def main():
     onboarding = import_builder("onboarding")
     if onboarding is None:
         return
     test_picker(onboarding)
     test_subscribe(onboarding)
+    welcome = import_builder("welcomeModule")
+    if welcome is not None:
+        test_taps_reach_the_handler(welcome)
     search = import_builder("searchModule")
     if search is not None:
         test_apple_link(search)
