@@ -1,14 +1,15 @@
 """Repair jobs preserve listening preferences/cursors and fence obsolete workers."""
+import json
 import os
 import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db import feed_recovery as jobs
-from app.jobs.feed_recovery import process_one, lookup_url
+from app.jobs.feed_recovery import process_one
 
 
 class RecoveryTest(unittest.TestCase):
@@ -95,15 +96,38 @@ class RecoveryTest(unittest.TestCase):
         self.assertEqual(sum(c is not None for c in claims), 1)
 
     def test_catalog_matches_identity_and_keeps_encoded_tracker_url(self):
-        response = Mock()
-        response.json.return_value = {'results':[
-            {'collectionId':999,'feedUrl':'https://wrong.example'},
-            {'collectionId':123456,'feedUrl':'https://feed.example/https%3A%2F%2Fsource'},
-        ]}
-        with patch('app.jobs.feed_recovery.requester.get', return_value=response) as get:
-            self.assertEqual(lookup_url('123456'), 'https://feed.example/https%3A%2F%2Fsource')
-            self.assertTrue(get.call_args.kwargs['verify'])
-            response.raise_for_status.assert_called_once()
+        from app.service.podcast import catalog
+        answers = {
+            catalog.APPLE_LOOKUP: [{'collectionId':999,'feedUrl':'https://wrong.example'},
+                                   {'collectionId':123456,'feedUrl':'https://feed.example/https%3A%2F%2Fsource'}],
+            catalog.INDEX_LOOKUP: [{'collectionId':123456,'feedUrl':'https://older.example/feed'}],
+        }
+        def get(url, **kwargs):
+            response = Mock(content=json.dumps({'results': answers[url]}).encode())
+            return response
+        self.assertEqual(catalog.feed_urls('123456', get=get),
+                         ['https://feed.example/https%3A%2F%2Fsource', 'https://older.example/feed'])
+
+    def test_apple_down_the_index_still_answers(self):
+        from app.service.podcast import catalog
+        def get(url, **kwargs):
+            if url == catalog.APPLE_LOOKUP:
+                raise TimeoutError()
+            return Mock(content=json.dumps({'results': [
+                {'collectionId': 123456, 'feedUrl': 'https://index.example/feed'}]}).encode())
+        self.assertEqual(catalog.feed_urls('123456', get=get), ['https://index.example/feed'])
+        def down(url, **kwargs):
+            raise TimeoutError()
+        with self.assertRaises(catalog.CatalogUnavailable):
+            catalog.feed_urls('123456', get=down)
+
+    def test_next_catalog_url_when_the_first_does_not_validate(self):
+        with jobs.connect(self.db) as c:
+            c.execute("UPDATE channels SET rss_link='https://dead.example/feed'")
+        self.enqueue(now=100)
+        process_one(self.db, lookup=lambda _: ['https://apple.example/feed', 'https://index.example/feed'],
+                    validate=lambda url: url == 'https://index.example/feed', now=101)
+        self.assertEqual(jobs.channel(17, self.db)['rss_link'], 'https://index.example/feed')
 
     def test_retry_daily_and_manual_throttling(self):
         self.enqueue(now=100, paused=True)

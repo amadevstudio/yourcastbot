@@ -1,29 +1,26 @@
-import json
 from typing import Tuple
 
 from app.repository.storage import storage
+from app.service.podcast import catalog
 from app.service.podcast.podcast import set_last_date
 from app.service.podcast.rss import get_rss_root
 from app.service.record.helpers import get_record_uniq_id
 from config import db_path
 from db.sqliteAdapter import SQLighter
-from lib.requests import requesterModule
 from lib.tools.logger import logger
-
-requester = requesterModule.Requester()
 
 
 def add_sub(u_tg_id, podcast_id, service_id, service_name='itunes') -> Tuple[str | None, int | None]:
     last_date, pc_name = None, None
 
     if service_name == 'itunes':
-        api_url_base = 'https://itunes.apple.com/lookup'
-        payload = {'entity': 'podcast', 'id': service_id}
-
-        response = requester.get(api_url_base, params=payload)
+        try:
+            results, source = catalog.lookup(service_id)
+        except catalog.CatalogUnavailable:
+            return None, None
 
         rss_link = ""
-        for result in json.loads(response.content.decode('utf-8'))["results"]:
+        for result in results:
             if "feedUrl" in result:
                 last_date = str(result["releaseDate"])
                 rss_link = result["feedUrl"]
@@ -31,6 +28,14 @@ def add_sub(u_tg_id, podcast_id, service_id, service_name='itunes') -> Tuple[str
                 break
         if rss_link == "":
             return None, None
+        if source == catalog.INDEX:
+            # The Index may know an older address of the show: a channel we
+            # already poll keeps its own (add_sub writes rss_link)
+            db_channels = SQLighter(db_path)
+            known = db_channels.get_channel_by_service(service_id, 'itunes')
+            db_channels.close()
+            if known is not None and known['rss_link']:
+                rss_link = known['rss_link']
 
     elif service_name == 'rss':
         last_date = None
