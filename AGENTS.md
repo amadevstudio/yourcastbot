@@ -502,6 +502,21 @@ chats by load. A channel's deliveries count for the user who added it.
 Locks: `python db/test_usage.py`, `python app/admin_web/test_economics.py`
 (CD gate), `python app/core/sender/test_record_delivery.py`.
 
+## Free weekly episodes
+
+A listener without a running plan gets `free_rec_per_week` (10) episodes
+by click in any 7 days (`app/service/record/free_limit.py`), counted from
+the usage ledger (`rec`) plus their clicks still waiting in the outbox
+(fast taps must not slip past). The same episode again is free. Any
+running plan, the welcome trial included, has no limit, whatever its
+`notify_count` (clicks are not notifies). Automatic deliveries, manual
+refresh, the episode list and the digest text are not limited; the
+digest's "Listen" is a click like any other. At the limit the click is
+not queued: the message lists every plan with its Stars price, Relay
+first, plus the page of plans (Storefront rules: no SKU hidden).
+Lock: `python app/service/record/test_free_limit.py` (CD gate; the message
+part runs where the bot's requirements are installed).
+
 ## Nightly backup
 
 `app/jobs/backup_db.py` runs `scripts/backup_to_yandex.sh` once a day
