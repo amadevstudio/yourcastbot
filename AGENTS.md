@@ -660,12 +660,17 @@ button; `quota.py` who may ask. The plan level is
 - "Ask" under a summary opens the route `ask`: the user's next texts are
   questions, answered from the cached transcript in the incoming worker
   (one call, `ANSWER_TIMEOUT`, the transcript a prompt-cache block), as a
-  reply to the audio; "Done" (the menu) leaves. Questions need the
+  reply to the audio. "Done" (`askDone`) leaves: its button goes and the
+  menu comes as a new message (a `menu` tap redraws the old question
+  screen up the chat: it looked like nothing happened). Half an hour after
+  the last question, or a link, a text is a search again; a voice message
+  or a photo is asked to be typed. Questions need the
   transcript (a summary first) and a running plan: `QUESTIONS_PER_DAY` (20),
   a trial `TRIAL_QUESTIONS_PER_DAY` (5), in the last 24 hours (usage ledger
   kind `ask`, its cost in the AI spend). No plan: every plan's invoice.
 - Summaries of new episodes (opt-in, /settings AI summaries, `users.flags`
-  `auto_summary`, action `sumAuto`; `app/service/ai/auto.py`): after the
+  `auto_summary`, action `sumAuto`; turning it on without a plan says
+  they come with one; `app/service/ai/auto.py`): after the
   circle delivers an episode (`Sender._queue_auto_summaries`, circle only,
   never a click) each chat that turned it on and whose plan's hours cover
   the episode gets it queued, charged like a tap; otherwise none, no

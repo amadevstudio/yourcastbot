@@ -113,6 +113,12 @@ class RouteMap:
             'method': summaryModule.ask,
             'available_from': ['call', 'message'],
             'waits_for_input': True,
+            'actions': {
+                ai_summary.ASK_DONE_ACTION: {
+                    'method': summaryModule.finish_ask,
+                    'state_independent': True,
+                },
+            },
         },
 
         'another': {
