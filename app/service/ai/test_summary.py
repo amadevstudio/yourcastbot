@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """AI summaries: the feed's transcript is found and read, OpenRouter is asked
-for the configured model and its billed cost kept, quotas count new
-summaries and the ones on their way, the queue leases once and retries
-once, a summary is made once per episode and language.
+for the configured model and its billed cost kept, quotas are hours of audio
+(done and on their way, the measured length once known, nothing for a
+cached summary), the queue leases once and retries once, a summary is made
+once per episode and language.
 
 Run from the repo root: python app/service/ai/test_summary.py
 (the worker part runs where the bot's requirements are installed).
@@ -114,18 +115,37 @@ def test_queue_and_quota(db):
     c.commit()
     c.close()
     _assert(summary.plan_level(501, db) == 1 and summary.plan_level(502, db) == 0, "plan levels")
+    _assert(summary.seconds_needed({'seconds': 2700}) == 2700, "an episode takes its length")
+    _assert(summary.seconds_needed({'seconds': 0}) == summary.UNKNOWN_SECONDS, "an hour when the feed has none")
+    _assert(summary.top_level() == 3, "Relay is the top plan")
+
+    hour = 3600
+    for i in range(3):
+        done, _ = ai.enqueue(501, 'h%d' % i, 'en', hour, db)
+        ai.finish(done, 'done', database=db)
+    failed, _ = ai.enqueue(501, 'bad', 'en', hour, db)
+    ai.finish(failed, 'failed', database=db)
+    served, _ = ai.enqueue(501, 'served', 'en', hour, db)
+    ai.finish(served, 'done', seconds=0, database=db)
+    old, _ = ai.enqueue(501, 'old', 'en', hour, db)
+    ai.finish(old, 'done', database=db)
+    c = sqlite3.connect(db)
+    c.execute('UPDATE ai_requests SET created_at=created_at-? WHERE id=?', (40 * 86400, old))
+    c.commit()
+    c.close()
 
     now = time.time()
-    for i in range(4):
-        usage.record_ai(501, 'r%d' % i, 0.01, database=db, at=now - 3600)
-    usage.record_ai(501, 'cached', 0.0, database=db, at=now)
-    usage.record_ai(501, 'old', 0.01, database=db, at=now - 40 * 86400)
-    allowed, limit, used = summary.quota(501, level=1, now=now, database=db)
-    _assert((allowed, limit, used) == (True, 5, 4), "Bronze: 4 new of 5; cached and old ones do not count")
-    request_id, new = ai.enqueue(501, 'r9', 'en', db)
-    _assert(new and ai.enqueue(501, 'r9', 'en', db) == (request_id, False), "a second tap is the same request")
-    _assert(summary.quota(501, level=1, now=now, database=db)[0] is False, "one on its way counts")
-    _assert(summary.quota(502, level=0, now=now, database=db)[:2] == (False, 0), "no plan: no new summaries")
+    quota = summary.quota(501, hour, level=1, now=now, database=db)
+    _assert((quota.allowed, quota.limit, quota.used, quota.needed) == (True, 5 * hour, 3 * hour, hour),
+            "Bronze, 5 hours: 3 used; failed, served by a cached summary and old ones do not count")
+    _assert(not summary.quota(501, 3 * hour, level=1, now=now, database=db).allowed,
+            "a three-hour episode does not fit the two hours left")
+    request_id, new = ai.enqueue(501, 'r9', 'en', hour, db)
+    _assert(new and ai.enqueue(501, 'r9', 'en', hour, db) == (request_id, False), "a second tap is the same request")
+    _assert(summary.quota(501, hour, level=1, now=now, database=db).used == 4 * hour, "one on its way counts")
+    _assert(not summary.quota(501, hour + 1, level=1, now=now, database=db).allowed, "the hour left is the limit")
+    nothing = summary.quota(502, 60, level=0, now=now, database=db)
+    _assert((nothing.allowed, nothing.limit) == (False, 0), "no plan: no new summaries")
 
     claimed = ai.claim(db, now=now)
     _assert(claimed['id'] == request_id and claimed['attempts'] == 1, "claimed once")
@@ -133,17 +153,27 @@ def test_queue_and_quota(db):
     again = ai.claim(db, now=now + ai.LEASE_SECONDS + 1)
     _assert(again['id'] == request_id and again['attempts'] == 2, "a lease that ran out is claimed again")
     _assert(ai.retry_or_fail(again, db) is True, "after the second attempt it fails")
-    _assert(ai.open_count(501, db) == 0, "a failed request is not on its way")
+    _assert(ai.seconds_used(501, now - 86400, db) == 3 * hour, "a failed request gives its hour back")
+
+    measured, _ = ai.enqueue(501, 'm', 'en', hour, db)
+    ai.finish(measured, 'done', seconds=5400, database=db)
+    _assert(ai.seconds_used(501, now - 86400, db) == 3 * hour + 5400, "charged what Groq measured, not the estimate")
 
 
 def test_worker(db):
     try:
         from app.jobs import ai_watcher
+        from app.controller.builders import summaryModule
     except Exception as e:  # CI has no bot requirements
         print("skip worker (%s)" % e.__class__.__name__)
         return
-    ai.remember_episode('ep7', LINK, None, 'Seven &amp; more', 'Show', db)
-    ai.save_transcript('ep7', 'words', 'feed', 0.0, db)
+    ai.remember_episode('ep7', LINK, None, 'Seven &amp; more', 'Show', 2700, database=db)
+    ai.save_transcript('ep7', 'words', 'feed', 0.0, database=db)
+    ai.remember_episode('ep8', 'https://cdn.example/show/ep8.mp3', None, 'Eight', 'Show', database=db)
+    ai.save_transcript('ep8', 'words', 'groq', 0.03, 2712.4, database=db)
+    _assert(ai.episode('ep8', db)['seconds'] == 0, "a feed without a length stores 0")
+    ai.remember_episode('ep7', LINK, None, 'Seven &amp; more', 'Show', 0, database=db)
+    _assert(ai.episode('ep7', db)['seconds'] == 2700, "a later delivery without a length keeps the known one")
     sent, asked = [], []
 
     def summarize(text, title, show, language, session=None):
@@ -155,16 +185,26 @@ def test_worker(db):
     ai.db_path = usage.db_path = db  # the worker's default database
     try:
         send = lambda chat_id, structures: sent.append((chat_id, structures[0]['text']))  # noqa: E731
-        ai_watcher.process({'chat_id': 501, 'ref': 'ep7', 'lang': 'ru'}, None, send=send)
-        ai_watcher.process({'chat_id': 502, 'ref': 'ep7', 'lang': 'ru'}, None, send=send)
+        charged = [
+            ai_watcher.process({'chat_id': 501, 'ref': 'ep7', 'lang': 'ru', 'seconds': 2700}, None, send=send),
+            ai_watcher.process({'chat_id': 502, 'ref': 'ep7', 'lang': 'ru', 'seconds': 2700}, None, send=send),
+            ai_watcher.process({'chat_id': 501, 'ref': 'ep8', 'lang': 'ru', 'seconds': 3600}, None, send=send)]
     finally:
         ai_watcher.summary.summarize, ai.db_path, usage.db_path = saved
-    _assert(asked == ['ru'], "one summary per episode and language, then the cache")
-    _assert([chat for chat, _ in sent] == [501, 502], "both askers get it")
+    _assert(asked == ['ru', 'ru'], "one summary per episode and language, then the cache")
+    _assert([chat for chat, _ in sent] == [501, 502, 501], "every asker gets it")
     _assert('Seven &amp; more' in sent[0][1] and 'Gist.' in sent[0][1], "the title is escaped once")
+    _assert(charged == [2700, 0, 2712], "charged: the feed's length, nothing for the cache, Groq's measure")
     rows = usage.per_user(0, database=db)
-    _assert(abs(rows[501]['ai_usd'] - 0.002) < 1e-9 and rows[502]['ai_usd'] == 0.0,
+    _assert(abs(rows[501]['ai_usd'] - 0.004) < 1e-9 and rows[502]['ai_usd'] == 0.0,
             "the new summary is charged to who asked, the cached one costs nothing")
+
+    _assert(summaryModule.length_text(5400, 'en') == '1 h 30 min', "hours and minutes")
+    _assert(summaryModule.length_text(2701, 'ru') == '46 мин', "minutes round up")
+    _assert(summaryModule.length_text(5 * 3600, 'de') == '5 Std.', "whole hours")
+    top = summaryModule.offer_message('en', summary.Quota(False, 30 * 3600, 29 * 3600, 7200, 3))
+    _assert('30 h of audio' in top['text'] and '1 h left' in top['text'] and 'runs 2 h' in top['text']
+            and 'reply_markup' not in top, "the top plan hears what is left, no plans to sell")
 
 
 def main():

@@ -1281,7 +1281,8 @@ class Sender:
         try:
             ref = usage.episode_ref(self.link)
             ai.remember_episode(ref, self.link, self.podcast_info.get('id'),
-                                self.podcast_info.get('title'), self.podcast_info.get('chName'))
+                                self.podcast_info.get('title'), self.podcast_info.get('chName'),
+                                self.podcast_info.get('duration_sec') or 0)
             self._summary_ref = ref
         except Exception as e:
             self.logger.warn("ai episode:", e)

@@ -548,10 +548,15 @@ pydub would hold the episode in memory on a 2 GB server).
   of the enclosure) and puts "Summary" under the file in user chats only:
   a channel's readers are not the bot's users.
 - A summary is made once per episode and language (the Telegram client's
-  code) and is then free for anyone. A new one counts toward the asker's
-  plan quota (`config.ai_summaries_per_month` by level, 30 days, the ones
-  on their way included); no plan or over quota: the plans, as at the free
-  episode limit.
+  code) and is then free for anyone. A new one takes the episode's length
+  from the asker's plan quota, hours of audio per 30 days
+  (`config.ai_summary_hours_per_month` by level), never a count: Groq bills
+  by the hour, and 15 three-hour episodes cost more than Silver brings. The
+  length is the feed's `itunes:duration` (an hour when there is none) when
+  asked, what Groq measured once transcribed, and 0 when someone else's
+  summary served the request; requests on their way count, failed ones do
+  not (`ai_requests.seconds`). No plan or over quota: the plans, as at the
+  free episode limit; on the top plan only what is left.
 - The jobs process drains `ai_requests` one at a time (`app/jobs/ai_watcher.py`),
   a lease of 30 minutes, two attempts, then "could not". What a new summary
   cost goes to the usage ledger for the chat that asked.

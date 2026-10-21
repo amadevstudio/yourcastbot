@@ -98,17 +98,6 @@ def oldest_since(chat_id, kind, since, database=None):
         c.close()
 
 
-def paid_ai_since(chat_id, since, database=None) -> int:
-    """New AI summaries this chat caused since `since` (cached ones cost nothing)."""
-    c = connect(database)
-    try:
-        row = c.execute("SELECT COUNT(*) FROM usage_events WHERE user_id=? AND kind='ai' "
-                        "AND cost_usd>0 AND at>=?", (int(chat_id), since)).fetchone()
-        return int(row[0]) if row else 0
-    finally:
-        c.close()
-
-
 def per_user(since, until=None, database=None) -> dict:
     """{chat id: {'rec', 'circle', 'ai', 'mb', 'ai_usd'}} for events in [since, until)."""
     until = time.time() if until is None else until

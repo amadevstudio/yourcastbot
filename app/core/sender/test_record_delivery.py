@@ -457,6 +457,7 @@ def _check_summary_button():
         _assert(sender.get_next_ep_button('en', chat_id=1) is None, "AI off until the episode is remembered")
         sender._remember_for_summary()
         _assert(len(remembered) == 1 and remembered[0][1] == sender.link, "the episode is remembered by its link")
+        _assert(remembered[0][5] == 3600, "with its length from the feed: the summary quota is hours of audio")
         keyboard = sender.get_next_ep_button('en', chat_id=1)
         _assert([data for _, data in keyboard.rows] == [{'tp': 'sum', 'r': remembered[0][0]}],
                 "a user chat gets the Summary button with the episode's ref")

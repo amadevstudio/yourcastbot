@@ -4,25 +4,30 @@
 Off until constants.py has the OpenRouter key, the model (openrouterModel,
 its OpenRouter id) and the Groq key for transcripts: no button, no worker.
 A summary is made once per episode and language and then free for
-everyone; a new one counts toward the asker's plan quota
-(config.ai_summaries_per_month, by plan level). Without a plan only
-summaries someone already made.
+everyone. A new one takes the episode's length from the asker's plan
+quota, hours of audio per 30 days (config.ai_summary_hours_per_month, by
+plan level): what a summary costs grows with the audio, so a count of
+summaries would let three-hour episodes cost more than the plan brings.
+Without a plan only summaries someone already made.
 
 What a new one cost: the transcript (free from the feed, else Groq Whisper,
 ~$0.03 for 45 minutes) plus what OpenRouter reports for the call (usage
 accounting), so the economics page follows whichever model is configured.
 """
 import time
+from typing import NamedTuple
 
 import requests
 
-from config import ai_summaries_per_month, ai_summary_model, groq_api_key, openrouter_api_key
-from db import ai, usage
+from config import ai_summary_hours_per_month, ai_summary_model, groq_api_key, openrouter_api_key
+from db import ai
 
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 MAX_TOKENS = 2000
 HTTP_TIMEOUT = 180
 QUOTA_DAYS = 30
+# a feed without itunes:duration: charged an hour until Groq measures the audio
+UNKNOWN_SECONDS = 3600
 
 SYSTEM = (
     "You write short summaries of podcast episodes for listeners in a Telegram bot. "
@@ -36,6 +41,15 @@ SYSTEM = (
 
 class SummaryUnavailable(Exception):
     pass
+
+
+class Quota(NamedTuple):
+    """Seconds of audio: the plan's limit for 30 days, used so far, what this episode needs."""
+    allowed: bool
+    limit: int
+    used: int
+    needed: int
+    level: int
 
 
 def enabled() -> bool:
@@ -95,10 +109,20 @@ def plan_level(chat_id, database=None) -> int:
         c.close()
 
 
-def quota(chat_id, level=None, now=None, database=None) -> tuple[bool, int, int]:
-    """(may ask for a new summary, monthly limit, used): new summaries in 30 days plus those on their way."""
-    level = plan_level(chat_id, database) if level is None else level
-    limit = int(ai_summaries_per_month.get(int(level), 0))
+def top_level() -> int:
+    return max(ai_summary_hours_per_month, default=0)
+
+
+def seconds_needed(episode) -> int:
+    """What a new summary of `episode` takes from the quota: its length, an hour if the feed has none."""
+    return int(episode.get('seconds') or 0) or UNKNOWN_SECONDS
+
+
+def quota(chat_id, needed, level=None, now=None, database=None) -> Quota:
+    """May this chat ask for a new summary of `needed` seconds of audio? Its requests of the
+    last 30 days count, done and on their way; one someone else's summary served counts 0."""
+    level = plan_level(chat_id, database) if level is None else int(level)
+    limit = int(ai_summary_hours_per_month.get(level, 0) * 3600)
     since = (time.time() if now is None else now) - QUOTA_DAYS * 86400
-    used = usage.paid_ai_since(chat_id, since, database=database) + ai.open_count(chat_id, database)
-    return used < limit, limit, used
+    used = ai.seconds_used(chat_id, since, database)
+    return Quota(limit > 0 and used + needed <= limit, limit, used, int(needed), level)

@@ -27,8 +27,8 @@ diag_token = getattr(constants, 'diagToken', None) or None
 openrouter_api_key = getattr(constants, 'openrouterApiKey', None) or ''
 ai_summary_model = getattr(constants, 'openrouterModel', None) or ''
 groq_api_key = getattr(constants, 'groqApiKey', None) or ''
-# new AI summaries per 30 days by plan level; one someone already made is free for everyone
-ai_summaries_per_month = {1: 5, 2: 15, 3: 30}
+# hours of audio summarized per 30 days by plan level; a summary someone already made is free for everyone
+ai_summary_hours_per_month = {1: 5, 2: 15, 3: 30}
 # agentId = creatorId
 botId = constants.botId
 donate_link = constants.donate_link

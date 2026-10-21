@@ -4,7 +4,9 @@
 One request at a time: a summary waits for a download, ffmpeg and two APIs,
 and the server has one CPU. The transcript and the summary are cached
 (db/ai.py), so a second request for the same episode costs nothing. What a
-new summary cost is written to the usage ledger for the chat that asked.
+new summary cost is written to the usage ledger for the chat that asked,
+and the request is charged the audio Groq measured (the feed's length was
+an estimate) or nothing when someone else's summary served it.
 """
 import time
 
@@ -37,11 +39,11 @@ def _feed_url(channel_id):
         c.close()
 
 
-def episode_transcript(episode, session) -> tuple[str, float]:
-    """(text, what making it cost now): cached, the feed's, or Groq's."""
+def episode_transcript(episode, session) -> tuple[str, float, float]:
+    """(text, what making it cost now, audio seconds Groq measured or 0): cached, the feed's, or Groq's."""
     cached = ai.transcript(episode['ref'])
     if cached is not None:
-        return cached['text'], 0.0
+        return cached['text'], 0.0, cached['seconds']
     feed_url = _feed_url(episode['channel_id'])
     text = None
     if feed_url:
@@ -51,27 +53,30 @@ def episode_transcript(episode, session) -> tuple[str, float]:
             logger.warn('ai_watcher/feed transcript:', e)
     if text:
         ai.save_transcript(episode['ref'], text, 'feed', 0.0)
-        return text, 0.0
-    text, cost = transcript.from_audio(requester, session, episode['link'])
-    ai.save_transcript(episode['ref'], text, 'groq', cost)
-    return text, cost
+        return text, 0.0, 0.0
+    text, cost, seconds = transcript.from_audio(requester, session, episode['link'])
+    ai.save_transcript(episode['ref'], text, 'groq', cost, seconds)
+    return text, cost, seconds
 
 
-def process(request, session, send=outer_sender) -> None:
+def process(request, session, send=outer_sender) -> int:
+    """Send the summary; the seconds of quota the request is charged in the end."""
     episode = ai.episode(request['ref'])
     if episode is None:
         raise summary.SummaryUnavailable('episode is not known any more')
     cached = ai.summary(request['ref'], request['lang'])
     if cached is not None:
-        text, cost = cached['text'], 0.0
+        text, cost, charged = cached['text'], 0.0, 0
     else:
-        transcript_text, cost = episode_transcript(episode, session)
+        transcript_text, cost, measured = episode_transcript(episode, session)
+        charged = round(measured) or request['seconds']
         text, summary_cost = summary.summarize(
             transcript_text, episode['title'], episode['show'], request['lang'], session=session)
         cost += summary_cost
         ai.save_summary(request['ref'], request['lang'], text, cost)
     usage.record_ai(request['chat_id'], request['ref'], cost)
     send(request['chat_id'], [summary_message(episode, text)])
+    return charged
 
 
 def ai_watcher():
@@ -84,8 +89,8 @@ def ai_watcher():
                 time.sleep(IDLE_SLEEP_SECONDS)
                 continue
             try:
-                process(request, session)
-                ai.finish(request['id'], 'done')
+                charged = process(request, session)
+                ai.finish(request['id'], 'done', seconds=charged)
             except Exception as e:
                 logger.warn('ai_watcher/request', request['id'], e)
                 if ai.retry_or_fail(request):

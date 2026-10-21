@@ -122,8 +122,8 @@ def transcribe_piece(session, path) -> tuple[str, float]:
     return str(data.get('text') or '').strip(), float(data.get('duration') or 0)
 
 
-def from_audio(requester, session, link, budget: DiskBudget | None = None) -> tuple[str, float]:
-    """(text, cost USD) by Groq Whisper. The file and its pieces are deleted after."""
+def from_audio(requester, session, link, budget: DiskBudget | None = None) -> tuple[str, float, float]:
+    """(text, cost USD, audio seconds) by Groq Whisper. The file and its pieces are deleted after."""
     if not groq_api_key:
         raise TranscriptUnavailable('no Groq key')
     budget = budget or DiskBudget(os.path.join(work_dir, 'records'))
@@ -132,15 +132,16 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None) -> tu
     try:
         download.fetch(requester, link)
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
-            texts, cost = [], 0.0
+            texts, cost, total_seconds = [], 0.0, 0.0
             for piece in split_audio(download.path, pieces_dir):
                 text, seconds = transcribe_piece(session, piece)
                 texts.append(text)
                 cost += groq_cost(seconds)
+                total_seconds += seconds
                 os.remove(piece)
     finally:
         download.close()
     text = ' '.join(t for t in texts if t).strip()
     if not text:
         raise TranscriptUnavailable('empty transcript')
-    return text, cost
+    return text, cost, total_seconds
