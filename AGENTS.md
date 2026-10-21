@@ -487,6 +487,18 @@ without server access. Rules:
 - Locks: `python app/admin_web/test_diag.py` (CD gate),
   `python app/admin_web/test_admin_web.py`.
 
+## Nightly backup
+
+`app/jobs/backup_db.py` runs `scripts/backup_to_yandex.sh` once a day
+(00:15) while the bot keeps writing. The database is in WAL mode, so a
+`tar` over the live `db/` can pair the main file with a `-wal` from
+another moment ("file changed as we read it"): an archive that may not
+restore. The script archives copies made by SQLite's backup API
+(`scripts/db_snapshot.py`, one read transaction, checked by
+`integrity_check`); a copy that fails the check is never uploaded. Never
+point `tar` at the live database again.
+Lock: `python scripts/test_db_snapshot.py` (CD gate).
+
 ## Tests
 
 Run the smallest existing suite that covers the change (for send jobs:
