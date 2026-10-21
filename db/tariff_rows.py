@@ -40,3 +40,20 @@ def ensure_tariff_rows(database=None) -> int:
     if given:
         logger.log("Users without a tariff row got 'no tariff':", given)
     return given
+
+
+def running_plan_level(chat_id, database=None) -> int:
+    """The level of the plan this Telegram chat has time left on, 0 without one
+    (whatever its notify_count: that counts automatic deliveries only)."""
+    if database is None:
+        from config import db_path as database
+    connection = connect_sqlite(database)
+    try:
+        row = connection.execute(
+            "SELECT t.level FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
+            "JOIN tariffs t ON t.id = ut.tariff_id "
+            "WHERE u.telegramId = ? AND ut.tariff_id > 0 AND ut.time_left > 0",
+            (int(chat_id),)).fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        connection.close()

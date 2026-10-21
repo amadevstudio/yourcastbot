@@ -9,7 +9,7 @@
    the episode in memory as pydub would) and each piece transcribed by
    OpenRouter's /audio/transcriptions with config.ai_transcribe_model
    (openai/whisper-large-v3-turbo: ~$0.012 per audio hour). The cost is
-   what OpenRouter bills for each piece (usage.cost).
+   what OpenRouter bills for each piece.
 """
 import glob
 import json
@@ -18,8 +18,10 @@ import re
 import subprocess
 import tempfile
 import time
+from typing import NamedTuple
 
-from config import ai_transcribe_model, openrouter_api_key, work_dir
+from app.service.ai import openrouter
+from config import ai_transcribe_model, work_dir
 from lib.markup import telegram_html
 from lib.requests.url import normalize_url
 from lib.system.disk_budget import BudgetedDownload, DiskBudget
@@ -28,9 +30,7 @@ PODCAST_NS = '{https://podcastindex.org/namespace/1.0}'
 # readable first: plain text, then subtitles, then JSON and HTML
 TYPE_ORDER = ('text/plain', 'text/vtt', 'application/x-subrip', 'application/srt',
               'application/json', 'text/html')
-TRANSCRIBE_URL = 'https://openrouter.ai/api/v1/audio/transcriptions'
 PIECE_SECONDS = 10 * 60
-HTTP_TIMEOUT = 300
 
 _TIMING = re.compile(r'^\s*(\d+\s*$|[\d:.,]+\s*-->\s*[\d:.,]+.*$|WEBVTT.*$|NOTE\b.*$)')
 _VOICE = re.compile(r'<v\s+[^>]*>|</v>')
@@ -38,6 +38,13 @@ _VOICE = re.compile(r'<v\s+[^>]*>|</v>')
 
 class TranscriptUnavailable(Exception):
     pass
+
+
+class Transcript(NamedTuple):
+    text: str
+    source: str  # 'feed' or 'whisper'
+    cost_usd: float  # what making it cost
+    seconds: float  # the audio Whisper measured, 0 for the feed's
 
 
 def transcript_url(channel_root, link) -> str | None:
@@ -82,7 +89,7 @@ def transcript_text(body: str, content_type: str = '') -> str:
     return re.sub(r'\s+', ' ', ' '.join(lines)).strip()
 
 
-def from_feed(requester, channel_root, link) -> str | None:
+def from_feed(requester, channel_root, link) -> Transcript | None:
     url = transcript_url(channel_root, link)
     if url is None:
         return None
@@ -90,7 +97,7 @@ def from_feed(requester, channel_root, link) -> str | None:
     if response is None or response.status_code != 200:
         return None
     text = transcript_text(response.text, response.headers.get('Content-Type', ''))
-    return text or None
+    return Transcript(text, 'feed', 0.0, 0.0) if text else None
 
 
 def split_audio(path, out_dir) -> list[str]:
@@ -104,44 +111,32 @@ def split_audio(path, out_dir) -> list[str]:
     return sorted(glob.glob(os.path.join(out_dir, 'piece*.mp3')))
 
 
-def transcribe_piece(session, path) -> tuple[str, float, float]:
-    """(text, audio seconds, USD as OpenRouter billed it) of one piece."""
+def transcribe_piece(session, path) -> Transcript:
     with open(path, 'rb') as audio:
-        response = session.post(
-            TRANSCRIBE_URL, headers={'Authorization': 'Bearer ' + openrouter_api_key},
+        body = openrouter.post(
+            'audio/transcriptions', session,
             files={'file': (os.path.basename(path), audio, 'audio/mpeg')},
-            data={'model': ai_transcribe_model, 'response_format': 'verbose_json'},
-            timeout=HTTP_TIMEOUT)
-    if response.status_code != 200:
-        raise TranscriptUnavailable('transcription %s: %s' % (response.status_code, response.text[:200]))
-    data = response.json()
-    if data.get('error'):
-        raise TranscriptUnavailable('transcription: %s' % str(data['error'])[:200])
-    usage = data.get('usage') or {}
-    seconds = float(usage.get('seconds') or data.get('duration') or 0)
-    return str(data.get('text') or '').strip(), seconds, float(usage.get('cost') or 0.0)
+            data={'model': ai_transcribe_model, 'response_format': 'verbose_json'})
+    seconds = float((body.get('usage') or {}).get('seconds') or body.get('duration') or 0)
+    return Transcript(str(body.get('text') or '').strip(), 'whisper', openrouter.cost(body), seconds)
 
 
-def from_audio(requester, session, link, budget: DiskBudget | None = None) -> tuple[str, float, float]:
-    """(text, cost USD, audio seconds) by Whisper. The file and its pieces are deleted after."""
-    if not (openrouter_api_key and ai_transcribe_model):
-        raise TranscriptUnavailable('no OpenRouter key or transcription model')
+def from_audio(requester, session, link, budget: DiskBudget | None = None) -> Transcript:
+    """Whisper on the episode's audio. The file and its pieces are deleted after."""
     budget = budget or DiskBudget(os.path.join(work_dir, 'records'))
     name = 'r_ai_%d.audio' % time.time_ns()
     download = BudgetedDownload(budget, os.path.join(work_dir, 'records', name))
     try:
         download.fetch(requester, link)
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
-            texts, cost, total_seconds = [], 0.0, 0.0
-            for piece in split_audio(download.path, pieces_dir):
-                text, seconds, piece_cost = transcribe_piece(session, piece)
-                texts.append(text)
-                cost += piece_cost
-                total_seconds += seconds
-                os.remove(piece)
+            pieces = []
+            for path in split_audio(download.path, pieces_dir):
+                pieces.append(transcribe_piece(session, path))
+                os.remove(path)
     finally:
         download.close()
-    text = ' '.join(t for t in texts if t).strip()
+    text = ' '.join(piece.text for piece in pieces if piece.text).strip()
     if not text:
         raise TranscriptUnavailable('empty transcript')
-    return text, cost, total_seconds
+    return Transcript(text, 'whisper', sum(piece.cost_usd for piece in pieces),
+                      sum(piece.seconds for piece in pieces))

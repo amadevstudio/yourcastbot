@@ -5,6 +5,7 @@ from app.controller.builders import welcomeModule, menuModule, subsModule, searc
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
+from app.service.ai import summary as ai_summary
 from app.service.record.text_format import EPISODE_FORMAT_ACTIONS, EPISODE_FORMAT_HINT_ACTION
 from app.service.payment import (
     paymentModule,
@@ -100,7 +101,7 @@ class RouteMap:
                     'state_independent': True,
                 },
                 # Summary under an episode file: the file stays in the chat
-                'sum': {
+                ai_summary.ACTION: {
                     'method': summaryModule.request_summary,
                     'state_independent': True,
                 }

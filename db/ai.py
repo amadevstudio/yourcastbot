@@ -89,7 +89,9 @@ def remember_episode(ref, link, channel_id, title, show, seconds=0, database=Non
 
 
 def episode(ref, database=None):
-    return _one(database, 'SELECT * FROM ai_episodes WHERE ref=?', (ref,))
+    """The episode with its channel's feed URL (`feed_url`, None when the channel is gone)."""
+    return _one(database, 'SELECT e.*, c.rss_link feed_url FROM ai_episodes e '
+                          'LEFT JOIN channels c ON c.id = e.channel_id WHERE e.ref=?', (ref,))
 
 
 def transcript(ref, database=None):

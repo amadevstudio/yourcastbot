@@ -16,9 +16,7 @@ from app.controller.builders.summaryModule import summary_message
 from app.i18n.messages import get_message
 from app.service.ai import summary, transcript
 from app.service.podcast.rss import get_rss_root
-from config import db_path
 from db import ai, usage
-from db.connection import connect_sqlite
 from lib.requests import requesterModule
 from lib.telegram.general.message_master import outer_sender
 from lib.tools.logger import logger
@@ -28,35 +26,20 @@ IDLE_SLEEP_SECONDS = 5
 requester = requesterModule.Requester(attempts=0, total_attempts=0)
 
 
-def _feed_url(channel_id):
-    if channel_id is None:
-        return None
-    c = connect_sqlite(db_path)
-    try:
-        row = c.execute('SELECT rss_link FROM channels WHERE id = ?', (int(channel_id),)).fetchone()
-        return row[0] if row and row[0] else None
-    finally:
-        c.close()
-
-
-def episode_transcript(episode, session) -> tuple[str, float, float]:
-    """(text, what making it cost now, audio seconds Whisper measured or 0): cached, the feed's, or Whisper's."""
+def episode_transcript(episode, session) -> transcript.Transcript:
+    """Cached (free now), the feed's, or Whisper's; a new one is cached."""
     cached = ai.transcript(episode['ref'])
     if cached is not None:
-        return cached['text'], 0.0, cached['seconds']
-    feed_url = _feed_url(episode['channel_id'])
-    text = None
-    if feed_url:
+        return transcript.Transcript(cached['text'], cached['source'], 0.0, cached['seconds'])
+    found = None
+    if episode['feed_url']:
         try:
-            text = transcript.from_feed(requester, get_rss_root(feed_url), episode['link'])
+            found = transcript.from_feed(requester, get_rss_root(episode['feed_url']), episode['link'])
         except Exception as e:
             logger.warn('ai_watcher/feed transcript:', e)
-    if text:
-        ai.save_transcript(episode['ref'], text, 'feed', 0.0)
-        return text, 0.0, 0.0
-    text, cost, seconds = transcript.from_audio(requester, session, episode['link'])
-    ai.save_transcript(episode['ref'], text, 'whisper', cost, seconds)
-    return text, cost, seconds
+    found = found or transcript.from_audio(requester, session, episode['link'])
+    ai.save_transcript(episode['ref'], found.text, found.source, found.cost_usd, found.seconds)
+    return found
 
 
 def process(request, session, send=outer_sender) -> int:
@@ -68,11 +51,11 @@ def process(request, session, send=outer_sender) -> int:
     if cached is not None:
         text, cost, charged = cached['text'], 0.0, 0
     else:
-        transcript_text, cost, measured = episode_transcript(episode, session)
-        charged = round(measured) or request['seconds']
+        found = episode_transcript(episode, session)
+        charged = round(found.seconds) or request['seconds']
         text, summary_cost = summary.summarize(
-            transcript_text, episode['title'], episode['show'], request['lang'], session=session)
-        cost += summary_cost
+            found.text, episode['title'], episode['show'], request['lang'], session=session)
+        cost = found.cost_usd + summary_cost
         ai.save_summary(request['ref'], request['lang'], text, cost)
     usage.record_ai(request['chat_id'], request['ref'], cost)
     send(request['chat_id'], [summary_message(episode, text)])

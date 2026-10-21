@@ -16,19 +16,12 @@ import time
 
 from config import db_path, free_rec_per_week
 from db import usage
-from db.connection import connect_sqlite
+from db.tariff_rows import running_plan_level
 
 
 def has_running_plan(chat_id, database=None) -> bool:
     """A plan with time left, whatever its notify_count: clicks are not notifies."""
-    c = connect_sqlite(db_path if database is None else database)
-    try:
-        return c.execute(
-            "SELECT 1 FROM user_tariff_cs utc JOIN users u ON u.id = utc.uid "
-            "WHERE u.telegramId = ? AND utc.tariff_id > 0 AND utc.time_left > 0",
-            (int(chat_id),)).fetchone() is not None
-    finally:
-        c.close()
+    return running_plan_level(chat_id, database) > 0
 
 
 def check(chat_id, link, open_links=(), plan=None, now=None, database=None, limit=None):

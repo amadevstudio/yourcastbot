@@ -450,7 +450,7 @@ def _check_summary_button():
     saved = (srh.InlineKeyboardMarkup, srh.InlineKeyboardButton, srh.ai_summary, srh.ai)
     srh.InlineKeyboardMarkup = Keyboard
     srh.InlineKeyboardButton = lambda text, callback_data: (text, json.loads(callback_data))
-    srh.ai_summary = _ns(enabled=lambda: True)
+    srh.ai_summary = _ns(enabled=lambda: True, button_data=saved[2].button_data)
     srh.ai = _ns(remember_episode=lambda *a: remembered.append(a))
     try:
         sender = World(size_mb=12).sender()
@@ -462,7 +462,7 @@ def _check_summary_button():
         _assert([data for _, data in keyboard.rows] == [{'tp': 'sum', 'r': remembered[0][0]}],
                 "a user chat gets the Summary button with the episode's ref")
         _assert(sender.get_next_ep_button('en', chat_id=-1001) is None, "a channel gets no Summary button")
-        srh.ai_summary = _ns(enabled=lambda: False)
+        srh.ai_summary = _ns(enabled=lambda: False, button_data=saved[2].button_data)
         off = World(size_mb=12).sender()
         off._remember_for_summary()
         _assert(off.get_next_ep_button('en', chat_id=1) is None, "AI off: no button, nothing remembered")

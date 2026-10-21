@@ -1266,7 +1266,7 @@ class Sender:
         if self._summary_ref is not None and chat_id is not None and int(chat_id) > 0:
             buttons.append(InlineKeyboardButton(
                 text=get_message("summaryButton", lang_code),
-                callback_data=json.dumps({'tp': 'sum', 'r': self._summary_ref})))
+                callback_data=json.dumps(ai_summary.button_data(self._summary_ref))))
         if not buttons:
             return None
         keyboard = InlineKeyboardMarkup()

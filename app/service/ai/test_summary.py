@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """AI summaries: the feed's transcript is found and read, OpenRouter is asked
-for the configured model and its billed cost kept, quotas are hours of audio
+for the summary and for Whisper with one key and its billed cost kept, quotas are hours of audio
 (done and on their way, the measured length once known, nothing for a
 cached summary), the queue leases once and retries once, a summary is made
 once per episode and language.
@@ -20,8 +20,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from app.service.ai import summary, transcript  # noqa: E402
+from app.service.ai import openrouter, quota, summary, transcript  # noqa: E402
 from db import ai, usage  # noqa: E402
+from db.tariff_rows import running_plan_level  # noqa: E402
 
 LINK = 'https://cdn.example/show/ep7.mp3'
 FEED = """<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel>
@@ -74,43 +75,49 @@ class FakeSession:
 
 
 def test_openrouter():
-    summary.openrouter_api_key, summary.ai_summary_model = 'k', 'vendor/some-model'
+    openrouter.openrouter_api_key, summary.ai_summary_model = 'k', 'vendor/some-model'
     _assert(summary.enabled(), "on with the key and a model")
+    _assert(summary.button_data('ab12') == {'tp': summary.ACTION, 'r': 'ab12'}, "the button names the episode")
     session = FakeSession(FakeResponse(200, {
         'choices': [{'message': {'content': ' Gist.\n• One '}, 'finish_reason': 'stop'}],
         'usage': {'prompt_tokens': 9000, 'completion_tokens': 300, 'cost': 0.0021}}))
     text, cost = summary.summarize('words ' * 10, 'Seven', 'Show', 'fa', session=session)
     url, headers, body = session.calls[0]
-    _assert(url == summary.OPENROUTER_URL and headers['Authorization'] == 'Bearer k', "OpenRouter, our key")
+    _assert(url == openrouter.BASE_URL + 'chat/completions' and headers['Authorization'] == 'Bearer k',
+            "OpenRouter's chat completions, our key")
     _assert(body['model'] == 'vendor/some-model', "the model from the config")
     _assert(body['usage'] == {'include': True}, "usage accounting asked for")
     _assert(body['messages'][0]['role'] == 'system' and '"fa"' in body['messages'][1]['content'],
             "the system prompt, and the user's own language")
     _assert((text, cost) == ('Gist.\n• One', 0.0021), "the text and what OpenRouter billed")
-    for response, label in ((FakeResponse(402, {'error': 'credits'}), "an HTTP error"),
-                            (FakeResponse(200, {'error': {'message': 'down'}}), "an error in the body"),
-                            (FakeResponse(200, {'choices': [{'message': {'content': ''}}]}), "an empty answer")):
+    for response, error, label in (
+            (FakeResponse(402, {'error': 'credits'}), openrouter.OpenRouterError, "an HTTP error"),
+            (FakeResponse(200, {'error': {'message': 'down'}}), openrouter.OpenRouterError, "an error in the body"),
+            (FakeResponse(200, {'choices': [{'message': {'content': ''}}]}), summary.SummaryUnavailable,
+             "an empty answer")):
         try:
             summary.summarize('t', 'T', 'S', 'en', session=FakeSession(response))
             raise AssertionError(label + " must raise")
-        except summary.SummaryUnavailable:
+        except error:
             _assert(True, label + " is no summary")
     summary.ai_summary_model = ''
     _assert(not summary.enabled(), "off without a model")
-    summary.ai_summary_model = 'vendor/some-model'
+    summary.ai_summary_model, openrouter.openrouter_api_key = 'vendor/some-model', ''
+    _assert(not summary.enabled(), "off without the key")
+    openrouter.openrouter_api_key = 'k'
 
 
 def test_transcription(tmp):
-    transcript.openrouter_api_key, transcript.ai_transcribe_model = 'k', 'openai/whisper-large-v3-turbo'
+    openrouter.openrouter_api_key, transcript.ai_transcribe_model = 'k', 'openai/whisper-large-v3-turbo'
     piece = os.path.join(tmp, 'piece000.mp3')
     with open(piece, 'wb') as f:
         f.write(b'ID3')
     session = FakeSession(FakeResponse(200, {'text': ' Hello. ', 'duration': 599.5,
                                              'usage': {'seconds': 600, 'cost': 0.002}}))
-    _assert(transcript.transcribe_piece(session, piece) == ('Hello.', 600.0, 0.002),
-            "the text, the seconds and what OpenRouter billed")
+    _assert(transcript.transcribe_piece(session, piece) == ('Hello.', 'whisper', 0.002, 600.0),
+            "the text, what OpenRouter billed and the seconds it measured")
     url, headers, (files, data) = session.calls[0]
-    _assert(url == transcript.TRANSCRIBE_URL and headers['Authorization'] == 'Bearer k',
+    _assert(url == openrouter.BASE_URL + 'audio/transcriptions' and headers['Authorization'] == 'Bearer k',
             "OpenRouter's transcription endpoint, the same key")
     _assert(data['model'] == 'openai/whisper-large-v3-turbo' and files['file'][0] == 'piece000.mp3',
             "the configured model, the piece as a file")
@@ -119,7 +126,7 @@ def test_transcription(tmp):
         try:
             transcript.transcribe_piece(FakeSession(response), piece)
             raise AssertionError(label + " must raise")
-        except transcript.TranscriptUnavailable:
+        except openrouter.OpenRouterError:
             _assert(True, label + " is no transcript")
     _assert(transcript.PIECE_SECONDS * 24000 / 8 < 25 * 1024 * 1024 and transcript.PIECE_SECONDS <= 600,
             "a piece is under the 25 MB upload cap and short enough for a 60 s provider timeout")
@@ -137,10 +144,9 @@ def test_queue_and_quota(db):
     """)
     c.commit()
     c.close()
-    _assert(summary.plan_level(501, db) == 1 and summary.plan_level(502, db) == 0, "plan levels")
-    _assert(summary.seconds_needed({'seconds': 2700}) == 2700, "an episode takes its length")
-    _assert(summary.seconds_needed({'seconds': 0}) == summary.UNKNOWN_SECONDS, "an hour when the feed has none")
-    _assert(summary.top_level() == 3, "Relay is the top plan")
+    _assert(running_plan_level(501, db) == 1 and running_plan_level(502, db) == 0, "plan levels")
+    _assert(quota.seconds_needed({'seconds': 2700}) == 2700, "an episode takes its length")
+    _assert(quota.seconds_needed({'seconds': 0}) == quota.UNKNOWN_SECONDS, "an hour when the feed has none")
 
     hour = 3600
     for i in range(3):
@@ -158,16 +164,17 @@ def test_queue_and_quota(db):
     c.close()
 
     now = time.time()
-    quota = summary.quota(501, hour, level=1, now=now, database=db)
-    _assert((quota.allowed, quota.limit, quota.used, quota.needed) == (True, 5 * hour, 3 * hour, hour),
+    bronze = quota.check(501, hour, level=1, now=now, database=db)
+    _assert((bronze.allowed, bronze.limit, bronze.used, bronze.needed) == (True, 5 * hour, 3 * hour, hour),
             "Bronze, 5 hours: 3 used; failed, served by a cached summary and old ones do not count")
-    _assert(not summary.quota(501, 3 * hour, level=1, now=now, database=db).allowed,
+    _assert(bronze.left == 2 * hour and not bronze.top_plan, "two hours left, a bigger plan exists")
+    _assert(not quota.check(501, 3 * hour, level=1, now=now, database=db).allowed,
             "a three-hour episode does not fit the two hours left")
     request_id, new = ai.enqueue(501, 'r9', 'en', hour, db)
     _assert(new and ai.enqueue(501, 'r9', 'en', hour, db) == (request_id, False), "a second tap is the same request")
-    _assert(summary.quota(501, hour, level=1, now=now, database=db).used == 4 * hour, "one on its way counts")
-    _assert(not summary.quota(501, hour + 1, level=1, now=now, database=db).allowed, "the hour left is the limit")
-    nothing = summary.quota(502, 60, level=0, now=now, database=db)
+    _assert(quota.check(501, hour, level=1, now=now, database=db).used == 4 * hour, "one on its way counts")
+    _assert(not quota.check(501, hour + 1, level=1, now=now, database=db).allowed, "the hour left is the limit")
+    nothing = quota.check(502, 60, level=0, now=now, database=db)
     _assert((nothing.allowed, nothing.limit) == (False, 0), "no plan: no new summaries")
 
     claimed = ai.claim(db, now=now)
@@ -190,12 +197,18 @@ def test_worker(db):
     except Exception as e:  # CI has no bot requirements
         print("skip worker (%s)" % e.__class__.__name__)
         return
-    ai.remember_episode('ep7', LINK, None, 'Seven &amp; more', 'Show', 2700, database=db)
+    c = sqlite3.connect(db)
+    c.execute('CREATE TABLE channels (id INTEGER PRIMARY KEY, rss_link TEXT)')
+    c.execute("INSERT INTO channels VALUES (9, 'https://feed.example/rss')")
+    c.commit()
+    c.close()
+    ai.remember_episode('ep7', LINK, 9, 'Seven &amp; more', 'Show', 2700, database=db)
+    _assert(ai.episode('ep7', db)['feed_url'] == 'https://feed.example/rss', "the episode knows its feed")
     ai.save_transcript('ep7', 'words', 'feed', 0.0, database=db)
     ai.remember_episode('ep8', 'https://cdn.example/show/ep8.mp3', None, 'Eight', 'Show', database=db)
     ai.save_transcript('ep8', 'words', 'whisper', 0.01, 2712.4, database=db)
     _assert(ai.episode('ep8', db)['seconds'] == 0, "a feed without a length stores 0")
-    ai.remember_episode('ep7', LINK, None, 'Seven &amp; more', 'Show', 0, database=db)
+    ai.remember_episode('ep7', LINK, 9, 'Seven &amp; more', 'Show', 0, database=db)
     _assert(ai.episode('ep7', db)['seconds'] == 2700, "a later delivery without a length keeps the known one")
     sent, asked = [], []
 
@@ -225,7 +238,7 @@ def test_worker(db):
     _assert(summaryModule.length_text(5400, 'en') == '1 h 30 min', "hours and minutes")
     _assert(summaryModule.length_text(2701, 'ru') == '46 мин', "minutes round up")
     _assert(summaryModule.length_text(5 * 3600, 'de') == '5 Std.', "whole hours")
-    top = summaryModule.offer_message('en', summary.Quota(False, 30 * 3600, 29 * 3600, 7200, 3))
+    top = summaryModule.offer_message('en', quota.Quota(False, 30 * 3600, 29 * 3600, 7200, 3))
     _assert('30 h of audio' in top['text'] and '1 h left' in top['text'] and 'runs 2 h' in top['text']
             and 'reply_markup' not in top, "the top plan hears what is left, no plans to sell")
 

@@ -10,18 +10,11 @@ import json
 
 from app.controller.general.notify import notify
 from app.i18n.messages import get_message
-from app.service.ai import summary
+from app.service.ai import quota as ai_quota, summary
 from config import ai_summary_hours_per_month
 from db import ai, usage
 from lib.markup import telegram_html
 from lib.telegram.general.message_master import render_messages
-
-SUMMARY_ACTION = 'sum'
-
-
-def button(ref, language_code) -> dict:
-    return {'text': get_message('summaryButton', language_code),
-            'callback_data': {'tp': SUMMARY_ACTION, 'r': ref}}
 
 
 def summary_message(episode, text) -> dict:
@@ -40,7 +33,7 @@ def length_text(seconds, language_code) -> str:
     return ' '.join(parts)
 
 
-def offer_message(language_code, quota: summary.Quota) -> dict:
+def offer_message(language_code, quota: ai_quota.Quota) -> dict:
     from app.service.record.free_limit import plans_offer
     if not quota.limit:
         text = get_message('summaryForPlans', language_code).format(
@@ -49,9 +42,9 @@ def offer_message(language_code, quota: summary.Quota) -> dict:
     else:
         text = get_message('summaryQuota', language_code).format(
             limit=length_text(quota.limit, language_code),
-            left=length_text(max(quota.limit - quota.used, 0), language_code),
+            left=length_text(quota.left, language_code),
             needed=length_text(quota.needed, language_code))
-        if quota.level >= summary.top_level():
+        if quota.top_plan:
             return {'type': 'text', 'text': text, 'disable_web_page_preview': True}
         text += ' ' + get_message('summaryBiggerPlan', language_code)
     plans_text, rows = plans_offer(language_code)
@@ -81,7 +74,7 @@ def request_summary(data):
         usage.record_ai(data['chat_id'], ref, 0.0)
         return
 
-    quota = summary.quota(data['chat_id'], summary.seconds_needed(episode))
+    quota = ai_quota.check(data['chat_id'], ai_quota.seconds_needed(episode))
     if not quota.allowed:
         notify(data['callback'], data['message'], '')
         render_messages(data['chat_id'], [offer_message(language_code, quota)])
