@@ -695,6 +695,12 @@ button; `quota.py` who may ask. The plan level is
   answers the delivered audio: the sender notes each chat's audio message
   (`_note_audio_message`, Bot API, rich and agent sends; bookkeeping that
   never fails a delivery).
+- Once per user (`app/service/ai/hint.py`, `users.flags` `summary_hint_sent`):
+  after a delivered episode with the Summary button, a chat with a plan
+  running (a trial too) that never asked for a summary gets a note on what
+  it does, a reply to that audio. Without a plan the button is an invoice:
+  no note. Never in the same delivery as the rich message note; never fails
+  a delivery (`Sender._send_summary_hints`).
 Lock: `python app/service/ai/test_summary.py` (CD gate; the worker part
 runs where the bot's requirements are installed),
 `python app/core/sender/test_record_delivery.py`,

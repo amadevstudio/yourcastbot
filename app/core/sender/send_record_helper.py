@@ -23,7 +23,7 @@ from app.service.record.caption import (
 from app.service.record.text_format import (
     CAPTION, EPISODE_FORMAT_HINT_ACTION, META, RICH, SEPARATE, user_format)
 from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
-from app.service.ai import summary as ai_summary
+from app.service.ai import hint as summary_hint, summary as ai_summary
 from db import ai, usage
 from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path, \
     trust_rss_podcasts
@@ -199,6 +199,8 @@ class Sender:
         # chat id -> how its episode text arrives (users only; the rest keep the caption)
         self.text_formats: dict[int, str] = {}
         self._rich_hint_pending: set[int] = set()
+        # chats that got a note in this delivery: one note at a time
+        self._hinted: set[int] = set()
 
         self.successfully_sent_to = []
         # chat id -> the delivered audio's message: an automatic summary answers it
@@ -628,6 +630,7 @@ class Sender:
         self._sync_outbox_recipients()
         self._record_usage()
         self._queue_auto_summaries()
+        self._send_summary_hints()
         complete = self._outbox_job_complete()
         # Receipt only after Telegram ACK (or a terminal outcome: too big /
         # blocked chat). A 429 must not be done — leftover mp3 is ok.
@@ -707,6 +710,26 @@ class Sender:
                        self.lang_codes_by_utg, self._audio_messages)
         except Exception as e:
             self.logger.warn("auto summaries:", e)
+
+    def _send_summary_hints(self):
+        """Once per user, after an episode with the Summary button: what it does
+        (app/service/ai/hint.py), a reply to the audio. Never fails the send."""
+        if self._summary_ref is None or not self.successfully_sent_to:
+            return
+        try:
+            chats = summary_hint.pending(set(self.successfully_sent_to) - self._hinted)
+        except Exception as e:
+            self.logger.warn("summary hint:", e)
+            return
+        for chat_id in chats:
+            structure = {'type': 'text', 'text': get_message("summaryHint", self.lang_codes_by_utg.get(chat_id))}
+            if self._audio_messages.get(chat_id):
+                structure['reply_to'] = self._audio_messages[chat_id]
+            try:
+                outer_sender(chat_id, [structure])
+                summary_hint.mark(chat_id)
+            except Exception as e:
+                self.logger.warn(e, "Fail to send the summary hint")
 
     def _mark_outbox_done_after_send(self):
         if self.outbox_id is None:
@@ -1150,6 +1173,7 @@ class Sender:
         if chat_id not in self._rich_hint_pending:
             return
         self._rich_hint_pending.discard(chat_id)
+        self._hinted.add(chat_id)
         lang = self.lang_codes_by_utg[chat_id]
         try:
             outer_sender(chat_id, [{
