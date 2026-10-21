@@ -741,6 +741,16 @@ restore. The script archives copies made by SQLite's backup API
 point `tar` at the live database again.
 Lock: `python scripts/test_db_snapshot.py` (CD gate).
 
+## botsim
+
+`tools/botsim` runs the real bot in one process against a fake Telegram
+(Telethon events in, Bot API responses out) on a fresh or copied database:
+`python tools/botsim/cli.py -c "send /start" -c "tap menu"` prints what the
+user would see. Use it to walk a flow end to end before shipping it (it
+found the OPML duplicate channels and the `flush=` TypeError). It needs the
+bot's requirements; a copy of a real database stays outside the repo.
+README: `tools/botsim/README.md`. Lock: `python tools/botsim/test_botsim.py`.
+
 ## Tests
 
 Run the smallest existing suite that covers the change (for send jobs:
