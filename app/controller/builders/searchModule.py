@@ -191,6 +191,8 @@ def construct_adding_by_rss_page(language_code):
     message = get_message("addingByRssMessage", language_code)
     for hosterLink in available_podcast_hoster_links:
         message += "\n\U00002022 " + hosterLink  # точка bullet
+    # subscriptions from another app: an OPML file sent to the bot (opmlModule)
+    message += "\n\n" + get_message("opmlHint", language_code)
 
     return {
         "message": message,

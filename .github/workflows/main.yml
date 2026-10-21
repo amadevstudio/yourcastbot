@@ -88,6 +88,7 @@ jobs:
           python3 app/core/balancers/test_record_balancer.py
           python3 app/admin_web/test_diag.py
           python3 app/service/podcast/test_feed_xml.py
+          python3 app/service/podcast/test_opml.py
           python3 app/jobs/test_quiet_start.py
           python3 app/jobs/test_nosub_rule.py
           python3 app/jobs/test_updater_resume.py

@@ -11,7 +11,7 @@ from telethon.tl.functions.messages import SetBotPrecheckoutResultsRequest
 
 import config
 from agent.bot_telethon import thonbot
-from app.controller.builders import welcomeModule, searchModule
+from app.controller.builders import opmlModule, welcomeModule, searchModule
 from app.core.balancers import telebotAnswerer
 from app.core.balancers.telebotAnswerer import TelebotBalancer
 from app.core.controller import construct_params, empty_state_input_state_corrector
@@ -23,6 +23,7 @@ from app.routes.routes_list import AvailableActions
 from app.routes.ptypes import Chat, User, ForwardedFrom, Message, Callback, HandleInThreadParams, Inline
 from app.routes.routes import AvailableRoutes, RouteMap
 from app.service.payment import starsPaymentModule
+from app.service.podcast import opml
 from lib.python import dict_tools
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -34,7 +35,7 @@ def get_tp(data):
     try:
         return json.loads(data)['tp']
     except Exception as e:
-        logger.err(e, flush=True)
+        logger.err(e)
         return ""
 
 
@@ -191,6 +192,25 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
         thonbot.add_event_handler(maintenance_catcher, events.NewMessage(incoming=True))
         thonbot.add_event_handler(maintenance_catcher, events.CallbackQuery())
         return
+
+    # An OPML file (subscriptions from another app), in any state: before the routes,
+    # which would read a document as an empty text
+    async def opml_file(event: telethon.events.NewMessage.Event):
+        file = event.file
+        if file is None or not opml.looks_like_opml(file.name, file.mime_type):
+            return
+        message = await get_message(event)
+        method_params = construct_params(None, message, None)
+        try:
+            method_params['opml'] = (await event.message.download_media(file=bytes)
+                                     if (file.size or 0) <= opml.MAX_BYTES else b'')
+        except Exception as e:
+            logger.warn("opml download:", event.chat_id, type(e).__name__, e)
+            method_params['opml'] = b''
+        handle_event_in_thread({'action': opmlModule.import_file, 'data': method_params})
+        raise events.StopPropagation
+    thonbot.add_event_handler(opml_file, events.NewMessage(
+        incoming=True, func=lambda event: event.is_private and event.message.document is not None))
 
     # If status is 'empty' and previous waits for text, goback to previously and process
     async def process_empty_state_input(event: telethon.events.NewMessage.Event):
