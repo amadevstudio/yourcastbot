@@ -281,9 +281,13 @@ class World:
         self.notices = []  # (chat_id, text) for too big / unavailable
         self.host_faults = []  # (link, error) counted toward cooling a host
         self.usage = []  # (chat ids, kind, MB downloaded) written to the usage ledger
+        self.structures = []  # (chat_id, structure) of every text message
+        self.hint_pending = set()  # chats app/service/ai/hint.py would send the Summary note to
+        self.hints_marked = []
 
         def notice(chat_id, structures, *args, **kwargs):
             self.notices.append((chat_id, structures[0]['text']))
+            self.structures.append((chat_id, structures[0]))
             return []
 
         patches = {
@@ -305,6 +309,8 @@ class World:
             'bot_blocked_reaction': self._blocked_reaction,
             'bot_removed_from_channel_reaction': lambda error, chat_id: False,
             'time': _ns(sleep=self.slept.append, time=time.time, time_ns=time.time_ns),
+            'summary_hint': _ns(pending=lambda chats: self.hint_pending & set(chats),
+                                mark=self.hints_marked.append),
             'usage': _ns(record_deliveries=lambda chats, kind, link, mb: self.usage.append(
                 (sorted(chats), kind, round(mb))), episode_ref=real_usage.episode_ref),
         }
@@ -475,6 +481,7 @@ def _check_summary_button():
     finally:
         srh.InlineKeyboardMarkup, srh.InlineKeyboardButton, srh.ai_summary, srh.ai = saved
     _check_auto_summaries()
+    _check_summary_hints()
 
 
 def _check_auto_summaries():
@@ -505,6 +512,43 @@ def _check_auto_summaries():
         _assert(sender.send_record() == [1], "a failing summary queue never fails the delivery")
     finally:
         auto.queue = saved
+
+
+def _check_summary_hints():
+    """Once per user, after an episode with the Summary button: a note, a reply to the audio;
+    never with the rich message note, never failing the delivery."""
+    summary_hint = srh.get_message("summaryHint", 'en')
+    world = World(size_mb=12, formats={1: ('caption', True), 2: ('caption', True)})
+    world.hint_pending = {1}
+    sender = world.sender(chats=(1, 2))
+    sender._summary_ref = 'ref1'
+    _assert(sorted(sender.send_record()) == [1, 2], "delivered as before")
+    _assert(world.structures == [(1, {'type': 'text', 'text': summary_hint, 'reply_to': 101})],
+            "the note goes to the chat that never asked, as a reply to its audio")
+    _assert(world.hints_marked == [1], "and is remembered: once per user")
+
+    world = World(size_mb=12, formats={1: ('caption', True)})
+    world.hint_pending = {1}
+    world.sender(chats=(1,)).send_record()
+    _assert(world.structures == [], "no Summary button on the episode (AI off): no note")
+
+    world = World(size_mb=12, formats={1: ('rich', False), 2: ('caption', True)})
+    world.hint_pending = {1, 2}
+    sender = world.sender(chats=(1, 2))
+    sender._summary_ref = 'ref1'
+    sender.send_record()
+    _assert([chat_id for chat_id, s in world.structures if s.get('text') == summary_hint] == [2],
+            "the chat that got the rich message note waits for the next episode")
+
+    world = World(size_mb=12, formats={1: ('caption', True)})
+    world.hint_pending = {1}
+
+    def broken(chats):
+        raise RuntimeError('database is locked')
+    srh.summary_hint = _ns(pending=broken, mark=world.hints_marked.append)
+    sender = world.sender(chats=(1,))
+    sender._summary_ref = 'ref1'
+    _assert(sender.send_record() == [1] and world.structures == [], "a failing note never fails the delivery")
 
 
 def main():

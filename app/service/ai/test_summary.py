@@ -313,6 +313,28 @@ def test_auto(db):
     _assert(ai.claim(db)['id'] == request_id, "and it goes first")
 
 
+def test_hint(db):
+    from app.service.ai import hint
+    c = sqlite3.connect(db)
+    c.executescript("""
+        CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT, flags TEXT);
+        CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, time_left INTEGER);
+        INSERT INTO users VALUES (1, 701, 'en', NULL), (2, 702, 'en', NULL), (3, 703, 'en', NULL),
+            (4, 704, 'en', '{"auto_summary": 1}');
+        INSERT INTO user_tariff_cs VALUES (1, 1, 3, 100), (2, 2, 0, 0), (3, 3, 3, 100), (4, 4, 3, 100);
+    """)
+    c.commit()
+    c.close()
+    ai.enqueue(703, 'ep', 'original', 60, db)
+    _assert(hint.pending([701, 702, 703, 704, '@channel', -100500], db) == {701, 704},
+            "the note: a plan running (a trial too), never asked for a summary; no plan, a channel: none")
+    hint.mark(704, db)
+    _assert(hint.pending([701, 704], db) == {701}, "once per user")
+    _assert(sqlite3.connect(db).execute("SELECT flags FROM users WHERE id=4").fetchone()[0]
+            == '{"auto_summary":1,"summary_hint_sent":1}', "the other flags stay")
+    _assert(hint.pending([], db) == set(), "nobody delivered: no query")
+
+
 def test_worker(db):
     try:
         from app.jobs import ai_watcher
@@ -546,6 +568,7 @@ def main():
         db = os.path.join(tmp, 'test.sqlite')
         test_queue_and_quota(db)
         test_auto(os.path.join(tmp, 'auto.sqlite'))
+        test_hint(os.path.join(tmp, 'hint.sqlite'))
         test_worker(os.path.join(tmp, 'worker.sqlite'))
     print("all AI summary checks passed")
 

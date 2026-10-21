@@ -169,6 +169,20 @@ ROWS = {
         'No se pudo responder. Inténtalo de nuevo.',
         'Das hat nicht geklappt. Bitte versuch es noch einmal.',
         'לא הצלחנו לענות. נסו שוב.'),
+    # once, after the first episode with the Summary button (app/service/ai/hint.py)
+    'summaryHint': (
+        '📝 Под выпуском кнопка "Пересказ": ИИ расскажет, о чём он, по пунктам со временем. '
+        'Нажмите на время – запись перемотается туда. А потом можно задать вопросы по выпуску.',
+        '📝 The "Summary" button under the episode: AI tells you what it is about, point by point with times. '
+        'Tap a time and the audio jumps there. Then you can ask questions about the episode.',
+        '📝 O botão "Resumo" sob o episódio: a IA conta do que se trata, ponto a ponto, com os horários. '
+        'Toque em um horário e o áudio pula para lá. Depois dá para fazer perguntas sobre o episódio.',
+        '📝 El botón "Resumen" bajo el episodio: la IA te cuenta de qué trata, punto por punto con los tiempos. '
+        'Toca un tiempo y el audio salta ahí. Después puedes hacer preguntas sobre el episodio.',
+        '📝 Der Button "Zusammenfassung" unter der Folge: Die KI sagt dir Punkt für Punkt mit Zeitangaben, '
+        'worum es geht. Tippe auf eine Zeit, und das Audio springt dorthin. Danach kannst du Fragen zur Folge stellen.',
+        '📝 הכפתור "סיכום" מתחת לפרק: ה-AI מספר על מה הפרק, נקודה אחר נקודה עם זמנים. '
+        'הקשה על זמן מעבירה את ההקלטה לשם. אחר כך אפשר לשאול שאלות על הפרק.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}
