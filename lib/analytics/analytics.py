@@ -1,6 +1,6 @@
 import json
 import typing
-from typing import TypedDict, Literal, Required
+from typing import TypedDict, Literal, Required, NotRequired
 
 import requests
 import queue
@@ -28,6 +28,7 @@ class SmartEventTelegramProcessingType(TypedDict):
     actionName: str
     language_code: str
     specialEventData: SpecialEventDataNewUserType | SpecialEventDataPodcastOpenedByLink | None
+    eventProperties: NotRequired[dict]  # extra properties of a tap (its source)
 
 
 class Analytics(metaclass=Singleton):
@@ -113,6 +114,7 @@ class Analytics(metaclass=Singleton):
         if command is None:
             return
 
+        event_properties = dict(event_properties, **(analytics_data.get('eventProperties') or {}))
         event_properties["original_command"] = command
         event_properties["request_type"] = request_type
         command = command.split(" ")[0]

@@ -5,6 +5,7 @@ from app.i18n.messages import get_message
 from app.jobs.relay_remind import (
     clear_relay_d3_sent, relay_nudge_markup, send_relay_d3_reminders)
 from app.jobs.tariff_tick import run_tariff_tick
+from app.service import analytics_events
 from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
 from app.service.payment.referral import invite_row
@@ -60,6 +61,8 @@ def balance_watcher(update_time):
 
         for npu in not_prolonged_users:
             lang = npu['lang']
+            # the trial-to-paid funnel: a plan nobody paid for that ended is a trial that did not convert
+            analytics_events.plan_off(npu['telegramId'], npu['tlevel'])
             # The plan that stopped is the user's own (Bronze, Silver, Relay).
             message_base = plan_off_text(npu['tlevel'], lang) + "\n\n"
 

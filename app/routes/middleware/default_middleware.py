@@ -12,6 +12,7 @@ from lib.telegram.general.message_master import message_master
 from app.controller.builders import podcastModule, adminModule, recsModule
 from app.i18n.messages import get_message
 from app.repository.storage import storage
+from app.service import analytics_events
 from app.service.payment import paymentSafeModule
 from db.sqliteAdapter import SQLighter
 from lib.analytics.analytics import Analytics, SpecialEventDataNewUserType, SmartEventTelegramProcessingType, \
@@ -96,6 +97,8 @@ def analytics_serving(tg_data: ControllerParams, user: Any, is_new_user: bool = 
             button_data = json.loads(tg_data['callback'].data)
             if tg_data['route_name'] == 'recs' and button_data.get('show_file_sizes', False) is True:
                 analytics_data['actionName'] = 'turn_file_sizes_on'
+            # where the button was (a digest's Listen): a digest's click-through in Amplitude
+            analytics_data['eventProperties'] = analytics_events.tap_properties(button_data)
 
         analytics.smart_event_telegram_processing(analytics_data)
     except Exception as e:

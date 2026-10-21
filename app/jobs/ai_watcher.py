@@ -14,6 +14,7 @@ import requests
 
 from app.controller.builders.summaryModule import summary_message
 from app.i18n.messages import get_message
+from app.service import analytics_events
 from app.service.ai import summary, transcript
 from app.service.podcast.rss import get_rss_root
 from db import ai, usage
@@ -65,6 +66,7 @@ def process(request, session, send=outer_sender) -> int:
         ai.save_summary(request['ref'], request['lang'], text, cost)
     usage.record_ai(request['chat_id'], request['ref'], cost)
     send(request['chat_id'], [summary_message(episode, text)])
+    analytics_events.track(request['chat_id'], 'summary_ready', {'cached': cached is not None, 'seconds': charged})
     return charged
 
 
