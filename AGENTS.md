@@ -571,6 +571,16 @@ chats by load. A channel's deliveries count for the user who added it.
 Locks: `python db/test_usage.py`, `python app/admin_web/test_economics.py`
 (CD gate), `python app/core/sender/test_record_delivery.py`.
 
+The page "Product" (`app/admin_web/product.py`, `GET /api/product?days=`)
+is the newcomers' funnel and the product's use from the database: who
+subscribed to a show of their own (the welcome show every newcomer gets
+does not count), got an episode, asked for a summary, paid, blocked the
+bot; plans now (a trial ending in 3 days without the balance to renew);
+payments (first-time payers); summaries, questions, auto opt-ins; the
+digest; newcomers by week. Read-only, the creator's tests are not payments,
+blocked users hold no plan. Taps and the digest's clicks are Amplitude's.
+Lock: `python app/admin_web/test_product.py` (CD gate).
+
 ## Welcome screen
 
 `/start` shows the top podcasts in the user's language (then worldwide) as

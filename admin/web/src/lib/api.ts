@@ -94,6 +94,37 @@ export type Economics = {
   users: (EconomicsRow & { tg: number; segment: string; level: number })[];
 };
 
+export type ProductFunnel = {
+  new: number;
+  own_sub: number;
+  got_episode: number;
+  asked_summary: number;
+  paid: number;
+  blocked: number;
+};
+
+export type Product = {
+  days: number;
+  newcomers: ProductFunnel;
+  weeks: (ProductFunnel & { week: string })[];
+  plans: { paid: number; trial: number; trial_ending: number };
+  payments: { payments: number; payers: number; first_time: number; revenue_usd: number };
+  ai: {
+    summary_taps: number;
+    summary_auto: number;
+    summary_done: number;
+    summary_failed: number;
+    summary_chats: number;
+    questions: number;
+    question_chats: number;
+    auto_on: number;
+    ai_usd: number;
+  };
+  activity: { clickers: number; clicks: number; automatic: number; listeners: number };
+  digest: { last_week: number; muted: number };
+  ledger_since: string | null;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -132,6 +163,7 @@ export const api = {
     return request<UsersPage>(`/api/users?${q.toString()}`);
   },
   economics: (days: number) => request<Economics>(`/api/economics?days=${days}`),
+  product: (days: number) => request<Product>(`/api/product?days=${days}`),
   tariffs: () => request<{ tariffs: Tariff[] }>("/api/tariffs"),
   saveTariff: (row: Tariff) =>
     request<Tariff>("/api/tariffs", {
