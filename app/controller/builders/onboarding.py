@@ -9,9 +9,16 @@ to all ticked ones.
 The handler cannot read the keyboard back (Telethon callbacks carry only
 the data), so every button carries the selection as a bitmask over the
 list and a checksum of the list: the list is rebuilt on each tap, and a
-list that changed in between is redrawn rather than subscribed to.
+list that changed in between is redrawn rather than subscribed to. Telethon
+gives the data as bytes.
+
+"Popular in your language" is popular among users whose Telegram has that
+language, and many listeners of Persian shows run Telegram in English. A
+show whose name is written in a script the language does not use (Arabic
+letters for English) is left out: the list stays readable.
 """
 import json
+import unicodedata
 
 from app.i18n.messages import get_message
 from app.service.podcast.subscription import add_sub
@@ -21,23 +28,40 @@ from lib.markup import telegram_html
 from lib.telegram.general.message_master import MessageStructuresInterface
 
 PICKS = 8
+# the scripts a language's own listeners read; other languages are not filtered
+SCRIPTS = {'en': {'LATIN'}, 'pt': {'LATIN'}, 'es': {'LATIN'}, 'de': {'LATIN'},
+           'ru': {'CYRILLIC', 'LATIN'}, 'he': {'HEBREW', 'LATIN'}}
 PICK_ACTION = 'wPick'
 SUBSCRIBE_ACTION = 'wSub'
 NAME_LIMIT = 48
 
 
+def name_script(name) -> str | None:
+    """The script most letters of `name` are written in ('LATIN', 'ARABIC'...), None without letters."""
+    counts = {}
+    for char in str(name or ''):
+        if char.isalpha():
+            script = unicodedata.name(char, '').split(' ')[0]
+            counts[script] = counts.get(script, 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
+def readable(name, language_code) -> bool:
+    scripts = SCRIPTS.get(str(language_code or '').split('-')[0].lower())
+    return scripts is None or name_script(name) in scripts | {None}
+
+
 def top_podcasts(language_code, count=PICKS, database=None) -> list[dict]:
-    """Popular podcasts in the user's language first, then worldwide ones."""
+    """Popular podcasts in the user's language first, then worldwide ones, readable names only."""
     db_users = SQLighter(db_path if database is None else database)
     try:
-        top_list = [dict(row) for row in db_users.select_top(
-            None, language_code, True, None, None, count, 0)]
-        if len(top_list) < count:
-            seen = {row['id'] for row in top_list}
-            for row in db_users.select_top(None, language_code, False, None, None, count, 0):
+        top_list, seen = [], set()
+        for lang_top in (True, False):
+            # a few spare rows: some are left out as unreadable
+            for row in db_users.select_top(None, language_code, lang_top, None, None, count * 3, 0):
                 if len(top_list) >= count:
                     break
-                if row['id'] not in seen:
+                if row['id'] not in seen and readable(row['name'], language_code):
                     top_list.append(dict(row))
                     seen.add(row['id'])
     finally:
@@ -71,16 +95,16 @@ def welcome_message(language_code, top_list, mask=0) -> list[MessageStructuresIn
         }])
     rows.append([{'text': get_message('goToSearch', language_code), 'callback_data': {'tp': 'search'}}])
     rows.append([{'text': get_message('skipWelcome', language_code), 'callback_data': {'tp': 'menu'}}])
-    text = get_message('welcomeMessage', language_code)
+    text = get_message('welcome', language_code)
     if top_list:
-        text += '\n\n' + get_message('welcomePickHint', language_code)
+        text += '\n' + get_message('welcomePickHint', language_code)
     return [{'type': 'text', 'text': text, 'reply_markup': rows}]
 
 
 def read_tap(callback_data) -> tuple[int | None, int, int | None]:
-    """(index or None, mask, checksum or None) from a welcome button."""
+    """(index or None, mask, checksum or None) from a welcome button (str, bytes or dict)."""
     try:
-        data = json.loads(callback_data) if isinstance(callback_data, str) else dict(callback_data)
+        data = json.loads(callback_data) if isinstance(callback_data, (str, bytes)) else dict(callback_data)
     except (TypeError, ValueError):
         return None, 0, None
     index = data.get('i')

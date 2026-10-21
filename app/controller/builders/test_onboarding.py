@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Welcome picker: checkboxes carry the selection, a changed list is not
 subscribed to, the free subscription limit holds, callbacks fit Telegram's
-64 bytes; a link from Apple Podcasts opens that podcast.
+64 bytes and are read as Telethon sends them (bytes), names in a script the
+language does not use stay out; a link from Apple Podcasts opens that podcast.
 
 Run from the repo root: python app/controller/builders/test_onboarding.py
 (the behaviour runs where the bot's requirements are installed).
@@ -17,6 +18,7 @@ if _ROOT not in sys.path:
 from app.controller.builders.test_open_recs import import_builder  # noqa: E402
 
 TOP = [{'id': 10000 + i, 'name': 'Show <%d> &amp; friends' % i} for i in range(8)]
+PERSIAN = {'id': 20000, 'name': 'رادیو کارنکن'}
 CHANNELS = {row['id']: {'id': row['id'], 'itunes_id': 500 + i if i % 2 == 0 else None,
                         'rss_link': 'https://feeds.example/%d.xml' % i}
             for i, row in enumerate(TOP)}
@@ -36,7 +38,8 @@ class FakeDB:
         pass
 
     def select_top(self, *args):
-        return TOP if args[2] else []
+        # popular among the language's users: a Persian show first; worldwide: nothing new
+        return [PERSIAN] + TOP if args[2] else TOP
 
     def getUserSubscriptionByTg(self, chat_id):
         return self.tariff
@@ -58,9 +61,15 @@ def _buttons(screen):
 def test_picker(onboarding):
     onboarding.SQLighter = FakeDB
     top = onboarding.top_podcasts('en')
-    _assert([row['id'] for row in top] == [row['id'] for row in TOP], "the top in the user's language")
+    _assert([row['id'] for row in top] == [row['id'] for row in TOP],
+            "the top in the user's language, without a name English readers cannot read")
+    _assert(onboarding.top_podcasts('fa')[0]['id'] == PERSIAN['id'], "a language without a script rule keeps it")
+    _assert(onboarding.readable('Подкаст', 'ru') and onboarding.readable('Lex Fridman', 'ru')
+            and not onboarding.readable('رادیو', 'pt-BR') and onboarding.readable('42', 'en'),
+            "Russian reads Cyrillic and Latin, Portuguese not Arabic, no letters is fine")
 
     screen = onboarding.welcome_message('en', top, mask=0b101)
+    _assert('popular channels' not in screen[0]['text'], "one invitation, not two")
     buttons = _buttons(screen)
     picks = [b for b in buttons if b['callback_data']['tp'] == onboarding.PICK_ACTION]
     _assert(len(picks) == 8, "eight podcasts to tick")
@@ -77,6 +86,8 @@ def test_picker(onboarding):
     _assert(checksum == onboarding.list_checksum(top), "and the checksum of the list it was drawn from")
     _assert(onboarding.list_checksum(list(reversed(top))) != checksum, "a reordered list has another checksum")
     _assert([row['id'] for row in onboarding.picked(top, 0b101)] == [10000, 10002], "mask to podcasts")
+    _assert(onboarding.read_tap(json.dumps(picks[1]['callback_data']).encode())[:2] == (1, 0b101),
+            "Telethon's bytes are read the same: a tap ticks")
     _assert(onboarding.read_tap('not json') == (None, 0, None), "a broken callback selects nothing")
 
 
