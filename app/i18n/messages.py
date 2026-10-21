@@ -1082,22 +1082,22 @@ messages = {
     },
     "add_by_rss": {
         "ru": {
-            "ro_msg": emojiCodes.get('link') + " " + "Добавить по RSS"
+            "ro_msg": emojiCodes.get('link') + " " + "RSS & Import"
         },
         "en": {
-            "ro_msg": emojiCodes.get('link') + " " + "Add by RSS"
+            "ro_msg": emojiCodes.get('link') + " " + "RSS & Import"
         },
         "pt-BR": {
-            "ro_msg": emojiCodes.get('link') + " " + "Adicionar por RSS"
+            "ro_msg": emojiCodes.get('link') + " " + "RSS e importação"
         },
         "es": {
-            "ro_msg": emojiCodes.get('link') + " " + "Agregar por RSS"
+            "ro_msg": emojiCodes.get('link') + " " + "RSS e importación"
         },
         "de": {
-            "ro_msg": emojiCodes.get('link') + " " + "Per RSS hinzufügen"
+            "ro_msg": emojiCodes.get('link') + " " + "RSS & Import"
         },
         "he": {
-            "ro_msg": emojiCodes.get('link') + " " + "הוסף באמצעות RSS"
+            "ro_msg": emojiCodes.get('link') + " " + "RSS וייבוא"
         }
     },
     "addingByRssMessage": {
