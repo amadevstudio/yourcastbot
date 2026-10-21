@@ -43,6 +43,7 @@ AvailableActions = Literal[
     'subscription', 'notifications',
     'rate',
     'rec', 'nrec',
+    'wPick', 'wSub',
     'digestMute', 'digestToggle',
     'episodeFormatRich', 'episodeFormatSeparate', 'episodeFormatCaption', 'episodeFormatMeta',
     'episodeFormatHint',
