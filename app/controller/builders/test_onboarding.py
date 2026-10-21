@@ -42,6 +42,9 @@ class FakeDB:
         # popular among the language's users: a Persian show first; worldwide: nothing new
         return [PERSIAN] + TOP if args[2] else TOP
 
+    def get_uccs_by_tg(self, chat_id, notifications_enabled=True):
+        return [{'channel_id': 10001}] if chat_id == 4002 else []
+
     def getUserSubscriptionByTg(self, chat_id):
         return self.tariff
 
@@ -65,9 +68,12 @@ def test_picker(onboarding):
     _assert([row['id'] for row in top] == [row['id'] for row in TOP],
             "the top in the user's language, without a name English readers cannot read")
     _assert(onboarding.top_podcasts('fa')[0]['id'] == PERSIAN['id'], "a language without a script rule keeps it")
+    _assert(10001 not in [row['id'] for row in onboarding.top_podcasts('en', 4002)],
+            "a podcast the user already has is not offered again")
     _assert(onboarding.readable('Подкаст', 'ru') and onboarding.readable('Lex Fridman', 'ru')
-            and not onboarding.readable('رادیو', 'pt-BR') and onboarding.readable('42', 'en'),
-            "Russian reads Cyrillic and Latin, Portuguese not Arabic, no letters is fine")
+            and not onboarding.readable('رادیو', 'pt-BR') and onboarding.readable('42', 'en')
+            and not onboarding.readable('پادکست WonderLand', 'en'),
+            "Russian reads Cyrillic and Latin, Portuguese not Arabic, no letters is fine, no mixed names")
 
     screen = onboarding.welcome_message('en', top, mask=0b101)
     _assert('popular channels' not in screen[0]['text'], "one invitation, not two")

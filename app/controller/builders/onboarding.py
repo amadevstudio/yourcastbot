@@ -15,7 +15,9 @@ gives the data as bytes.
 "Popular in your language" is popular among users whose Telegram has that
 language, and many listeners of Persian shows run Telegram in English. A
 show whose name is written in a script the language does not use (Arabic
-letters for English) is left out: the list stays readable.
+letters for English) is left out: the list stays readable. Podcasts the
+user already has are left out too: /start again suggests new ones, and
+ticking one they have would only re-fetch its feed and take a free slot.
 """
 import json
 import unicodedata
@@ -36,29 +38,27 @@ SUBSCRIBE_ACTION = 'wSub'
 NAME_LIMIT = 48
 
 
-def name_script(name) -> str | None:
-    """The script most letters of `name` are written in ('LATIN', 'ARABIC'...), None without letters."""
-    counts = {}
-    for char in str(name or ''):
-        if char.isalpha():
-            script = unicodedata.name(char, '').split(' ')[0]
-            counts[script] = counts.get(script, 0) + 1
-    return max(counts, key=counts.get) if counts else None
+def name_scripts(name) -> set:
+    """The scripts the letters of `name` are written in ({'LATIN', 'ARABIC'}...)."""
+    return {unicodedata.name(char, '').split(' ')[0] for char in str(name or '') if char.isalpha()}
 
 
 def readable(name, language_code) -> bool:
+    """Every letter in a script the language's readers read ('پادکست WonderLand' is not English)."""
     scripts = SCRIPTS.get(str(language_code or '').split('-')[0].lower())
-    return scripts is None or name_script(name) in scripts | {None}
+    return scripts is None or name_scripts(name) <= scripts
 
 
-def top_podcasts(language_code, count=PICKS, database=None) -> list[dict]:
-    """Popular podcasts in the user's language first, then worldwide ones, readable names only."""
+def top_podcasts(language_code, chat_id=None, count=PICKS, database=None) -> list[dict]:
+    """Popular podcasts in the user's language first, then worldwide ones, readable names only,
+    without the ones this chat is subscribed to."""
     db_users = SQLighter(db_path if database is None else database)
     try:
-        top_list, seen = [], set()
+        seen = set() if chat_id is None else {
+            row['channel_id'] for row in db_users.get_uccs_by_tg(chat_id, notifications_enabled=False)}
+        top_list, spare = [], count * 2 + len(seen)  # rows left out as unreadable or already subscribed
         for lang_top in (True, False):
-            # a few spare rows: some are left out as unreadable
-            for row in db_users.select_top(None, language_code, lang_top, None, None, count * 3, 0):
+            for row in db_users.select_top(None, language_code, lang_top, None, None, count + spare, 0):
                 if len(top_list) >= count:
                     break
                 if row['id'] not in seen and readable(row['name'], language_code):
