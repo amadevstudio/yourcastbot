@@ -19,11 +19,12 @@ from lib.tools.logger import logger
 
 IDLE_SLEEP_SECONDS = 5
 SEND_PAUSE_SECONDS = 1
+LISTEN_PER_ROW = 3  # five episodes: two rows, not five
 
 
 def digest_message(entries, language):
     text = get_message('youHaveNewEpisodes', language)
-    rows = []
+    listen = []
     if entries:
         text += '\n\n<b>' + get_message('digestEpisodes', language) + '</b>'
     for index, entry in enumerate(entries, 1):
@@ -33,8 +34,9 @@ def digest_message(entries, language):
         callback = json.loads(entry['callback_json'])
         # Saved old positions can no longer be trusted; hash lookup starts at 0.
         callback['dh_n'] = callback['dh_n'].split('_')[0] + '_1'
-        rows.append([{'text': str(index) + ' · ' + get_message('playLater', language),
-                      'callback_data': callback}])
+        listen.append({'text': str(index) + ' · ' + get_message('playLater', language),
+                       'callback_data': callback})
+    rows = [listen[i:i + LISTEN_PER_ROW] for i in range(0, len(listen), LISTEN_PER_ROW)]
     rows += relay_nudge_markup(language, extra_row=[{
         'text': get_message('nosubDigestMuteButton', language),
         'callback_data': {'tp': DIGEST_MUTE_ACTION},

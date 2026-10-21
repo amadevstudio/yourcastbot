@@ -357,7 +357,7 @@ Locks: `python db/test_feed_recovery.py`, `python db/test_channel_poll.py`,
 holds the latest episode per show, up to five shows per message, keeping
 Relay/change-plan/mute controls and rechecking tariff/notify at send time.
 ACK deletes only the revision shown. "Listen" is the ordinary rec button
-and searches by hash from the start (positions change). Snapshots nothing
+and searches by hash from the start (positions change); three to a row. Snapshots nothing
 refers to expire after 90 days; a hard user delete takes the user's queued
 digest episodes. A "listen later" list was tried and left out (it halved
 episode titles in the list for little use). Locks:
