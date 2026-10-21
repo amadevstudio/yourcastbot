@@ -196,6 +196,13 @@ def run_jobs():
     t_feed_notices.start()
     watched.append(t_feed_notices)
 
+    from app.service.ai.summary import enabled as ai_summaries_enabled
+    if ai_summaries_enabled():
+        from app.jobs.ai_watcher import ai_watcher
+        t_ai_watcher = threading.Thread(target=ai_watcher, name="AI summaries", daemon=True)
+        t_ai_watcher.start()
+        watched.append(t_ai_watcher)
+
     from app.admin_web.mail_jobs import ensure_table as ensure_mail_table
     from app.admin_web.mailer import mailer_loop
     ensure_mail_table()

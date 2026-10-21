@@ -8,6 +8,7 @@ check runs without prod secrets or those packages.
 Run from the repo root: python app/core/sender/test_record_delivery.py
 """
 import importlib.util
+import json
 import os
 import sys
 import tempfile
@@ -72,6 +73,7 @@ from app.core.sender import outbox as real_outbox  # noqa: E402
 from app.core.sender import send_record_helper as srh  # noqa: E402
 from lib.net.enclosure import host_from_error  # noqa: E402
 from lib.system.disk_budget import DiskBudget, DiskBusy  # noqa: E402
+from db import usage as real_usage  # noqa: E402
 
 
 def _assert(cond, label):
@@ -302,7 +304,7 @@ class World:
             'bot_removed_from_channel_reaction': lambda error, chat_id: False,
             'time': _ns(sleep=self.slept.append, time=time.time, time_ns=time.time_ns),
             'usage': _ns(record_deliveries=lambda chats, kind, link, mb: self.usage.append(
-                (sorted(chats), kind, round(mb)))),
+                (sorted(chats), kind, round(mb))), episode_ref=real_usage.episode_ref),
         }
         for name, value in patches.items():
             setattr(srh, name, value)
@@ -433,6 +435,39 @@ def _check_episode_text_formats():
     _assert([(c, k) for c, k, _ in world.rich.sent] == [(1, 'url'), (1, 'upload'), (2, 'file_id')]
             and world.bot.audio == [],
             "rich: a refused URL is a refused file (upload, then file_id), never the old caption")
+
+
+def _check_summary_button():
+    """With AI summaries on: the episode is remembered, user chats get Summary, channels do not."""
+    class Keyboard:
+        def __init__(self):
+            self.rows = []
+
+        def add(self, button):
+            self.rows.append(button)
+
+    remembered = []
+    saved = (srh.InlineKeyboardMarkup, srh.InlineKeyboardButton, srh.ai_summary, srh.ai)
+    srh.InlineKeyboardMarkup = Keyboard
+    srh.InlineKeyboardButton = lambda text, callback_data: (text, json.loads(callback_data))
+    srh.ai_summary = _ns(enabled=lambda: True, button_data=saved[2].button_data)
+    srh.ai = _ns(remember_episode=lambda *a: remembered.append(a))
+    try:
+        sender = World(size_mb=12).sender()
+        _assert(sender.get_next_ep_button('en', chat_id=1) is None, "AI off until the episode is remembered")
+        sender._remember_for_summary()
+        _assert(len(remembered) == 1 and remembered[0][1] == sender.link, "the episode is remembered by its link")
+        _assert(remembered[0][5] == 3600, "with its length from the feed: the summary quota is hours of audio")
+        keyboard = sender.get_next_ep_button('en', chat_id=1)
+        _assert([data for _, data in keyboard.rows] == [{'tp': 'sum', 'r': remembered[0][0]}],
+                "a user chat gets the Summary button with the episode's ref")
+        _assert(sender.get_next_ep_button('en', chat_id=-1001) is None, "a channel gets no Summary button")
+        srh.ai_summary = _ns(enabled=lambda: False, button_data=saved[2].button_data)
+        off = World(size_mb=12).sender()
+        off._remember_for_summary()
+        _assert(off.get_next_ep_button('en', chat_id=1) is None, "AI off: no button, nothing remembered")
+    finally:
+        srh.InlineKeyboardMarkup, srh.InlineKeyboardButton, srh.ai_summary, srh.ai = saved
 
 
 def main():
@@ -632,6 +667,7 @@ def main():
             "fanout by URL touches the outbox for every chat")
 
     _check_episode_text_formats()
+    _check_summary_button()
     print("all record delivery checks passed")
 
 

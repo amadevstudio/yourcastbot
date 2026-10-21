@@ -16,19 +16,12 @@ import time
 
 from config import db_path, free_rec_per_week
 from db import usage
-from db.connection import connect_sqlite
+from db.tariff_rows import running_plan_level
 
 
 def has_running_plan(chat_id, database=None) -> bool:
     """A plan with time left, whatever its notify_count: clicks are not notifies."""
-    c = connect_sqlite(db_path if database is None else database)
-    try:
-        return c.execute(
-            "SELECT 1 FROM user_tariff_cs utc JOIN users u ON u.id = utc.uid "
-            "WHERE u.telegramId = ? AND utc.tariff_id > 0 AND utc.time_left > 0",
-            (int(chat_id),)).fetchone() is not None
-    finally:
-        c.close()
+    return running_plan_level(chat_id, database) > 0
 
 
 def check(chat_id, link, open_links=(), plan=None, now=None, database=None, limit=None):
@@ -61,15 +54,15 @@ def wait_text(seconds, language_code) -> str:
     return get_message("freeEpisodesNextDays", language_code).format(days=math.ceil(hours / 24))
 
 
-def limit_message(language_code, wait_seconds, limit=None):
-    """The limit as a message: every plan, Stars price on its button, Relay first."""
+def plans_offer(language_code) -> tuple[str, list]:
+    """(text, keyboard rows): every plan with its Stars price, Relay first, then the
+    page of plans for the other ways to pay. Shared by the limits that sell a plan."""
     from app.i18n.messages import get_message
     from app.service.payment.paymentModule import get_tariff_description_and_button_text
     from app.service.payment.starsPaymentModule import get_stars_withdraw_rate_x1000, stars_for_balance
     from app.service.payment.storefront import CHANGE_PLAN_CALLBACK, tariffs_for_storefront
     from db.sqliteAdapter import SQLighter
 
-    limit = free_rec_per_week if limit is None else limit
     db_users = SQLighter(db_path)
     try:
         tariffs = db_users.getTariffs()
@@ -77,9 +70,7 @@ def limit_message(language_code, wait_seconds, limit=None):
         db_users.close()
     rate_x1000 = get_stars_withdraw_rate_x1000()
 
-    text = "<b>" + get_message("freeEpisodesUsed", language_code).format(limit=limit) + "</b>\n"
-    text += wait_text(wait_seconds, language_code) + " "
-    text += get_message("freeEpisodesAnyPlan", language_code) + "\n\n"
+    text = ""
     rows = []
     for tariff in tariffs_for_storefront(tariffs):
         texts = get_tariff_description_and_button_text(tariff, {'id': 0}, language_code)
@@ -90,5 +81,17 @@ def limit_message(language_code, wait_seconds, limit=None):
         }])
     rows.append([{'text': get_message("tariffs", language_code),
                   'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}])
+    return text, rows
+
+
+def limit_message(language_code, wait_seconds, limit=None):
+    """The limit as a message: every plan, Stars price on its button, Relay first."""
+    from app.i18n.messages import get_message
+
+    limit = free_rec_per_week if limit is None else limit
+    plans_text, rows = plans_offer(language_code)
+    text = "<b>" + get_message("freeEpisodesUsed", language_code).format(limit=limit) + "</b>\n"
+    text += wait_text(wait_seconds, language_code) + " "
+    text += get_message("freeEpisodesAnyPlan", language_code) + "\n\n" + plans_text
     return {'type': 'text', 'text': text.strip(), 'reply_markup': rows,
             'disable_web_page_preview': True}

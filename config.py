@@ -22,6 +22,14 @@ trust_rss_podcasts = bool(getattr(constants, 'trustRssPodcasts', False))
 # Read-only token for GET /api/diag/* (admin API). Unset or shorter than 32
 # chars: the endpoints answer 404. Never commit it: constants.py only.
 diag_token = getattr(constants, 'diagToken', None) or None
+# AI episode summaries (app/service/ai): off until the key and the model are set in constants.py.
+# The summary goes through OpenRouter; the model is its id there, e.g. "provider/model-name".
+openrouter_api_key = getattr(constants, 'openrouterApiKey', None) or ''
+ai_summary_model = getattr(constants, 'openrouterModel', None) or ''
+# the speech-to-text model (its OpenRouter id) for episodes whose feed has no transcript, same key
+ai_transcribe_model = getattr(constants, 'openrouterTranscribeModel', None) or ''
+# hours of audio summarized per 30 days by plan level; a summary someone already made is free for everyone
+ai_summary_hours_per_month = {1: 5, 2: 15, 3: 30}
 # agentId = creatorId
 botId = constants.botId
 donate_link = constants.donate_link

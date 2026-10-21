@@ -1,10 +1,11 @@
 from typing import TypedDict, Callable, Literal, Dict, Optional, Required
 
 from app.controller.builders import welcomeModule, menuModule, subsModule, searchModule, podcastModule, recsModule, \
-    helpModule, channelModule, topModule, adminModule, settingsModule
+    helpModule, channelModule, topModule, adminModule, settingsModule, summaryModule
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
+from app.service.ai import summary as ai_summary
 from app.service.record.text_format import EPISODE_FORMAT_ACTIONS, EPISODE_FORMAT_HINT_ACTION
 from app.service.payment import (
     paymentModule,
@@ -97,6 +98,11 @@ class RouteMap:
                 },
                 'nrec': {
                     'method': recsModule.send_record,
+                    'state_independent': True,
+                },
+                # Summary under an episode file: the file stays in the chat
+                ai_summary.ACTION: {
+                    'method': summaryModule.request_summary,
                     'state_independent': True,
                 }
             }

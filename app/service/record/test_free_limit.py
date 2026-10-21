@@ -65,8 +65,10 @@ def _check_plan(db):
     c = sqlite3.connect(db)
     c.executescript("""
         CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER);
+        CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER);
         CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER,
                                      balance INTEGER, notify_count INTEGER, time_left INTEGER);
+        INSERT INTO tariffs VALUES (1, 1), (3, 3);
     """)
     c.executemany("INSERT INTO users VALUES (?, ?)", [(1, FREE), (2, PAID), (3, EXPIRED)])
     c.executemany("INSERT INTO user_tariff_cs VALUES (?, ?, ?, 0, ?, ?)",

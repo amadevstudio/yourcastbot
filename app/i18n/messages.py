@@ -5050,3 +5050,5 @@ from app.i18n.sales import TRANSLATIONS as _SALES_TRANSLATIONS
 messages.update(_SALES_TRANSLATIONS)
 from app.i18n.onboarding import TRANSLATIONS as _ONBOARDING_TRANSLATIONS
 messages.update(_ONBOARDING_TRANSLATIONS)
+from app.i18n.ai import TRANSLATIONS as _AI_TRANSLATIONS
+messages.update(_AI_TRANSLATIONS)

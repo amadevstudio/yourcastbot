@@ -23,7 +23,8 @@ from app.service.record.caption import (
 from app.service.record.text_format import (
     CAPTION, EPISODE_FORMAT_HINT_ACTION, META, RICH, SEPARATE, user_format)
 from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
-from db import usage
+from app.service.ai import summary as ai_summary
+from db import ai, usage
 from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path, \
     trust_rss_podcasts
 from lib.markup import telegram_html
@@ -187,6 +188,8 @@ class Sender:
         self.consume_notify = bool(consume_notify)
         # the outbox action: 'rec' (a click, counts toward the free limit) or 'circle'
         self.usage_kind = usage_kind
+        # the episode's ref when AI summaries are on: the Summary button under the file
+        self._summary_ref: str | None = None
         self.outbox_id = outbox_id
         self.outbox_attempts = outbox_attempts
         self._last_outbox_touch = None
@@ -604,6 +607,7 @@ class Sender:
 
         retryable = None
         self._touch_outbox()
+        self._remember_for_summary()
         try:
             if storage.enclosure_host_is_cool(self.link):
                 self.__record_gone = True
@@ -1040,7 +1044,7 @@ class Sender:
                 title=telegram_html.plain_text(self.podcast_info['title']),
                 caption=record_message_text,
                 parse_mode="HTML",
-                reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id]))
+                reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id], chat_id=chat_id))
 
         # audio + message
         except Exception as e:  # telebot.apihelper.ApiTelegramException, ?
@@ -1064,7 +1068,7 @@ class Sender:
                           else record_message_text),
                     parse_mode=None if as_plain_text else "HTML",
                     reply_markup=self.get_next_ep_button(
-                        lang_code=self.lang_codes_by_utg[chat_id]))
+                        lang_code=self.lang_codes_by_utg[chat_id], chat_id=chat_id))
             except Exception as e:
                 self.logger.err(e, "Fail to send caption, but success record")
                 self.logger.log(record_message_text)
@@ -1100,7 +1104,7 @@ class Sender:
             duration=self.podcast_info['duration_sec'],
             performer=telegram_html.plain_text(self.podcast_info['chName']),
             title=telegram_html.plain_text(self.podcast_info['title']),
-            reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id]))
+            reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id], chat_id=chat_id))
 
     def _send_description_message(self, chat_id):
         """The description after the audio, as a collapsible quote. The audio is already
@@ -1251,19 +1255,37 @@ class Sender:
             show_updated_text=('show_updated_text' not in chat or chat['show_updated_text'] is True),
             bot_reference=('bot_reference' not in chat or chat['bot_reference'] is True))
 
-    def get_next_ep_button(self, lang_code='en'):
+    def get_next_ep_button(self, lang_code='en', chat_id=None):
+        """Next episode (clicks), Summary (user chats, AI on). None without buttons."""
+        buttons = []
         if self.podcast_info['with_next_ep_button']:
-            keyboard = InlineKeyboardMarkup()
-
-            b1 = InlineKeyboardButton(
+            buttons.append(InlineKeyboardButton(
                 text=get_message("loadNextRecord", lang_code),
-                callback_data=self.get_button_data())
-            keyboard.add(b1)
-
-            return keyboard
-
-        else:
+                callback_data=self.get_button_data()))
+        # channels have no one to answer: their readers are not the bot's users
+        if self._summary_ref is not None and chat_id is not None and int(chat_id) > 0:
+            buttons.append(InlineKeyboardButton(
+                text=get_message("summaryButton", lang_code),
+                callback_data=json.dumps(ai_summary.button_data(self._summary_ref))))
+        if not buttons:
             return None
+        keyboard = InlineKeyboardMarkup()
+        for button in buttons:
+            keyboard.add(button)
+        return keyboard
+
+    def _remember_for_summary(self):
+        """With AI summaries on, the episode a Summary button will name. Never fails a send."""
+        if not ai_summary.enabled():
+            return
+        try:
+            ref = usage.episode_ref(self.link)
+            ai.remember_episode(ref, self.link, self.podcast_info.get('id'),
+                                self.podcast_info.get('title'), self.podcast_info.get('chName'),
+                                self.podcast_info.get('duration_sec') or 0)
+            self._summary_ref = ref
+        except Exception as e:
+            self.logger.warn("ai episode:", e)
 
     def get_button_data(self):
         dh = sha256(

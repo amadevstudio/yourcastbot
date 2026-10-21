@@ -73,6 +73,7 @@ jobs:
           python3 app/admin_web/test_economics.py
           python3 app/service/record/test_free_limit.py
           python3 app/controller/builders/test_onboarding.py
+          python3 app/service/ai/test_summary.py
           python3 app/core/sender/test_record_delivery.py
           python3 db/test_send_outbox.py
           python3 app/core/sender/test_circle_charge.py

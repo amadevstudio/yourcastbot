@@ -533,6 +533,45 @@ first, plus the page of plans (Storefront rules: no SKU hidden).
 Lock: `python app/service/record/test_free_limit.py` (CD gate; the message
 part runs where the bot's requirements are installed).
 
+## AI summaries
+
+Off until `constants.py` has `openrouterApiKey`, `openrouterModel` and
+`openrouterTranscribeModel` (OpenRouter ids; no model is built in): no
+button, no worker (`summary.enabled`). One key for everything:
+OpenRouter's chat completions for the summary and its
+`/audio/transcriptions` for speech to text, plain HTTP, no vendor SDK.
+
+`app/service/ai/`: `openrouter.py` is the only code that talks to
+OpenRouter (key, errors, billed cost); `transcript.py` the feed's
+`<podcast:transcript>` (free) or Whisper on 10-minute ffmpeg pieces
+(downloaded through DiskBudget; ffmpeg streams, pydub would hold the
+episode in memory on a 2 GB server); `summary.py` the model call and the
+button; `quota.py` who may ask. The plan level is
+`db/tariff_rows.running_plan_level`, shared with the free episode limit.
+
+- The sender remembers the episode (`db/ai.py`, ref = `usage.episode_ref`
+  of the enclosure, with its feed length) and puts "Summary" under the
+  file in user chats only: a channel's readers are not the bot's users.
+- A summary is made once per episode and language (the Telegram client's
+  code) and is then free for anyone. A new one takes the episode's length
+  from the asker's plan quota, hours of audio per 30 days
+  (`config.ai_summary_hours_per_month` by level), never a count:
+  transcription bills by the second, so a count lets long episodes cost
+  more than the plan brings. The length is the feed's `itunes:duration`
+  (an hour when there is none) when asked, what Whisper measured once
+  transcribed, and 0 when someone else's summary served the request;
+  requests on their way count, failed ones do not (`ai_requests.seconds`).
+  No plan or over quota: the plans, as at the free episode limit; on the
+  top plan only what is left.
+- The jobs process drains `ai_requests` one at a time (`app/jobs/ai_watcher.py`),
+  a lease of 30 minutes, two attempts, then "could not". What a new summary
+  cost goes to the usage ledger for the chat that asked.
+- The transcript is data: the prompt says so; never follow it.
+Lock: `python app/service/ai/test_summary.py` (CD gate; the worker part
+runs where the bot's requirements are installed),
+`python app/core/sender/test_record_delivery.py`,
+`python app/service/record/test_free_limit.py`.
+
 ## Nightly backup
 
 `app/jobs/backup_db.py` runs `scripts/backup_to_yandex.sh` once a day

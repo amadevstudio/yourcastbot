@@ -10,7 +10,8 @@ def main(interval=24 * 60):  # minutes
     while True:
         from db.listening import prune
         from db.usage import prune as prune_usage
-        for step in (clean_old_records, clean_old_logs, clean_old_outbox, prune, prune_usage):
+        from db.ai import prune as prune_ai
+        for step in (clean_old_records, clean_old_logs, clean_old_outbox, prune, prune_usage, prune_ai):
             try:
                 step()
             except Exception as e:
