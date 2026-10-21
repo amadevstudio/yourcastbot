@@ -297,11 +297,38 @@ def test_auto(db):
     _assert(queued == 2 and set(rows) == {601, 604}, "queued for a running plan that turned it on; no plan, nothing")
     _assert(rows[601] == ('original', 11, 1, 1800) and rows[604] == ('pt-br', 44, 1, 1800),
             "in the chat's summary language, answering the delivered audio, charged its length")
+    from app.i18n.messages import get_message
+    notices = []
+    saved_send = auto._send
+    auto._send = lambda chat_id, messages: notices.append((chat_id, messages[0]))
     summary.enabled = lambda: True
     try:
-        _assert(auto.queue([601], 'long', 40 * 3600, {}, {}, db) == 0, "an episode past the plan's hours: none")
+        _assert(auto.queue([601], 'long', 40 * 3600, {601: 'en'}, {601: 12}, db) == 0,
+                "an episode past the plan's hours: none")
+        _assert(len(notices) == 1 and notices[0][0] == 601 and notices[0][1]['reply_to'] == 12
+                and notices[0][1]['text'].startswith(get_message('summaryAutoSkipped', 'en') + '\n\n')
+                and '30 h of audio' in notices[0][1]['text'] and 'reply_markup' not in notices[0][1],
+                "and says so, a reply to the audio, with what is left (a paid top plan: nothing to sell)")
+        auto.queue([601], 'long2', 40 * 3600, {601: 'en'}, {}, db)
+        _assert(len(notices) == 1, "once in 30 days")
+        c = sqlite3.connect(db)
+        c.execute("UPDATE users SET flags = json_set(flags, '$.summary_quota_noticed', ?) WHERE telegramId = 601",
+                  (int(time.time()) - 31 * 86400,))
+        c.commit()
+        c.close()
+        auto.queue([601], 'long3', 40 * 3600, {601: 'en'}, {}, db)
+        _assert(len(notices) == 2 and 'reply_to' not in notices[1][1], "again after 30 days; no audio, no reply")
+        auto.queue([602], 'long4', 40 * 3600, {}, {}, db)
+        _assert(len(notices) == 2, "no plan: no notice (the plan-off notice said it)")
+        auto._send = lambda chat_id, messages: (_ for _ in ()).throw(RuntimeError('blocked'))
+        c = sqlite3.connect(db)
+        c.execute("UPDATE users SET flags = json_remove(flags, '$.summary_quota_noticed') WHERE telegramId = 601")
+        c.commit()
+        c.close()
+        _assert(auto.queue([601, 604], 'long5', 40 * 3600, {}, {}, db) == 0, "a failed notice fails nothing")
     finally:
         summary.enabled = saved
+        auto._send = saved_send
     tap, _ = ai.enqueue(603, 'tapped', 'en', 60, db)
     claimed = ai.claim(db)
     _assert(claimed['id'] == tap, "a tap goes before the automatic ones queued earlier")
@@ -397,9 +424,10 @@ def test_worker(db):
     _assert(abs(usage.per_user(0, database=db)[503]['ai_usd'] - 0.02) < 1e-9,
             "Whisper is paid even when the summary fails: its cost is in the ledger")
 
-    _assert(summaryModule.length_text(5400, 'en') == '1 h 30 min', "hours and minutes")
-    _assert(summaryModule.length_text(2701, 'ru') == '46 мин', "minutes round up")
-    _assert(summaryModule.length_text(5 * 3600, 'de') == '5 Std.', "whole hours")
+    from app.service.ai import offer
+    _assert(offer.length_text(5400, 'en') == '1 h 30 min', "hours and minutes")
+    _assert(offer.length_text(2701, 'ru') == '46 мин', "minutes round up")
+    _assert(offer.length_text(5 * 3600, 'de') == '5 Std.', "whole hours")
     top = summaryModule.offer_message('en', quota.Quota(False, 30 * 3600, 29 * 3600, 7200, 3))
     _assert('30 h of audio' in top['text'] and '1 h left' in top['text'] and 'runs 2 h' in top['text']
             and 'reply_markup' not in top, "the top plan hears what is left, no plans to sell")

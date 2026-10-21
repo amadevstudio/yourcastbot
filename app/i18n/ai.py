@@ -169,6 +169,14 @@ ROWS = {
         'No se pudo responder. Inténtalo de nuevo.',
         'Das hat nicht geklappt. Bitte versuch es noch einmal.',
         'לא הצלחנו לענות. נסו שוב.'),
+    # a new episode without its automatic summary: the plan's hours ran out (once in 30 days)
+    'summaryAutoSkipped': (
+        '🔁 Этот выпуск пришёл без пересказа: часов пересказов не хватает.',
+        '🔁 This episode came without its summary: not enough summary hours left.',
+        '🔁 Este episódio chegou sem resumo: não há horas de resumo suficientes.',
+        '🔁 Este episodio llegó sin resumen: no quedan horas de resumen suficientes.',
+        '🔁 Diese Folge kam ohne Zusammenfassung: Es sind nicht genug Stunden übrig.',
+        '🔁 הפרק הזה הגיע בלי סיכום: לא נשארו מספיק שעות סיכום.'),
     # once, after the first episode with the Summary button (app/service/ai/hint.py)
     'summaryHint': (
         '📝 Под выпуском кнопка "Пересказ": ИИ расскажет, о чём он, по пунктам со временем. '
