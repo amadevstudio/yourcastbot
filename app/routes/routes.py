@@ -192,7 +192,7 @@ class RouteMap:
             'method': settingsModule.open_settings,
             'available_from': ['command', 'call'],
             'commands': ['settings'],
-            'routes': ['settsText', 'settsRem'],
+            'routes': ['settsText', 'settsSum', 'settsRem'],
             'actions': {
                 'digestMute': {
                     'method': settingsModule.mute_digest_reminders,
@@ -210,11 +210,20 @@ class RouteMap:
                     'method': settingsModule.set_episode_format_handler(episode_format),
                     'state_independent': True,
                 } for action, episode_format in EPISODE_FORMAT_ACTIONS.items()},
+                **{action: {
+                    'method': settingsModule.set_summary_language_handler(choice),
+                    'state_independent': True,
+                } for action, choice in ai_summary.LANGUAGE_ACTIONS.items()},
             }
         },
 
         'settsText': {
             'method': settingsModule.open_episode_text_settings,
+            'available_from': ['call'],
+        },
+
+        'settsSum': {
+            'method': settingsModule.open_summary_settings,
             'available_from': ['call'],
         },
 

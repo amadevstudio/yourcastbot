@@ -933,10 +933,9 @@ class Sender:
             'duration_sec': self.podcast_info['duration_sec'],
             'channel_name': telegram_html.plain_text(self.podcast_info['chName']),
             'message_text': caption,
+            # the same buttons as a Bot API upload: Summary too
+            'buttons': self.episode_buttons(self.lang_codes_by_utg[chat_id], chat_id),
         }
-        if self.podcast_info['with_next_ep_button']:
-            message['nextEpButtonText'] = get_message("loadNextRecord", self.lang_codes_by_utg[chat_id])
-            message['nextEpButtonData'] = self.get_button_data()
         return message
 
     def _remember_agent_file_id(self, sent):
@@ -1113,7 +1112,8 @@ class Sender:
         if not text:
             return
         try:
-            self.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+            # a link in the description must not turn into a preview card under the episode
+            self.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
         except Exception as e:
             self.logger.warn(e, "Fail to send the description after the audio")
 
@@ -1255,23 +1255,26 @@ class Sender:
             show_updated_text=('show_updated_text' not in chat or chat['show_updated_text'] is True),
             bot_reference=('bot_reference' not in chat or chat['bot_reference'] is True))
 
-    def get_next_ep_button(self, lang_code='en', chat_id=None):
-        """Next episode (clicks), Summary (user chats, AI on). None without buttons."""
+    def episode_buttons(self, lang_code='en', chat_id=None) -> list[tuple[str, str]]:
+        """(text, callback data) under the episode, one per row, for the Bot API and the
+        agent alike: Next episode (clicks), Summary (user chats, AI on)."""
         buttons = []
         if self.podcast_info['with_next_ep_button']:
-            buttons.append(InlineKeyboardButton(
-                text=get_message("loadNextRecord", lang_code),
-                callback_data=self.get_button_data()))
+            buttons.append((get_message("loadNextRecord", lang_code), self.get_button_data()))
         # channels have no one to answer: their readers are not the bot's users
         if self._summary_ref is not None and chat_id is not None and int(chat_id) > 0:
-            buttons.append(InlineKeyboardButton(
-                text=get_message("summaryButton", lang_code),
-                callback_data=json.dumps(ai_summary.button_data(self._summary_ref))))
+            buttons.append((get_message("summaryButton", lang_code),
+                            json.dumps(ai_summary.button_data(self._summary_ref))))
+        return buttons
+
+    def get_next_ep_button(self, lang_code='en', chat_id=None):
+        """The episode buttons as a Bot API keyboard, None without buttons."""
+        buttons = self.episode_buttons(lang_code, chat_id)
         if not buttons:
             return None
         keyboard = InlineKeyboardMarkup()
-        for button in buttons:
-            keyboard.add(button)
+        for text, data in buttons:
+            keyboard.add(InlineKeyboardButton(text=text, callback_data=data))
         return keyboard
 
     def _remember_for_summary(self):

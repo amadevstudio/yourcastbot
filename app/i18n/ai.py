@@ -63,6 +63,23 @@ ROWS = {
         'angefragt hat, ist gratis.',
         'סיכומי AI מגיעים עם מסלול ונספרים לפי אורך הפרקים: Relay {relay} שעות אודיו בחודש, '
         'כסף {silver} שעות, ארד {bronze} שעות. סיכום שמישהו כבר ביקש הוא בחינם.'),
+    'settingsSummaryTitle': (
+        'ИИ-пересказы', 'AI summaries', 'Resumos com IA', 'Resúmenes con IA', 'KI-Zusammenfassungen',
+        'סיכומי AI'),
+    'summaryLanguageOriginal': (
+        'На языке выпуска', "In the episode's language", 'No idioma do episódio', 'En el idioma del episodio',
+        'In der Sprache der Folge', 'בשפת הפרק'),
+    'summaryLanguageMine': (
+        'На языке моего Telegram', 'In my Telegram language', 'No idioma do meu Telegram',
+        'En el idioma de mi Telegram', 'In meiner Telegram-Sprache', 'בשפת הטלגרם שלי'),
+    'summaryLanguageHelp': (
+        'На каком языке присылать пересказ: на языке, на котором говорят в выпуске, '
+        'или на языке вашего Telegram.',
+        'Which language summaries come in: the one spoken in the episode, or your Telegram language.',
+        'Em que idioma enviar os resumos: o falado no episódio ou o idioma do seu Telegram.',
+        'En qué idioma enviar los resúmenes: el que se habla en el episodio o el idioma de tu Telegram.',
+        'In welcher Sprache Zusammenfassungen kommen: in der Sprache der Folge oder in deiner Telegram-Sprache.',
+        'באיזו שפה לשלוח סיכומים: בשפה שמדברים בה בפרק או בשפת הטלגרם שלך.'),
     'summaryHours': ('{h} ч', '{h} h', '{h} h', '{h} h', '{h} Std.', '{h} ש׳'),
     'summaryMinutes': ('{m} мин', '{m} min', '{m} min', '{m} min', '{m} Min.', '{m} דק׳'),
 }

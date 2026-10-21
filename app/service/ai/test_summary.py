@@ -90,6 +90,14 @@ def test_openrouter():
     _assert(body['usage'] == {'include': True}, "usage accounting asked for")
     _assert(body['messages'][0]['role'] == 'system' and '"fa"' in body['messages'][1]['content'],
             "the system prompt, and the user's own language")
+    summary.summarize('words', 'Seven', 'Show', summary.ORIGINAL, session=session)
+    _assert('language the episode is spoken in' in session.calls[1][2]['messages'][1]['content'],
+            "or the episode's own")
+    _assert(summary.summary_language(None, 'fa') == summary.ORIGINAL
+            and summary.summary_language(summary.ORIGINAL, 'fa') == summary.ORIGINAL,
+            "the episode's language by default")
+    _assert(summary.summary_language(summary.MINE, 'pt-BR') == 'pt-br'
+            and summary.summary_language(summary.MINE, None) == 'en', "the Telegram language when picked")
     _assert((text, cost) == ('Gist.\n• One', 0.0021), "the text and what OpenRouter billed")
     for response, error, label in (
             (FakeResponse(402, {'error': 'credits'}), openrouter.OpenRouterError, "an HTTP error"),
@@ -138,10 +146,10 @@ def test_transcription(tmp):
 def test_queue_and_quota(db):
     c = sqlite3.connect(db)
     c.executescript("""
-        CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER);
+        CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT);
         CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER);
         CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, time_left INTEGER);
-        INSERT INTO users VALUES (1, 501), (2, 502);
+        INSERT INTO users VALUES (1, 501, 'ru'), (2, 502, 'en');
         INSERT INTO tariffs VALUES (1, 1), (3, 3);
         INSERT INTO user_tariff_cs VALUES (1, 1, 1, 100), (2, 2, 0, 0);
     """)
@@ -182,6 +190,7 @@ def test_queue_and_quota(db):
 
     claimed = ai.claim(db, now=now)
     _assert(claimed['id'] == request_id and claimed['attempts'] == 1, "claimed once")
+    _assert(claimed['ui_lang'] == 'ru', "with the user's interface language for a notice")
     _assert(ai.claim(db, now=now) is None, "a leased request is not claimed twice")
     again = ai.claim(db, now=now + ai.LEASE_SECONDS + 1)
     _assert(again['id'] == request_id and again['attempts'] == 2, "a lease that ran out is claimed again")

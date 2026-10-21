@@ -4,7 +4,9 @@
 Off until constants.py has the OpenRouter key and both models, their
 OpenRouter ids (openrouterModel for the summary, openrouterTranscribeModel
 for speech to text): no button, no worker. A summary is made once per episode
-and language and then free for everyone; who may ask for a new one is
+and language and then free for everyone. The language is the episode's own
+unless the user picked their Telegram language in /settings
+(users.flags[LANGUAGE_FLAG]). Who may ask for a new one is
 app/service/ai/quota.py. What a new one cost is what OpenRouter billed for
 the transcript and for this call, so the economics page follows whichever
 model is configured.
@@ -14,6 +16,11 @@ from config import ai_summary_model, ai_transcribe_model
 
 ACTION = 'sum'
 MAX_TOKENS = 2000
+
+# users.flags key: MINE = the Telegram client's language; unset or ORIGINAL = the episode's own
+LANGUAGE_FLAG = 'summary_language'
+ORIGINAL, MINE = 'original', 'mine'
+LANGUAGE_ACTIONS = {'sumLangOrig': ORIGINAL, 'sumLangMine': MINE}
 
 SYSTEM = (
     "You write short summaries of podcast episodes for listeners in a Telegram bot. "
@@ -38,14 +45,23 @@ def button_data(ref) -> dict:
     return {'tp': ACTION, 'r': ref}
 
 
-def language_of(language_code) -> str:
-    """The cache key and the language asked for: the Telegram client's code ('fa', 'pt-br')."""
+def summary_language(preference, language_code) -> str:
+    """The cache key and the language asked for: ORIGINAL (the episode's own), or with
+    the MINE preference the Telegram client's code ('fa', 'pt-br')."""
+    if preference != MINE:
+        return ORIGINAL
     code = str(language_code or 'en').strip().lower()[:10]
     return code or 'en'
 
 
+def _language_instruction(language) -> str:
+    if language == ORIGINAL:
+        return 'Write the summary in the language the episode is spoken in.'
+    return 'Write the summary in the language with the code "%s".' % language
+
+
 def summarize(transcript, title, show, language, session=None) -> tuple[str, float]:
-    """(summary text, USD as OpenRouter billed it) for one episode in `language` (an ISO code)."""
+    """(summary text, USD as OpenRouter billed it) for one episode in `language` (summary_language)."""
     body = openrouter.post('chat/completions', session, json={
         'model': ai_summary_model,
         'max_tokens': MAX_TOKENS,
@@ -53,9 +69,8 @@ def summarize(transcript, title, show, language, session=None) -> tuple[str, flo
         'messages': [
             {'role': 'system', 'content': SYSTEM},
             {'role': 'user', 'content':
-                '<show>%s</show>\n<title>%s</title>\n<transcript>\n%s\n</transcript>\n\n'
-                'Write the summary in the language with the code "%s".' % (
-                    show, title, transcript, language)},
+                '<show>%s</show>\n<title>%s</title>\n<transcript>\n%s\n</transcript>\n\n%s' % (
+                    show, title, transcript, _language_instruction(language))},
         ],
     })
     choice = (body.get('choices') or [{}])[0]

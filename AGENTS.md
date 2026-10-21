@@ -49,7 +49,7 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
   player and the whole description (`lib/telegram/rich_message.py`, up to
   32768 characters; pyTelegramBotAPI 4.11 has no such method, it goes
   through `apihelper._make_request`). The first one a user gets is followed
-  once by a note on how to switch (`users.flags` JSON key `rich_hint_sent`: one-off per-user marks are keys there, not columns; button
+  once by a note on how to switch (`users.flags` JSON key `rich_hint_sent`: one-off per-user marks and small choices are keys there, not columns; button
   `episodeFormatSeparate`).
   The description keeps its http(s) links (`telegram_html.protect_links` /
   `restore_links`); other schemes and empty anchors are text. Past 32000
@@ -57,7 +57,7 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
   text. Lock: `python lib/telegram/test_rich_message.py`.
 - **separate** (Settings, or the note's button): the audio with a header-only
   caption, then the description in `<blockquote expandable>` (one message,
-  under 4096).
+  under 4096, no link preview: a link in it is not a card under the episode).
 - **caption** (Settings): the old way, the description cut to the caption.
 - **meta** (Settings): the header only, no description, as in channels.
 - Channels and chats with `description_mode` none are not users here: no
@@ -552,6 +552,12 @@ button; `quota.py` who may ask. The plan level is
 - The sender remembers the episode (`db/ai.py`, ref = `usage.episode_ref`
   of the enclosure, with its feed length) and puts "Summary" under the
   file in user chats only: a channel's readers are not the bot's users.
+  The buttons come from one place (`Sender.episode_buttons`) for the Bot
+  API and for the agent's uploads over 50 MB alike.
+- The summary is in the episode's language unless the user picked their
+  Telegram language (/settings, AI summaries; `users.flags`
+  `summary_language`); that language is the cache key with the episode.
+  Notices go in the user's interface language (`users.lang`).
 - A summary is made once per episode and language (the Telegram client's
   code) and is then free for anyone. A new one takes the episode's length
   from the asker's plan quota, hours of audio per 30 days

@@ -3,7 +3,8 @@
 
 The first screen held every setting at once (four episode-text buttons, the
 reminders switch and their help text), and every new setting would have made
-it longer. Now: /settings -> Episode text, Reminders (without a plan only);
+it longer. Now: /settings -> Episode text, AI summaries (when AI is on),
+Reminders (without a plan only);
 each button names what is set. A button that leads nowhere is the failure to
 lock: every button of the three screens is a route, an action or "back".
 
@@ -59,6 +60,18 @@ def test_sections(settings):
     paid = settings.construct_settings_message('en', 1)
     _assert(_tps(paid) == ['settsText', 'bck'], "with a plan: no reminders section")
 
+    settings.ai_summary.enabled = lambda: True
+    try:
+        ai_on = settings.construct_settings_message('en', 1)
+        _assert(_tps(ai_on) == ['settsText', 'settsSum', 'bck'], "AI on: the summaries section")
+        _assert(_texts(ai_on)[1].endswith(get_message("summaryLanguageOriginal", "en")),
+                "it shows the default: the episode's language")
+        user['flags'] = '{"summary_language": "mine"}'
+        _assert(_texts(settings.construct_settings_message('en', 1))[1].endswith(
+            get_message("summaryLanguageMine", "en")), "and the user's choice")
+    finally:
+        settings.ai_summary.enabled = lambda: False
+
 
 def test_pages(settings):
     user = {'episode_format': 'caption', 'nosub_digest_enabled': 1}
@@ -72,6 +85,16 @@ def test_pages(settings):
     _assert(get_message("episodeFormatHelp", "en") not in settings.construct_settings_message('en', 1)[0]['text'],
             "and no longer on the first screen")
 
+    page = settings.construct_summary_message('en', 1)
+    marked = [text for text in _texts(page) if text.startswith('✅')]
+    _assert(_tps(page) == ['sumLangOrig', 'sumLangMine', 'bck'], "summaries: two languages, Back")
+    _assert(len(marked) == 1 and get_message("summaryLanguageOriginal", "en") in marked[0],
+            "summaries: the episode's language by default")
+    user['flags'] = '{"summary_language": "mine"}'
+    marked = [text for text in _texts(settings.construct_summary_message('en', 1)) if text.startswith('✅')]
+    _assert(len(marked) == 1 and get_message("summaryLanguageMine", "en") in marked[0],
+            "summaries: the user's choice is marked")
+
     page = settings.construct_reminders_message('en', 1)
     _assert(_tps(page) == ['digestToggle', 'bck'], "reminders: the switch, Back")
     _assert(get_message("nosubDigestRemindersHelp", "en") in page[0]['text'], "reminders: the explanation is here")
@@ -83,11 +106,16 @@ def test_every_button_leads_somewhere(settings):
     for route in RouteMap.ROUTES.values():
         known |= set((route or {}).get('actions', {}))
     settings._read_user = lambda chat_id: ({'episode_format': None, 'nosub_digest_enabled': 1}, False)
-    for name in ('construct_settings_message', 'construct_episode_text_message', 'construct_reminders_message'):
-        for tp in _tps(getattr(settings, name)('en', 1)):
-            _assert(tp in known, "%s: '%s' is a route, an action or Back" % (name, tp))
+    settings.ai_summary.enabled = lambda: True
+    try:
+        for name in ('construct_settings_message', 'construct_episode_text_message',
+                     'construct_summary_message', 'construct_reminders_message'):
+            for tp in _tps(getattr(settings, name)('en', 1)):
+                _assert(tp in known, "%s: '%s' is a route, an action or Back" % (name, tp))
+    finally:
+        settings.ai_summary.enabled = lambda: False
     reachable = RouteMap.ROUTES['setts']['routes']
-    _assert(set(reachable) == {'settsText', 'settsRem'}, "/settings lists its sections as routes")
+    _assert(set(reachable) == {'settsText', 'settsSum', 'settsRem'}, "/settings lists its sections as routes")
     for route in reachable:
         _assert(RouteMap.ROUTES[route]['method'] and RouteMap.ROUTES[route]['available_from'] == ['call'],
                 "%s opens from a button" % route)
@@ -97,7 +125,7 @@ def test_languages(settings):
     settings._read_user = lambda chat_id: ({'episode_format': None, 'nosub_digest_enabled': 1}, False)
     for language in LANGUAGES:
         for name in ('construct_settings_message', 'construct_episode_text_message',
-                     'construct_reminders_message'):
+                     'construct_summary_message', 'construct_reminders_message'):
             screen = getattr(settings, name)(language, 1)
             _assert(screen[0]['text'].strip() and all(_texts(screen)), "%s %s" % (language, name))
 
@@ -125,6 +153,7 @@ def main():
     settings = import_builder('settingsModule')
     if settings is None:
         return
+    settings.ai_summary.enabled = lambda: False  # the local constants decide nothing here
     test_sections(settings)
     test_pages(settings)
     test_every_button_leads_somewhere(settings)
