@@ -148,6 +148,13 @@ ROWS = {
         'Se acabaron las preguntas de hoy: {limit} al día. Pronto podrás volver a preguntar.',
         'Für heute sind keine Fragen mehr übrig: {limit} am Tag. Bald geht es wieder.',
         'נגמרו השאלות להיום: {limit} ביום. בקרוב אפשר לשאול שוב.'),
+    'askTrialMore': (
+        'С оплаченным тарифом – {limit} вопросов в сутки.',
+        'A paid plan gives {limit} questions a day.',
+        'Um plano pago dá {limit} perguntas por dia.',
+        'Un plan de pago da {limit} preguntas al día.',
+        'Ein bezahlter Tarif gibt {limit} Fragen am Tag.',
+        'מסלול בתשלום נותן {limit} שאלות ביום.'),
     'askForPlans': (
         'Вопросы к выпускам доступны с подпиской: до {limit} в день.',
         'Questions about episodes come with a plan: up to {limit} a day.',

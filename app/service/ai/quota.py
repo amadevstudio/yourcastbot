@@ -73,6 +73,7 @@ class Questions(NamedTuple):
     allowed: bool
     limit: int  # 0: no plan
     left: int
+    trial: bool = False
 
 
 def questions(chat_id, now=None, database=None) -> Questions:
@@ -81,7 +82,8 @@ def questions(chat_id, now=None, database=None) -> Questions:
     level = running_plan_level(chat_id, database)
     if level <= 0:
         return Questions(False, 0, 0)
-    limit = TRIAL_QUESTIONS_PER_DAY if not ever_paid(chat_id, database) else QUESTIONS_PER_DAY
+    trial = not ever_paid(chat_id, database)
+    limit = TRIAL_QUESTIONS_PER_DAY if trial else QUESTIONS_PER_DAY
     since = (time.time() if now is None else now) - 86400
     left = max(limit - usage.count_since(chat_id, 'ask', since, database), 0)
-    return Questions(left > 0, limit, left)
+    return Questions(left > 0, limit, left, trial)

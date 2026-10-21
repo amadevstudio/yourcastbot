@@ -132,6 +132,17 @@ def ask_offer_message(language_code) -> dict:
             + '\n\n' + plans_text.strip()}
 
 
+def limit_message(language_code, questions) -> dict:
+    """The day's questions are used up; a trial hears what paying gives, with the Stars page
+    and change-plan (a running plan: an invoice would only top it up, as for summaries)."""
+    text = get_message('askLimit', language_code).format(limit=questions.limit)
+    if not questions.trial:
+        return {'type': 'text', 'text': text}
+    from app.service.payment.storefront import relay_nudge_markup
+    return {'type': 'text', 'disable_web_page_preview': True, 'reply_markup': relay_nudge_markup(language_code),
+            'text': text + ' ' + get_message('askTrialMore', language_code).format(limit=ai_quota.QUESTIONS_PER_DAY)}
+
+
 def ask(data):
     """Route `ask`: the Ask button opens it; a message in it is a question."""
     if data['callback'] is not None:
@@ -162,8 +173,8 @@ def open_ask(data):
         outer_sender(data['chat_id'], [ask_offer_message(language_code)])
         return False
     if not questions.allowed:
-        notify(data['callback'], data['message'],
-               get_message('askLimit', language_code).format(limit=questions.limit), alert=True)
+        notify(data['callback'], data['message'], '')
+        outer_sender(data['chat_id'], [limit_message(language_code, questions)])
         return False
     notify(data['callback'], data['message'], '')
     storage.set_user_state_data(data['chat_id'], 'ask', {'ref': ref, 'audio': audio, 'at': time.time()})
@@ -192,9 +203,8 @@ def answer_question(data):
         return render_outdated_screen(data)
     questions = ai_quota.questions(data['chat_id'])
     if not questions.allowed:
-        outer_sender(data['chat_id'], [{'type': 'text', 'text': get_message(
-            'askLimit', language_code).format(limit=questions.limit) if questions.limit
-            else get_message('askForPlans', language_code).format(limit=ai_quota.QUESTIONS_PER_DAY)}])
+        outer_sender(data['chat_id'], [limit_message(language_code, questions) if questions.limit
+                                       else ask_offer_message(language_code)])
         return
     try:
         from agent.bot_telebot import bot

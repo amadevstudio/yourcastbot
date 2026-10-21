@@ -256,13 +256,13 @@ def test_queue_and_quota(db):
     _assert(sqlite3.connect(old_db).execute('SELECT reply_to FROM ai_requests').fetchone()[0] == 5,
             "a database from before gets the reply_to column")
 
-    _assert(quota.questions(501, database=db) == (True, quota.QUESTIONS_PER_DAY, quota.QUESTIONS_PER_DAY),
+    _assert(quota.questions(501, database=db) == (True, quota.QUESTIONS_PER_DAY, quota.QUESTIONS_PER_DAY, False),
             "a paid plan asks its questions a day")
-    _assert(quota.questions(502, database=db) == (False, 0, 0), "no plan: no questions")
+    _assert(quota.questions(502, database=db)[:3] == (False, 0, 0), "no plan: no questions")
     for _ in range(quota.TRIAL_QUESTIONS_PER_DAY):
         usage.record_ask(504, 'ep', 0.001, db)
     usage.record_ask(504, 'ep', 0.001, db, at=now - 2 * 86400)
-    _assert(quota.questions(504, database=db) == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0),
+    _assert(quota.questions(504, database=db) == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0, True),
             "a trial has fewer, counted over the last 24 hours")
     _assert(abs(usage.per_user(0, database=db)[504]['ai_usd'] - 0.006) < 1e-9, "questions are in the AI spend")
 
@@ -464,7 +464,14 @@ def test_ask(db, module):
         _assert(usage.count_since(501, 'ask', 0, db) == 1, "the question is counted")
         left[0] = quota.Questions(False, 5, 0)
         module.ask({'chat_id': 501, 'language_code': 'en', 'callback': None, 'message': SimpleNamespace(text='More?')})
-        _assert(len(answered) == 1 and 'No questions left' in sent[-1]['text'], "over the day's limit: no model call")
+        _assert(len(answered) == 1 and 'No questions left' in sent[-1]['text'] and 'reply_markup' not in sent[-1],
+                "over the day's limit: no model call; a paid plan has nothing bigger to buy here")
+        left[0] = quota.Questions(False, 5, 0, True)
+        module.ask(dict(tap, callback=Tap({'tp': 'ask', 'r': 'ep7', 'm': 4})))
+        _assert('A paid plan gives 20 questions a day' in sent[-1]['text']
+                and [b['callback_data']['tp'] for row in sent[-1]['reply_markup'] for b in row] == ['bs_stars', 'bs_trfs'],
+                "a trial at its limit hears what paying gives, with the Stars page and change-plan")
+        left[0] = quota.Questions(False, 5, 0)
 
         import app.controller.builders as builders
         searched = []
