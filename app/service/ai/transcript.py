@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""An episode's transcript: the one its feed publishes, else Groq Whisper.
+"""An episode's transcript: the one its feed publishes, else Whisper through OpenRouter.
 
 1. The feed's <podcast:transcript> for the item with this enclosure: free.
 2. Otherwise the audio is downloaded (through DiskBudget, as every episode
-   file), turned into mono 16 kHz 24 kbps pieces of at most 30 minutes by
-   ffmpeg (a 30-minute piece is ~5 MB, under Groq's upload limit; ffmpeg
-   streams, it does not hold the episode in memory as pydub would) and each
-   piece transcribed by whisper-large-v3-turbo, $0.04 per audio hour.
+   file), turned into mono 16 kHz 24 kbps pieces of at most 10 minutes by
+   ffmpeg (~2 MB each: under OpenRouter's 25 MB upload cap and well inside
+   the 60 s a provider gets per request; ffmpeg streams, it does not hold
+   the episode in memory as pydub would) and each piece transcribed by
+   OpenRouter's /audio/transcriptions with config.ai_transcribe_model
+   (openai/whisper-large-v3-turbo: ~$0.012 per audio hour). The cost is
+   what OpenRouter bills for each piece (usage.cost).
 """
 import glob
 import json
@@ -16,7 +19,7 @@ import subprocess
 import tempfile
 import time
 
-from config import groq_api_key, work_dir
+from config import ai_transcribe_model, openrouter_api_key, work_dir
 from lib.markup import telegram_html
 from lib.requests.url import normalize_url
 from lib.system.disk_budget import BudgetedDownload, DiskBudget
@@ -25,11 +28,8 @@ PODCAST_NS = '{https://podcastindex.org/namespace/1.0}'
 # readable first: plain text, then subtitles, then JSON and HTML
 TYPE_ORDER = ('text/plain', 'text/vtt', 'application/x-subrip', 'application/srt',
               'application/json', 'text/html')
-GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
-GROQ_MODEL = 'whisper-large-v3-turbo'
-GROQ_USD_PER_HOUR = 0.04
-GROQ_MIN_SECONDS = 10  # Groq bills at least 10 s a request
-PIECE_SECONDS = 30 * 60
+TRANSCRIBE_URL = 'https://openrouter.ai/api/v1/audio/transcriptions'
+PIECE_SECONDS = 10 * 60
 HTTP_TIMEOUT = 300
 
 _TIMING = re.compile(r'^\s*(\d+\s*$|[\d:.,]+\s*-->\s*[\d:.,]+.*$|WEBVTT.*$|NOTE\b.*$)')
@@ -104,28 +104,28 @@ def split_audio(path, out_dir) -> list[str]:
     return sorted(glob.glob(os.path.join(out_dir, 'piece*.mp3')))
 
 
-def groq_cost(seconds) -> float:
-    return max(float(seconds), GROQ_MIN_SECONDS) / 3600 * GROQ_USD_PER_HOUR
-
-
-def transcribe_piece(session, path) -> tuple[str, float]:
-    """(text, audio seconds) of one piece."""
+def transcribe_piece(session, path) -> tuple[str, float, float]:
+    """(text, audio seconds, USD as OpenRouter billed it) of one piece."""
     with open(path, 'rb') as audio:
         response = session.post(
-            GROQ_URL, headers={'Authorization': 'Bearer ' + groq_api_key},
+            TRANSCRIBE_URL, headers={'Authorization': 'Bearer ' + openrouter_api_key},
             files={'file': (os.path.basename(path), audio, 'audio/mpeg')},
-            data={'model': GROQ_MODEL, 'response_format': 'verbose_json'},
+            data={'model': ai_transcribe_model, 'response_format': 'verbose_json'},
             timeout=HTTP_TIMEOUT)
     if response.status_code != 200:
-        raise TranscriptUnavailable('groq %s: %s' % (response.status_code, response.text[:200]))
+        raise TranscriptUnavailable('transcription %s: %s' % (response.status_code, response.text[:200]))
     data = response.json()
-    return str(data.get('text') or '').strip(), float(data.get('duration') or 0)
+    if data.get('error'):
+        raise TranscriptUnavailable('transcription: %s' % str(data['error'])[:200])
+    usage = data.get('usage') or {}
+    seconds = float(usage.get('seconds') or data.get('duration') or 0)
+    return str(data.get('text') or '').strip(), seconds, float(usage.get('cost') or 0.0)
 
 
 def from_audio(requester, session, link, budget: DiskBudget | None = None) -> tuple[str, float, float]:
-    """(text, cost USD, audio seconds) by Groq Whisper. The file and its pieces are deleted after."""
-    if not groq_api_key:
-        raise TranscriptUnavailable('no Groq key')
+    """(text, cost USD, audio seconds) by Whisper. The file and its pieces are deleted after."""
+    if not (openrouter_api_key and ai_transcribe_model):
+        raise TranscriptUnavailable('no OpenRouter key or transcription model')
     budget = budget or DiskBudget(os.path.join(work_dir, 'records'))
     name = 'r_ai_%d.audio' % time.time_ns()
     download = BudgetedDownload(budget, os.path.join(work_dir, 'records', name))
@@ -134,9 +134,9 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None) -> tu
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
             texts, cost, total_seconds = [], 0.0, 0.0
             for piece in split_audio(download.path, pieces_dir):
-                text, seconds = transcribe_piece(session, piece)
+                text, seconds, piece_cost = transcribe_piece(session, piece)
                 texts.append(text)
-                cost += groq_cost(seconds)
+                cost += piece_cost
                 total_seconds += seconds
                 os.remove(piece)
     finally:

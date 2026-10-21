@@ -535,12 +535,14 @@ part runs where the bot's requirements are installed).
 
 ## AI summaries
 
-Off until `constants.py` has `openrouterApiKey`, `openrouterModel` (the
-model's OpenRouter id) and `groqApiKey`: no button, no worker
+Off until `constants.py` has `openrouterApiKey` and `openrouterModel` (the
+model's OpenRouter id): no button, no worker
 (`app/service/ai/summary.enabled`). The summary goes through OpenRouter's
 chat completions over plain HTTP (no vendor SDK); its cost is what
 OpenRouter bills (`usage: {include: true}`). Transcript: the feed's
-`<podcast:transcript>` for that enclosure (free), else Groq Whisper on
+`<podcast:transcript>` for that enclosure (free), else Whisper through
+OpenRouter's `/audio/transcriptions` (`openrouterTranscribeModel`, by
+default `openai/whisper-large-v3-turbo`, the same key) on 10-minute
 ffmpeg pieces of the audio (downloaded through DiskBudget; ffmpeg streams,
 pydub would hold the episode in memory on a 2 GB server).
 
@@ -550,10 +552,10 @@ pydub would hold the episode in memory on a 2 GB server).
 - A summary is made once per episode and language (the Telegram client's
   code) and is then free for anyone. A new one takes the episode's length
   from the asker's plan quota, hours of audio per 30 days
-  (`config.ai_summary_hours_per_month` by level), never a count: Groq bills
-  by the hour, and 15 three-hour episodes cost more than Silver brings. The
+  (`config.ai_summary_hours_per_month` by level), never a count: transcription
+  bills by the second, so a count lets long episodes cost more than the plan brings. The
   length is the feed's `itunes:duration` (an hour when there is none) when
-  asked, what Groq measured once transcribed, and 0 when someone else's
+  asked, what Whisper measured once transcribed, and 0 when someone else's
   summary served the request; requests on their way count, failed ones do
   not (`ai_requests.seconds`). No plan or over quota: the plans, as at the
   free episode limit; on the top plan only what is left.

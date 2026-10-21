@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """AI summary of an episode through OpenRouter, and who may ask for one.
 
-Off until constants.py has the OpenRouter key, the model (openrouterModel,
-its OpenRouter id) and the Groq key for transcripts: no button, no worker.
+Off until constants.py has the OpenRouter key and the model (openrouterModel,
+its OpenRouter id): no button, no worker. Transcripts go through the same
+key (app/service/ai/transcript.py).
 A summary is made once per episode and language and then free for
 everyone. A new one takes the episode's length from the asker's plan
 quota, hours of audio per 30 days (config.ai_summary_hours_per_month, by
@@ -10,8 +11,8 @@ plan level): what a summary costs grows with the audio, so a count of
 summaries would let three-hour episodes cost more than the plan brings.
 Without a plan only summaries someone already made.
 
-What a new one cost: the transcript (free from the feed, else Groq Whisper,
-~$0.03 for 45 minutes) plus what OpenRouter reports for the call (usage
+What a new one cost: the transcript (free from the feed, else Whisper
+through OpenRouter, ~$0.01 an hour) plus what OpenRouter reports for the call (usage
 accounting), so the economics page follows whichever model is configured.
 """
 import time
@@ -19,14 +20,14 @@ from typing import NamedTuple
 
 import requests
 
-from config import ai_summary_hours_per_month, ai_summary_model, groq_api_key, openrouter_api_key
+from config import ai_summary_hours_per_month, ai_summary_model, openrouter_api_key
 from db import ai
 
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 MAX_TOKENS = 2000
 HTTP_TIMEOUT = 180
 QUOTA_DAYS = 30
-# a feed without itunes:duration: charged an hour until Groq measures the audio
+# a feed without itunes:duration: charged an hour until Whisper measures the audio
 UNKNOWN_SECONDS = 3600
 
 SYSTEM = (
@@ -53,7 +54,7 @@ class Quota(NamedTuple):
 
 
 def enabled() -> bool:
-    return bool(openrouter_api_key and ai_summary_model and groq_api_key)
+    return bool(openrouter_api_key and ai_summary_model)
 
 
 def language_of(language_code) -> str:

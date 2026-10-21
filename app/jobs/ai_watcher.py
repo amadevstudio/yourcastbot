@@ -5,7 +5,7 @@ One request at a time: a summary waits for a download, ffmpeg and two APIs,
 and the server has one CPU. The transcript and the summary are cached
 (db/ai.py), so a second request for the same episode costs nothing. What a
 new summary cost is written to the usage ledger for the chat that asked,
-and the request is charged the audio Groq measured (the feed's length was
+and the request is charged the audio Whisper measured (the feed's length was
 an estimate) or nothing when someone else's summary served it.
 """
 import time
@@ -40,7 +40,7 @@ def _feed_url(channel_id):
 
 
 def episode_transcript(episode, session) -> tuple[str, float, float]:
-    """(text, what making it cost now, audio seconds Groq measured or 0): cached, the feed's, or Groq's."""
+    """(text, what making it cost now, audio seconds Whisper measured or 0): cached, the feed's, or Whisper's."""
     cached = ai.transcript(episode['ref'])
     if cached is not None:
         return cached['text'], 0.0, cached['seconds']
@@ -55,7 +55,7 @@ def episode_transcript(episode, session) -> tuple[str, float, float]:
         ai.save_transcript(episode['ref'], text, 'feed', 0.0)
         return text, 0.0, 0.0
     text, cost, seconds = transcript.from_audio(requester, session, episode['link'])
-    ai.save_transcript(episode['ref'], text, 'groq', cost, seconds)
+    ai.save_transcript(episode['ref'], text, 'whisper', cost, seconds)
     return text, cost, seconds
 
 

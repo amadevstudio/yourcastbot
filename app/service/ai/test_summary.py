@@ -51,8 +51,6 @@ def test_transcripts():
     js = json.dumps({'segments': [{'body': 'Hello.'}, {'body': ' Bye. '}]})
     _assert(transcript.transcript_text(js, 'application/json') == 'Hello. Bye.', "podcast JSON segments")
     _assert(transcript.transcript_text('<p>Hello <b>there</b></p>', 'text/html') == 'Hello there', "HTML")
-    _assert(abs(transcript.groq_cost(1) - 10 / 3600 * 0.04) < 1e-12, "Groq bills at least 10 seconds")
-    _assert(abs(transcript.groq_cost(2700) - 0.03) < 1e-9, "45 minutes cost $0.03")
 
 
 class FakeResponse:
@@ -70,14 +68,14 @@ class FakeSession:
         self.response = response
         self.calls = []
 
-    def post(self, url, headers=None, json=None, timeout=None):
-        self.calls.append((url, headers, json))
+    def post(self, url, headers=None, json=None, timeout=None, files=None, data=None):
+        self.calls.append((url, headers, json if files is None else (files, data)))
         return self.response
 
 
 def test_openrouter():
-    summary.openrouter_api_key, summary.ai_summary_model, summary.groq_api_key = 'k', 'vendor/some-model', 'g'
-    _assert(summary.enabled(), "on with both keys and a model")
+    summary.openrouter_api_key, summary.ai_summary_model = 'k', 'vendor/some-model'
+    _assert(summary.enabled(), "on with the key and a model")
     session = FakeSession(FakeResponse(200, {
         'choices': [{'message': {'content': ' Gist.\n• One '}, 'finish_reason': 'stop'}],
         'usage': {'prompt_tokens': 9000, 'completion_tokens': 300, 'cost': 0.0021}}))
@@ -100,6 +98,31 @@ def test_openrouter():
     summary.ai_summary_model = ''
     _assert(not summary.enabled(), "off without a model")
     summary.ai_summary_model = 'vendor/some-model'
+
+
+def test_transcription(tmp):
+    transcript.openrouter_api_key, transcript.ai_transcribe_model = 'k', 'openai/whisper-large-v3-turbo'
+    piece = os.path.join(tmp, 'piece000.mp3')
+    with open(piece, 'wb') as f:
+        f.write(b'ID3')
+    session = FakeSession(FakeResponse(200, {'text': ' Hello. ', 'duration': 599.5,
+                                             'usage': {'seconds': 600, 'cost': 0.002}}))
+    _assert(transcript.transcribe_piece(session, piece) == ('Hello.', 600.0, 0.002),
+            "the text, the seconds and what OpenRouter billed")
+    url, headers, (files, data) = session.calls[0]
+    _assert(url == transcript.TRANSCRIBE_URL and headers['Authorization'] == 'Bearer k',
+            "OpenRouter's transcription endpoint, the same key")
+    _assert(data['model'] == 'openai/whisper-large-v3-turbo' and files['file'][0] == 'piece000.mp3',
+            "the configured model, the piece as a file")
+    for response, label in ((FakeResponse(400, {'error': 'format'}), "an HTTP error"),
+                            (FakeResponse(200, {'error': {'message': 'down'}}), "an error in the body")):
+        try:
+            transcript.transcribe_piece(FakeSession(response), piece)
+            raise AssertionError(label + " must raise")
+        except transcript.TranscriptUnavailable:
+            _assert(True, label + " is no transcript")
+    _assert(transcript.PIECE_SECONDS * 24000 / 8 < 25 * 1024 * 1024 and transcript.PIECE_SECONDS <= 600,
+            "a piece is under the 25 MB upload cap and short enough for a 60 s provider timeout")
 
 
 def test_queue_and_quota(db):
@@ -157,7 +180,7 @@ def test_queue_and_quota(db):
 
     measured, _ = ai.enqueue(501, 'm', 'en', hour, db)
     ai.finish(measured, 'done', seconds=5400, database=db)
-    _assert(ai.seconds_used(501, now - 86400, db) == 3 * hour + 5400, "charged what Groq measured, not the estimate")
+    _assert(ai.seconds_used(501, now - 86400, db) == 3 * hour + 5400, "charged what Whisper measured, not the estimate")
 
 
 def test_worker(db):
@@ -170,7 +193,7 @@ def test_worker(db):
     ai.remember_episode('ep7', LINK, None, 'Seven &amp; more', 'Show', 2700, database=db)
     ai.save_transcript('ep7', 'words', 'feed', 0.0, database=db)
     ai.remember_episode('ep8', 'https://cdn.example/show/ep8.mp3', None, 'Eight', 'Show', database=db)
-    ai.save_transcript('ep8', 'words', 'groq', 0.03, 2712.4, database=db)
+    ai.save_transcript('ep8', 'words', 'whisper', 0.01, 2712.4, database=db)
     _assert(ai.episode('ep8', db)['seconds'] == 0, "a feed without a length stores 0")
     ai.remember_episode('ep7', LINK, None, 'Seven &amp; more', 'Show', 0, database=db)
     _assert(ai.episode('ep7', db)['seconds'] == 2700, "a later delivery without a length keeps the known one")
@@ -194,7 +217,7 @@ def test_worker(db):
     _assert(asked == ['ru', 'ru'], "one summary per episode and language, then the cache")
     _assert([chat for chat, _ in sent] == [501, 502, 501], "every asker gets it")
     _assert('Seven &amp; more' in sent[0][1] and 'Gist.' in sent[0][1], "the title is escaped once")
-    _assert(charged == [2700, 0, 2712], "charged: the feed's length, nothing for the cache, Groq's measure")
+    _assert(charged == [2700, 0, 2712], "charged: the feed's length, nothing for the cache, Whisper's measure")
     rows = usage.per_user(0, database=db)
     _assert(abs(rows[501]['ai_usd'] - 0.004) < 1e-9 and rows[502]['ai_usd'] == 0.0,
             "the new summary is charged to who asked, the cached one costs nothing")
@@ -211,6 +234,7 @@ def main():
     test_transcripts()
     test_openrouter()
     with tempfile.TemporaryDirectory() as tmp:
+        test_transcription(tmp)
         db = os.path.join(tmp, 'test.sqlite')
         test_queue_and_quota(db)
         test_worker(os.path.join(tmp, 'worker.sqlite'))

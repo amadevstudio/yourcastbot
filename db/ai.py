@@ -7,7 +7,7 @@ the ref. A transcript is made once per episode; a summary once per episode
 and language, and then it is free for everyone who asks.
 
 Quotas are hours of audio: a request carries the seconds it is charged
-(the feed's length when asked, what Groq measured once transcribed, 0 when
+(the feed's length when asked, what Whisper measured once transcribed, 0 when
 someone else's summary served it), and a chat's use is the sum of its
 requests that are on their way or done.
 
@@ -97,7 +97,7 @@ def transcript(ref, database=None):
 
 
 def save_transcript(ref, text, source, cost_usd, seconds=0.0, database=None):
-    """`seconds`: the audio Groq transcribed, 0 for a transcript from the feed."""
+    """`seconds`: the audio Whisper transcribed, 0 for a transcript from the feed."""
     _write(database, 'INSERT OR REPLACE INTO ai_transcripts VALUES (?,?,?,?,?,?)',
            (ref, text, source, float(cost_usd), time.time(), float(seconds or 0)))
 
