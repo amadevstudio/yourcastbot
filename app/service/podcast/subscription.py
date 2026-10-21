@@ -59,7 +59,7 @@ def add_sub_rss(
 
     root = get_rss_root(rss_link)
     if root is False:
-        logger.warn("mainf/addSub unsuccessful", flush=True)
+        logger.warn("mainf/addSub unsuccessful")
         return None, None
 
     if 'lastDate' in additional_info:

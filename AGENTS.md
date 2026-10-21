@@ -250,6 +250,25 @@ Lock: `python app/service/podcast/test_catalog.py` (CD gate; the page and
 subscribe parts run where the bot's requirements are installed),
 `python db/test_feed_recovery.py`.
 
+## OPML import
+
+An OPML file (subscriptions exported from another app) sent to the bot in a
+private chat, in any state, is read before the routes (`initialize_routes`
+`opml_file`, `.opml`, or `.xml` typed as XML; at most 2 MB; it stops the
+other handlers, a document never reaches search as an empty text). The
+import runs in a thread of its own, one per chat (`opmlModule`), with a
+status line and a result naming what was added, had, failed and is over
+the free limit (Relay's invoice and change-plan, as at the limit on the
+podcast page). A feed is matched (`app/service/podcast/opml.py`): a channel
+we poll with that address, else the catalog result with the same feed, else
+the one result with exactly that name when the two feeds share an episode
+or the file's address is gone (apps keep old addresses: megaphone for
+Darknet Diaries, radio-t.com for a feedburner feed), else the feed as RSS.
+A wrong "else RSS" makes a duplicate RSS-only channel (no download over
+20 MB), so keep the iTunes match. The file is user data: no DTD, at most
+100 feeds. Lock: `python app/service/podcast/test_opml.py` (CD gate; the
+message part runs where the bot's requirements are installed).
+
 ## Podcast page speed
 
 The podcast page, the episode list and a click on an episode each read the
