@@ -452,8 +452,9 @@ def test_ask(db, module):
                 "no plan: the plans, as for summaries")
         left[0] = quota.Questions(True, 5, 3)
         module.ask(dict(tap, callback=Tap({'tp': 'ask', 'r': 'ep7', 'm': 4})))
-        _assert(states[(501, 'ask')] == {'ref': 'ep7', 'audio': 4} and 'left today: 3' in rendered[-1]['text']
-                and rendered[-1]['reply_markup'][0][0]['callback_data'] == {'tp': 'menu'},
+        opened = dict(states[(501, 'ask')])
+        _assert(opened.pop('at') > 0 and opened == {'ref': 'ep7', 'audio': 4} and 'left today: 3' in rendered[-1]['text']
+                and rendered[-1]['reply_markup'][0][0]['callback_data'] == {'tp': 'askDone'},
                 "Ask opens the question screen with what is left and Done")
         module.ask({'chat_id': 501, 'language_code': 'en', 'callback': None,
                     'message': SimpleNamespace(text='What <b>do</b> they say?')})
@@ -464,6 +465,62 @@ def test_ask(db, module):
         left[0] = quota.Questions(False, 5, 0)
         module.ask({'chat_id': 501, 'language_code': 'en', 'callback': None, 'message': SimpleNamespace(text='More?')})
         _assert(len(answered) == 1 and 'No questions left' in sent[-1]['text'], "over the day's limit: no model call")
+
+        import app.controller.builders as builders
+        searched = []
+        fake_search = SimpleNamespace(search=lambda data: searched.append((data['route_name'], data['message'].text)))
+        saved_search = (sys.modules.get('app.controller.builders.searchModule'), getattr(builders, 'searchModule', None))
+        sys.modules['app.controller.builders.searchModule'] = builders.searchModule = fake_search
+        module.storage.add_user_state = lambda chat, route: states.__setitem__((chat, 'route'), route)
+        try:
+            states[(501, 'ask')] = dict(states[(501, 'ask')], at=time.time() - summary.ASK_IDLE_SECONDS - 1)
+            left[0] = quota.Questions(True, 5, 5)
+            module.ask({'chat_id': 501, 'language_code': 'en', 'callback': None, 'united_data': {'ref': 'ep7'},
+                        'route_name': 'ask', 'message': SimpleNamespace(text='lex fridman')})
+        finally:
+            for name, value in (('sys', saved_search[0]), ('attr', saved_search[1])):
+                if name == 'sys':
+                    if value is None:
+                        sys.modules.pop('app.controller.builders.searchModule', None)
+                    else:
+                        sys.modules['app.controller.builders.searchModule'] = value
+                elif value is None:
+                    del builders.searchModule
+                else:
+                    builders.searchModule = value
+        _assert(searched == [('search', 'lex fridman')] and states[(501, 'route')] == 'search' and len(answered) == 1,
+                "half an hour after the last question a text is a search again, no model call")
+        states[(501, 'ask')] = {'ref': 'ep7', 'audio': 4, 'at': time.time()}
+        sys.modules['app.controller.builders.searchModule'] = builders.searchModule = fake_search
+        try:
+            module.ask({'chat_id': 501, 'language_code': 'en', 'callback': None, 'united_data': {}, 'route_name': 'ask',
+                        'message': SimpleNamespace(text='https://podcasts.apple.com/us/podcast/x/id123')})
+        finally:
+            sys.modules['app.controller.builders.searchModule'] = builders.searchModule = saved_search[0] or fake_search
+        _assert(searched[-1][1].startswith('https://podcasts.apple.com') and len(answered) == 1,
+                "a podcast link is not a question: search opens it, as before Ask")
+        states[(501, 'ask')] = {'ref': 'ep7', 'audio': 4, 'at': time.time()}
+        module.ask({'chat_id': 501, 'language_code': 'en', 'callback': None, 'message': SimpleNamespace(text='')})
+        _assert(sent[-1]['text'] == 'Please type the question.' and len(answered) == 1,
+                "a voice message or a photo: asked to type it, no model call")
+
+        menus, markups = [], []
+        import agent.bot_telebot as telebot_agent
+        from app.controller.builders import menuModule
+        saved_menu = (menuModule.construct_menu_message, telebot_agent.bot)
+        menuModule.construct_menu_message = lambda lang, chat: [{'type': 'text', 'text': 'Menu'}]
+        telebot_agent.bot = SimpleNamespace(edit_message_reply_markup=lambda chat, mid, reply_markup=None:
+                                            markups.append((chat, mid, reply_markup)))
+        module.storage.clear_user_storage = lambda chat: states.clear()
+        module.render_messages = lambda chat, structures, resending=False: menus.append((structures[0], resending))
+        try:
+            module.finish_ask({'chat_id': 501, 'language_code': 'en', 'message': Tap({}, 77),
+                               'callback': SimpleNamespace(data='{"tp": "askDone"}', message=Tap({}, 77))})
+        finally:
+            menuModule.construct_menu_message, telebot_agent.bot = saved_menu
+        _assert(markups == [(501, 77, None)] and menus == [({'type': 'text', 'text': 'Menu'}, True)]
+                and states == {(501, 'route'): 'menu'},
+                "Done: its button goes, the questions end, the menu comes as a new message")
         states.clear()
         left[0] = quota.Questions(True, 5, 5)
         module.render_outdated_screen = lambda data: rendered.append({'text': 'outdated'}) or False

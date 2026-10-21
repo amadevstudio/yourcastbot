@@ -11,9 +11,13 @@ A summary is a reply to the episode's audio: Telegram turns its times
 "Ask" opens the route `ask` (summary.ASK_ACTION): the text the user sends
 next is a question, answered from the cached transcript in this worker (one
 model call with a short timeout), as a reply to the audio too. A running plan
-asks quota.QUESTIONS_PER_DAY a day (a trial fewer); "Done" leaves.
+asks quota.QUESTIONS_PER_DAY a day (a trial fewer). "Done" leaves: its button
+goes and the menu comes as a new message at the bottom (a plain `menu` tap
+would redraw the old question screen up the chat). A text after
+ASK_IDLE_SECONDS without a question is a search, as it was before Ask.
 """
 import json
+import time
 
 from app.controller.general.notify import notify, render_outdated_screen
 from app.i18n.messages import get_message
@@ -162,12 +166,12 @@ def open_ask(data):
                get_message('askLimit', language_code).format(limit=questions.limit), alert=True)
         return False
     notify(data['callback'], data['message'], '')
-    storage.set_user_state_data(data['chat_id'], 'ask', {'ref': ref, 'audio': audio})
+    storage.set_user_state_data(data['chat_id'], 'ask', {'ref': ref, 'audio': audio, 'at': time.time()})
     render_messages(data['chat_id'], [{
         'type': 'text', 'disable_web_page_preview': True,
         'text': get_message('askPrompt', language_code).format(
             title=telegram_html.escape(telegram_html.plain_text(episode['title'])[:150]), left=questions.left),
-        'reply_markup': [[{'text': get_message('askDone', language_code), 'callback_data': {'tp': 'menu'}}]],
+        'reply_markup': done_markup(language_code),
     }], resending=True)
 
 
@@ -177,8 +181,14 @@ def answer_question(data):
     if state_lost(state, 'ref'):
         return render_outdated_screen(data)
     question = str(getattr(data['message'], 'text', '') or '').strip()
+    if time.time() - float(state.get('at') or 0) > summary.ASK_IDLE_SECONDS or _is_link(question):
+        # long after the last question, or a podcast link: the user is searching, as before Ask
+        return _search_instead(data)
+    if not question:  # a voice message, a photo
+        outer_sender(data['chat_id'], [{'type': 'text', 'text': get_message('askTextOnly', language_code)}])
+        return
     episode, found = ai.episode(state['ref']), ai.transcript(state['ref'])
-    if not question or episode is None or found is None:
+    if episode is None or found is None:
         return render_outdated_screen(data)
     questions = ai_quota.questions(data['chat_id'])
     if not questions.allowed:
@@ -198,10 +208,43 @@ def answer_question(data):
         outer_sender(data['chat_id'], [{'type': 'text', 'text': get_message('askFailed', language_code)}])
         return
     usage.record_ask(data['chat_id'], state['ref'], cost)
+    storage.set_user_state_data(data['chat_id'], 'ask', dict(state, at=time.time()))
     analytics_events.track(data['chat_id'], 'question_answered', {'left': questions.left - 1})
     answer = {'type': 'text', 'disable_web_page_preview': True,
               'text': '❓ <i>%s</i>\n\n%s' % (telegram_html.escape(question[:300]), telegram_html.escape(text)),
-              'reply_markup': [[{'text': get_message('askDone', language_code), 'callback_data': {'tp': 'menu'}}]]}
+              'reply_markup': done_markup(language_code)}
     if state.get('audio'):
         answer['reply_to'] = int(state['audio'])
     outer_sender(data['chat_id'], [answer])
+
+
+def done_markup(language_code):
+    return [[{'text': get_message('askDone', language_code), 'callback_data': {'tp': summary.ASK_DONE_ACTION}}]]
+
+
+def finish_ask(data):
+    """ "Done": the questions end here; the button goes, the menu comes at the bottom of the chat."""
+    from app.controller.builders.menuModule import construct_menu_message
+    from agent.bot_telebot import bot
+    notify(data['callback'], data['message'], '')
+    try:
+        bot.edit_message_reply_markup(data['chat_id'], data['callback'].message.message_id, reply_markup=None)
+    except Exception:
+        pass  # an old message: the menu still comes
+    storage.clear_user_storage(data['chat_id'])
+    storage.add_user_state(data['chat_id'], 'menu')
+    render_messages(data['chat_id'], construct_menu_message(data['language_code'], data['chat_id']),
+                    resending=True)
+
+
+def _is_link(text) -> bool:
+    return text.lower().startswith(('http://', 'https://')) and ' ' not in text
+
+
+def _search_instead(data):
+    """A text long after the last question: the user is searching again, as before Ask."""
+    from app.controller.builders import searchModule
+    storage.add_user_state(data['chat_id'], 'search')
+    data['route_name'], data['united_data'] = 'search', {}
+    searchModule.search(data)
+    return False

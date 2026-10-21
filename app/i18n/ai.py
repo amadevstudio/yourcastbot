@@ -124,6 +124,16 @@ ROWS = {
         'es darum geht. Fragen heute übrig: {left}.',
         'כתבו שאלה על "{title}". אענה לפי התמליל ואגיד באיזו דקה מדברים על זה. שאלות שנותרו היום: {left}.'),
     'askDone': ('Готово', 'Done', 'Pronto', 'Listo', 'Fertig', 'סיום'),
+    'askTextOnly': (
+        'Напишите вопрос текстом.', 'Please type the question.', 'Escreva a pergunta em texto.',
+        'Escribe la pregunta en texto.', 'Bitte schreib die Frage als Text.', 'כתבו את השאלה בטקסט.'),
+    'summaryAutoNeedsPlan': (
+        'Включено. Пересказы новых выпусков приходят с подпиской: без неё они ждут, пока она появится.',
+        'On. Summaries of new episodes come with a plan: without one they wait until you have one.',
+        'Ativado. Resumos de episódios novos vêm com um plano: sem ele, esperam até você ter um.',
+        'Activado. Los resúmenes de episodios nuevos llegan con un plan: sin él, esperan hasta que tengas uno.',
+        'An. Zusammenfassungen neuer Folgen kommen mit einem Tarif: ohne ihn warten sie, bis du einen hast.',
+        'פעיל. סיכומי פרקים חדשים מגיעים עם מסלול: בלעדיו הם מחכים עד שיהיה לך.'),
     'askNeedsSummary': (
         'Сначала получите пересказ: вопросы задаются по расшифровке выпуска.',
         'Get the summary first: questions are answered from the episode\'s transcript.',

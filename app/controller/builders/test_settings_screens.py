@@ -154,6 +154,41 @@ def test_redraw(settings):
     _assert(renders == [5], "a command sends a message")
 
 
+def test_auto_summary_toggle(settings):
+    import db.tariff_rows as tariff_rows
+    flags, toasts = {}, []
+
+    class DB:
+        def __init__(self, *_):
+            pass
+
+        def get_user_flag(self, chat_id, name):
+            return flags.get(name)
+
+        def set_user_flag(self, chat_id, name, value=1):
+            flags[name] = value
+
+        def close(self):
+            pass
+
+    saved = (settings.SQLighter, settings.notify, settings._redraw, tariff_rows.running_plan_level)
+    settings.SQLighter, settings._redraw = DB, lambda data, screen: None
+    settings.notify = lambda call, message, text, alert=False: toasts.append((text, alert))
+    data = {'chat_id': 5, 'callback': None, 'message': None, 'language_code': 'en'}
+    try:
+        tariff_rows.running_plan_level = lambda chat_id, database=None: 0
+        settings.toggle_auto_summary(data)
+        _assert(flags['auto_summary'] == 1 and toasts[-1] == (get_message('summaryAutoNeedsPlan', 'en'), True),
+                "no plan: turned on, and an alert says they come with a plan")
+        settings.toggle_auto_summary(data)
+        _assert(flags['auto_summary'] == 0 and toasts[-1] == (get_message('summaryAutoOff', 'en'), False), "off")
+        tariff_rows.running_plan_level = lambda chat_id, database=None: 3
+        settings.toggle_auto_summary(data)
+        _assert(toasts[-1] == (get_message('summaryAutoOn', 'en'), False), "with a plan: on, a toast")
+    finally:
+        settings.SQLighter, settings.notify, settings._redraw, tariff_rows.running_plan_level = saved
+
+
 def main():
     settings = import_builder('settingsModule')
     if settings is None:
@@ -164,6 +199,7 @@ def main():
     test_every_button_leads_somewhere(settings)
     test_languages(settings)
     test_redraw(settings)
+    test_auto_summary_toggle(settings)
     print("all settings screen checks passed")
 
 

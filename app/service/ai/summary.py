@@ -16,6 +16,8 @@ from config import ai_summary_model, ai_transcribe_model
 
 ACTION = 'sum'
 ASK_ACTION = 'ask'  # the route of questions about an episode
+ASK_DONE_ACTION = 'askDone'  # "Done": leaves it
+ASK_IDLE_SECONDS = 30 * 60  # a text after this long without a question is a search again
 MAX_TOKENS = 2000
 ANSWER_MAX_TOKENS = 800
 ANSWER_TIMEOUT = (10, 60)  # a question is answered in the incoming worker: it must not hang there

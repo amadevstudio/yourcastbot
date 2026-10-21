@@ -59,8 +59,8 @@ def _ask(url, params, get, answer: dict, key: str):
 
 def _listed(item) -> bool:
     """An Index result the search screens can show (they read these keys as Apple's)."""
-    return bool(item.get('collectionId') and item.get('collectionName') and item.get('feedUrl')) \
-        and 'trackCount' in item and 'releaseDate' in item
+    return bool(item.get('collectionId') and item.get('collectionName') and item.get('feedUrl')
+                and item.get('collectionViewUrl')) and 'trackCount' in item and 'releaseDate' in item
 
 
 def search(term, get=None, grace=INDEX_GRACE_SECONDS) -> dict:

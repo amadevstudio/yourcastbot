@@ -282,8 +282,11 @@ def toggle_auto_summary(data: ControllerParams):
         db_users.set_user_flag(data['chat_id'], ai_auto.FLAG, 1 if enabled else 0)
     finally:
         db_users.close()
+    from db.tariff_rows import running_plan_level
+    without_plan = enabled and running_plan_level(data['chat_id']) <= 0
     notify(data['callback'], data['message'],
-           get_message('summaryAutoOn' if enabled else 'summaryAutoOff', data['language_code']))
+           get_message('summaryAutoNeedsPlan' if without_plan else 'summaryAutoOn' if enabled else 'summaryAutoOff',
+                       data['language_code']), alert=without_plan)
     _redraw(data, construct_summary_message(data['language_code'], data['chat_id']))
 
 

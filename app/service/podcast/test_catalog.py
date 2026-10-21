@@ -35,6 +35,7 @@ class Response:
 
 def show(cid, name, feed='https://feed.example/%s'):
     return {'collectionId': cid, 'collectionName': name, 'feedUrl': feed % cid if '%s' in feed else feed, 'trackCount': 3,
+            'collectionViewUrl': 'https://podcasts.apple.com/us/podcast/*/id%s' % cid,
             'releaseDate': '2026-10-01T00:00:00Z'}
 
 
@@ -57,10 +58,11 @@ def directory(apple=None, index=None, slow_index=None):
 def test_search():
     apple = [show(1, 'Huberman Lab'), show(2, 'Lex Fridman Podcast')]
     index = [show(2, 'Lex Fridman Podcast'), show(3, 'Психология'),
-             {'collectionId': 4, 'collectionName': 'No feed'}]
+             {'collectionId': 4, 'collectionName': 'No feed'},
+             dict(show(5, 'No page link'), collectionViewUrl='')]
     found = catalog.search('term', get=directory(apple, index))
     _assert([r['collectionId'] for r in found['results']] == [1, 2, 3] and found['resultCount'] == 3,
-            "Apple's results first, in its order, then the Index's others; one row per podcast")
+            "Apple's results first, in its order, then the Index's others; one row per podcast; only Index rows with every field the search and inline screens read")
     _assert([r['collectionId'] for r in catalog.search('term', get=directory(TimeoutError(), index))['results']]
             == [2, 3], "Apple down: the Index alone")
     _assert([r['collectionId'] for r in catalog.search('term', get=directory(apple, None))['results']] == [1, 2],
