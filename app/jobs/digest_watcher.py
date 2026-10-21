@@ -10,6 +10,7 @@ from app.jobs import digest_outbox
 from app.jobs.digest_outbox import migrate_from_kv, pending_count
 from app.jobs.nosub_digest import DIGEST_MUTE_ACTION, should_send_nosub_digest
 from app.jobs.relay_remind import relay_nudge_markup
+from app.service import analytics_events
 from config import db_path
 from db.sqliteAdapter import SQLighter
 from db import listening
@@ -34,8 +35,10 @@ def digest_message(entries, language):
         callback = json.loads(entry['callback_json'])
         # Saved old positions can no longer be trusted; hash lookup starts at 0.
         callback['dh_n'] = callback['dh_n'].split('_')[0] + '_1'
+        # tapped from a digest (Amplitude: source); compact JSON keeps it in 64 bytes
+        callback['s'] = analytics_events.DIGEST_SOURCE
         listen.append({'text': str(index) + ' · ' + get_message('playLater', language),
-                       'callback_data': callback})
+                       'callback_data': json.dumps(callback, separators=(',', ':'))})
     rows = [listen[i:i + LISTEN_PER_ROW] for i in range(0, len(listen), LISTEN_PER_ROW)]
     rows += relay_nudge_markup(language, extra_row=[{
         'text': get_message('nosubDigestMuteButton', language),
@@ -67,6 +70,7 @@ def send_digest_to_user(user_tg_id, database=None):
         if sent:
             db_users.mark_nosub_digest_sent(user_tg_id)
             listening.ack_digest(user_tg_id, entries, database)
+            analytics_events.track(user_tg_id, 'digest_sent', {'episodes': len(entries)}, database)
             return True
         return False
     finally:

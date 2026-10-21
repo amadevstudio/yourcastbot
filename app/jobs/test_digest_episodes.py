@@ -1,4 +1,5 @@
 """The digest names its episodes, keeps the payment and mute controls, and its copy exists in every language."""
+import json
 import os
 import sys
 import tempfile
@@ -43,10 +44,13 @@ class DigestMessage(unittest.TestCase):
         for lang in LANGUAGES:
             screen = self.digest_message([entry], lang)
             buttons = [b for row in screen['reply_markup'] for b in row]
-            tps = [b['callback_data']['tp'] for b in buttons]
+            tps = [_data(b)['tp'] for b in buttons]
             self.assertEqual(tps, ['rec','bs_stars','bs_trfs','digestMute'])
             # positions move as the feed grows: "Listen" looks the hash up from the start
-            self.assertEqual(buttons[0]['callback_data']['dh_n'], 'abcdef_1')
+            self.assertEqual(_data(buttons[0])['dh_n'], 'abcdef_1')
+            # a tap from the digest is told apart in Amplitude, within Telegram's 64 bytes
+            self.assertEqual(_data(buttons[0])['s'], 'd')
+            self.assertLessEqual(len(buttons[0]['callback_data'].encode()), 64)
             self.assertIn('Episode one &amp; two', screen['text'])
             self.assertNotIn('<i>', screen['text'])
             self.assertLess(len(screen['text']), 4096)
@@ -58,9 +62,14 @@ class DigestMessage(unittest.TestCase):
         entry = dict(listening.digest(101, self.db)[0])
         entries = [dict(entry, show_name='Show %d' % i) for i in range(5)]
         rows = self.digest_message(entries, 'en')['reply_markup']
-        listen_rows = [row for row in rows if row[0]['callback_data']['tp'] == 'rec']
+        listen_rows = [row for row in rows if _data(row[0])['tp'] == 'rec']
         self.assertEqual([len(row) for row in listen_rows], [3, 2], "five episodes in two rows")
         self.assertEqual([b['text'][0] for row in listen_rows for b in row], list('12345'), "in order")
+
+
+def _data(button):
+    data = button['callback_data']
+    return json.loads(data) if isinstance(data, str) else data
 
 
 class Translations(unittest.TestCase):

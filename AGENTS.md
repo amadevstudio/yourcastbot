@@ -538,6 +538,21 @@ without server access. Rules:
 - Locks: `python app/admin_web/test_diag.py` (CD gate),
   `python app/admin_web/test_admin_web.py`.
 
+## Amplitude
+
+Taps reach Amplitude from the bot role (`analytics_serving`, one event per
+route; the user is `users.id`). What the bot does on its own goes through
+`app/service/analytics_events.track` (any role; the payment scripts pass
+`sync=True`): `digest_sent {episodes}`, `plan_off {level, paid_before}`
+(the tick did not renew it; `paid_before` false is a trial that did not
+convert), `payment {method, amount_cents, ...}` (Stars, CryptoBot),
+`summary_ready {cached, seconds}`. A digest's Listen button carries
+`"s": "d"` (compact JSON, within 64 bytes), so its tap has
+`source: digest`. Tracking never fails the caller and never creates a
+user row (it reads `users`, not `get_user_by_tg`).
+Lock: `python app/service/test_analytics_events.py` (CD gate),
+`python app/jobs/test_digest_episodes.py`.
+
 ## Usage ledger and economics
 
 `usage_events` (`db/usage.py`) is one row per chat per delivered episode

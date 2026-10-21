@@ -18,6 +18,7 @@ from app.controller.general.notify import notify
 from app.i18n.messages import get_message
 from app.routes.message_tools import go_back_inline_button
 from app.routes.ptypes import ControllerParams
+from app.service import analytics_events
 from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_description_and_button_text)
 from app.service.payment.paymentSafeModule import (
@@ -425,6 +426,9 @@ def process_successful_payment(
     finally:
         db.close()
 
+    analytics_events.track(user['telegramId'], 'payment', {
+        'method': STARS_SERVICE_TYPE, 'amount_cents': payload_data['b'], 'plan': payload_data['v'] or None,
+        'months': payload_data['m']})
     # the balance is in; the referral bonus goes before any message can fail
     refer_tg_id, award_message = award_referrer_for_payment(user['telegramId'])
 
