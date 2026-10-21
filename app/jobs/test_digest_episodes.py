@@ -51,6 +51,17 @@ class DigestMessage(unittest.TestCase):
             self.assertNotIn('<i>', screen['text'])
             self.assertLess(len(screen['text']), 4096)
 
+    def test_listen_buttons_share_rows(self):
+        listening.remember('Episode', 'Show', {'tp': 'rec', 'id': 17, 'dh_n': 'abcdef_9'},
+                           self.db, channel_id=17, cursor='c')
+        listening.flag_digest([101], 17, 'c', self.db)
+        entry = dict(listening.digest(101, self.db)[0])
+        entries = [dict(entry, show_name='Show %d' % i) for i in range(5)]
+        rows = self.digest_message(entries, 'en')['reply_markup']
+        listen_rows = [row for row in rows if row[0]['callback_data']['tp'] == 'rec']
+        self.assertEqual([len(row) for row in listen_rows], [3, 2], "five episodes in two rows")
+        self.assertEqual([b['text'][0] for row in listen_rows for b in row], list('12345'), "in order")
+
 
 class Translations(unittest.TestCase):
     def test_all_copy_has_each_language(self):
