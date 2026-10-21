@@ -9,6 +9,7 @@ import Users from "@/pages/Users";
 import Send from "@/pages/Send";
 import Tariffs from "@/pages/Tariffs";
 import Economics from "@/pages/Economics";
+import Product from "@/pages/Product";
 
 function Gate() {
   const { data, isLoading, error } = useQuery({
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/users" element={<Users />} />
         <Route path="/send" element={<Send />} />
         <Route path="/tariffs" element={<Tariffs />} />
+        <Route path="/product" element={<Product />} />
         <Route path="/economics" element={<Economics />} />
       </Route>
     </Routes>

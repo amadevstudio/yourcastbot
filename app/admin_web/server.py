@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
-from app.admin_web import auth, diag, economics, mail_jobs, queries
+from app.admin_web import auth, diag, economics, mail_jobs, product, queries
 from lib.tools.logger import logger
 
 ADMIN_HOST = "127.0.0.1"
@@ -228,6 +228,11 @@ def users(
 @api.get("/economics")
 def economics_report(days: int = 30, _admin: dict = Depends(current_admin)):
     return economics.economics(days=days)
+
+
+@api.get("/product")
+def product_report(days: int = 30, _admin: dict = Depends(current_admin)):
+    return product.product(days=days)
 
 
 @api.get("/tariffs")

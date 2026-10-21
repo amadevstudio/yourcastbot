@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { BarChart3, CircleDollarSign, LogOut, Radio, Send, Users } from "lucide-react";
+import { Activity, BarChart3, CircleDollarSign, LogOut, Radio, Send, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -8,6 +8,7 @@ const links = [
   { to: "/users", label: "Пользователи", icon: Users },
   { to: "/send", label: "Рассылка", icon: Send },
   { to: "/tariffs", label: "Тарифы", icon: Radio },
+  { to: "/product", label: "Продукт", icon: Activity },
   { to: "/economics", label: "Экономика", icon: CircleDollarSign },
 ];
 
