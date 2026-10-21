@@ -25,6 +25,7 @@ from app.service.podcast.subscription import add_sub
 from config import db_path, max_subscriptions_without_tariff
 from db.sqliteAdapter import SQLighter
 from lib.markup import telegram_html
+from lib.tools.logger import logger
 from lib.telegram.general.message_master import MessageStructuresInterface
 
 PICKS = 8
@@ -141,10 +142,14 @@ def subscribe(chat_id, rows, database=None, subscriber=add_sub) -> tuple[list[st
         if channel is None:
             failed.append(name)
             continue
-        if channel['itunes_id']:
-            result, _ = subscriber(chat_id, channel['id'], channel['itunes_id'], 'itunes')
-        else:
-            result, _ = subscriber(chat_id, channel['id'], channel['rss_link'], 'rss')
+        try:
+            if channel['itunes_id']:
+                result, _ = subscriber(chat_id, channel['id'], channel['itunes_id'], 'itunes')
+            else:
+                result, _ = subscriber(chat_id, channel['id'], channel['rss_link'], 'rss')
+        except Exception as e:  # iTunes or the feed did not answer: name it, go on with the rest
+            logger.warn("welcome subscribe:", channel['id'], e)
+            result = None
         (done if result is not None else failed).append(name)
     return done, failed, over
 

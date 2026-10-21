@@ -111,6 +111,13 @@ def test_subscribe(onboarding):
     FakeDB.tariff = {'tariff_id': 3, 'time_left': 100}
     done, failed, over = onboarding.subscribe(4001, TOP, subscriber=subscriber)
     _assert(len(calls) == 8 and over == [], "a running plan has no subscription limit")
+    def silent_itunes(chat_id, channel_id, service_id, service_name):
+        if channel_id == 10000:
+            raise AttributeError("'NoneType' object has no attribute 'content'")  # iTunes did not answer
+        return 'name', channel_id
+
+    done, failed, over = onboarding.subscribe(4001, TOP[:2], subscriber=silent_itunes)
+    _assert(len(failed) == 1 and len(done) == 1, "a podcast that fails to answer is named; the rest go on")
     text = onboarding.result_message('en', ['A & B'], [], [])[0]['text']
     _assert('A &amp; B' in text, "names are escaped in the result")
 

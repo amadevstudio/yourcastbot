@@ -41,8 +41,8 @@ def check(chat_id, link, open_links=(), plan=None, now=None, database=None, limi
     counted |= {usage.episode_ref(other) for other in open_links}
     if usage.episode_ref(link) in counted or len(counted) < limit:
         return True, None
-    oldest = usage.oldest_since(chat_id, 'rec', since, database=database)
-    wait = (oldest + usage.WEEK_SECONDS - now) if oldest is not None else usage.WEEK_SECONDS
+    leaves = usage.first_to_leave(chat_id, 'rec', since, database=database)
+    wait = (leaves + usage.WEEK_SECONDS - now) if leaves is not None else usage.WEEK_SECONDS
     return False, max(wait, 60)
 
 

@@ -53,8 +53,14 @@ def process(request, session, send=outer_sender) -> int:
     else:
         found = episode_transcript(episode, session)
         charged = round(found.seconds) or request['seconds']
-        text, summary_cost = summary.summarize(
-            found.text, episode['title'], episode['show'], request['lang'], session=session)
+        try:
+            text, summary_cost = summary.summarize(
+                found.text, episode['title'], episode['show'], request['lang'], session=session)
+        except Exception:
+            # the transcript is cached and billed: a retry reads it for free, so book it now
+            if found.cost_usd:
+                usage.record_ai(request['chat_id'], request['ref'], found.cost_usd)
+            raise
         cost = found.cost_usd + summary_cost
         ai.save_summary(request['ref'], request['lang'], text, cost)
     usage.record_ai(request['chat_id'], request['ref'], cost)

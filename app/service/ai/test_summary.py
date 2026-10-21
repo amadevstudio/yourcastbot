@@ -247,12 +247,33 @@ def test_worker(db):
     _assert(abs(rows[501]['ai_usd'] - 0.004) < 1e-9 and rows[502]['ai_usd'] == 0.0,
             "the new summary is charged to who asked, the cached one costs nothing")
 
+    def down(*args, **kwargs):
+        raise openrouter.OpenRouterError('chat/completions 502: down')
+
+    saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path)
+    ai_watcher.summary.summarize = down
+    ai_watcher.episode_transcript = lambda episode, session: transcript.Transcript('words', 'whisper', 0.02, 3600.0)
+    ai.db_path = usage.db_path = db
+    try:
+        ai_watcher.process({'chat_id': 503, 'ref': 'ep8', 'lang': 'en', 'seconds': 3600}, None, send=send)
+        raise AssertionError("a failed summary must raise")
+    except openrouter.OpenRouterError:
+        pass
+    finally:
+        ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path = saved
+    _assert(abs(usage.per_user(0, database=db)[503]['ai_usd'] - 0.02) < 1e-9,
+            "Whisper is paid even when the summary fails: its cost is in the ledger")
+
     _assert(summaryModule.length_text(5400, 'en') == '1 h 30 min', "hours and minutes")
     _assert(summaryModule.length_text(2701, 'ru') == '46 мин', "minutes round up")
     _assert(summaryModule.length_text(5 * 3600, 'de') == '5 Std.', "whole hours")
     top = summaryModule.offer_message('en', quota.Quota(False, 30 * 3600, 29 * 3600, 7200, 3))
     _assert('30 h of audio' in top['text'] and '1 h left' in top['text'] and 'runs 2 h' in top['text']
             and 'reply_markup' not in top, "the top plan hears what is left, no plans to sell")
+    bronze = summaryModule.offer_message('en', quota.Quota(False, 5 * 3600, 4 * 3600, 7200, 1))
+    tps = [b['callback_data']['tp'] for row in bronze['reply_markup'] for b in row]
+    _assert(tps == ['bs_stars', 'bs_trfs'],
+            "a running plan gets the Stars page and change-plan, never an invoice that only tops it up")
 
 
 def main():

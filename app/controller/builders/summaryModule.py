@@ -35,22 +35,26 @@ def length_text(seconds, language_code) -> str:
 
 
 def offer_message(language_code, quota: ai_quota.Quota) -> dict:
+    """No plan: every plan with its Stars invoice, as at the free episode limit. A running plan:
+    an invoice would only top it up (storefront rules), so the Stars page and change-plan.
+    The top plan: only what is left."""
+    from app.service.payment.storefront import relay_nudge_markup
     from app.service.record.free_limit import plans_offer
     if not quota.limit:
         text = get_message('summaryForPlans', language_code).format(
             relay=ai_summary_hours_per_month.get(3, 0), silver=ai_summary_hours_per_month.get(2, 0),
             bronze=ai_summary_hours_per_month.get(1, 0))
-    else:
-        text = get_message('summaryQuota', language_code).format(
-            limit=length_text(quota.limit, language_code),
-            left=length_text(quota.left, language_code),
-            needed=length_text(quota.needed, language_code))
-        if quota.top_plan:
-            return {'type': 'text', 'text': text, 'disable_web_page_preview': True}
-        text += ' ' + get_message('summaryBiggerPlan', language_code)
-    plans_text, rows = plans_offer(language_code)
-    return {'type': 'text', 'text': text + '\n\n' + plans_text.strip(), 'reply_markup': rows,
-            'disable_web_page_preview': True}
+        plans_text, rows = plans_offer(language_code)
+        return {'type': 'text', 'text': text + '\n\n' + plans_text.strip(), 'reply_markup': rows,
+                'disable_web_page_preview': True}
+    text = get_message('summaryQuota', language_code).format(
+        limit=length_text(quota.limit, language_code),
+        left=length_text(quota.left, language_code),
+        needed=length_text(quota.needed, language_code))
+    if quota.top_plan:
+        return {'type': 'text', 'text': text, 'disable_web_page_preview': True}
+    return {'type': 'text', 'text': text + ' ' + get_message('summaryBiggerPlan', language_code),
+            'reply_markup': relay_nudge_markup(language_code), 'disable_web_page_preview': True}
 
 
 def _summary_language(chat_id, language_code) -> str:
