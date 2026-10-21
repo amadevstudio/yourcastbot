@@ -108,6 +108,54 @@ def _plans(sent):
         os.remove(path)
 
 
+def _recap(sent):
+    """Under the plan's text, what the plan brought: the Relay text stays as it is, first."""
+    import time
+    from app.i18n.messages import get_message
+    from db import ai, usage
+    fd, path = tempfile.mkstemp(suffix=".sqlite")
+    os.close(fd)
+    try:
+        db = SQLighter(path)
+        try:
+            _schema(db.connection)
+            db.connection.execute(
+                "CREATE TABLE user_channel_cs (id INTEGER PRIMARY KEY, user_telegram_id INTEGER, "
+                "channel_id INTEGER, notify INTEGER)")
+            db.connection.executemany(
+                "INSERT INTO user_channel_cs (user_telegram_id, channel_id, notify) VALUES (?, ?, ?)",
+                [(301, 1, 1), (301, 2, 1), (301, 3, 0), (302, 1, 1)])
+            db.connection.commit()
+            _add_user(db.connection, 301, 48, lang="ru")
+            _add_user(db.connection, 302, 48, lang="en")
+        finally:
+            db.close()
+        now = time.time()
+        for i in range(3):
+            usage.record_deliveries([301], 'circle', 'https://a/%d.mp3' % i, database=path, at=now - 3600)
+        usage.record_deliveries([301], 'rec', 'https://a/r.mp3', database=path, at=now - 3600)
+        usage.record_deliveries([301], 'rec', 'https://a/old.mp3', database=path, at=now - 40 * 86400)
+        done, _ = ai.enqueue(301, 'ep', 'original', 600, database=path)
+        ai.finish(done, 'done', database=path)
+        failed, _ = ai.enqueue(301, 'ep2', 'original', 600, database=path)
+        ai.finish(failed, 'failed', database=path)
+        _assert_eq(relay_remind.recap_counts(301, database=path), {'episodes': 4, 'summaries': 1, 'shows': 2},
+                   "the last 30 days' episodes, done summaries, podcasts on auto-delivery")
+
+        del sent[:]
+        relay_remind.send_relay_d3_reminders(database=path)
+        by_user = {row[0]: row[1] for row in sent}
+        relay = get_message("relay_trial_ending", "ru") % 2
+        _assert(by_user[301].startswith(relay + "\n\n"), "the Relay text stays as it is, first")
+        _assert_eq(by_user[301][len(relay) + 2:].split("\n"),
+                   [get_message("planRecap", "ru"), "🎧 выпусков в чате: 4", "🎙 подкастов на автодоставке: 2",
+                    "📝 ИИ-пересказов: 1"], "then what the plan brought")
+        _assert_eq(by_user[302], get_message("relay_trial_ending", "en") % 2,
+                   "nothing delivered yet: no recap, the text alone")
+    finally:
+        os.remove(path)
+
+
 def main():
     _assert_eq(relay_remind.days_left_label(72), 3, "72h is 3 days")
     _assert_eq(relay_remind.days_left_label(25), 1, "25h floors to 1")
@@ -173,6 +221,7 @@ def main():
         os.remove(path)
 
     _plans(sent)
+    _recap(sent)
     print("all relay_remind checks passed")
 
 

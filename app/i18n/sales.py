@@ -106,6 +106,35 @@ ROWS = {
         'Relay está apagado y los episodios nuevos de tus pódcasts ya no llegan como archivo.\n\nRecupera la entrega automática con un toque.',
         'Relay ist aus, und neue Folgen deiner Podcasts kommen nicht mehr als Datei.\n\nHol dir die automatische Zustellung mit einem Tipp zurück.',
         'Relay כבוי, ופרקים חדשים של הפודקאסטים שלך כבר לא מגיעים כקובץ.\n\nאפשר להחזיר את המשלוח האוטומטי בלחיצה אחת.'),
+    # D-3: what the plan brought, under its text (app/jobs/relay_remind.recap_text)
+    'planRecap': (
+        'Что вы уже получили с ботом:',
+        'What the bot has brought you so far:',
+        'O que o bot já trouxe para você:',
+        'Lo que el bot ya te trajo:',
+        'Was der Bot dir bisher gebracht hat:',
+        'מה הבוט כבר הביא לך:'),
+    'planRecapEpisodes': (
+        '🎧 выпусков в чате: {n}',
+        '🎧 episodes delivered: {n}',
+        '🎧 episódios entregues: {n}',
+        '🎧 episodios entregados: {n}',
+        '🎧 zugestellte Folgen: {n}',
+        '🎧 פרקים שנשלחו: {n}'),
+    'planRecapShows': (
+        '🎙 подкастов на автодоставке: {n}',
+        '🎙 podcasts on auto-delivery: {n}',
+        '🎙 podcasts com entrega automática: {n}',
+        '🎙 pódcasts con entrega automática: {n}',
+        '🎙 Podcasts mit automatischer Zustellung: {n}',
+        '🎙 פודקאסטים במשלוח אוטומטי: {n}'),
+    'planRecapSummaries': (
+        '📝 ИИ-пересказов: {n}',
+        '📝 AI summaries: {n}',
+        '📝 resumos de IA: {n}',
+        '📝 resúmenes con IA: {n}',
+        '📝 KI-Zusammenfassungen: {n}',
+        '📝 סיכומי AI: {n}'),
     'offerNotAvailable': (
         'Это предложение уже недоступно.',
         'This offer is no longer available.',
