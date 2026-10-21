@@ -11,8 +11,9 @@ import json
 from app.controller.general.notify import notify
 from app.i18n.messages import get_message
 from app.service.ai import quota as ai_quota, summary
-from config import ai_summary_hours_per_month
+from config import ai_summary_hours_per_month, db_path
 from db import ai, usage
+from db.sqliteAdapter import SQLighter
 from lib.markup import telegram_html
 from lib.telegram.general.message_master import render_messages
 
@@ -52,6 +53,15 @@ def offer_message(language_code, quota: ai_quota.Quota) -> dict:
             'disable_web_page_preview': True}
 
 
+def _summary_language(chat_id, language_code) -> str:
+    db_users = SQLighter(db_path)
+    try:
+        preference = db_users.get_user_flag(chat_id, summary.LANGUAGE_FLAG)
+    finally:
+        db_users.close()
+    return summary.summary_language(preference, language_code)
+
+
 def request_summary(data):
     language_code = data['language_code']
     if not summary.enabled():
@@ -66,7 +76,7 @@ def request_summary(data):
         notify(data['callback'], data['message'], get_message('screenOutdated', language_code))
         return
 
-    lang = summary.language_of(language_code)
+    lang = _summary_language(data['chat_id'], language_code)
     cached = ai.summary(ref, lang)
     if cached is not None:
         notify(data['callback'], data['message'], '')

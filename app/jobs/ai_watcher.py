@@ -79,7 +79,7 @@ def ai_watcher():
                 if ai.retry_or_fail(request):
                     try:
                         outer_sender(request['chat_id'], [{
-                            'type': 'text', 'text': get_message('summaryFailed', request['lang'])}])
+                            'type': 'text', 'text': get_message('summaryFailed', request['ui_lang'])}])
                     except Exception as notify_error:
                         logger.warn('ai_watcher/notify', notify_error)
         except Exception as e:

@@ -1,8 +1,11 @@
+import json
+
 from app.controller.general.notify import notify
 from app.i18n.messages import get_message, emojiCodes
 from app.jobs.nosub_digest import DIGEST_TOGGLE_ACTION, digest_enabled
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams
+from app.service.ai import summary as ai_summary
 from app.service.record.text_format import (
     EPISODE_FORMAT_ACTIONS, SEPARATE, user_format)
 from config import db_path
@@ -37,6 +40,32 @@ def episode_format_buttons(language_code, value) -> list[list[InlineButtonData]]
             'callback_data': {'tp': action},
         }])
     return rows
+
+
+def summary_language_label(language_code, preference) -> str:
+    return get_message(
+        "summaryLanguageMine" if preference == ai_summary.MINE else "summaryLanguageOriginal",
+        language_code)
+
+
+def summary_language_buttons(language_code, preference) -> list[list[InlineButtonData]]:
+    """One button per choice; the current one is marked (the episode's language by default)."""
+    current = ai_summary.MINE if preference == ai_summary.MINE else ai_summary.ORIGINAL
+    rows: list[list[InlineButtonData]] = []
+    for action, choice in ai_summary.LANGUAGE_ACTIONS.items():
+        mark = emojiCodes['whiteHeavyCheckMark'] + " " if choice == current else ""
+        rows.append([{
+            'text': mark + summary_language_label(language_code, choice),
+            'callback_data': {'tp': action},
+        }])
+    return rows
+
+
+def _stored_summary_language(user):
+    try:
+        return json.loads(user['flags'] or '{}').get(ai_summary.LANGUAGE_FLAG)
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+        return None
 
 
 def _stored_episode_format(user):
@@ -81,6 +110,12 @@ def open_episode_text_settings(data: ControllerParams):
         construct_episode_text_message(data['language_code'], data['chat_id']))
 
 
+def open_summary_settings(data: ControllerParams):
+    render_messages(
+        data['chat_id'],
+        construct_summary_message(data['language_code'], data['chat_id']))
+
+
 def open_reminder_settings(data: ControllerParams):
     render_messages(
         data['chat_id'],
@@ -97,6 +132,12 @@ def construct_settings_message(language_code, chat_id) -> list[MessageStructures
         'callback_data': {'tp': 'settsText'},
     }
     keyboard: list[list[InlineButtonData]] = [[episode_text_button]]
+    if ai_summary.enabled():
+        keyboard.append([{
+            'text': get_message("settingsSummaryTitle", language_code) + " · "
+                    + summary_language_label(language_code, _stored_summary_language(user)),
+            'callback_data': {'tp': 'settsSum'},
+        }])
     if show_digest_reminder_settings(has_bot_subscription):
         reminders_button: InlineButtonData = {
             'text': get_message("settingsRemindersTitle", language_code) + " · "
@@ -118,6 +159,14 @@ def construct_episode_text_message(language_code, chat_id) -> list[MessageStruct
     keyboard = episode_format_buttons(language_code, _stored_episode_format(user))
     keyboard += go_back_inline_markup(language_code)
     return _screen(text, keyboard)
+
+
+def construct_summary_message(language_code, chat_id) -> list[MessageStructuresInterface]:
+    user, _ = _read_user(chat_id)
+    text = ("<b>" + get_message("settingsSummaryTitle", language_code) + "</b>\n\n"
+            + get_message("summaryLanguageHelp", language_code))
+    keyboard = summary_language_buttons(language_code, _stored_summary_language(user))
+    return _screen(text, keyboard + go_back_inline_markup(language_code))
 
 
 def construct_reminders_message(language_code, chat_id) -> list[MessageStructuresInterface]:
@@ -197,6 +246,20 @@ def set_episode_format_handler(episode_format):
         _redraw(data, construct_episode_text_message(data['language_code'], data['chat_id']))
 
     return set_episode_format
+
+
+def set_summary_language_handler(choice):
+    def set_summary_language(data: ControllerParams):
+        db_users = SQLighter(db_path)
+        try:
+            db_users.set_user_flag(data['chat_id'], ai_summary.LANGUAGE_FLAG, choice)
+        finally:
+            db_users.close()
+
+        notify(data['callback'], data['message'], summary_language_label(data['language_code'], choice))
+        _redraw(data, construct_summary_message(data['language_code'], data['chat_id']))
+
+    return set_summary_language
 
 
 def use_separate_episode_format(data: ControllerParams):

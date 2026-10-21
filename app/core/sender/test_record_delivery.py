@@ -119,6 +119,7 @@ class FakeBot:
         self.audio = []  # (chat_id, 'url' | 'upload' | 'file_id')
         self.captions = {}  # chat_id -> caption of its audio
         self.messages = []  # (chat_id, text, parse_mode) of send_message
+        self.previews_off = []  # disable_web_page_preview of each send_message
 
     def send_audio(self, chat_id, audio, **kwargs):
         self.captions[chat_id] = kwargs.get('caption')
@@ -144,6 +145,7 @@ class FakeBot:
 
     def send_message(self, *args, **kwargs):
         self.messages.append((kwargs.get('chat_id'), kwargs.get('text'), kwargs.get('parse_mode')))
+        self.previews_off.append(kwargs.get('disable_web_page_preview'))
 
     def forward_message(self, chat_id, from_chat_id, message_id):
         return _ns(audio=_ns(file_id='AGENT_FID'), document=None, message_id=99)
@@ -378,6 +380,7 @@ def _check_episode_text_formats():
     _assert(chat_id == 1 and parse_mode == 'HTML' and text.startswith('<blockquote expandable>')
             and text.endswith('</blockquote>') and 'Opening sentence.' in text and len(text) < 4096,
             "separate: collapsible quote that fits one message")
+    _assert(world.bot.previews_off == [True], "separate: a link in the description makes no preview card")
     _assert(world.hints_remembered == [], "separate: no rich note")
 
     # Caption: the old way, cut. Meta: the header only. Neither is a rich message or a quote.
@@ -462,6 +465,9 @@ def _check_summary_button():
         _assert([data for _, data in keyboard.rows] == [{'tp': 'sum', 'r': remembered[0][0]}],
                 "a user chat gets the Summary button with the episode's ref")
         _assert(sender.get_next_ep_button('en', chat_id=-1001) is None, "a channel gets no Summary button")
+        agent_buttons = sender._agent_message(1, 'caption')['buttons']
+        _assert([json.loads(data) for _, data in agent_buttons] == [{'tp': 'sum', 'r': remembered[0][0]}],
+                "an agent upload (over 50 MB) gets the same Summary button")
         srh.ai_summary = _ns(enabled=lambda: False, button_data=saved[2].button_data)
         off = World(size_mb=12).sender()
         off._remember_for_summary()

@@ -147,7 +147,8 @@ def seconds_used(chat_id, since, database=None) -> int:
 
 
 def claim(database=None, now=None):
-    """Lease the oldest pending request (or one whose lease ran out), or None."""
+    """Lease the oldest pending request (or one whose lease ran out), or None.
+    `ui_lang`: the user's interface language, for a notice (the summary's may be the episode's)."""
     now = time.time() if now is None else now
     c = connect(database)
     try:
@@ -155,8 +156,9 @@ def claim(database=None, now=None):
         c.execute('BEGIN IMMEDIATE')
         try:
             row = c.execute(
-                "SELECT * FROM ai_requests WHERE status='pending' "
-                "OR (status='working' AND leased_until < ?) ORDER BY id LIMIT 1", (now,)).fetchone()
+                "SELECT r.*, u.lang ui_lang FROM ai_requests r LEFT JOIN users u ON u.telegramId = r.chat_id "
+                "WHERE r.status='pending' OR (r.status='working' AND r.leased_until < ?) "
+                "ORDER BY r.id LIMIT 1", (now,)).fetchone()
             if row is None:
                 c.execute('COMMIT')
                 return None

@@ -123,7 +123,7 @@ async def sender(local_thonbot, argv, file):
         # record_caption keeps the visible text under the limit; slicing
         # the markup here could cut a tag or an entity in half.
         caption=str(message_text),
-        buttons=get_next_ep_button(argv),
+        buttons=episode_keyboard(argv),
         parse_mode='HTML',
         file_name=str(file_name),
         use_cache=False,
@@ -162,20 +162,9 @@ def send_uploaded(local_thonbot, data, file, retries=3):
         return send_uploaded(local_thonbot, data, file, retries=retries - 1)
 
 
-def get_next_ep_button(argv):
-    if 'nextEpButtonText' in argv and 'nextEpButtonData' in argv:
-        next_ep_button_text = argv['nextEpButtonText']
-        next_ep_button_data = argv['nextEpButtonData']
-
-        keyboard = [
-            [
-                Button.inline(next_ep_button_text, next_ep_button_data)
-            ]
-        ]
-        return keyboard
-
-    else:
-        return None
+def episode_keyboard(argv):
+    """argv['buttons']: (text, callback data) pairs, one per row (Sender.episode_buttons)."""
+    return [[Button.inline(text, data)] for text, data in argv.get('buttons') or ()] or None
 
 # def get_or_create_event_loop():
 #     try:
