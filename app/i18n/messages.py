@@ -160,32 +160,6 @@ messages = {
             "ro_msg": "ou"
         },
     },
-    "welcomeMessage": {
-        "ru": {
-            "ro_msg": "<b>Добро пожаловать!</b>\n"
-                      "Вы можете начать с этих популярных каналов:"
-        },
-        "en": {
-            "ro_msg": "<b>Welcome!</b>\n"
-                      "You can start with these popular channels:"
-        },
-        "pt-BR": {
-            "ro_msg": "<b>Olá!</b>\n"
-                      "Que tal começar com estes podcasts populares?"
-        },
-        "es": {
-            "ro_msg": "<b>Bienvenido!</b>\n"
-                      "Usted puede comenzar con estos canales populares"
-        },
-        "de": {
-            "ro_msg": "<b>Herzlich Willkommen!</b>\n"
-                      "Du kannst mit einem dieser beliebten Podcasts beginnen:"
-        },
-        "he": {
-            "ro_msg": "ברוכים הבאים!"
-                      "אתם יכולים להרשם לערוצים הפופולריים הללו:"
-        }
-    },
     "welcome": {
         "ru": {
             "ro_msg": "<b>Добро пожаловать!</b>"
