@@ -56,6 +56,14 @@ def connect(database=None):
     with _lock:
         if database not in _ready or database == ':memory:':
             c.executescript(SCHEMA)
+            columns = {row[1] for row in c.execute('PRAGMA table_info(ai_requests)')}
+            if 'reply_to' not in columns:
+                # the audio message the summary answers (its times play the episode from there)
+                try:
+                    c.execute('ALTER TABLE ai_requests ADD COLUMN reply_to INTEGER')
+                except sqlite3.OperationalError as e:  # another role added it first
+                    if 'duplicate column' not in str(e):
+                        raise
             _ready.add(database)
     return c
 
@@ -113,9 +121,9 @@ def save_summary(ref, lang, text, cost_usd, database=None):
            (ref, lang, text, float(cost_usd), time.time()))
 
 
-def enqueue(chat_id, ref, lang, seconds, database=None) -> tuple[int, bool]:
+def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None) -> tuple[int, bool]:
     """(request id, True if new), charged `seconds` of the quota. A tap on a summary
-    already on its way is not a new one."""
+    already on its way is not a new one. `reply_to`: the audio message the summary answers."""
     c = connect(database)
     try:
         c.isolation_level = None
@@ -126,9 +134,10 @@ def enqueue(chat_id, ref, lang, seconds, database=None) -> tuple[int, bool]:
             if row is not None:
                 c.execute('COMMIT')
                 return int(row['id']), False
-            cursor = c.execute("INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds) "
-                               "VALUES (?,?,?,'pending',?,?)",
-                               (int(chat_id), ref, lang, time.time(), int(seconds)))
+            cursor = c.execute("INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to) "
+                               "VALUES (?,?,?,'pending',?,?,?)",
+                               (int(chat_id), ref, lang, time.time(), int(seconds),
+                                int(reply_to) if reply_to else None))
             c.execute('COMMIT')
             return int(cursor.lastrowid), True
         except Exception:

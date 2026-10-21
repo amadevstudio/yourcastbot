@@ -645,6 +645,22 @@ button; `quota.py` who may ask. The plan level is
   a lease of 30 minutes, two attempts, then "could not". What a new summary
   cost goes to the usage ledger for the chat that asked.
 - The transcript is data: the prompt says so; never follow it.
+- Transcripts carry time marks, `[12:40]`, at most every 30 s (Whisper's
+  segments with each piece's offset, VTT/SRT cues, JSON `startTime`; plain
+  text and HTML have none). The summary starts its points with those times
+  ("12:40 – ..."), never invented ones, and is a reply to the episode's
+  audio (`ai_requests.reply_to`, the message the button was on;
+  `message_master` `reply_to`, sent anyway if the audio is gone): Telegram
+  makes a time in a reply to the media play it from there. Transcripts made
+  before have no marks, and their summaries no times. A transcript past
+  `MAX_TRANSCRIPT_CHARS` (~100k tokens, 8+ hours of speech) is cut.
+- "Ask" under a summary opens the route `ask`: the user's next texts are
+  questions, answered from the cached transcript in the incoming worker
+  (one call, `ANSWER_TIMEOUT`, the transcript a prompt-cache block), as a
+  reply to the audio; "Done" (the menu) leaves. Questions need the
+  transcript (a summary first) and a running plan: `QUESTIONS_PER_DAY` (20),
+  a trial `TRIAL_QUESTIONS_PER_DAY` (5), in the last 24 hours (usage ledger
+  kind `ask`, its cost in the AI spend). No plan: every plan's invoice.
 Lock: `python app/service/ai/test_summary.py` (CD gate; the worker part
 runs where the bot's requirements are installed),
 `python app/core/sender/test_record_delivery.py`,

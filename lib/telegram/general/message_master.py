@@ -49,6 +49,7 @@ class BaseStructureInterface(TypedDict, total=False):
     reply_markup: list[list[InlineButtonData]]
     parse_mode: PARSE_MODES
     disable_web_page_preview: bool
+    reply_to: int  # a new text message answers this one (sent anyway if it is gone)
 
 
 class TextStructureInterface(BaseStructureInterface):
@@ -475,12 +476,14 @@ def message_master(
         reply_markup = build_markup(send_message_structure)
 
         if send_message_structure['type'] == MasterMessages.text.value:
+            reply_to = send_message_structure.get('reply_to', None)
             result = bot.send_message(
                 chat_id=chat_id,
                 text=send_message_structure.get('text', None),
                 parse_mode=send_message_structure.get('parse_mode', DEFAULT_PARSE_MODE),
                 reply_markup=reply_markup,
-                disable_web_page_preview=send_message_structure.get('disable_web_page_preview', None))
+                disable_web_page_preview=send_message_structure.get('disable_web_page_preview', None),
+                **({'reply_to_message_id': reply_to, 'allow_sending_without_reply': True} if reply_to else {}))
 
         elif send_message_structure['type'] == MasterMessages.image.value:
             result = bot.send_photo(

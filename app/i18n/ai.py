@@ -89,6 +89,50 @@ ROWS = {
         'באיזו שפה לשלוח סיכומים: בשפה שמדברים בה בפרק או בשפת הטלגרם שלך.'),
     'summaryHours': ('{h} ч', '{h} h', '{h} h', '{h} h', '{h} Std.', '{h} ש׳'),
     'summaryMinutes': ('{m} мин', '{m} min', '{m} min', '{m} min', '{m} Min.', '{m} דק׳'),
+    'askButton': (
+        '❓ Спросить о выпуске', '❓ Ask about it', '❓ Perguntar sobre o episódio', '❓ Preguntar sobre el episodio',
+        '❓ Frage zur Folge', '❓ לשאול על הפרק'),
+    'askPrompt': (
+        'Напишите вопрос о выпуске "{title}". Отвечу по его расшифровке и подскажу, на какой минуте об этом '
+        'говорят. Вопросов на сегодня: {left}.',
+        'Write a question about "{title}". I answer from its transcript and tell you the minute where it '
+        'comes up. Questions left today: {left}.',
+        'Escreva uma pergunta sobre "{title}". Respondo pela transcrição e digo em que minuto isso aparece. '
+        'Perguntas restantes hoje: {left}.',
+        'Escribe una pregunta sobre "{title}". Respondo con su transcripción y te digo en qué minuto se habla '
+        'de ello. Preguntas que quedan hoy: {left}.',
+        'Schreib eine Frage zu "{title}". Ich antworte anhand des Transkripts und sage dir, in welcher Minute '
+        'es darum geht. Fragen heute übrig: {left}.',
+        'כתבו שאלה על "{title}". אענה לפי התמליל ואגיד באיזו דקה מדברים על זה. שאלות שנותרו היום: {left}.'),
+    'askDone': ('Готово', 'Done', 'Pronto', 'Listo', 'Fertig', 'סיום'),
+    'askNeedsSummary': (
+        'Сначала получите пересказ: вопросы задаются по расшифровке выпуска.',
+        'Get the summary first: questions are answered from the episode\'s transcript.',
+        'Peça o resumo primeiro: as perguntas são respondidas pela transcrição do episódio.',
+        'Pide primero el resumen: las preguntas se responden con la transcripción del episodio.',
+        'Hol dir zuerst die Zusammenfassung: Fragen werden anhand des Transkripts beantwortet.',
+        'קודם בקשו את הסיכום: התשובות מבוססות על התמליל של הפרק.'),
+    'askLimit': (
+        'На сегодня вопросы закончились: {limit} в сутки. Скоро можно будет снова.',
+        'No questions left for today: {limit} a day. You can ask again soon.',
+        'As perguntas de hoje acabaram: {limit} por dia. Logo você poderá perguntar de novo.',
+        'Se acabaron las preguntas de hoy: {limit} al día. Pronto podrás volver a preguntar.',
+        'Für heute sind keine Fragen mehr übrig: {limit} am Tag. Bald geht es wieder.',
+        'נגמרו השאלות להיום: {limit} ביום. בקרוב אפשר לשאול שוב.'),
+    'askForPlans': (
+        'Вопросы к выпускам доступны с подпиской: до {limit} в день.',
+        'Questions about episodes come with a plan: up to {limit} a day.',
+        'Perguntas sobre episódios vêm com um plano: até {limit} por dia.',
+        'Las preguntas sobre episodios vienen con un plan: hasta {limit} al día.',
+        'Fragen zu Folgen gibt es mit einem Tarif: bis zu {limit} am Tag.',
+        'שאלות על פרקים מגיעות עם מסלול: עד {limit} ביום.'),
+    'askFailed': (
+        'Не получилось ответить. Попробуйте ещё раз.',
+        'Could not answer. Please try again.',
+        'Não foi possível responder. Tente de novo.',
+        'No se pudo responder. Inténtalo de nuevo.',
+        'Das hat nicht geklappt. Bitte versuch es noch einmal.',
+        'לא הצלחנו לענות. נסו שוב.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

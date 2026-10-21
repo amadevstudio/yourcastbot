@@ -61,3 +61,27 @@ def check(chat_id, needed, level=None, trial=False, now=None, database=None) -> 
     since = (time.time() if now is None else now) - QUOTA_DAYS * 86400
     used = ai.seconds_used(chat_id, since, database)
     return Quota(limit > 0 and used + needed <= limit, limit, used, int(needed), level, trial)
+
+
+# Questions about an episode (summaryModule.ask): one model call each, a few
+# tenths of a cent with the transcript cached, so a count per day is enough
+QUESTIONS_PER_DAY = 20
+TRIAL_QUESTIONS_PER_DAY = 5
+
+
+class Questions(NamedTuple):
+    allowed: bool
+    limit: int  # 0: no plan
+    left: int
+
+
+def questions(chat_id, now=None, database=None) -> Questions:
+    """Questions left today (the last 24 hours) for this chat: a running plan only, fewer on a trial."""
+    from db import usage
+    level = running_plan_level(chat_id, database)
+    if level <= 0:
+        return Questions(False, 0, 0)
+    limit = TRIAL_QUESTIONS_PER_DAY if not ever_paid(chat_id, database) else QUESTIONS_PER_DAY
+    since = (time.time() if now is None else now) - 86400
+    left = max(limit - usage.count_since(chat_id, 'ask', since, database), 0)
+    return Questions(left > 0, limit, left)

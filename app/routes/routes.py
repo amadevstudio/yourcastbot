@@ -108,6 +108,13 @@ class RouteMap:
             }
         },
 
+        # Questions about an episode: the Ask button under a summary, then the user's text
+        ai_summary.ASK_ACTION: {
+            'method': summaryModule.ask,
+            'available_from': ['call', 'message'],
+            'waits_for_input': True,
+        },
+
         'another': {
             'method': helpModule.show_another_projects,
             'available_from': ['call', 'command'],
