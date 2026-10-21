@@ -35,8 +35,23 @@ class UsageTest(unittest.TestCase):
         usage.record_deliveries([101], 'circle', 'https://a/3.mp3', database=self.db, at=now)
         week = usage.episodes_since(101, 'rec', now - usage.WEEK_SECONDS, database=self.db)
         self.assertEqual(week, {usage.episode_ref('https://a/1.mp3'), usage.episode_ref('https://a/2.mp3')})
-        self.assertEqual(usage.oldest_since(101, 'rec', now - usage.WEEK_SECONDS, database=self.db), now)
-        self.assertIsNone(usage.oldest_since(102, 'rec', 0, database=self.db))
+        self.assertEqual(usage.first_to_leave(101, 'rec', now - usage.WEEK_SECONDS, database=self.db), now)
+        self.assertIsNone(usage.first_to_leave(102, 'rec', 0, database=self.db))
+
+    def test_an_episode_leaves_the_window_after_its_last_delivery(self):
+        now = time.time()
+        usage.record_deliveries([101], 'rec', 'https://a/1.mp3', database=self.db, at=now - 5 * 86400)
+        usage.record_deliveries([101], 'rec', 'https://a/2.mp3', database=self.db, at=now - 3 * 86400)
+        usage.record_deliveries([101], 'rec', 'https://a/1.mp3', database=self.db, at=now - 1 * 86400)
+        # 1.mp3 again yesterday keeps it in the window: 2.mp3 leaves first
+        self.assertEqual(usage.first_to_leave(101, 'rec', now - usage.WEEK_SECONDS, database=self.db),
+                         now - 3 * 86400)
+
+    def test_a_public_channel_by_name_is_recorded(self):
+        usage.record_deliveries([101, '@show_channel', -1001], 'circle', 'https://a/1.mp3', 30, self.db)
+        rows = usage.per_user(0, database=self.db)
+        self.assertEqual(set(rows), {101, '@show_channel', -1001})
+        self.assertAlmostEqual(rows['@show_channel']['mb'], 10)
 
     def test_ai_cost_and_prune(self):
         now = time.time()

@@ -1262,7 +1262,7 @@ class Sender:
         if self.podcast_info['with_next_ep_button']:
             buttons.append((get_message("loadNextRecord", lang_code), self.get_button_data()))
         # channels have no one to answer: their readers are not the bot's users
-        if self._summary_ref is not None and chat_id is not None and int(chat_id) > 0:
+        if self._summary_ref is not None and str(chat_id).isdigit():
             buttons.append((get_message("summaryButton", lang_code),
                             json.dumps(ai_summary.button_data(self._summary_ref))))
         return buttons

@@ -60,6 +60,8 @@ def _setup(path, now):
                       (2, 'b', 'canceled', 500, stamp),    # not paid: still a trial
                       (4, 'c', 'paid', 500, stamp)])       # the creator's own test
     conn.execute("INSERT INTO tg_channels VALUES (1, ?, ?, 1)", (PAYER, CHANNEL))
+    # a channel added by its link is kept by @name (10 of 47 on prod): int() of it broke the page
+    conn.execute("INSERT INTO tg_channels VALUES (2, ?, '@named_show', 1)", (PAYER,))
     conn.commit()
     conn.close()
     at = now - 3600
@@ -99,6 +101,16 @@ def main():
         segments = {row['segment']: row for row in report['segments']}
         _assert_eq(segments['free']['users'], 1, 'segment counts')
         _assert_close(segments['paid']['revenue_usd'], 5.0, 'segment revenue')
+
+        usage.record_deliveries(['@named_show'], 'circle', 'https://a/n.mp3', database=path, at=now - 60)
+        named = {row['tg']: row for row in economics.economics(
+            days=30, database=path, now=now, server_usd_month=10)['users']}
+        _assert_eq(named[PAYER]['circle'], 2, "a channel kept by @name counts for its owner too")
+
+        usage.record_deliveries([int(config.creatorId)], 'rec', 'https://a/me.mp3', database=path, at=now - 60)
+        mine = {row['tg']: row for row in economics.economics(
+            days=30, database=path, now=now, server_usd_month=10)['users']}
+        _assert_eq(mine[int(config.creatorId)]['segment'], 'trial', "the creator's own tests do not make a payer")
 
         quiet = economics.economics(days=7, database=path, now=now + 30 * 86400, server_usd_month=10)
         _assert_eq(quiet['users'], [], 'a period without events lists nobody')

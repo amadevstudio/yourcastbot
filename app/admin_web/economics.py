@@ -34,19 +34,21 @@ def _segments(conn) -> dict[int, tuple[str, int]]:
 
     paid: a running plan and a payment at any time; trial: a running plan
     nobody paid for (the welcome or referral days). Everyone else is free.
+    The creator's own test payments are not payments, as in _revenue.
     """
     rows = conn.execute(
-        "SELECT u.telegramId tg, t.level level, "
+        "SELECT u.telegramId tg, t.level level, u.telegramId != ? AND "
         "EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id AND p.status = 'paid') paid "
         "FROM users u JOIN user_tariff_cs utc ON utc.uid = u.id "
         "JOIN tariffs t ON t.id = utc.tariff_id "
-        "WHERE utc.tariff_id > 0 AND utc.time_left > 0").fetchall()
+        "WHERE utc.tariff_id > 0 AND utc.time_left > 0", (int(config.creatorId),)).fetchall()
     return {int(r['tg']): ('paid' if r['paid'] else 'trial', int(r['level'])) for r in rows}
 
 
-def _channel_owners(conn) -> dict[int, int]:
-    """A Telegram channel's deliveries count toward the user who added it."""
-    return {int(r['tg_id']): int(r['user_id'])
+def _channel_owners(conn) -> dict:
+    """A Telegram channel's deliveries count toward the user who added it (tg_channels.user_id
+    is a Telegram id). A channel is kept by its id or, added by link, its @name."""
+    return {usage.chat_key(r['tg_id']): int(r['user_id'])
             for r in conn.execute("SELECT tg_id, user_id FROM tg_channels")}
 
 
@@ -93,9 +95,9 @@ def economics(days: int = 30, database: Optional[str] = None, now: Optional[floa
     finally:
         conn.close()
 
-    rows: dict[int, dict] = {}
+    rows: dict = {}
     for chat_id, used in usage.per_user(since, until, database=database).items():
-        tg = owners.get(int(chat_id), int(chat_id))
+        tg = owners.get(usage.chat_key(chat_id), chat_id)
         row = rows.setdefault(tg, {'rec': 0, 'circle': 0, 'ai': 0, 'mb': 0.0, 'ai_usd': 0.0})
         for key in row:
             row[key] += used[key]

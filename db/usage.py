@@ -49,9 +49,18 @@ def episode_ref(link) -> str:
     return hashlib.sha1(str(link).encode('utf-8')).hexdigest()[:16]
 
 
+def chat_key(chat_id):
+    """A chat as the ledger keys it: its Telegram id, or a public channel's @name as given."""
+    text = str(chat_id).strip()
+    try:
+        return int(text)
+    except ValueError:
+        return text
+
+
 def record_deliveries(chat_ids, kind, link, downloaded_mb=0.0, database=None, at=None):
     """One row per chat that got the episode. A download is shared by them."""
-    chat_ids = sorted({int(chat_id) for chat_id in chat_ids})
+    chat_ids = sorted({chat_key(chat_id) for chat_id in chat_ids}, key=str)
     if not chat_ids:
         return
     share = float(downloaded_mb or 0) / len(chat_ids)
@@ -71,7 +80,7 @@ def record_ai(chat_id, ref, cost_usd, database=None, at=None):
     try:
         with c:
             c.execute('INSERT INTO usage_events (at,user_id,kind,ref,cost_usd) VALUES (?,?,?,?,?)',
-                      (time.time() if at is None else at, int(chat_id), 'ai', ref, float(cost_usd)))
+                      (time.time() if at is None else at, chat_key(chat_id), 'ai', ref, float(cost_usd)))
     finally:
         c.close()
 
@@ -82,17 +91,19 @@ def episodes_since(chat_id, kind, since, database=None) -> set:
     try:
         return {r[0] for r in c.execute(
             'SELECT DISTINCT ref FROM usage_events WHERE user_id=? AND kind=? AND at>=?',
-            (int(chat_id), kind, since))}
+            (chat_key(chat_id), kind, since))}
     finally:
         c.close()
 
 
-def oldest_since(chat_id, kind, since, database=None):
-    """When the oldest counted event of the window happened, or None."""
+def first_to_leave(chat_id, kind, since, database=None):
+    """When the episode that leaves the window first was last delivered, or None.
+    An episode counts until a window after its last delivery, not its first."""
     c = connect(database)
     try:
-        row = c.execute('SELECT MIN(at) FROM usage_events WHERE user_id=? AND kind=? AND at>=?',
-                        (int(chat_id), kind, since)).fetchone()
+        row = c.execute('SELECT MIN(last) FROM (SELECT MAX(at) last FROM usage_events '
+                        'WHERE user_id=? AND kind=? AND at>=? GROUP BY ref)',
+                        (chat_key(chat_id), kind, since)).fetchone()
         return row[0] if row else None
     finally:
         c.close()
