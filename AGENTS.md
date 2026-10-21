@@ -116,8 +116,11 @@ remove plan management or hide Bronze/Silver.
   Stars payment, below Stars and change-plan.
   Lock: `python app/service/payment/test_referral_award.py`.
 - A Stars invoice names its plan (payload `v`). With no plan running the
-  payment switches to that plan and turns it on when the balance covers it
-  (`applyPaymentReplenishmentOnce(planId=...)`): before, a free user who paid
+  payment switches to that plan and turns it on when the balance covers
+  one period at the price the invoice sold it for (`b / m` of the payload,
+  `planPrice`; today's price if lower): an invoice sent before a price rise
+  and paid after it still turns its plan on
+  (`applyPaymentReplenishmentOnce(planId=..., planPrice=...)`): before, a free user who paid
   for Relay got a balance and "choose a plan", and an ended Bronze paid for
   Relay renewed Bronze. A running plan is only topped up, as before (a
   mid-period change has a price difference: the change-plan page). An
@@ -567,8 +570,14 @@ button; `quota.py` who may ask. The plan level is
   (an hour when there is none) when asked, what Whisper measured once
   transcribed, and 0 when someone else's summary served the request;
   requests on their way count, failed ones do not (`ai_requests.seconds`).
-  No plan or over quota: the plans, as at the free episode limit; on the
-  top plan only what is left.
+  A plan nobody paid for yet (the welcome Relay, referral days; no `paid`
+  row in `payment_history`) has `config.ai_summary_trial_hours` (5) whatever
+  its level: 153 of 155 running plans were unpaid on 2026-10-21. The first
+  payment opens the plan's own hours.
+  No plan: every plan's invoice, as at the free episode limit. A running
+  plan (a trial too) over quota: the Stars page and change-plan, never an
+  invoice (it would only top the running plan up). The top plan, paid: only
+  what is left.
 - The jobs process drains `ai_requests` one at a time (`app/jobs/ai_watcher.py`),
   a lease of 30 minutes, two attempts, then "could not". What a new summary
   cost goes to the usage ledger for the chat that asked.

@@ -7,13 +7,17 @@ grows with the audio (transcription bills by the second), so a count of
 summaries would let long episodes cost more than the plan brings. The
 charges themselves are ai_requests.seconds (db/ai.py). Without a plan
 only summaries someone already made, which are free.
+
+A plan nobody paid for yet (the welcome Relay, referral days) has
+config.ai_summary_trial_hours whatever its level: every new user gets
+two weeks of Relay. The first payment opens the plan's own hours.
 """
 import time
 from typing import NamedTuple
 
-from config import ai_summary_hours_per_month
+from config import ai_summary_hours_per_month, ai_summary_trial_hours
 from db import ai
-from db.tariff_rows import running_plan_level
+from db.tariff_rows import ever_paid, running_plan_level
 
 QUOTA_DAYS = 30
 # a feed without itunes:duration: charged an hour until Whisper measures the audio
@@ -27,6 +31,7 @@ class Quota(NamedTuple):
     used: int
     needed: int
     level: int
+    trial: bool = False
 
     @property
     def left(self) -> int:
@@ -34,7 +39,8 @@ class Quota(NamedTuple):
 
     @property
     def top_plan(self) -> bool:
-        return self.level >= max(ai_summary_hours_per_month, default=0)
+        """Nothing bigger to sell: the top plan, paid for."""
+        return not self.trial and self.level >= max(ai_summary_hours_per_month, default=0)
 
 
 def seconds_needed(episode) -> int:
@@ -42,11 +48,16 @@ def seconds_needed(episode) -> int:
     return int(episode.get('seconds') or 0) or UNKNOWN_SECONDS
 
 
-def check(chat_id, needed, level=None, now=None, database=None) -> Quota:
+def check(chat_id, needed, level=None, trial=False, now=None, database=None) -> Quota:
     """May this chat ask for a new summary of `needed` seconds of audio? Its requests of the
-    last 30 days count, done and on their way; one someone else's summary served counts 0."""
-    level = running_plan_level(chat_id, database) if level is None else int(level)
-    limit = int(ai_summary_hours_per_month.get(level, 0) * 3600)
+    last 30 days count, done and on their way; one someone else's summary served counts 0.
+    `level` and `trial` are read for the chat unless given."""
+    if level is None:
+        level = running_plan_level(chat_id, database)
+        trial = level > 0 and not ever_paid(chat_id, database)
+    level, trial = int(level), bool(trial)
+    hours = ai_summary_trial_hours if trial else ai_summary_hours_per_month.get(level, 0)
+    limit = int(hours * 3600)
     since = (time.time() if now is None else now) - QUOTA_DAYS * 86400
     used = ai.seconds_used(chat_id, since, database)
-    return Quota(limit > 0 and used + needed <= limit, limit, used, int(needed), level)
+    return Quota(limit > 0 and used + needed <= limit, limit, used, int(needed), level, trial)

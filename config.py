@@ -30,6 +30,8 @@ ai_summary_model = getattr(constants, 'openrouterModel', None) or ''
 ai_transcribe_model = getattr(constants, 'openrouterTranscribeModel', None) or ''
 # hours of audio summarized per 30 days by plan level; a summary someone already made is free for everyone
 ai_summary_hours_per_month = {1: 5, 2: 15, 3: 30}
+# a plan nobody paid for yet (the welcome Relay, referral days): its hours, whatever its level
+ai_summary_trial_hours = 5
 # agentId = creatorId
 botId = constants.botId
 donate_link = constants.donate_link

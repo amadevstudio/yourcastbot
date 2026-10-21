@@ -149,15 +149,23 @@ def test_queue_and_quota(db):
         CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT);
         CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER);
         CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, time_left INTEGER);
-        INSERT INTO users VALUES (1, 501, 'ru'), (2, 502, 'en');
+        CREATE TABLE payment_history (user_id INTEGER, status TEXT);
+        INSERT INTO users VALUES (1, 501, 'ru'), (2, 502, 'en'), (3, 503, 'en'), (4, 504, 'en');
         INSERT INTO tariffs VALUES (1, 1), (3, 3);
-        INSERT INTO user_tariff_cs VALUES (1, 1, 1, 100), (2, 2, 0, 0);
+        INSERT INTO user_tariff_cs VALUES (1, 1, 1, 100), (2, 2, 0, 0), (3, 3, 3, 100), (4, 4, 3, 100);
+        INSERT INTO payment_history VALUES (1, 'paid'), (3, 'paid'), (4, 'canceled');
     """)
     c.commit()
     c.close()
     _assert(running_plan_level(501, db) == 1 and running_plan_level(502, db) == 0, "plan levels")
     _assert(quota.seconds_needed({'seconds': 2700}) == 2700, "an episode takes its length")
     _assert(quota.seconds_needed({'seconds': 0}) == quota.UNKNOWN_SECONDS, "an hour when the feed has none")
+    paid_relay, trial_relay = quota.check(503, 60, database=db), quota.check(504, 60, database=db)
+    _assert((paid_relay.limit, paid_relay.trial, paid_relay.top_plan) == (30 * 3600, False, True),
+            "a paid Relay has its 30 hours")
+    _assert((trial_relay.limit, trial_relay.trial, trial_relay.top_plan) == (5 * 3600, True, False),
+            "the welcome Relay nobody paid for has the trial's 5 hours (a canceled payment is no payment)")
+    _assert(quota.check(502, 60, database=db).limit == 0, "no plan, no new summaries")
 
     hour = 3600
     for i in range(3):
@@ -270,6 +278,10 @@ def test_worker(db):
     top = summaryModule.offer_message('en', quota.Quota(False, 30 * 3600, 29 * 3600, 7200, 3))
     _assert('30 h of audio' in top['text'] and '1 h left' in top['text'] and 'runs 2 h' in top['text']
             and 'reply_markup' not in top, "the top plan hears what is left, no plans to sell")
+    trial = summaryModule.offer_message('en', quota.Quota(False, 5 * 3600, 4 * 3600, 7200, 3, True))
+    _assert('A paid plan gives more: Relay 30 h' in trial['text']
+            and [b['callback_data']['tp'] for row in trial['reply_markup'] for b in row] == ['bs_stars', 'bs_trfs'],
+            "a trial over its hours hears what paying gives, with the Stars page and change-plan")
     bronze = summaryModule.offer_message('en', quota.Quota(False, 5 * 3600, 4 * 3600, 7200, 1))
     tps = [b['callback_data']['tp'] for row in bronze['reply_markup'] for b in row]
     _assert(tps == ['bs_stars', 'bs_trfs'],
