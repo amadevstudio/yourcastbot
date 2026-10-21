@@ -53,7 +53,9 @@ def offer_message(language_code, quota: ai_quota.Quota) -> dict:
         needed=length_text(quota.needed, language_code))
     if quota.top_plan:
         return {'type': 'text', 'text': text, 'disable_web_page_preview': True}
-    return {'type': 'text', 'text': text + ' ' + get_message('summaryBiggerPlan', language_code),
+    more = (get_message('summaryTrialMore', language_code).format(relay=ai_summary_hours_per_month.get(3, 0))
+            if quota.trial else get_message('summaryBiggerPlan', language_code))
+    return {'type': 'text', 'text': text + ' ' + more,
             'reply_markup': relay_nudge_markup(language_code), 'disable_web_page_preview': True}
 
 

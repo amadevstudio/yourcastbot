@@ -188,6 +188,42 @@ def plan_turns_on(stars):
         os.remove(path)
 
 
+def old_price_invoice(stars):
+    """An invoice sent before a price rise and paid after it still turns its plan on."""
+    from db.sqliteAdapter import SQLighter
+    path = _temp_db()
+    db = SQLighter(path)
+    try:
+        for tg in (621, 622, 623):
+            db.register_new_user(tg, 'en')
+        db.subscribeUserToTariffByTg(623, 1, 0, 100, 30)   # Bronze runs
+    finally:
+        db.close()
+    old = stars.stars_for_balance(50, RATE)
+    old_invoices = {tg: stars.create_payload(tg, 50, old, RATE, plan_id=1) for tg in (621, 623)}
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE tariffs SET price = 100 WHERE id = 1")   # Bronze: 50 -> 100 cents
+    conn.commit()
+    conn.close()
+    new_invoice = stars.create_payload(622, 100, stars.stars_for_balance(100, RATE), RATE, plan_id=1)
+    try:
+        _pay(stars, path, 621, old_invoices[621], 'c-621')
+        _pay(stars, path, 622, new_invoice, 'c-622')
+        _pay(stars, path, 623, old_invoices[623], 'c-623')
+        db = SQLighter(path)
+        try:
+            state = {tg: (p['tariff_id'], p['time_left'], p['balance'])
+                     for tg, p in ((tg, db.getUserSubscriptionByTg(tg)) for tg in (621, 622, 623))}
+        finally:
+            db.close()
+        period = stars.config.tariff_period
+        _assert_eq(state[621], (1, period, 0), "an invoice sold at 50 turns Bronze on after it costs 100")
+        _assert_eq(state[622], (1, period, 0), "an invoice at the new price turns it on as before")
+        _assert_eq(state[623], (1, 100, 50), "a running plan is only topped up, whatever the invoice said")
+    finally:
+        os.remove(path)
+
+
 def credit_once(stars):
     from db.sqliteAdapter import SQLighter
     path = _temp_db()
@@ -285,6 +321,7 @@ def main():
     precheckout(stars)
     credit_once(stars)
     plan_turns_on(stars)
+    old_price_invoice(stars)
     winback_offer(stars)
     page_rows(stars)
     print("all Stars invoice checks passed")

@@ -57,3 +57,16 @@ def running_plan_level(chat_id, database=None) -> int:
         return int(row[0]) if row else 0
     finally:
         connection.close()
+
+
+def ever_paid(chat_id, database=None) -> bool:
+    """A payment of this Telegram chat went through, ever (payment_history keys users.id)."""
+    if database is None:
+        from config import db_path as database
+    connection = connect_sqlite(database)
+    try:
+        return connection.execute(
+            "SELECT 1 FROM payment_history p JOIN users u ON u.id = p.user_id "
+            "WHERE u.telegramId = ? AND p.status = 'paid' LIMIT 1", (int(chat_id),)).fetchone() is not None
+    finally:
+        connection.close()

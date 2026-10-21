@@ -1687,7 +1687,8 @@ class SQLighter:
 
     def applyPaymentReplenishmentOnce(
             self, user, serviceType, invoiceId, paidAt, amountCents,
-            tariff_period, invoiceHash=None, status=None, userFlag=None, planId=None
+            tariff_period, invoiceHash=None, status=None, userFlag=None, planId=None,
+            planPrice=None
     ):
         """userFlag: a users.flags key set with the payment, in its transaction
         (a one-time offer is spent exactly when its money is credited).
@@ -1696,7 +1697,11 @@ class SQLighter:
         switches to it and turns it on when the balance covers it (a free user
         who paid for Relay gets Relay, not a balance and "choose a plan"). A
         running plan is only topped up, as before: a mid-period change has its
-        price difference and is the change-plan page's job."""
+        price difference and is the change-plan page's job.
+
+        planPrice: what the invoice sold one period of that plan for. The
+        period it turns on costs that, not today's price: an invoice sent
+        before a price rise and paid after it still turns its plan on."""
         try:
             self.cursor.execute("BEGIN IMMEDIATE")
             user_id = user['id']
@@ -1803,12 +1808,15 @@ class SQLighter:
                 new_time_left = current_subscription['time_left']
                 new_notify_count = 0
 
-                if current_tariff['price'] != 0 and new_balance >= current_tariff['price']:
-                    new_balance -= current_tariff['price']
+                price = current_tariff['price']
+                if plan is not None and planPrice is not None:
+                    price = min(price, int(planPrice))
+                if price != 0 and new_balance >= price:
+                    new_balance -= price
                     new_time_left = tariff_period
                     new_notify_count = current_tariff['notify_count']
                     result_mode = 2
-                elif current_tariff['price'] != 0:
+                elif price != 0:
                     result_mode = 3
                 else:
                     result_mode = 0

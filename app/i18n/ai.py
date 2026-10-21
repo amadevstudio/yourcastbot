@@ -49,6 +49,13 @@ ROWS = {
         'Un plan mayor da más:',
         'Ein größerer Tarif gibt mehr:',
         'מסלול גדול יותר נותן יותר:'),
+    'summaryTrialMore': (
+        'С оплаченным тарифом больше: Relay – {relay} ч в месяц.',
+        'A paid plan gives more: Relay {relay} h a month.',
+        'Um plano pago dá mais: Relay {relay} h por mês.',
+        'Un plan de pago da más: Relay {relay} h al mes.',
+        'Ein bezahlter Tarif gibt mehr: Relay {relay} Std. im Monat.',
+        'מסלול בתשלום נותן יותר: Relay {relay} שעות בחודש.'),
     'summaryForPlans': (
         'ИИ-пересказы входят в тарифы и считаются по длине выпусков: Relay – {relay} ч аудио в месяц, '
         'Серебро – {silver} ч, Бронза – {bronze} ч. Пересказ, который уже кто-то заказал, бесплатен.',

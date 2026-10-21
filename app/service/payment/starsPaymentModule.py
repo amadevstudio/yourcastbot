@@ -417,7 +417,9 @@ def process_successful_payment(
             invoiceHash=f"{payload_data['p']}:{payload_data['r']}:{provider_charge_id or ''}",
             status="paid",
             userFlag=WINBACK_OFFER_FLAG if payload_data['o'] == WINBACK_OFFER else None,
-            planId=payload_data['v'] or None)
+            planId=payload_data['v'] or None,
+            # the price one period was sold for: a later price rise does not undo the invoice
+            planPrice=payload_data['b'] // payload_data['m'] if payload_data['v'] else None)
         if result_data['already_processed']:
             return False
     finally:
