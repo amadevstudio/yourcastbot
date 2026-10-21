@@ -24,7 +24,7 @@ def post(path, session=None, **kwargs) -> dict:
     """POST to BASE_URL + path with our key; `kwargs` go to requests (json, files, data)."""
     response = (session or requests).post(
         BASE_URL + path, headers={'Authorization': 'Bearer ' + openrouter_api_key},
-        timeout=HTTP_TIMEOUT, **kwargs)
+        timeout=kwargs.pop('timeout', HTTP_TIMEOUT), **kwargs)
     if response.status_code != 200:
         raise OpenRouterError('%s %s: %s' % (path, response.status_code, response.text[:200]))
     body = response.json()

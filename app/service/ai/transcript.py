@@ -10,6 +10,12 @@
    OpenRouter's /audio/transcriptions with config.ai_transcribe_model
    (e.g. openai/whisper-large-v3-turbo, ~$0.012 per audio hour). The cost is
    what OpenRouter bills for each piece.
+
+The text carries time marks, "[12:40]", at most every MARK_SECONDS (Whisper's
+segments, a VTT/SRT cue, a JSON segment's startTime): the summary and the
+answers to questions point to the moment, and Telegram turns a time in a
+reply to the audio into a link that plays from there. A plain-text or HTML
+transcript has no times, and so no marks.
 """
 import glob
 import json
@@ -31,6 +37,7 @@ PODCAST_NS = '{https://podcastindex.org/namespace/1.0}'
 TYPE_ORDER = ('text/plain', 'text/vtt', 'application/x-subrip', 'application/srt',
               'application/json', 'text/html')
 PIECE_SECONDS = 10 * 60
+MARK_SECONDS = 30
 
 _TIMING = re.compile(r'^\s*(\d+\s*$|[\d:.,]+\s*-->\s*[\d:.,]+.*$|WEBVTT.*$|NOTE\b.*$)')
 _VOICE = re.compile(r'<v\s+[^>]*>|</v>')
@@ -68,25 +75,61 @@ def transcript_url(channel_root, link) -> str | None:
     return None
 
 
+def clock(seconds) -> str:
+    """'7:05', '1:02:15'."""
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, secs = divmod(rest, 60)
+    return '%d:%02d:%02d' % (hours, minutes, secs) if hours else '%d:%02d' % (minutes, secs)
+
+
+def timed(parts) -> str:
+    """[(start seconds or None, text)] -> one text with a [m:ss] mark at most every MARK_SECONDS."""
+    out, last = [], None
+    for start, text in parts:
+        text = str(text or '').strip()
+        if not text:
+            continue
+        if start is not None and (last is None or start - last >= MARK_SECONDS):
+            out.append('[%s]' % clock(start))
+            last = start
+        out.append(text)
+    return re.sub(r'\s+', ' ', ' '.join(out)).strip()
+
+
+def _stamp_seconds(stamp) -> float:
+    total = 0.0
+    for part in stamp.strip().replace(',', '.').split(':'):
+        total = total * 60 + float(part)
+    return total
+
+
 def transcript_text(body: str, content_type: str = '') -> str:
-    """Plain text of a transcript file: no timings, cue numbers or tags."""
+    """Text of a transcript file with time marks: no cue numbers, timings or tags."""
     body = body.lstrip('﻿')
     stripped = body.lstrip()
     if 'json' in content_type or stripped.startswith('{'):
         try:
             data = json.loads(body)
             segments = data.get('segments') or []
-            return ' '.join(str(s.get('body', '')).strip() for s in segments if s.get('body')).strip()
+            return timed((s.get('startTime') if isinstance(s.get('startTime'), (int, float)) else None,
+                          s.get('body', '')) for s in segments if s.get('body'))
         except (ValueError, AttributeError):
             pass
     if 'html' in content_type or stripped.startswith('<'):
         return re.sub(r'\s+', ' ', telegram_html.plain_text(body)).strip()
-    lines = []
+    parts, start = [], None
     for line in body.splitlines():
+        if '-->' in line:
+            try:
+                start = _stamp_seconds(line.split('-->')[0])
+            except ValueError:
+                start = None
+            continue
         if _TIMING.match(line) or not line.strip():
             continue
-        lines.append(_VOICE.sub('', line).strip())
-    return re.sub(r'\s+', ' ', ' '.join(lines)).strip()
+        parts.append((start, _VOICE.sub('', line)))
+        start = None  # the cue's later lines are its own
+    return timed(parts)
 
 
 def from_feed(requester, channel_root, link) -> Transcript | None:
@@ -111,14 +154,21 @@ def split_audio(path, out_dir) -> list[str]:
     return sorted(glob.glob(os.path.join(out_dir, 'piece*.mp3')))
 
 
-def transcribe_piece(session, path) -> Transcript:
+def transcribe_piece(session, path, offset=0.0) -> Transcript:
+    """One piece; `offset`: where it starts in the episode, for its time marks."""
     with open(path, 'rb') as audio:
         body = openrouter.post(
             'audio/transcriptions', session,
             files={'file': (os.path.basename(path), audio, 'audio/mpeg')},
-            data={'model': ai_transcribe_model, 'response_format': 'verbose_json'})
+            data={'model': ai_transcribe_model, 'response_format': 'verbose_json',
+                  'timestamp_granularities[]': 'segment'})
     seconds = float((body.get('usage') or {}).get('seconds') or body.get('duration') or 0)
-    return Transcript(str(body.get('text') or '').strip(), 'whisper', openrouter.cost(body), seconds)
+    segments = [s for s in body.get('segments') or [] if isinstance(s, dict)]
+    if segments:
+        text = timed((offset + float(s.get('start') or 0), s.get('text')) for s in segments)
+    else:
+        text = timed([(offset, body.get('text'))])
+    return Transcript(text, 'whisper', openrouter.cost(body), seconds)
 
 
 def from_audio(requester, session, link, budget: DiskBudget | None = None) -> Transcript:
@@ -129,9 +179,10 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None) -> Tr
     try:
         download.fetch(requester, link)
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
-            pieces = []
+            pieces, offset = [], 0.0
             for path in split_audio(download.path, pieces_dir):
-                pieces.append(transcribe_piece(session, path))
+                pieces.append(transcribe_piece(session, path, offset))
+                offset += pieces[-1].seconds or PIECE_SECONDS
                 os.remove(path)
     finally:
         download.close()

@@ -85,6 +85,26 @@ def record_ai(chat_id, ref, cost_usd, database=None, at=None):
         c.close()
 
 
+def record_ask(chat_id, ref, cost_usd, database=None, at=None):
+    """A question about an episode (kind 'ask'): counted per day, its cost in the AI spend."""
+    c = connect(database)
+    try:
+        with c:
+            c.execute('INSERT INTO usage_events (at,user_id,kind,ref,cost_usd) VALUES (?,?,?,?,?)',
+                      (time.time() if at is None else at, chat_key(chat_id), 'ask', ref, float(cost_usd)))
+    finally:
+        c.close()
+
+
+def count_since(chat_id, kind, since, database=None) -> int:
+    c = connect(database)
+    try:
+        return int(c.execute('SELECT count(*) FROM usage_events WHERE user_id=? AND kind=? AND at>=?',
+                             (chat_key(chat_id), kind, since)).fetchone()[0])
+    finally:
+        c.close()
+
+
 def episodes_since(chat_id, kind, since, database=None) -> set:
     """Distinct episodes of `kind` delivered to the chat since `since` (epoch)."""
     c = connect(database)

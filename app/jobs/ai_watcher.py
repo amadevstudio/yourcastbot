@@ -65,7 +65,8 @@ def process(request, session, send=outer_sender) -> int:
         cost = found.cost_usd + summary_cost
         ai.save_summary(request['ref'], request['lang'], text, cost)
     usage.record_ai(request['chat_id'], request['ref'], cost)
-    send(request['chat_id'], [summary_message(episode, text)])
+    send(request['chat_id'], [summary_message(episode, text, request['ref'], request.get('reply_to'),
+                                              request.get('ui_lang'))])
     analytics_events.track(request['chat_id'], 'summary_ready', {'cached': cached is not None, 'seconds': charged})
     return charged
 
