@@ -689,8 +689,12 @@ button; `quota.py` who may ask. The plan level is
   they come with one; `app/service/ai/auto.py`): after the
   circle delivers an episode (`Sender._queue_auto_summaries`, circle only,
   never a click) each chat that turned it on and whose plan's hours cover
-  the episode gets it queued, charged like a tap; otherwise none, no
-  notice, and a failure is quiet. `ai_requests.auto`: taps are claimed
+  the episode gets it queued, charged like a tap; no plan: none (the
+  plan-off notice told them). A plan whose hours do not cover the episode:
+  none, and once in 30 days (`users.flags` `summary_quota_noticed`, when)
+  a note that the episode came without its summary, with the offer a tap
+  over the hours gets (`app/service/ai/offer.py`, shared with
+  summaryModule), a reply to the audio. A failure is quiet. `ai_requests.auto`: taps are claimed
   first, and a tap on an automatic request makes it a tap. The summary
   answers the delivered audio: the sender notes each chat's audio message
   (`_note_audio_message`, Bot API, rich and agent sends; bookkeeping that
