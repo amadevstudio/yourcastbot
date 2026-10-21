@@ -225,6 +225,32 @@ characters, most of them blank lines and dots: `MESSAGE_TOO_LONG`, no page).
 Lock: `python app/service/podcast/test_card.py` (CD gate),
 `python app/service/record/test_caption.py`.
 
+## Podcast page speed
+
+The podcast page, the episode list and a click on an episode each read the
+feed. They used to download it every tap: 12 s for a 66 MB feed of 10k
+episodes, ~2 s for a slow host.
+
+- `feed_cache` (`app/service/podcast/feed_cache.py`): those three paths pass
+  `cached=True` (`podcast_info_query` -> `rss.get_rss_root_with_status`).
+  A copy checked in the last 5 minutes is read from disk; an older one is
+  asked for with its ETag (304: read from disk; changed: that one download
+  replaces it). Any uncached full fetch of the feed (the updater found a new
+  version, a manual refresh, feed recovery) drops the copy, so a new episode
+  is never hidden behind it. The updater and recovery never read the copy.
+  At most 300 MB, least recently used first, and only while the disk keeps
+  512 MB + room for episode downloads.
+- A cover Telegram refuses (`failed to get HTTP URL content`, cdn.mave.digital
+  15 times on 2026-10-21) is marked in `telegram_cache` for 7 days
+  (`app/service/podcast/cover.py`): the page goes at once as one text
+  message with its buttons. While marked, an open starts a background check
+  at most once an hour (send to the storage chat): fetched now, its file_id
+  is cached and the mark goes. A page without its picture is a text
+  message; its buttons refresh the keyboard only (`message_has_no_media`).
+Locks: `python app/service/podcast/test_feed_cache.py`,
+`python app/service/podcast/test_cover.py` (CD gates; the rss, page and
+editor parts run where the bot's requirements are installed).
+
 ## Screen state
 
 The saved state of a screen is gone when a button of an old message is

@@ -149,10 +149,10 @@ def load_podcast_root(podcast_data: PodcastStateData) -> tuple[Any, dict]:
 
     if podcast_data['service_name'] == 'itunes':
         payload = {'entity': 'podcast', 'id': podcast_data['service_id']}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload)
+        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, cached=True)
     elif podcast_data['service_name'] == 'rss':
         payload = {'rss_link': podcast_data['service_id']}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, 'rss')
+        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, 'rss', cached=True)
     else:
         root = False
         pc_info = {}
@@ -515,12 +515,12 @@ def send_record_direct(
 
     if channel.get('itunes_id', None) is not None:
         payload = {'entity': 'podcast', 'id': channel['itunes_id']}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload)
+        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, cached=True)
         service_name = 'itunes'
         service_id = channel['itunes_id']
     elif channel.get('rss_link', None) is not None:
         payload = {'rss_link': channel['rss_link']}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, 'rss')
+        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, 'rss', cached=True)
         service_name = 'rss'
         service_id = channel['rss_link']
     else:

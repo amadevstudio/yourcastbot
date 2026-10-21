@@ -94,7 +94,7 @@ def fetch_channel_feed(channel, manual=False, conditional=True):
 
 def podcast_info_query(
         payload, service_name='itunes', direct_link=False,
-        etag=None, last_modified=None) \
+        etag=None, last_modified=None, cached=False) \
         -> Tuple[RootAdapter | Literal[False], PodcastInfoType]:
     if service_name == 'itunes':
         api_url_base = 'https://itunes.apple.com/lookup'
@@ -162,8 +162,9 @@ def podcast_info_query(
 
     feed_url = str(feed_url)
 
+    # cached: a person's tap (rss.get_rss_root_with_status); the updater never passes it
     root, feed_status, validators = get_rss_root_with_status(
-        feed_url, etag=etag, last_modified=last_modified)
+        feed_url, etag=etag, last_modified=last_modified, cached=cached)
     if (
             root is False
             and feed_status != FEED_STATUS_NOT_MODIFIED
@@ -172,7 +173,7 @@ def podcast_info_query(
     ):
         feed_url = feed_url.replace("www.", "")
         root, feed_status, validators = get_rss_root_with_status(
-            feed_url, etag=etag, last_modified=last_modified)
+            feed_url, etag=etag, last_modified=last_modified, cached=cached)
 
     http_etag = validators.get('etag') if validators else None
     http_last_modified = validators.get('last_modified') if validators else None

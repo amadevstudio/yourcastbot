@@ -4,6 +4,7 @@ import typing
 import cchardet
 from lxml import etree
 
+from app.service.podcast import feed_cache
 from app.service.podcast.feed_xml import channel_element
 from lib.requests import requesterModule
 from lib.requests.requesterModule import STD_REQUEST_HEADERS
@@ -63,8 +64,39 @@ def get_rss_root(feed_url, etag=None, last_modified=None):
     return root
 
 
+def __read_through_cache(feed_url):
+    """(root, status, validators) from the last copy (feed_cache), or None: the usual fetch runs.
+    A fresh copy is read without the network; an older one only after the host says 304."""
+    entry = feed_cache.get(feed_url)
+    if entry is None:
+        return None
+    validators = empty_validators(entry.etag, entry.last_modified)
+    if not entry.fresh:
+        if not (entry.etag or entry.last_modified):
+            return None
+        result = __load_rss_root(
+            feed_url, __headers_for_attempt('Usual', entry.etag, entry.last_modified),
+            entry.etag, entry.last_modified)
+        if result['status'] == FEED_STATUS_OK and result['content'] is not False:
+            # changed: this answer is the new feed, do not download it twice
+            parsed = __parse_rss_root(result['content'])
+            if parsed['root'] is False:
+                return None
+            fresh = result['validators'] or empty_validators()
+            feed_cache.put(feed_url, result['content'], fresh.get('etag'), fresh.get('last_modified'))
+            return parsed['root'], FEED_STATUS_OK, fresh
+        if result['status'] != FEED_STATUS_NOT_MODIFIED:
+            return None  # failed: the usual fetch retries and tells gone from unavailable
+        feed_cache.touch(feed_url)
+    parsed = __parse_rss_root(entry.content)
+    if parsed['root'] is False:
+        feed_cache.forget(feed_url)
+        return None
+    return parsed['root'], FEED_STATUS_OK, validators
+
+
 def get_rss_root_with_status(
-        feed_url, etag=None, last_modified=None
+        feed_url, etag=None, last_modified=None, cached=False
 ) -> typing.Tuple[typing.Any, FeedStatus, FeedValidators]:
     """Возвращает (root, status, validators).
 
@@ -76,7 +108,21 @@ def get_rss_root_with_status(
     Вызывающий код должен различать 'gone' (фида больше нет)
     и 'unavailable' (могло просто моргнуть), чтобы не наказывать
     пользователей за разовый сбой сети.
+
+    cached=True — для нажатий человека (страница подкаста, список, выпуск):
+    последняя копия фида с диска (feed_cache). Апдейтер и восстановление
+    фидов так не делают: им нужен ответ площадки.
     """
+    cached = cached and not etag and not last_modified
+    if cached:
+        try:
+            hit = __read_through_cache(feed_url)
+        except Exception as e:  # the cache is a shortcut: never a reason to fail the page
+            logger.warn('feed cache read:', feed_url, e)
+            hit = None
+        if hit is not None:
+            return hit
+
     errors: list[str] = []
     statuses: list[FeedStatus] = []
     last_validators = empty_validators(etag, last_modified)
@@ -102,6 +148,14 @@ def get_rss_root_with_status(
                 root_result = __parse_rss_root(content)
                 root = root_result['root']
                 if root is not False:
+                    try:
+                        if cached:
+                            feed_cache.put(feed_url, content, last_validators.get('etag'),
+                                           last_validators.get('last_modified'))
+                        else:  # a new version reached the updater: an old copy must not hide it
+                            feed_cache.forget(feed_url)
+                    except Exception as e:
+                        logger.warn('feed cache:', feed_url, e)
                     return root, FEED_STATUS_OK, last_validators
 
                 errors.append(root_result['error'])

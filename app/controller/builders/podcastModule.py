@@ -20,6 +20,7 @@ from lib.telegram.general.errors import media_fetch_failed
 from lib.telegram.general.message_master import message_master, render_messages, MessageStructuresInterface, \
     message_editor, InlineButtonData, outer_sender
 from app.service.payment.storefront import relay_nudge_markup
+from app.service.podcast import cover as cover_service
 from lib.tools.logger import logger
 from app.i18n.messages import get_message, emojiCodes, standartSymbols
 from app.repository.storage import storage
@@ -133,6 +134,13 @@ def channel_query(data: ControllerParams):
         return
 
     ch_msg = construct_channel_message(data['chat_id'], data['language_code'], podcast_data)
+    cover = ch_msg[1].get('image')
+
+    # A cover Telegram refused before: the page goes at once, the cover is checked in the background
+    if cover_service.known_unreachable(cover):
+        render_messages(data['chat_id'], without_cover(ch_msg))
+        cover_service.recheck_later(cover)
+        return
 
     try:
         render_messages(data['chat_id'], ch_msg)
@@ -140,17 +148,22 @@ def channel_query(data: ControllerParams):
         # If telegram can't fetch the cover, keep the menu alive: the keyboard lives on the image
         # message, so without this fallback the user is left with a description and no buttons
         if media_fetch_failed(e):
-            logger.warn("Podcast cover is unreachable for telegram:", ch_msg[1].get('image'), "|", e)
-            ch_msg_without_image: list[MessageStructuresInterface] = [{
-                'type': 'text',
-                'text': ch_msg[0]['text'],
-                'disable_web_page_preview': True,
-                'reply_markup': ch_msg[1]['reply_markup']
-            }]
-            render_messages(data['chat_id'], ch_msg_without_image)
+            logger.warn("Podcast cover is unreachable for telegram:", cover, "|", e)
+            cover_service.mark_unreachable(cover)
+            render_messages(data['chat_id'], without_cover(ch_msg))
 
         else:
             raise e
+
+
+def without_cover(ch_msg) -> list[MessageStructuresInterface]:
+    """The page as one text message carrying the buttons that live on the cover."""
+    return [{
+        'type': 'text',
+        'text': ch_msg[0]['text'],
+        'disable_web_page_preview': True,
+        'reply_markup': ch_msg[1]['reply_markup']
+    }]
 
 
 def get_and_set_podcast_data(
@@ -169,10 +182,10 @@ def get_podcast_data(chat_id, service_id, podcast_id=None, service_name='itunes'
         -> tuple[bool, PodcastStateData | None]:
     if service_name == 'itunes':
         payload = {'entity': 'podcast', 'id': service_id}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload)
+        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, cached=True)
     elif service_name == 'rss':
         payload = {'rss_link': service_id}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, 'rss', direct_link=True)
+        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, 'rss', direct_link=True, cached=True)
     else:
         root = False
         pc_info = None
