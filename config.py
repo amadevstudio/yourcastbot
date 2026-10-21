@@ -79,6 +79,8 @@ server_usd_month = 10
 
 # максимальное число подписок и количества в обновлении
 max_subscriptions_without_tariff = 15
+# episodes a listener without a plan gets by click in any 7 days (app/service/record/free_limit.py)
+free_rec_per_week = 10
 
 # максимальная длина подкаста хэша для идентификации подкаста
 maxPodcastDateCallDataHexLen = 15

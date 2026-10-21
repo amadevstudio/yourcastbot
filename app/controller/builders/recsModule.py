@@ -19,6 +19,7 @@ from app.core.balancers import recordSender
 from app.core.message.navigationBuilder import determine_search_query_and_page, get_full_message_navigation, \
     FullMessageNavigation
 from app.core.sender import outbox, send_record_helper
+from app.service.record import free_limit
 from app.i18n.messages import get_message, standartSymbols, emojiCodes, get_message_rtd
 from app.repository.storage import storage
 from app.routes.message_tools import go_back_inline_markup
@@ -634,6 +635,12 @@ def send_record_direct(
         'recNum': i,
         'recordUniqId': record_uniq_id
     }
+
+    # without a plan: free_rec_per_week episodes by click in any 7 days
+    allowed, wait = free_limit.check(chat_id, link, outbox.open_user_rec_links(chat_id))
+    if not allowed:
+        render_messages(chat_id, [free_limit.limit_message(lang_code, wait)])
+        return
 
     outbox.enqueue_user_rec(
         {

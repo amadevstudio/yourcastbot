@@ -455,6 +455,30 @@ def find_open_user_rec(user_id, record_uniq_id, database=None):
     return None
 
 
+def open_user_rec_links(user_id, database=None):
+    """Enclosure links of this chat's clicks not delivered yet (pending/leased)."""
+    if user_id is None or is_circle_user_id(user_id):
+        return set()
+    conn = _connect(_database(database))
+    try:
+        rows = conn.execute(
+            "SELECT payload_json FROM send_outbox "
+            "WHERE action = 'rec' AND status IN ('pending', 'leased') AND user_id = ?",
+            (str(user_id),),
+        ).fetchall()
+    finally:
+        conn.close()
+    links = set()
+    for row in rows:
+        try:
+            link = (json.loads(row['payload_json'] or '{}').get('func_params') or {}).get('link')
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if link:
+            links.add(link)
+    return links
+
+
 def drop_circle_recipient(chat_id, record_uniq_id, database=None):
     """Take a chat off pending/leased circle recs for this episode.
 
