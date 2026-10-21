@@ -346,7 +346,7 @@ def inline_podcast_searcher(data: InlineControllerParams):
             page = None
 
         payload = {'entity': 'podcast', 'id': podcast_data['collectionId']}
-        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload)
+        root, pc_info = app.service.podcast.podcast.podcast_info_query(payload, cached=True)
 
         if root is False:
             return

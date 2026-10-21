@@ -115,6 +115,35 @@ def add_file_id(
     _save(f'{file_type}:{file}', file_id, expiration_date.timestamp())
 
 
+def _delete(key, database=None):
+    conn = _connect(database)
+    try:
+        conn.execute("DELETE FROM telegram_cache WHERE key = ?", (key,))
+    finally:
+        conn.close()
+
+
+# An image URL Telegram could not fetch (app/service/podcast/cover.py)
+def image_unreachable(url: str) -> bool:
+    return _get(f'imgUnreachable:{url}') is not None
+
+
+def mark_image_unreachable(url: str, days: int = 7):
+    _save(f'imgUnreachable:{url}', {'at': time.time()}, time.time() + days * 86400)
+
+
+def clear_image_unreachable(url: str):
+    _delete(f'imgUnreachable:{url}')
+
+
+def claim_once(key: str, seconds: float) -> bool:
+    """True for the first caller in `seconds` (a background job runs once per window)."""
+    if _get(f'once:{key}') is not None:
+        return False
+    _save(f'once:{key}', 1, time.time() + seconds)
+    return True
+
+
 def get_cached(unique: str):
     return _get(f'strCache:{unique}')
 

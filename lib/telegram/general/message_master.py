@@ -9,7 +9,7 @@ from typing import TypedDict, Literal, Required, Sequence
 
 from app.routes.routes_list import AvailableActions, AvailableRoutes
 from lib.telegram.general.errors import bot_blocked_reaction, get_timeout_from_error_bot, \
-    media_fetch_failed, message_to_edit_not_found, log_caught, telegram_server_error
+    media_fetch_failed, message_has_no_media, message_to_edit_not_found, log_caught, telegram_server_error
 from lib.telegram.telebot import types as telegram_types
 
 from agent.bot_telebot import bot
@@ -337,12 +337,18 @@ def message_editor(chat_id: int, message_structure: MessageStructuresInterface, 
             raise TypeError(f"Not implemented: {message_structure['type']}")
 
     except Exception as e:
-        # The media is unreachable for telegram (dead cover host and such). The keyboard still has to
-        # be refreshed, otherwise subscribe/rate buttons stop reacting to the user
-        if media_fetch_failed(e) and reply_markup is not None:
-            logger.warn("Media is unreachable for telegram, refreshing the keyboard only:", e)
-            bot.edit_message_reply_markup(
-                chat_id=chat_id, message_id=old_message_id, reply_markup=reply_markup)
+        # The media is unreachable for telegram (dead cover host and such), or the page went out
+        # without its picture (a text message). The keyboard still has to be refreshed, otherwise
+        # subscribe/rate buttons stop reacting to the user
+        if (media_fetch_failed(e) or message_has_no_media(e)) and reply_markup is not None:
+            if media_fetch_failed(e):
+                logger.warn("Media is unreachable for telegram, refreshing the keyboard only:", e)
+            try:
+                bot.edit_message_reply_markup(
+                    chat_id=chat_id, message_id=old_message_id, reply_markup=reply_markup)
+            except Exception as markup_error:
+                if skip_not_modified(markup_error):
+                    raise
 
         elif skip_not_modified(e):
             raise e
