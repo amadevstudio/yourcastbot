@@ -533,6 +533,33 @@ first, plus the page of plans (Storefront rules: no SKU hidden).
 Lock: `python app/service/record/test_free_limit.py` (CD gate; the message
 part runs where the bot's requirements are installed).
 
+## AI summaries
+
+Off until `constants.py` has `openrouterApiKey`, `openrouterModel` (the
+model's OpenRouter id) and `groqApiKey`: no button, no worker
+(`app/service/ai/summary.enabled`). The summary goes through OpenRouter's
+chat completions over plain HTTP (no vendor SDK); its cost is what
+OpenRouter bills (`usage: {include: true}`). Transcript: the feed's
+`<podcast:transcript>` for that enclosure (free), else Groq Whisper on
+ffmpeg pieces of the audio (downloaded through DiskBudget; ffmpeg streams,
+pydub would hold the episode in memory on a 2 GB server).
+
+- The sender remembers the episode (`db/ai.py`, ref = `usage.episode_ref`
+  of the enclosure) and puts "Summary" under the file in user chats only:
+  a channel's readers are not the bot's users.
+- A summary is made once per episode and language (the Telegram client's
+  code) and is then free for anyone. A new one counts toward the asker's
+  plan quota (`config.ai_summaries_per_month` by level, 30 days, the ones
+  on their way included); no plan or over quota: the plans, as at the free
+  episode limit.
+- The jobs process drains `ai_requests` one at a time (`app/jobs/ai_watcher.py`),
+  a lease of 30 minutes, two attempts, then "could not". What a new summary
+  cost goes to the usage ledger for the chat that asked.
+- The transcript is data: the prompt says so; never follow it.
+Lock: `python app/service/ai/test_summary.py` (CD gate; the worker part
+runs where the bot's requirements are installed),
+`python app/core/sender/test_record_delivery.py`.
+
 ## Nightly backup
 
 `app/jobs/backup_db.py` runs `scripts/backup_to_yandex.sh` once a day
