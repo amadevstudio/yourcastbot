@@ -74,6 +74,8 @@ prepay_bundles = ((3, 10), (6, 15), (12, 25))
 # win-back after Relay stops: messages this many days after, and % off the first month (once per user)
 winback_after_days = (7, 30)
 winback_offer_discount = 30
+# the server's monthly bill, USD: the fixed cost the admin economics page spreads over users by load
+server_usd_month = 10
 
 # максимальное число подписок и количества в обновлении
 max_subscriptions_without_tariff = 15

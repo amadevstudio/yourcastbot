@@ -9,7 +9,8 @@ from lib.tools.logger import logger
 def main(interval=24 * 60):  # minutes
     while True:
         from db.listening import prune
-        for step in (clean_old_records, clean_old_logs, clean_old_outbox, prune):
+        from db.usage import prune as prune_usage
+        for step in (clean_old_records, clean_old_logs, clean_old_outbox, prune, prune_usage):
             try:
                 step()
             except Exception as e:
