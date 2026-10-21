@@ -23,6 +23,7 @@ from app.service.record.caption import (
 from app.service.record.text_format import (
     CAPTION, EPISODE_FORMAT_HINT_ACTION, META, RICH, SEPARATE, user_format)
 from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
+from db import usage
 from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path, \
     trust_rss_podcasts
 from lib.markup import telegram_html
@@ -149,7 +150,7 @@ class Sender:
 
     def __init__(self, thonbot, link, chats: dict[int, ChatParamsType], lang_codes_by_utg, bitrates_tg, podcast_info,
                  with_status_message=True, consume_notify=False,
-                 outbox_id=None, outbox_attempts=None):
+                 outbox_id=None, outbox_attempts=None, usage_kind='rec'):
         # link — link to file
         # chats — users with params
         # lang_codes_by_utg — tg id to language: {123: 'en'}
@@ -184,6 +185,8 @@ class Sender:
         self.podcast_info = podcast_info
         self.withStatusMessage = with_status_message
         self.consume_notify = bool(consume_notify)
+        # the outbox action: 'rec' (a click, counts toward the free limit) or 'circle'
+        self.usage_kind = usage_kind
         self.outbox_id = outbox_id
         self.outbox_attempts = outbox_attempts
         self._last_outbox_touch = None
@@ -617,6 +620,7 @@ class Sender:
                 retryable = e
 
         self._sync_outbox_recipients()
+        self._record_usage()
         complete = self._outbox_job_complete()
         # Receipt only after Telegram ACK (or a terminal outcome: too big /
         # blocked chat). A 429 must not be done — leftover mp3 is ok.
@@ -659,6 +663,21 @@ class Sender:
             raise RuntimeError("rec send failed")
 
         return self.successfully_sent_to
+
+    def _record_usage(self):
+        """The usage ledger (db/usage.py): who got the episode, what we downloaded.
+
+        A retried job carries only the chats still waiting, so a chat is
+        counted once. Never fails the send.
+        """
+        delivered = set(self.successfully_sent_to)
+        if not delivered:
+            return
+        downloaded_mb = self.recordSizeMb if self._file is not None else 0.0
+        try:
+            usage.record_deliveries(delivered, self.usage_kind, self.link, downloaded_mb)
+        except Exception as e:
+            self.logger.warn("usage ledger:", e)
 
     def _mark_outbox_done_after_send(self):
         if self.outbox_id is None:

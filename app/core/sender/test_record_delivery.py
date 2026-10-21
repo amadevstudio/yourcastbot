@@ -276,6 +276,7 @@ class World:
         self.outbox = FakeOutbox() if with_outbox else real_outbox
         self.notices = []  # (chat_id, text) for too big / unavailable
         self.host_faults = []  # (link, error) counted toward cooling a host
+        self.usage = []  # (chat ids, kind, MB downloaded) written to the usage ledger
 
         def notice(chat_id, structures, *args, **kwargs):
             self.notices.append((chat_id, structures[0]['text']))
@@ -300,6 +301,8 @@ class World:
             'bot_blocked_reaction': self._blocked_reaction,
             'bot_removed_from_channel_reaction': lambda error, chat_id: False,
             'time': _ns(sleep=self.slept.append, time=time.time, time_ns=time.time_ns),
+            'usage': _ns(record_deliveries=lambda chats, kind, link, mb: self.usage.append(
+                (sorted(chats), kind, round(mb)))),
         }
         for name, value in patches.items():
             setattr(srh, name, value)
@@ -444,6 +447,7 @@ def main():
     _assert([kind for _, kind in world.bot.audio] == ['file_id', 'file_id'], "the rest reuse the file_id")
     _assert(world.notices == [], "no too-big or unavailable notice")
     _assert(world.records_left() == [] and world.budget._live == [], "file deleted, disk released")
+    _assert(world.usage == [([1, 2, 3], 'rec', 389)], "usage ledger: every chat, the download shared")
 
     # Circle fan-out: the agent cannot reach the first chat; its file_id still can.
     world = World(size_mb=389, agent_unreachable_chat=1)
@@ -456,6 +460,7 @@ def main():
     sent = world.sender().send_record()
     _assert(sorted(sent) == [2, 3], "the others are delivered")
     _assert([chat_id for chat_id, _ in world.notices] == [1], "notice goes only to the undelivered chat")
+    _assert(world.usage == [([2, 3], 'rec', 389)], "usage ledger: only the chats that got it")
 
     # Radio Record, 11.09: 12 MB, Telegram cannot fetch the host, our server can.
     world = World(size_mb=12, url_error="Bad Request: failed to get HTTP URL content")
@@ -491,6 +496,7 @@ def main():
     sent = world.sender().send_record()
     _assert(sorted(sent) == [1, 2, 3] and world.requester.downloads == 0,
             "small file Telegram can fetch: URL only, nothing downloaded")
+    _assert(world.usage == [([1, 2, 3], 'rec', 0)], "usage ledger: fetched by URL, 0 MB of ours")
 
     world = World(size_mb=2100)
     sent = world.sender().send_record()

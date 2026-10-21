@@ -74,6 +74,26 @@ export type MailJob = {
   created_by: string | null;
 };
 
+export type EconomicsRow = {
+  rec: number;
+  circle: number;
+  ai: number;
+  mb: number;
+  ai_usd: number;
+  revenue_usd: number;
+  fixed_usd: number;
+  margin_usd: number;
+};
+
+export type Economics = {
+  days: number;
+  server_usd_month: number;
+  load_mb_per_unit: number;
+  totals: EconomicsRow & { users: number };
+  segments: (EconomicsRow & { segment: string; users: number })[];
+  users: (EconomicsRow & { tg: number; segment: string; level: number })[];
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -111,6 +131,7 @@ export const api = {
     if (tgid) q.set("tgid", tgid);
     return request<UsersPage>(`/api/users?${q.toString()}`);
   },
+  economics: (days: number) => request<Economics>(`/api/economics?days=${days}`),
   tariffs: () => request<{ tariffs: Tariff[] }>("/api/tariffs"),
   saveTariff: (row: Tariff) =>
     request<Tariff>("/api/tariffs", {

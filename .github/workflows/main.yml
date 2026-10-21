@@ -69,6 +69,8 @@ jobs:
           python3 lib/telegram/general/test_render_retry.py
           python3 lib/system/test_disk_budget.py
           python3 scripts/test_db_snapshot.py
+          python3 db/test_usage.py
+          python3 app/admin_web/test_economics.py
           python3 app/core/sender/test_record_delivery.py
           python3 db/test_send_outbox.py
           python3 app/core/sender/test_circle_charge.py

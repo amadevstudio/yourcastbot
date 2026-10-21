@@ -487,6 +487,21 @@ without server access. Rules:
 - Locks: `python app/admin_web/test_diag.py` (CD gate),
   `python app/admin_web/test_admin_web.py`.
 
+## Usage ledger and economics
+
+`usage_events` (`db/usage.py`) is one row per chat per delivered episode
+(`rec`: a click, `circle`: automatic, by the outbox action), with the MB we
+downloaded for it (shared by the chats it served, 0 when Telegram fetched
+the URL), and one row per AI summary with what the APIs charged. The
+sender writes it after the delivery (`Sender._record_usage`); it never fails
+a send. The free weekly limit and the admin page "Economics"
+(`app/admin_web/economics.py`, `GET /api/economics?days=`) read it.
+Revenue comes from `payment_history` (the creator's own test payments are
+not revenue); the server bill (`config.server_usd_month`) is spread over
+chats by load. A channel's deliveries count for the user who added it.
+Locks: `python db/test_usage.py`, `python app/admin_web/test_economics.py`
+(CD gate), `python app/core/sender/test_record_delivery.py`.
+
 ## Nightly backup
 
 `app/jobs/backup_db.py` runs `scripts/backup_to_yandex.sh` once a day

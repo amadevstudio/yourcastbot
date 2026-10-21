@@ -656,7 +656,8 @@ def send_record_thread(input_data, thonbot):
         with_status_message=bool(func_params.get('with_status_message', True)),
         consume_notify=bool(func_params.get('consume_notify', False)),
         outbox_id=input_data.get('outbox_id'),
-        outbox_attempts=input_data.get('outbox_attempts'))
+        outbox_attempts=input_data.get('outbox_attempts'),
+        usage_kind=input_data.get('action') or 'rec')
     sender.send_record()
 
 
