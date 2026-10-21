@@ -32,18 +32,44 @@ def _assert(cond, label):
 
 
 class FakeBot:
-    def __init__(self, fetches):
-        self.fetches, self.sent, self.deleted = fetches, [], []
+    """fetches: Telegram gets the URL itself; uploads: it takes the file we send."""
+    def __init__(self, fetches, uploads=True):
+        self.fetches, self.uploads, self.sent, self.deleted = fetches, uploads, [], []
 
     def send_photo(self, chat_id, photo):
         self.sent.append((chat_id, photo))
-        if not self.fetches:
+        if isinstance(photo, str) and not self.fetches:
             raise REFUSED
+        if isinstance(photo, bytes) and not self.uploads:
+            raise Exception('Bad Request: IMAGE_PROCESS_FAILED')
         return types.SimpleNamespace(message_id=5, photo=[types.SimpleNamespace(file_id='small'),
                                                           types.SimpleNamespace(file_id='FID')])
 
     def delete_message(self, chat_id, message_id):
         self.deleted.append(message_id)
+
+
+class FakeResponse:
+    def __init__(self, status=200, kind='image/jpeg', body=b'JPEG'):
+        self.status_code, self.headers, self.body = status, {'Content-Type': kind}, body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def iter_content(self, size):
+        for i in range(0, len(self.body), size):
+            yield self.body[i:i + size]
+
+
+def host(response=None, error=None):
+    def get(url, **kwargs):
+        if error:
+            raise error
+        return response or FakeResponse()
+    return get
 
 
 def test_marks():
@@ -54,13 +80,31 @@ def test_marks():
     _assert(not cover.known_unreachable('/app/static/no_photo.png'), "a local placeholder is never marked")
 
     refused = FakeBot(fetches=False)
-    _assert(cover.recheck(URL, bot=refused, storage_chat_id=-100) is False and cover.known_unreachable(URL),
-            "a check Telegram still refuses keeps the mark")
+    _assert(cover.recheck(URL, bot=refused, storage_chat_id=-100, get=host(error=OSError('timed out'))) is False
+            and cover.known_unreachable(URL), "Telegram refuses the URL and the host does not answer us: marked")
+    _assert(cover.recheck(URL, bot=refused, storage_chat_id=-100, get=host(FakeResponse(kind='text/html'))) is False
+            and cover.known_unreachable(URL) and len(refused.sent) == 2, "a page that is not an image is not uploaded")
+    big = FakeResponse(body=b'x' * (cover.MAX_COVER_BYTES + 1))
+    _assert(cover.recheck(URL, bot=refused, storage_chat_id=-100, get=host(big)) is False
+            and cover.known_unreachable(URL), "nor a file far bigger than a cover")
+    _assert(cover.recheck(URL, bot=FakeBot(fetches=False, uploads=False), storage_chat_id=-100, get=host()) is False
+            and cover.known_unreachable(URL), "an upload Telegram refuses keeps the mark")
+
     fetched = FakeBot(fetches=True)
-    _assert(cover.recheck(URL, bot=fetched, storage_chat_id=-100) is True, "a check that goes through")
+    _assert(cover.recheck(URL, bot=fetched, storage_chat_id=-100, get=host(error=AssertionError('no download')))
+            is True and fetched.sent == [(-100, URL)], "Telegram fetches the URL again: nothing downloaded")
     _assert(not cover.known_unreachable(URL) and telegram_cache.get_file_id(URL, 'img') == 'FID',
             "clears the mark and caches the file_id: the next page shows the cover at once")
     _assert(fetched.deleted == [5], "the check leaves nothing in the storage chat")
+
+    cover.mark_unreachable(URL)
+    telegram_cache.add_file_id(URL, 'old', 'img')
+    uploaded = FakeBot(fetches=False)
+    _assert(cover.recheck(URL, bot=uploaded, storage_chat_id=-100, get=host()) is True
+            and uploaded.sent == [(-100, URL), (-100, b'JPEG')],
+            "Telegram refuses the URL but the host gives the file to us: uploaded")
+    _assert(not cover.known_unreachable(URL) and telegram_cache.get_file_id(URL, 'img') == 'FID'
+            and uploaded.deleted == [5], "the uploaded cover is shown from then on")
 
     _assert(telegram_cache.claim_once('coverCheck:' + URL, cover.RECHECK_SECONDS)
             and not telegram_cache.claim_once('coverCheck:' + URL, cover.RECHECK_SECONDS),
@@ -114,9 +158,10 @@ def test_page(cache_db):
         page.channel_query(data)
         _assert(rendered == [['text'], ['text', 'image'], ['text']] and cover.known_unreachable(URL),
                 "first refusal: the page falls back to text with its buttons, and the cover is marked")
+        _assert(checked == [URL], "and checked in the background at once: the next open may have it")
         del rendered[:]
         page.channel_query(data)
-        _assert(rendered == [['text'], ['text']] and checked == [URL],
+        _assert(rendered == [['text'], ['text']] and checked == [URL, URL],
                 "marked: the page goes at once without the cover, the check runs in the background")
         _assert(page.without_cover(page.construct_channel_message())[0]['reply_markup'] == keyboard,
                 "the buttons that live on the cover come with the text")
