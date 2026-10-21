@@ -151,6 +151,7 @@ def channel_query(data: ControllerParams):
             logger.warn("Podcast cover is unreachable for telegram:", cover, "|", e)
             cover_service.mark_unreachable(cover)
             render_messages(data['chat_id'], without_cover(ch_msg))
+            cover_service.recheck_later(cover)  # the next open may already have it
 
         else:
             raise e

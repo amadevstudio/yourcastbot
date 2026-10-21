@@ -243,9 +243,11 @@ episodes, ~2 s for a slow host.
 - A cover Telegram refuses (`failed to get HTTP URL content`, cdn.mave.digital
   15 times on 2026-10-21) is marked in `telegram_cache` for 7 days
   (`app/service/podcast/cover.py`): the page goes at once as one text
-  message with its buttons. While marked, an open starts a background check
-  at most once an hour (send to the storage chat): fetched now, its file_id
-  is cached and the mark goes. A page without its picture is a text
+  message with its buttons. The refusal and, while marked, an open start a
+  background check at most once an hour (send to the storage chat): by URL,
+  and when Telegram still refuses the URL, as a file we download (an image,
+  at most 5 MB: the mave cover is a 208 KB JPEG our server gets at once).
+  Through, its file_id is cached and the mark goes. A page without its picture is a text
   message; its buttons refresh the keyboard only (`message_has_no_media`).
 Locks: `python app/service/podcast/test_feed_cache.py`,
 `python app/service/podcast/test_cover.py` (CD gates; the rss, page and
