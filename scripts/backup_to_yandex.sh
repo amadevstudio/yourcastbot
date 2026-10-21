@@ -202,9 +202,30 @@ logger "--- $PROJECT START BACKUP $DATE ---"
 # tar -czf $BACKUP_DIR/$DATE-mysql-$PROJECT.tar.gz $BACKUP_DIR/$DATE
 # rm -rf $BACKUP_DIR/$DATE
 
-logger "Создаем архив каталогов $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz"
+# The bot writes while we run and the db is in WAL mode: tar over the live
+# files can pair a main file with a -wal from another moment. Archive
+# copies made by SQLite's backup API, checked by integrity_check.
+STAGE_DIR="$BACKUP_DIR/stage"
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR/$DIRS"
+for src in "$HOME_DIR/$DIRS"/*.db; do
+    if ! snap_out=$(python3 "$HOME_DIR/scripts/db_snapshot.py" "$src" "$STAGE_DIR/$DIRS/$(basename "$src")" 2>&1); then
+        logger "$PROJECT - snapshot error: $snap_out"
+        rm -rf "$STAGE_DIR"
+        exit 1
+    fi
+    logger "Копия базы: $snap_out"
+done
+
+logger "Создаем архив баз $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz"
 find "$BACKUP_DIR" -type f -name "*.gz" -delete
-tar -czf $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz -C $HOME_DIR $DIRS
+tar -czf $BACKUP_DIR/$DATE-files-$PROJECT.tar.gz -C "$STAGE_DIR" $DIRS
+tar_status=$?
+rm -rf "$STAGE_DIR"
+if [ $tar_status -ne 0 ]; then
+    logger "$PROJECT - tar error: exit $tar_status"
+    exit 1
+fi
 
 # FILENAME=$DATE-mysql-$PROJECT.tar.gz
 # logger "Выгружаем на Яндекс.Диск архив mysql $BACKUP_DIR/$DATE-mysql-$PROJECT.tar.gz"
