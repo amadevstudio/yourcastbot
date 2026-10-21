@@ -34,3 +34,4 @@ admin/web/dist
 .idea
 .DS_Store
 .tool-versions
+feed_cache/
