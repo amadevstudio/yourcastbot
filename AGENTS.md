@@ -101,6 +101,11 @@ remove plan management or hide Bronze/Silver.
   "Relay" inside a sentence). Both still offer Relay first, with change-plan
   next to it. Locks: `python app/jobs/test_relay_remind.py`,
   `python app/i18n/test_relay_copy.py`.
+- Under the D-3 text (Relay's verbatim, first) goes what the plan brought
+  (`relay_remind.recap_text`): episodes delivered and summaries received in
+  the last 30 days, podcasts on auto-delivery now. Nothing delivered and no
+  summary: no recap. It never fails the reminder.
+  Lock: `python app/jobs/test_relay_remind.py`.
 
 ## Referrals, paywall, prepaid months, win-back
 

@@ -2,16 +2,23 @@
 """Once-per-period Relay reminder when time_left first enters 72 hours.
 
 Runs from the existing hourly balance_watcher. Does not touch payment apply.
+Under the plan's text, what the plan brought (recap_text): what stops is
+easier to weigh when it is counted.
 """
+import time
+
+from app.i18n.messages import get_message
 from app.service.payment.referral import invite_row
 # relay_nudge_markup is imported from here by the digest and the balance watcher
 from app.service.payment.storefront import plan_ending_text, relay_nudge_markup  # noqa: F401
 from config import db_path
-from db import runtime_kv
+from db import ai, runtime_kv, usage
+from db.connection import connect_sqlite
 from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
 
 RELAY_D3_HOURS = 72
+RECAP_DAYS = 30  # one plan period: a trial (14 days) fits in it
 
 
 def d3_kv_key(telegram_id) -> str:
@@ -47,6 +54,46 @@ def clear_relay_d3_sent(telegram_id, database=None):
     runtime_kv.delete_kv(d3_kv_key(telegram_id), database=database)
 
 
+def recap_counts(telegram_id, database=None, now=None) -> dict:
+    """In the last RECAP_DAYS: episodes delivered (clicks and automatic, the usage ledger),
+    summaries received (done, cached ones too), and podcasts on auto-delivery now."""
+    since = (time.time() if now is None else now) - RECAP_DAYS * 86400
+    database = db_path if database is None else database
+    usage.connect(database).close()
+    ai.connect(database).close()
+    connection = connect_sqlite(database)
+    try:
+        episodes = connection.execute(
+            "SELECT COUNT(*) FROM usage_events WHERE user_id = ? AND kind IN ('rec', 'circle') AND at >= ?",
+            (int(telegram_id), since)).fetchone()[0]
+        summaries = connection.execute(
+            "SELECT COUNT(*) FROM ai_requests WHERE chat_id = ? AND status = 'done' AND created_at >= ?",
+            (int(telegram_id), since)).fetchone()[0]
+        shows = connection.execute(
+            "SELECT COUNT(*) FROM user_channel_cs WHERE user_telegram_id = ? AND notify = 1",
+            (int(telegram_id),)).fetchone()[0]
+    finally:
+        connection.close()
+    return {'episodes': int(episodes), 'summaries': int(summaries), 'shows': int(shows)}
+
+
+def recap_text(telegram_id, lang, database=None, now=None) -> str:
+    """The recap under the D-3 text, '' when the plan brought nothing yet. Never fails the reminder."""
+    try:
+        counts = recap_counts(telegram_id, database, now)
+    except Exception as e:
+        logger.warn("relay_d3 recap:", telegram_id, type(e).__name__, e)
+        return ''
+    if not counts['episodes'] and not counts['summaries']:
+        return ''
+    lines = [get_message('planRecap', lang)]
+    for key, message in (('episodes', 'planRecapEpisodes'), ('shows', 'planRecapShows'),
+                         ('summaries', 'planRecapSummaries')):
+        if counts[key]:
+            lines.append(get_message(message, lang).format(n=counts[key]))
+    return '\n'.join(lines)
+
+
 def _send(chat_id, messages):
     from lib.telegram.general.message_master import outer_sender
     return outer_sender(chat_id, messages)
@@ -71,6 +118,9 @@ def send_relay_d3_reminders(database=None):
         lang = user["lang"] if user["lang"] else "en"
         days = days_left_label(user["time_left"])
         text = plan_ending_text(user["level"], days, lang)
+        recap = recap_text(telegram_id, lang, database=db_file)
+        if recap:
+            text += "\n\n" + recap
         try:
             _send(telegram_id, [{
                 "type": "text",
