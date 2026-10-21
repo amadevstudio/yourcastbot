@@ -75,8 +75,9 @@ class FakeSession:
 
 
 def test_openrouter():
-    openrouter.openrouter_api_key, summary.ai_summary_model = 'k', 'vendor/some-model'
-    _assert(summary.enabled(), "on with the key and a model")
+    openrouter.openrouter_api_key, summary.ai_summary_model, summary.ai_transcribe_model = \
+        'k', 'vendor/some-model', 'vendor/some-stt'
+    _assert(summary.enabled(), "on with the key and both models")
     _assert(summary.button_data('ab12') == {'tp': summary.ACTION, 'r': 'ab12'}, "the button names the episode")
     session = FakeSession(FakeResponse(200, {
         'choices': [{'message': {'content': ' Gist.\n• One '}, 'finish_reason': 'stop'}],
@@ -102,13 +103,15 @@ def test_openrouter():
             _assert(True, label + " is no summary")
     summary.ai_summary_model = ''
     _assert(not summary.enabled(), "off without a model")
-    summary.ai_summary_model, openrouter.openrouter_api_key = 'vendor/some-model', ''
+    summary.ai_summary_model, summary.ai_transcribe_model = 'vendor/some-model', ''
+    _assert(not summary.enabled(), "off without a speech-to-text model")
+    summary.ai_transcribe_model, openrouter.openrouter_api_key = 'vendor/some-stt', ''
     _assert(not summary.enabled(), "off without the key")
     openrouter.openrouter_api_key = 'k'
 
 
 def test_transcription(tmp):
-    openrouter.openrouter_api_key, transcript.ai_transcribe_model = 'k', 'openai/whisper-large-v3-turbo'
+    openrouter.openrouter_api_key, transcript.ai_transcribe_model = 'k', 'vendor/some-stt'
     piece = os.path.join(tmp, 'piece000.mp3')
     with open(piece, 'wb') as f:
         f.write(b'ID3')
@@ -119,7 +122,7 @@ def test_transcription(tmp):
     url, headers, (files, data) = session.calls[0]
     _assert(url == openrouter.BASE_URL + 'audio/transcriptions' and headers['Authorization'] == 'Bearer k',
             "OpenRouter's transcription endpoint, the same key")
-    _assert(data['model'] == 'openai/whisper-large-v3-turbo' and files['file'][0] == 'piece000.mp3',
+    _assert(data['model'] == 'vendor/some-stt' and files['file'][0] == 'piece000.mp3',
             "the configured model, the piece as a file")
     for response, label in ((FakeResponse(400, {'error': 'format'}), "an HTTP error"),
                             (FakeResponse(200, {'error': {'message': 'down'}}), "an error in the body")):

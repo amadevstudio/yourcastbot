@@ -26,8 +26,8 @@ diag_token = getattr(constants, 'diagToken', None) or None
 # The summary goes through OpenRouter; the model is its id there, e.g. "provider/model-name".
 openrouter_api_key = getattr(constants, 'openrouterApiKey', None) or ''
 ai_summary_model = getattr(constants, 'openrouterModel', None) or ''
-# Whisper through OpenRouter for episodes whose feed has no transcript (billed per audio second, same key)
-ai_transcribe_model = getattr(constants, 'openrouterTranscribeModel', None) or 'openai/whisper-large-v3-turbo'
+# the speech-to-text model (its OpenRouter id) for episodes whose feed has no transcript, same key
+ai_transcribe_model = getattr(constants, 'openrouterTranscribeModel', None) or ''
 # hours of audio summarized per 30 days by plan level; a summary someone already made is free for everyone
 ai_summary_hours_per_month = {1: 5, 2: 15, 3: 30}
 # agentId = creatorId

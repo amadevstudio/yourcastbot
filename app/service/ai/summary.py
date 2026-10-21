@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 """AI summary of an episode: the model call and the button that asks for it.
 
-Off until constants.py has the OpenRouter key and the model (openrouterModel,
-its OpenRouter id): no button, no worker. A summary is made once per episode
+Off until constants.py has the OpenRouter key and both models, their
+OpenRouter ids (openrouterModel for the summary, openrouterTranscribeModel
+for speech to text): no button, no worker. A summary is made once per episode
 and language and then free for everyone; who may ask for a new one is
 app/service/ai/quota.py. What a new one cost is what OpenRouter billed for
 the transcript and for this call, so the economics page follows whichever
 model is configured.
 """
 from app.service.ai import openrouter
-from config import ai_summary_model
+from config import ai_summary_model, ai_transcribe_model
 
 ACTION = 'sum'
 MAX_TOKENS = 2000
@@ -29,7 +30,7 @@ class SummaryUnavailable(Exception):
 
 
 def enabled() -> bool:
-    return openrouter.configured() and bool(ai_summary_model)
+    return openrouter.configured() and bool(ai_summary_model and ai_transcribe_model)
 
 
 def button_data(ref) -> dict:

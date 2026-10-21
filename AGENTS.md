@@ -535,11 +535,11 @@ part runs where the bot's requirements are installed).
 
 ## AI summaries
 
-Off until `constants.py` has `openrouterApiKey` and `openrouterModel` (the
-model's OpenRouter id): no button, no worker (`summary.enabled`). One key
-for everything: OpenRouter's chat completions for the summary and its
-`/audio/transcriptions` for Whisper (`openrouterTranscribeModel`, by
-default `openai/whisper-large-v3-turbo`), plain HTTP, no vendor SDK.
+Off until `constants.py` has `openrouterApiKey`, `openrouterModel` and
+`openrouterTranscribeModel` (OpenRouter ids; no model is built in): no
+button, no worker (`summary.enabled`). One key for everything:
+OpenRouter's chat completions for the summary and its
+`/audio/transcriptions` for speech to text, plain HTTP, no vendor SDK.
 
 `app/service/ai/`: `openrouter.py` is the only code that talks to
 OpenRouter (key, errors, billed cost); `transcript.py` the feed's

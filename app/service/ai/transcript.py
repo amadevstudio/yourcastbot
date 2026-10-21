@@ -8,7 +8,7 @@
    the 60 s a provider gets per request; ffmpeg streams, it does not hold
    the episode in memory as pydub would) and each piece transcribed by
    OpenRouter's /audio/transcriptions with config.ai_transcribe_model
-   (openai/whisper-large-v3-turbo: ~$0.012 per audio hour). The cost is
+   (e.g. openai/whisper-large-v3-turbo, ~$0.012 per audio hour). The cost is
    what OpenRouter bills for each piece.
 """
 import glob
