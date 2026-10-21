@@ -666,7 +666,8 @@ button; `quota.py` who may ask. The plan level is
   the last question, or a link, a text is a search again; a voice message
   or a photo is asked to be typed. Questions need the
   transcript (a summary first) and a running plan: `QUESTIONS_PER_DAY` (20),
-  a trial `TRIAL_QUESTIONS_PER_DAY` (5), in the last 24 hours (usage ledger
+  a trial `TRIAL_QUESTIONS_PER_DAY` (5; at its limit it hears what paying
+  gives, with the Stars page and change-plan), in the last 24 hours (usage ledger
   kind `ask`, its cost in the AI spend). No plan: every plan's invoice.
 - Summaries of new episodes (opt-in, /settings AI summaries, `users.flags`
   `auto_summary`, action `sumAuto`; turning it on without a plan says
