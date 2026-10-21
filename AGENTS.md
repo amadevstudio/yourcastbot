@@ -225,6 +225,26 @@ characters, most of them blank lines and dots: `MESSAGE_TOO_LONG`, no page).
 Lock: `python app/service/podcast/test_card.py` (CD gate),
 `python app/service/record/test_caption.py`.
 
+## Podcast catalog
+
+Search, the podcast page, subscribing and feed recovery ask
+`app/service/podcast/catalog.py`, never Apple's URLs directly: Apple's
+directory with the Podcast Index beside it (its Apple-format `search` and
+`lookup`, no key). The Index lists podcasts by their Apple id, so
+`itunes_id` and "iTunes-listed" delivery mean what they did.
+
+- Search asks both at once: Apple's results first, in Apple's order, then
+  the Index's others. Either answering is enough; a slow Index is waited
+  for 2 s once Apple answered.
+- Lookup is Apple's; the Index only when Apple fails or has no feed for the
+  id. The Index's feedUrl can be an older address of the show (feedburner
+  for TED Talks Daily): subscribing through it keeps the channel's stored
+  `rss_link` (`add_sub` writes it), and feed recovery still validates the
+  stored URL first, then Apple's, then the Index's.
+Lock: `python app/service/podcast/test_catalog.py` (CD gate; the page and
+subscribe parts run where the bot's requirements are installed),
+`python db/test_feed_recovery.py`.
+
 ## Podcast page speed
 
 The podcast page, the episode list and a click on an episode each read the

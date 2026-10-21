@@ -1,19 +1,14 @@
-import json
 from typing import TypedDict, Dict, Tuple, Literal
 from urllib.parse import unquote
 
+from app.service.podcast import catalog
 from app.service.podcast.rss import (
     get_rss_root_with_status,
     FeedStatus, FEED_STATUS_GONE, FEED_STATUS_UNAVAILABLE,
     FEED_STATUS_NOT_MODIFIED)
-from lib.requests import requesterModule
 from lib.requests.url import normalize_url
 from lib.tools.logger import logger
 from lib.tools.time_tools.general import format_rss_last_date, prepare_date_time_from_formatted
-
-requester = requesterModule.Requester()
-
-ITUNES_REQUEST_TIMEOUT = (5, 15)  # (connect, read)
 
 
 class RootAdapter:
@@ -97,26 +92,13 @@ def podcast_info_query(
         etag=None, last_modified=None, cached=False) \
         -> Tuple[RootAdapter | Literal[False], PodcastInfoType]:
     if service_name == 'itunes':
-        api_url_base = 'https://itunes.apple.com/lookup'
+        # Apple, or the Podcast Index when Apple fails (catalog.lookup)
         try:
-            response = requester.get(api_url_base, params=payload, timeout=ITUNES_REQUEST_TIMEOUT)
+            itunes_json, _source = catalog.lookup(payload['id'])
         except Exception as e:
-            # сеть до itunes могла моргнуть; раньше исключение улетало наверх
+            # сеть до каталогов могла моргнуть; раньше исключение улетало наверх
             # и роняло поток апдейтера
-            logger.warn("Itunes request failed: ", payload, "; error: ", e)
-            return False, {'failureReason': FEED_STATUS_UNAVAILABLE}
-
-        # if response.status_code == 200:
-        # 	return json.loads(response.content.decode('utf-8'))
-        # else:
-        # 	return None
-
-        # firstResult = json.loads(response.content.decode('utf-8'))["results"][0]
-        # Получение первого результата с feedUrl для выборки по id
-        try:
-            itunes_json = json.loads(response.content.decode('utf-8'))["results"]
-        except Exception as e:
-            print("mainf/parsing_error1: ", e, "; payload: ", payload, flush=True)
+            logger.warn("Catalog lookup failed: ", payload, "; error: ", e)
             return False, {'failureReason': FEED_STATUS_UNAVAILABLE}
 
         feed_url: str | bool = ""

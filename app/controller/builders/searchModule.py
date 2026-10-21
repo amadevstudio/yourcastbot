@@ -7,7 +7,6 @@ import typing
 from hashlib import sha256
 from typing import TypedDict
 
-import requests
 from telebot import types
 
 import app.i18n.messages
@@ -29,11 +28,11 @@ from app.repository.storage import storage, telegram_cache
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams, InlineControllerParams
 from app.routes.routes_list import AvailableRoutes
+from app.service.podcast import catalog
 from app.service.record.caption import record_caption
 from app.service.record.delivery import fetch_by_url_first
 from config import (
-    db_path, available_podcast_hoster_links, botName, server, maxPodcastDateCallDataHexLen,
-    apple_itunes_search)
+    db_path, available_podcast_hoster_links, botName, server, maxPodcastDateCallDataHexLen)
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import render_messages, MessageStructuresInterface, \
     InlineButtonData
@@ -114,10 +113,8 @@ def make_search(message_text: str, _, per_page: int = PER_PAGE, offset: int = 0)
     cached_result = telegram_cache.get_cached(cache_key)
 
     if cached_result is None:
-        payload = {'media': 'podcast', 'term': message_text}
-        response = requests.get(apple_itunes_search, params=payload)
-
-        result = json.loads(response.content.decode('utf-8'))
+        # Apple and the Podcast Index together: either answering is enough
+        result = catalog.search(message_text)
         telegram_cache.add_cache(cache_key, result)
     else:
         result = cached_result
@@ -279,12 +276,8 @@ def inline_podcast_searcher(data: InlineControllerParams):
     if splitter in query:
         query, record_query = query.split(splitter, 1)
 
-    api_url_base = apple_itunes_search
-    payload = {'media': 'podcast', 'term': query}
-    response = requests.get(api_url_base, params=payload)
-
     try:
-        result = json.loads(response.content.decode('utf-8'))
+        result = catalog.search(query)
     except Exception:
         # TODO
         # print error

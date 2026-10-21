@@ -2,27 +2,17 @@
 import time
 
 from db import feed_recovery as jobs
-from lib.requests.requesterModule import Requester
-from lib.requests.url import normalize_url
 from lib.tools.logger import Logger
 
 logger = Logger(file='feed_recovery')
-requester = Requester(attempts=0, total_attempts=0)
 IDLE_SECONDS = 10
 JOB_GAP_SECONDS = 2
 
 
 def lookup_url(itunes_id):
-    response = requester.get(
-        'https://itunes.apple.com/lookup',
-        params={'id': itunes_id, 'entity': 'podcast'}, timeout=(5, 15), verify=True)
-    response.raise_for_status()
-    for item in response.json().get('results', []):
-        if str(item.get('collectionId')) == str(itunes_id) and item.get('feedUrl'):
-            url = normalize_url(item['feedUrl'])
-            if url.startswith(('http://', 'https://')):
-                return url
-    return None
+    """The feed URLs Apple and the Podcast Index give for this id, Apple's first."""
+    from app.service.podcast import catalog
+    return catalog.feed_urls(itunes_id)
 
 
 def valid_feed(url):
@@ -61,8 +51,10 @@ def process_one(database=None, lookup=lookup_url, validate=valid_feed, now=None)
             except Exception as e:
                 logger.warn('catalog lookup failed for channel', job['channel_id'], type(e).__name__)
                 result = 'catalog_unavailable'
-            if found and found != channel['rss_link'] and _valid(validate, found, job['channel_id']):
-                candidate = found
+            for url in ([found] if isinstance(found, str) else found or []):
+                if url != channel['rss_link'] and _valid(validate, url, job['channel_id']):
+                    candidate = url
+                    break
     except Exception as e:
         candidate = None
         logger.warn('feed validation failed for channel', job['channel_id'], type(e).__name__)
