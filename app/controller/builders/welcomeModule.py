@@ -16,7 +16,7 @@ from lib.tools.logger import logger
 
 
 def start(data: ControllerParams):
-    welcome_message = construct_welcome_message(data['language_code'])
+    welcome_message = construct_welcome_message(data['language_code'], data['chat_id'])
 
     render_messages(data['chat_id'], message_structures=welcome_message)
 
@@ -165,9 +165,9 @@ def action_processing(data: ControllerParams, action: str | None, *action_params
             logger.err(e)
 
 
-def construct_welcome_message(language_code) -> list[MessageStructuresInterface]:
+def construct_welcome_message(language_code, chat_id=None) -> list[MessageStructuresInterface]:
     # popular podcasts in the user's language as checkboxes, one tap subscribes to the ticked ones
-    return onboarding.welcome_message(language_code, onboarding.top_podcasts(language_code))
+    return onboarding.welcome_message(language_code, onboarding.top_podcasts(language_code, chat_id))
 
 
 def _redraw(data: ControllerParams, screen: list[MessageStructuresInterface]):
@@ -181,7 +181,7 @@ def _redraw(data: ControllerParams, screen: list[MessageStructuresInterface]):
 
 
 def toggle_pick(data: ControllerParams):
-    top_list = onboarding.top_podcasts(data['language_code'])
+    top_list = onboarding.top_podcasts(data['language_code'], data['chat_id'])
     index, mask, checksum = onboarding.read_tap(data['callback'].data if data['callback'] else None)
     if index is None or checksum != onboarding.list_checksum(top_list):
         mask = 0  # the list changed since it was drawn: start over on the new one
@@ -192,7 +192,7 @@ def toggle_pick(data: ControllerParams):
 
 
 def subscribe_picked(data: ControllerParams):
-    top_list = onboarding.top_podcasts(data['language_code'])
+    top_list = onboarding.top_podcasts(data['language_code'], data['chat_id'])
     _, mask, checksum = onboarding.read_tap(data['callback'].data if data['callback'] else None)
     if checksum != onboarding.list_checksum(top_list):
         notify(data['callback'], data['message'], get_message("screenOutdated", data['language_code']))
