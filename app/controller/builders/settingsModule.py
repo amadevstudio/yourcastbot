@@ -5,7 +5,7 @@ from app.i18n.messages import get_message, emojiCodes
 from app.jobs.nosub_digest import DIGEST_TOGGLE_ACTION, digest_enabled
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams
-from app.service.ai import summary as ai_summary
+from app.service.ai import auto as ai_auto, summary as ai_summary
 from app.service.record.text_format import (
     EPISODE_FORMAT_ACTIONS, SEPARATE, user_format)
 from config import db_path
@@ -161,11 +161,23 @@ def construct_episode_text_message(language_code, chat_id) -> list[MessageStruct
     return _screen(text, keyboard)
 
 
+def _stored_auto_summary(user) -> bool:
+    try:
+        return bool(json.loads(user['flags'] or '{}').get(ai_auto.FLAG))
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+        return False
+
+
 def construct_summary_message(language_code, chat_id) -> list[MessageStructuresInterface]:
     user, _ = _read_user(chat_id)
     text = ("<b>" + get_message("settingsSummaryTitle", language_code) + "</b>\n\n"
-            + get_message("summaryLanguageHelp", language_code))
+            + get_message("summaryLanguageHelp", language_code) + "\n\n"
+            + get_message("summaryAutoHelp", language_code))
     keyboard = summary_language_buttons(language_code, _stored_summary_language(user))
+    keyboard.append([{
+        'text': get_message('summaryAutoOn' if _stored_auto_summary(user) else 'summaryAutoOff', language_code),
+        'callback_data': {'tp': ai_auto.TOGGLE_ACTION},
+    }])
     return _screen(text, keyboard + go_back_inline_markup(language_code))
 
 
@@ -260,6 +272,19 @@ def set_summary_language_handler(choice):
         _redraw(data, construct_summary_message(data['language_code'], data['chat_id']))
 
     return set_summary_language
+
+
+def toggle_auto_summary(data: ControllerParams):
+    """Summaries of new episodes on or off (app/service/ai/auto.py)."""
+    db_users = SQLighter(db_path)
+    try:
+        enabled = not db_users.get_user_flag(data['chat_id'], ai_auto.FLAG)
+        db_users.set_user_flag(data['chat_id'], ai_auto.FLAG, 1 if enabled else 0)
+    finally:
+        db_users.close()
+    notify(data['callback'], data['message'],
+           get_message('summaryAutoOn' if enabled else 'summaryAutoOff', data['language_code']))
+    _redraw(data, construct_summary_message(data['language_code'], data['chat_id']))
 
 
 def use_separate_episode_format(data: ControllerParams):

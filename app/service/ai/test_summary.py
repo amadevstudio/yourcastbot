@@ -267,6 +267,52 @@ def test_queue_and_quota(db):
     _assert(abs(usage.per_user(0, database=db)[504]['ai_usd'] - 0.006) < 1e-9, "questions are in the AI spend")
 
 
+def test_auto(db):
+    from app.service.ai import auto
+    c = sqlite3.connect(db)
+    c.executescript("""
+        CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT, flags TEXT);
+        CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER);
+        CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, time_left INTEGER);
+        CREATE TABLE payment_history (user_id INTEGER, status TEXT);
+        INSERT INTO users VALUES (1, 601, 'en', '{"auto_summary": 1}'), (2, 602, 'en', '{"auto_summary": 1}'),
+            (3, 603, 'en', NULL), (4, 604, 'ru', '{"auto_summary": 1, "summary_language": "mine"}'),
+            (5, 605, 'en', '{"auto_summary": 0}');
+        INSERT INTO tariffs VALUES (3, 3);
+        INSERT INTO user_tariff_cs VALUES (1, 1, 3, 100), (2, 2, 0, 0), (3, 3, 3, 100), (4, 4, 3, 100), (5, 5, 3, 100);
+        INSERT INTO payment_history VALUES (1, 'paid'), (4, 'paid');
+    """)
+    c.commit()
+    c.close()
+    _assert(set(auto.wanted([601, 602, 603, 604, 605, '@channel'], db)) == {601, 602, 604},
+            "only the chats that turned it on (a channel never)")
+    saved = summary.enabled
+    summary.enabled = lambda: True
+    try:
+        queued = auto.queue([601, 602, 603, 604, 605], 'new1', 1800, {604: 'pt-BR'}, {601: 11, 604: 44}, db)
+    finally:
+        summary.enabled = saved
+    rows = {r[0]: r[1:] for r in sqlite3.connect(db).execute(
+        "SELECT chat_id, lang, reply_to, auto, seconds FROM ai_requests WHERE ref='new1'")}
+    _assert(queued == 2 and set(rows) == {601, 604}, "queued for a running plan that turned it on; no plan, nothing")
+    _assert(rows[601] == ('original', 11, 1, 1800) and rows[604] == ('pt-br', 44, 1, 1800),
+            "in the chat's summary language, answering the delivered audio, charged its length")
+    summary.enabled = lambda: True
+    try:
+        _assert(auto.queue([601], 'long', 40 * 3600, {}, {}, db) == 0, "an episode past the plan's hours: none")
+    finally:
+        summary.enabled = saved
+    tap, _ = ai.enqueue(603, 'tapped', 'en', 60, db)
+    claimed = ai.claim(db)
+    _assert(claimed['id'] == tap, "a tap goes before the automatic ones queued earlier")
+    ai.finish(tap, 'done', database=db)
+    request_id, new = ai.enqueue(601, 'new1', 'original', 1800, db, reply_to=99)
+    _assert(not new and sqlite3.connect(db).execute('SELECT auto, reply_to FROM ai_requests WHERE id=?',
+                                                    (request_id,)).fetchone() == (0, 11),
+            "a tap on one queued automatically makes it a tap, keeping its audio")
+    _assert(ai.claim(db)['id'] == request_id, "and it goes first")
+
+
 def test_worker(db):
     try:
         from app.jobs import ai_watcher
@@ -435,6 +481,7 @@ def main():
         test_transcription(tmp)
         db = os.path.join(tmp, 'test.sqlite')
         test_queue_and_quota(db)
+        test_auto(os.path.join(tmp, 'auto.sqlite'))
         test_worker(os.path.join(tmp, 'worker.sqlite'))
     print("all AI summary checks passed")
 

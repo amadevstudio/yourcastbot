@@ -134,7 +134,7 @@ class FakeBot:
             self.audio.append((chat_id, 'url'))
             if self.url_error:
                 raise ApiTelegramException(self.url_error)
-            return _ns(audio=_ns(file_id='URL_FID'))
+            return _ns(audio=_ns(file_id='URL_FID'), message_id=100 + chat_id)
         kind = 'upload' if hasattr(audio, 'read') else 'file_id'
         self.audio.append((chat_id, kind))
         if chat_id == self.flood_chat:
@@ -474,6 +474,37 @@ def _check_summary_button():
         _assert(off.get_next_ep_button('en', chat_id=1) is None, "AI off: no button, nothing remembered")
     finally:
         srh.InlineKeyboardMarkup, srh.InlineKeyboardButton, srh.ai_summary, srh.ai = saved
+    _check_auto_summaries()
+
+
+def _check_auto_summaries():
+    """A new episode from the circle queues summaries for the chats that asked, answering their audio."""
+    from app.service.ai import auto
+    queued = []
+    saved = auto.queue
+    auto.queue = lambda chats, ref, seconds, langs, messages: queued.append((sorted(chats), ref, seconds, dict(messages)))
+    try:
+        world = World(size_mb=12, formats={1: ('caption', True), 2: ('caption', True)})
+        sender = world.sender(chats=(1, 2))
+        sender.usage_kind, sender._summary_ref = 'circle', 'ref1'
+        _assert(sorted(sender.send_record()) == [1, 2], "the circle delivers as before")
+        _assert(queued == [([1, 2], 'ref1', 3600, {1: 101, 2: 102})],
+                "then the summaries: the delivered chats, the episode, its length, each chat's audio message")
+        del queued[:]
+        click = World(size_mb=12).sender(chats=(1,))
+        click._summary_ref = 'ref1'
+        click.send_record()
+        _assert(queued == [], "a click is not a new episode: nothing queued")
+
+        def broken(*args):
+            raise RuntimeError('database is locked')
+        auto.queue = broken
+        world = World(size_mb=12, formats={1: ('caption', True)})
+        sender = world.sender(chats=(1,))
+        sender.usage_kind, sender._summary_ref = 'circle', 'ref1'
+        _assert(sender.send_record() == [1], "a failing summary queue never fails the delivery")
+    finally:
+        auto.queue = saved
 
 
 def main():

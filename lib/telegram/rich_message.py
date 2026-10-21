@@ -68,11 +68,12 @@ def _find_audio(node) -> str | None:
 
 
 def send_audio(bot, chat_id, audio, html, duration=None, performer=None, title=None,
-               reply_markup=None) -> str | None:
+               reply_markup=None, on_message=None) -> str | None:
     """Sends the episode and its text as one rich message.
 
     audio: a file_id, an http(s) URL Telegram fetches, or an open file.
-    Raises telebot's ApiTelegramException like any other call. Returns the audio's file_id.
+    Raises telebot's ApiTelegramException like any other call. Returns the audio's file_id;
+    `on_message` gets the sent message's id.
     """
     from telebot import apihelper
 
@@ -99,4 +100,6 @@ def send_audio(bot, chat_id, audio, html, duration=None, performer=None, title=N
     if reply_markup is not None:
         params['reply_markup'] = reply_markup.to_json()
     sent = apihelper._make_request(bot.token, 'sendRichMessage', method='post', params=params, files=files)
+    if on_message is not None and isinstance(sent, dict) and sent.get('message_id'):
+        on_message(sent['message_id'])
     return file_id_of(sent)
