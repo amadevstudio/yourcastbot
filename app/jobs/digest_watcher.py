@@ -13,7 +13,7 @@ from app.jobs.relay_remind import relay_nudge_markup
 from app.service import analytics_events
 from config import db_path
 from db.sqliteAdapter import SQLighter
-from db import listening
+from db import ai, listening
 from lib.markup import telegram_html
 from lib.telegram.general.message_master import outer_sender
 from lib.tools.logger import logger
@@ -23,7 +23,16 @@ SEND_PAUSE_SECONDS = 1
 LISTEN_PER_ROW = 3  # five episodes: two rows, not five
 
 
-def digest_message(entries, language):
+def _gist(entry):
+    """A summary's gist line when one was made of this episode; never fails the digest."""
+    try:
+        return ai.gist(entry['channel_id'], entry['title'])
+    except Exception as e:
+        logger.warn("digest gist:", type(e).__name__, e)
+        return None
+
+
+def digest_message(entries, language, gist=_gist):
     text = get_message('youHaveNewEpisodes', language)
     listen = []
     if entries:
@@ -32,6 +41,10 @@ def digest_message(entries, language):
         text += '\n\n' + str(index) + '. <b>' + telegram_html.escape(
             telegram_html.plain_text(entry['show_name'])[:90]) + '</b>\n'
         text += telegram_html.escape(telegram_html.plain_text(entry['title'])[:150])
+        line = gist(entry) if 'channel_id' in entry else None
+        if line:
+            # someone's summary of it: free to show, and what Relay gives
+            text += '\n📝 <i>' + telegram_html.escape(line) + '</i>'  # the model's plain text, as in summaries
         callback = json.loads(entry['callback_json'])
         # Saved old positions can no longer be trusted; hash lookup starts at 0.
         callback['dh_n'] = callback['dh_n'].split('_')[0] + '_1'

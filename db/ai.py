@@ -57,10 +57,13 @@ def connect(database=None):
         if database not in _ready or database == ':memory:':
             c.executescript(SCHEMA)
             columns = {row[1] for row in c.execute('PRAGMA table_info(ai_requests)')}
-            if 'reply_to' not in columns:
-                # the audio message the summary answers (its times play the episode from there)
+            # reply_to: the audio message the summary answers (its times play the episode from there);
+            # auto: queued for a new episode (app/service/ai/auto.py), after every tap
+            for column, sql in (('reply_to', 'reply_to INTEGER'), ('auto', 'auto INTEGER NOT NULL DEFAULT 0')):
+                if column in columns:
+                    continue
                 try:
-                    c.execute('ALTER TABLE ai_requests ADD COLUMN reply_to INTEGER')
+                    c.execute('ALTER TABLE ai_requests ADD COLUMN ' + sql)
                 except sqlite3.OperationalError as e:  # another role added it first
                     if 'duplicate column' not in str(e):
                         raise
@@ -121,9 +124,25 @@ def save_summary(ref, lang, text, cost_usd, database=None):
            (ref, lang, text, float(cost_usd), time.time()))
 
 
-def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None) -> tuple[int, bool]:
+def gist(channel_id, title, database=None, limit=200):
+    """The first line of a summary someone already made of this episode (the episode's own
+    language first), cut to `limit` at a word; None when there is none. For the digest:
+    a summary made is free to show, nothing new is made for it."""
+    row = _one(database, "SELECT s.text FROM ai_episodes e JOIN ai_summaries s ON s.ref = e.ref "
+                         "WHERE e.channel_id=? AND e.title=? "
+                         "ORDER BY s.lang='original' DESC, s.created_at DESC LIMIT 1",
+               (int(channel_id), str(title or '')[:500]))
+    lines = str(row['text']).strip().splitlines() if row else []
+    first = lines[0].strip() if lines else ''
+    if len(first) > limit:
+        first = first[:limit].rsplit(' ', 1)[0].rstrip(',;:') + '…'
+    return first or None
+
+
+def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=False) -> tuple[int, bool]:
     """(request id, True if new), charged `seconds` of the quota. A tap on a summary
-    already on its way is not a new one. `reply_to`: the audio message the summary answers."""
+    already on its way is not a new one. `reply_to`: the audio message the summary answers;
+    `auto`: not asked for (a new episode), it waits for every tap."""
     c = connect(database)
     try:
         c.isolation_level = None
@@ -132,12 +151,15 @@ def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None) -> tuple[
             row = c.execute("SELECT id FROM ai_requests WHERE chat_id=? AND ref=? AND lang=? "
                             "AND status IN ('pending','working')", (int(chat_id), ref, lang)).fetchone()
             if row is not None:
+                if not auto:  # a tap on one queued automatically: it is wanted now
+                    c.execute('UPDATE ai_requests SET auto=0, reply_to=COALESCE(reply_to, ?) WHERE id=?',
+                              (int(reply_to) if reply_to else None, row['id']))
                 c.execute('COMMIT')
                 return int(row['id']), False
-            cursor = c.execute("INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to) "
-                               "VALUES (?,?,?,'pending',?,?,?)",
+            cursor = c.execute("INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to,auto) "
+                               "VALUES (?,?,?,'pending',?,?,?,?)",
                                (int(chat_id), ref, lang, time.time(), int(seconds),
-                                int(reply_to) if reply_to else None))
+                                int(reply_to) if reply_to else None, int(bool(auto))))
             c.execute('COMMIT')
             return int(cursor.lastrowid), True
         except Exception:
@@ -156,7 +178,8 @@ def seconds_used(chat_id, since, database=None) -> int:
 
 
 def claim(database=None, now=None):
-    """Lease the oldest pending request (or one whose lease ran out), or None.
+    """Lease the oldest pending request (or one whose lease ran out), taps before
+    automatic ones, or None.
     `ui_lang`: the user's interface language, for a notice (the summary's may be the episode's)."""
     now = time.time() if now is None else now
     c = connect(database)
@@ -167,7 +190,7 @@ def claim(database=None, now=None):
             row = c.execute(
                 "SELECT r.*, u.lang ui_lang FROM ai_requests r LEFT JOIN users u ON u.telegramId = r.chat_id "
                 "WHERE r.status='pending' OR (r.status='working' AND r.leased_until < ?) "
-                "ORDER BY r.id LIMIT 1", (now,)).fetchone()
+                "ORDER BY r.auto, r.id LIMIT 1", (now,)).fetchone()
             if row is None:
                 c.execute('COMMIT')
                 return None

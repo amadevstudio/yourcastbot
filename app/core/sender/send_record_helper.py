@@ -201,6 +201,8 @@ class Sender:
         self._rich_hint_pending: set[int] = set()
 
         self.successfully_sent_to = []
+        # chat id -> the delivered audio's message: an automatic summary answers it
+        self._audio_messages: dict = {}
         self.outcome_messages: dict[int, OutcomeMessageType] = {}
         self.bitrates = {}
         self.send_attempts = {}
@@ -625,6 +627,7 @@ class Sender:
 
         self._sync_outbox_recipients()
         self._record_usage()
+        self._queue_auto_summaries()
         complete = self._outbox_job_complete()
         # Receipt only after Telegram ACK (or a terminal outcome: too big /
         # blocked chat). A 429 must not be done — leftover mp3 is ok.
@@ -682,6 +685,28 @@ class Sender:
             usage.record_deliveries(delivered, self.usage_kind, self.link, downloaded_mb)
         except Exception as e:
             self.logger.warn("usage ledger:", e)
+
+    def _note_audio_message(self, chat_id, sent):
+        """The delivered audio's message id (a Bot API Message or the agent's dict), for an
+        automatic summary to answer. Bookkeeping only: it never fails a delivery."""
+        try:
+            message_id = sent.get('message_id') if isinstance(sent, dict) else getattr(sent, 'message_id', None)
+            if isinstance(message_id, int) and message_id > 0:
+                self._audio_messages[chat_id] = message_id
+        except Exception:
+            pass
+
+    def _queue_auto_summaries(self):
+        """A new episode the circle delivered: its summary for the chats that turned
+        them on (app/service/ai/auto.py). Never fails the send."""
+        if self.usage_kind != 'circle' or self._summary_ref is None or not self.successfully_sent_to:
+            return
+        try:
+            from app.service.ai import auto
+            auto.queue(set(self.successfully_sent_to), self._summary_ref, self.podcast_info.get('duration_sec'),
+                       self.lang_codes_by_utg, self._audio_messages)
+        except Exception as e:
+            self.logger.warn("auto summaries:", e)
 
     def _mark_outbox_done_after_send(self):
         if self.outbox_id is None:
@@ -901,6 +926,7 @@ class Sender:
                     self.send_audio(chat_id, self.cached_file_id, caption)
                     return
                 sent = bot_telethon.send_uploaded(self.thonbot, self._agent_message(chat_id, caption), uploaded)
+                self._note_audio_message(chat_id, sent)
                 self._remember_agent_file_id(sent)
                 if self._chat_format(chat_id) in (RICH, SEPARATE):
                     self._send_description_message(chat_id)
@@ -1072,6 +1098,7 @@ class Sender:
                 self.logger.err(e, "Fail to send caption, but success record")
                 self.logger.log(record_message_text)
 
+        self._note_audio_message(chat_id, message)
         if fmt == SEPARATE:
             self._send_description_message(chat_id)
 
@@ -1103,7 +1130,8 @@ class Sender:
             duration=self.podcast_info['duration_sec'],
             performer=telegram_html.plain_text(self.podcast_info['chName']),
             title=telegram_html.plain_text(self.podcast_info['title']),
-            reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id], chat_id=chat_id))
+            reply_markup=self.get_next_ep_button(lang_code=self.lang_codes_by_utg[chat_id], chat_id=chat_id),
+            on_message=lambda message_id: self._note_audio_message(chat_id, {'message_id': message_id}))
 
     def _send_description_message(self, chat_id):
         """The description after the audio, as a collapsible quote. The audio is already

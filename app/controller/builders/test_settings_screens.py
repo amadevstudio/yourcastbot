@@ -87,13 +87,18 @@ def test_pages(settings):
 
     page = settings.construct_summary_message('en', 1)
     marked = [text for text in _texts(page) if text.startswith('✅')]
-    _assert(_tps(page) == ['sumLangOrig', 'sumLangMine', 'bck'], "summaries: two languages, Back")
+    _assert(_tps(page) == ['sumLangOrig', 'sumLangMine', 'sumAuto', 'bck'],
+            "summaries: two languages, summaries of new episodes, Back")
+    _assert(get_message("summaryAutoOff", "en") in _texts(page), "summaries of new episodes: off by default")
     _assert(len(marked) == 1 and get_message("summaryLanguageOriginal", "en") in marked[0],
             "summaries: the episode's language by default")
     user['flags'] = '{"summary_language": "mine"}'
     marked = [text for text in _texts(settings.construct_summary_message('en', 1)) if text.startswith('✅')]
     _assert(len(marked) == 1 and get_message("summaryLanguageMine", "en") in marked[0],
             "summaries: the user's choice is marked")
+    user['flags'] = '{"summary_language": "mine", "auto_summary": 1}'
+    _assert(get_message("summaryAutoOn", "en") in _texts(settings.construct_summary_message('en', 1)),
+            "summaries of new episodes: the button says it is on")
 
     page = settings.construct_reminders_message('en', 1)
     _assert(_tps(page) == ['digestToggle', 'bck'], "reminders: the switch, Back")

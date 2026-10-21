@@ -85,7 +85,8 @@ def ai_watcher():
                 ai.finish(request['id'], 'done', seconds=charged)
             except Exception as e:
                 logger.warn('ai_watcher/request', request['id'], e)
-                if ai.retry_or_fail(request):
+                # a summary nobody tapped for (a new episode) fails quietly
+                if ai.retry_or_fail(request) and not request.get('auto'):
                     try:
                         outer_sender(request['chat_id'], [{
                             'type': 'text', 'text': get_message('summaryFailed', request['ui_lang'])}])

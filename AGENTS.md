@@ -407,7 +407,10 @@ Locks: `python db/test_feed_recovery.py`, `python db/test_channel_poll.py`,
 `db/listening.py` stores text/callback references, not audio. The digest
 holds the latest episode per show, up to five shows per message, keeping
 Relay/change-plan/mute controls and rechecking tariff/notify at send time.
-ACK deletes only the revision shown. "Listen" is the ordinary rec button
+ACK deletes only the revision shown. An episode someone already has a
+summary of shows its first line (`ai.gist`, by channel and title, the
+episode's own language first): nothing new is made for a digest.
+"Listen" is the ordinary rec button
 and searches by hash from the start (positions change); three to a row. Snapshots nothing
 refers to expire after 90 days; a hard user delete takes the user's queued
 digest episodes. A "listen later" list was tried and left out (it halved
@@ -661,6 +664,16 @@ button; `quota.py` who may ask. The plan level is
   transcript (a summary first) and a running plan: `QUESTIONS_PER_DAY` (20),
   a trial `TRIAL_QUESTIONS_PER_DAY` (5), in the last 24 hours (usage ledger
   kind `ask`, its cost in the AI spend). No plan: every plan's invoice.
+- Summaries of new episodes (opt-in, /settings AI summaries, `users.flags`
+  `auto_summary`, action `sumAuto`; `app/service/ai/auto.py`): after the
+  circle delivers an episode (`Sender._queue_auto_summaries`, circle only,
+  never a click) each chat that turned it on and whose plan's hours cover
+  the episode gets it queued, charged like a tap; otherwise none, no
+  notice, and a failure is quiet. `ai_requests.auto`: taps are claimed
+  first, and a tap on an automatic request makes it a tap. The summary
+  answers the delivered audio: the sender notes each chat's audio message
+  (`_note_audio_message`, Bot API, rich and agent sends; bookkeeping that
+  never fails a delivery).
 Lock: `python app/service/ai/test_summary.py` (CD gate; the worker part
 runs where the bot's requirements are installed),
 `python app/core/sender/test_record_delivery.py`,

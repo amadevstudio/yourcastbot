@@ -27,6 +27,10 @@ class DigestMessage(unittest.TestCase):
         p = patch.object(listening, 'db_path', self.db)
         p.start()
         self.addCleanup(p.stop)
+        from db import ai
+        p = patch.object(ai, 'db_path', self.db)
+        p.start()
+        self.addCleanup(p.stop)
         c = listening.connect(self.db)
         with c:
             c.executescript('CREATE TABLE user_channel_cs(user_telegram_id INTEGER,channel_id INTEGER,notify INTEGER);'
@@ -54,6 +58,24 @@ class DigestMessage(unittest.TestCase):
             self.assertIn('Episode one &amp; two', screen['text'])
             self.assertNotIn('<i>', screen['text'])
             self.assertLess(len(screen['text']), 4096)
+
+    def test_a_made_summary_shows_its_gist(self):
+        from db import ai
+        listening.remember('Episode one', 'Show', {'tp': 'rec', 'id': 17, 'dh_n': 'abcdef_9'},
+                           self.db, channel_id=17, cursor='c')
+        listening.flag_digest([101], 17, 'c', self.db)
+        entry = listening.digest(101, self.db)[0]
+        self.assertNotIn('📝', self.digest_message([entry], 'en')['text'], "no summary made: nothing new")
+        ai.remember_episode('ref1', 'https://cdn.example/1.mp3', 17, 'Episode one', 'Show', database=self.db)
+        ai.save_summary('ref1', 'de', 'Auf Deutsch.\n• x', 0.0, database=self.db)
+        ai.save_summary('ref1', 'original', 'They <explain> why ' + 'very ' * 60 + 'much.\n• point', 0.0,
+                        database=self.db)
+        text = self.digest_message([entry], 'en')['text']
+        self.assertIn('📝 <i>They &lt;explain&gt; why very', text, "the gist, the episode's own language first")
+        self.assertIn('…</i>', text, "cut at a word")
+        self.assertNotIn('• point', text, "the first line only")
+        with patch.object(ai, 'gist', side_effect=RuntimeError('locked')):
+            self.assertNotIn('📝', self.digest_message([entry], 'en')['text'], "a failing lookup never fails the digest")
 
     def test_listen_buttons_share_rows(self):
         listening.remember('Episode', 'Show', {'tp': 'rec', 'id': 17, 'dh_n': 'abcdef_9'},

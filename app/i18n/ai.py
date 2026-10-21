@@ -89,6 +89,25 @@ ROWS = {
         'באיזו שפה לשלוח סיכומים: בשפה שמדברים בה בפרק או בשפת הטלגרם שלך.'),
     'summaryHours': ('{h} ч', '{h} h', '{h} h', '{h} h', '{h} Std.', '{h} ש׳'),
     'summaryMinutes': ('{m} мин', '{m} min', '{m} min', '{m} min', '{m} Min.', '{m} דק׳'),
+    'summaryAutoOn': (
+        '🔁 Пересказ новых выпусков: вкл', '🔁 Summaries of new episodes: on', '🔁 Resumo dos novos episódios: sim',
+        '🔁 Resumen de episodios nuevos: sí', '🔁 Zusammenfassung neuer Folgen: an', '🔁 סיכום פרקים חדשים: פעיל'),
+    'summaryAutoOff': (
+        '🔁 Пересказ новых выпусков: выкл', '🔁 Summaries of new episodes: off', '🔁 Resumo dos novos episódios: não',
+        '🔁 Resumen de episodios nuevos: no', '🔁 Zusammenfassung neuer Folgen: aus', '🔁 סיכום פרקים חדשים: כבוי'),
+    'summaryAutoHelp': (
+        'С подпиской пересказ нового выпуска может приходить сам, сразу после файла. Он считается в часы '
+        'пересказов плана, как по кнопке.',
+        'With a plan, the summary of a new episode can come by itself, right after the file. It counts toward '
+        "the plan's summary hours, as a tap does.",
+        'Com um plano, o resumo de um episódio novo pode chegar sozinho, logo depois do arquivo. Ele conta nas '
+        'horas de resumos do plano, como um toque.',
+        'Con un plan, el resumen de un episodio nuevo puede llegar solo, justo después del archivo. Cuenta en '
+        'las horas de resúmenes del plan, como un toque.',
+        'Mit einem Tarif kann die Zusammenfassung einer neuen Folge von selbst kommen, direkt nach der Datei. '
+        'Sie zählt zu den Stunden des Tarifs, wie ein Tippen.',
+        'עם מסלול, הסיכום של פרק חדש יכול להגיע לבד, מיד אחרי הקובץ. הוא נספר בשעות הסיכומים של המסלול, '
+        'כמו לחיצה.'),
     'askButton': (
         '❓ Спросить о выпуске', '❓ Ask about it', '❓ Perguntar sobre o episódio', '❓ Preguntar sobre el episodio',
         '❓ Frage zur Folge', '❓ לשאול על הפרק'),

@@ -5,7 +5,7 @@ from app.controller.builders import welcomeModule, menuModule, subsModule, searc
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
-from app.service.ai import summary as ai_summary
+from app.service.ai import auto as ai_auto, summary as ai_summary
 from app.service.record.text_format import EPISODE_FORMAT_ACTIONS, EPISODE_FORMAT_HINT_ACTION
 from app.service.payment import (
     paymentModule,
@@ -221,6 +221,10 @@ class RouteMap:
                     'method': settingsModule.set_summary_language_handler(choice),
                     'state_independent': True,
                 } for action, choice in ai_summary.LANGUAGE_ACTIONS.items()},
+                ai_auto.TOGGLE_ACTION: {
+                    'method': settingsModule.toggle_auto_summary,
+                    'state_independent': True,
+                },
             }
         },
 
