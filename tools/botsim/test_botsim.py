@@ -70,6 +70,8 @@ def test_opml_offline(user):
     step = user.send_file('subs.opml', opml, 'text/x-opml')
     _assert(step.handlers == ['opml_file (stop)'], "an OPML file is read before the routes, and only there")
     _assert(any('Offline Show' in text for text in step.texts), "a feed that does not answer is named")
+    _assert(any(text.endswith('1 of 1…') for text in step.texts),
+            "the status line is edited to the full count (message_master's result is read right)")
     _assert(not step.errors, "and nothing breaks")
     other = user.send_file('photo.jpg', b'\xff\xd8\xff', 'image/jpeg')
     _assert('opml_file (stop)' not in other.handlers, "other documents are not taken for OPML")
@@ -80,16 +82,25 @@ def test_summary_and_question(user):
     ai.remember_episode('simref0000000001', 'https://cdn.example.com/ep.mp3', None, 'Episode One', 'Sim Show',
                         1800)
     step = user.tap_data(json.dumps({'tp': 'sum', 'r': 'simref0000000001'}))
-    _assert(step.toasts and step.toasts[0][0], "Summary: the tap is answered at once (it takes minutes)")
+    _assert(len(step.new) == 1 and step.new[0].text == '📝 Summary: queued…',
+            "Summary: a status line at once (it takes minutes)")
+    status = step.new[0]
+    again = user.tap_data(json.dumps({'tp': 'sum', 'r': 'simref0000000001'}))
+    _assert(not again.new and not user.api.messages[(USER, status.message_id)].deleted,
+            "a second tap adds no second status line")
     made = user.run_ai()
-    _assert(len(made.new) == 1 and sim.FAKE_SUMMARY.splitlines()[0] in made.new[0].text,
-            "the jobs process sends the summary")
-    _assert(any(button.get('text') for button in made.new[0].buttons[0]), "with its Ask button")
-    ask = user.tap((0, 0), message=made.new[0])
+    _assert(not made.new and len(made.edited) == 1 and made.edited[0].message_id == status.message_id
+            and sim.FAKE_SUMMARY.splitlines()[0] in made.edited[0].text,
+            "the jobs process turns the status line into the summary")
+    _assert(any(button.get('text') for button in made.edited[0].buttons[0]), "with its Ask button")
+    ask = user.tap((0, 0), message=made.edited[0])
     _assert(ask.handlers == ['processor(ask)'] and ask.new, "Ask opens the question screen")
     answer = user.send('Who is the guest?')
     _assert(answer.handlers[-1] == 'processor(ask)' and any(sim.FAKE_ANSWER in text for text in answer.texts),
             "a text there is a question, answered")
+    thinking = [method for method, params, _ in user.api.log if method == 'editMessageText'
+                and sim.FAKE_ANSWER in str(params.get('text'))]
+    _assert(len(answer.new) == 1 and thinking, "the answer is the 'Thinking…' line, edited")
     left = _db().execute("SELECT COUNT(*) FROM usage_events WHERE user_id = ? AND kind = 'ask'", (USER,)).fetchone()
     _assert(left[0] == 1, "and counted in the usage ledger")
     done = user.tap('Done')

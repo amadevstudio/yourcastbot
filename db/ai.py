@@ -59,7 +59,9 @@ def connect(database=None):
             columns = {row[1] for row in c.execute('PRAGMA table_info(ai_requests)')}
             # reply_to: the audio message the summary answers (its times play the episode from there);
             # auto: queued for a new episode (app/service/ai/auto.py), after every tap
-            for column, sql in (('reply_to', 'reply_to INTEGER'), ('auto', 'auto INTEGER NOT NULL DEFAULT 0')):
+            # status_message: the line "downloading... transcribing..." a tap got, edited into the summary
+            for column, sql in (('reply_to', 'reply_to INTEGER'), ('auto', 'auto INTEGER NOT NULL DEFAULT 0'),
+                                ('status_message', 'status_message INTEGER')):
                 if column in columns:
                     continue
                 try:
@@ -139,10 +141,12 @@ def gist(channel_id, title, database=None, limit=200):
     return first or None
 
 
-def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=False) -> tuple[int, bool]:
+def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=False,
+            status_message=None) -> tuple[int, bool]:
     """(request id, True if new), charged `seconds` of the quota. A tap on a summary
     already on its way is not a new one. `reply_to`: the audio message the summary answers;
-    `auto`: not asked for (a new episode), it waits for every tap."""
+    `auto`: not asked for (a new episode), it waits for every tap; `status_message`: the
+    status line the worker edits as it goes, and into the summary."""
     c = connect(database)
     try:
         c.isolation_level = None
@@ -152,14 +156,17 @@ def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=Fals
                             "AND status IN ('pending','working')", (int(chat_id), ref, lang)).fetchone()
             if row is not None:
                 if not auto:  # a tap on one queued automatically: it is wanted now
-                    c.execute('UPDATE ai_requests SET auto=0, reply_to=COALESCE(reply_to, ?) WHERE id=?',
-                              (int(reply_to) if reply_to else None, row['id']))
+                    c.execute('UPDATE ai_requests SET auto=0, reply_to=COALESCE(reply_to, ?), '
+                              'status_message=COALESCE(status_message, ?) WHERE id=?',
+                              (int(reply_to) if reply_to else None,
+                               int(status_message) if status_message else None, row['id']))
                 c.execute('COMMIT')
                 return int(row['id']), False
-            cursor = c.execute("INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to,auto) "
-                               "VALUES (?,?,?,'pending',?,?,?,?)",
+            cursor = c.execute("INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to,auto,"
+                               "status_message) VALUES (?,?,?,'pending',?,?,?,?,?)",
                                (int(chat_id), ref, lang, time.time(), int(seconds),
-                                int(reply_to) if reply_to else None, int(bool(auto))))
+                                int(reply_to) if reply_to else None, int(bool(auto)),
+                                int(status_message) if status_message else None))
             c.execute('COMMIT')
             return int(cursor.lastrowid), True
         except Exception:

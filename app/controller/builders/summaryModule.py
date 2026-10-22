@@ -31,7 +31,7 @@ from config import db_path
 from db import ai, usage
 from db.sqliteAdapter import SQLighter
 from lib.markup import telegram_html
-from lib.telegram.general.message_master import outer_sender, render_messages
+from lib.telegram.general.message_master import message_deleter, message_editor, outer_sender, render_messages
 from lib.tools.logger import logger
 
 
@@ -87,8 +87,28 @@ def request_summary(data):
         notify(data['callback'], data['message'], '')
         render_messages(data['chat_id'], [offer_message(language_code, quota)])
         return
-    ai.enqueue(data['chat_id'], ref, lang, quota.needed, reply_to=audio)
-    notify(data['callback'], data['message'], get_message('summaryPreparing', language_code))
+    notify(data['callback'], data['message'], '')
+    # a status line under the audio, edited by the worker as it goes and into the summary (ai_watcher)
+    status = _status_line(data['chat_id'], get_message('summaryStatusQueued', language_code), audio)
+    _, new = ai.enqueue(data['chat_id'], ref, lang, quota.needed, reply_to=audio, status_message=status)
+    if not new and status:  # a second tap: the first one's line is already there
+        try:
+            message_deleter(data['chat_id'], status)
+        except Exception:
+            pass
+
+
+def _status_line(chat_id, text, reply_to=None) -> int | None:
+    """A status message (a reply to the audio when known); its id, None if it did not go."""
+    structure = {'type': 'text', 'text': text}
+    if reply_to:
+        structure['reply_to'] = int(reply_to)
+    try:
+        sent = outer_sender(chat_id, [structure])
+        return int(sent[0]['id']) if sent and sent[0].get('id') else None  # message_master's result
+    except Exception as e:
+        logger.warn('summary status:', type(e).__name__, e)
+        return None
 
 
 def ask_offer_message(language_code) -> dict:
@@ -174,16 +194,13 @@ def answer_question(data):
         outer_sender(data['chat_id'], [limit_message(language_code, questions) if questions.limit
                                        else ask_offer_message(language_code)])
         return
-    try:
-        from agent.bot_telebot import bot
-        bot.send_chat_action(data['chat_id'], 'typing')
-    except Exception:
-        pass
+    # "Thinking...": a reply to the audio, edited into the answer (or into "could not")
+    status = _status_line(data['chat_id'], get_message('askThinking', language_code), state.get('audio'))
     try:
         text, cost = summary.answer(found['text'], episode['title'], episode['show'], question)
     except Exception as e:
         logger.warn('ask: no answer', state['ref'], type(e).__name__, str(e)[:200])
-        outer_sender(data['chat_id'], [{'type': 'text', 'text': get_message('askFailed', language_code)}])
+        _result(data['chat_id'], {'type': 'text', 'text': get_message('askFailed', language_code)}, status)
         return
     usage.record_ask(data['chat_id'], state['ref'], cost)
     storage.set_user_state_data(data['chat_id'], 'ask', dict(state, at=time.time()))
@@ -193,7 +210,18 @@ def answer_question(data):
               'reply_markup': done_markup(language_code)}
     if state.get('audio'):
         answer['reply_to'] = int(state['audio'])
-    outer_sender(data['chat_id'], [answer])
+    _result(data['chat_id'], answer, status)
+
+
+def _result(chat_id, message, status=None):
+    """The status line edited into `message`; a new message when there is none or it is gone."""
+    if status:
+        try:
+            message_editor(chat_id, message, status)
+            return
+        except Exception as e:
+            logger.warn('ask status:', type(e).__name__, e)
+    outer_sender(chat_id, [message])
 
 
 def done_markup(language_code):

@@ -8,13 +8,6 @@ ROWS = {
         '📝 Resumen',
         '📝 Zusammenfassung',
         '📝 סיכום'),
-    'summaryPreparing': (
-        'Готовлю пересказ: 1–2 минуты',
-        'Preparing the summary: 1–2 minutes',
-        'Preparando o resumo: 1–2 minutos',
-        'Preparando el resumen: 1–2 minutos',
-        'Die Zusammenfassung kommt in 1–2 Minuten',
-        'מכין את הסיכום: 1–2 דקות'),
     'summaryUnavailable': (
         'Пересказы сейчас недоступны',
         'Summaries are not available right now',
@@ -191,6 +184,42 @@ ROWS = {
         'worum es geht. Tippe auf eine Zeit, und das Audio springt dorthin. Danach kannst du Fragen zur Folge stellen.',
         '📝 הכפתור "סיכום" מתחת לפרק: ה-AI מספר על מה הפרק, נקודה אחר נקודה עם זמנים. '
         'הקשה על זמן מעבירה את ההקלטה לשם. אחר כך אפשר לשאול שאלות על הפרק.'),
+    # status lines while a summary is made or a question answered, edited into the result
+    'summaryStatusQueued': (
+        '📝 Пересказ: в очереди…',
+        '📝 Summary: queued…',
+        '📝 Resumo: na fila…',
+        '📝 Resumen: en cola…',
+        '📝 Zusammenfassung: in der Warteschlange…',
+        '📝 סיכום: בתור…'),
+    'summaryStatusDownloading': (
+        '📝 Пересказ: скачиваю выпуск…',
+        '📝 Summary: downloading the episode…',
+        '📝 Resumo: baixando o episódio…',
+        '📝 Resumen: descargando el episodio…',
+        '📝 Zusammenfassung: lade die Folge herunter…',
+        '📝 סיכום: מוריד את הפרק…'),
+    'summaryStatusTranscribing': (
+        '📝 Пересказ: расшифровываю, часть {done} из {total}…',
+        '📝 Summary: transcribing, part {done} of {total}…',
+        '📝 Resumo: transcrevendo, parte {done} de {total}…',
+        '📝 Resumen: transcribiendo, parte {done} de {total}…',
+        '📝 Zusammenfassung: transkribiere, Teil {done} von {total}…',
+        '📝 סיכום: מתמלל, חלק {done} מתוך {total}…'),
+    'summaryStatusWriting': (
+        '📝 Пересказ: пишу…',
+        '📝 Summary: writing…',
+        '📝 Resumo: escrevendo…',
+        '📝 Resumen: escribiendo…',
+        '📝 Zusammenfassung: schreibe…',
+        '📝 סיכום: כותב…'),
+    'askThinking': (
+        '🤔 Думаю…',
+        '🤔 Thinking…',
+        '🤔 Pensando…',
+        '🤔 Pensando…',
+        '🤔 Ich denke nach…',
+        '🤔 חושב…'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

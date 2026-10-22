@@ -231,7 +231,7 @@ def test_message():
 
     sent = []
     saved = (opmlModule.outer_sender, opmlModule.threading)
-    opmlModule.outer_sender = lambda chat_id, structures: sent.append(structures[0]['text']) or [{'message_id': 5}]
+    opmlModule.outer_sender = lambda chat_id, structures: sent.append(structures[0]['text']) or [{'id': 5, 'type': 'text'}]
 
     class NoThread:
         def __init__(self, target, args, **kwargs):
