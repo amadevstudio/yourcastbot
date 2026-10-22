@@ -531,6 +531,11 @@ def switch_subscription(data: ControllerParams):
     else:
         render_messages(data['chat_id'], channel_msg)
 
+    if u_action == "yousubscribedto":
+        # the show's newest episode now, not days later (recsModule imports this module)
+        from app.controller.builders import recsModule
+        recsModule.send_latest_episode_later(updated_state_data['id'], data['chat_id'], data['language_code'])
+
 
 def change_channel_notify(data: ControllerParams):
     if state_lost(data['united_data'], 'notify'):

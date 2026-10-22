@@ -700,6 +700,20 @@ A link from Apple Podcasts typed into search opens that podcast.
 Lock: `python app/controller/builders/test_onboarding.py` (the behaviour
 runs where the bot's requirements are installed).
 
+## First episode after subscribing
+
+A subscription from the podcast page or the welcome screen queues the show's
+newest episode at once (`recsModule.send_latest_episode`, off the tap's
+thread): a newcomer used to wait days for a new episode and saw nothing come.
+It is a click on that episode (the `rec` pool, one at a time per chat, the
+free limit counts it); the subscription's cursor already points at it, so
+the circle does not send it again. Quiet when it cannot go: a feed that
+fails, the free limit, `LATEST_OPEN_LIMIT` (3) clicks already waiting
+(eight ticks are not eight files). Never fails the subscription. Not for an
+OPML import (up to 100 shows) or the TED Talks Daily subscription /start
+makes on its own. A click on an episode is unchanged.
+Lock: `python app/controller/builders/test_latest_episode.py`.
+
 ## Free weekly episodes
 
 A listener without a running plan gets `free_rec_per_week` (10) episodes

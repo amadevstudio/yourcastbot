@@ -33,6 +33,8 @@ from lib.telegram.general.message_master import render_messages, MessageStructur
 from lib.tools.logger import logger
 
 PER_PAGE = 5
+# a subscription's newest episode is not queued while this many of the chat's clicks wait
+LATEST_OPEN_LIMIT = 3
 
 recordSenderQueue = queue.Queue()
 t_podcast_sender = None
@@ -503,15 +505,19 @@ def send_record_by_hash_using_start(data: ControllerParams, episode_data: dict):
 
 
 def send_record_direct(
-        channel: dict | None, chat_id: int, lang_code: str, prev_hash: str, from_num: int | None,
-        next_record: bool = False
-):
+        channel: dict | None, chat_id: int, lang_code: str, prev_hash: str | None, from_num: int | None,
+        next_record: bool = False, latest: bool = False, quiet: bool = False
+) -> bool:
+    """Queue an episode of the channel for the chat (the one with prev_hash, the one before it
+    with next_record, the newest with latest). quiet: nothing is said when it cannot be queued
+    (a gift nobody asked for). True when queued."""
     if channel is None:
-        render_messages(chat_id, [{
-            'type': 'text', 'text': get_message('parsingError', lang_code),
-            'reply_markup': go_back_inline_markup(lang_code)}])
+        if not quiet:
+            render_messages(chat_id, [{
+                'type': 'text', 'text': get_message('parsingError', lang_code),
+                'reply_markup': go_back_inline_markup(lang_code)}])
         logger.warn("Channel is None for chat", chat_id)
-        return
+        return False
 
     if channel.get('itunes_id', None) is not None:
         payload = {'entity': 'podcast', 'id': channel['itunes_id']}
@@ -531,9 +537,10 @@ def send_record_direct(
 
     if root is False:
         logger.warn("PARSING ERROR! In recsModule/sendRecord2")
-        render_messages(chat_id, [{
-            'type': 'text', 'text': get_message("parsingError", lang_code)}])
-        return
+        if not quiet:
+            render_messages(chat_id, [{
+                'type': 'text', 'text': get_message("parsingError", lang_code)}])
+        return False
 
     i = 0
     record_info = {}
@@ -554,7 +561,7 @@ def send_record_direct(
                 record_info['recordUniqId'].encode('utf-8')
             ).hexdigest()[0:maxPodcastDateCallDataHexLen]
             # пока хэш отличается, пропускаем
-            if date_hash != prev_hash:
+            if not latest and date_hash != prev_hash:
                 newer_record_info = record_info
                 record_info = {}
                 continue
@@ -572,9 +579,10 @@ def send_record_direct(
             (next_record and newer_record_info == {})  # берём следующую, но запись первая или данных нет
             or (not next_record and record_info == {})  # берём текущую, но данных нет
     ):
-        render_messages(chat_id, [{
-            'type': 'text', 'text': get_message("notFoundOrFuture", lang_code)}])
-        return
+        if not quiet:
+            render_messages(chat_id, [{
+                'type': 'text', 'text': get_message("notFoundOrFuture", lang_code)}])
+        return False
 
     i -= 1
     if next_record:  # следующая запись
@@ -637,10 +645,14 @@ def send_record_direct(
     }
 
     # without a plan: free_rec_per_week episodes by click in any 7 days
-    allowed, wait = free_limit.check(chat_id, link, outbox.open_user_rec_links(chat_id))
+    open_links = outbox.open_user_rec_links(chat_id)
+    if quiet and len(open_links) >= LATEST_OPEN_LIMIT:
+        return False  # several podcasts ticked at once: a few episodes, not a flood
+    allowed, wait = free_limit.check(chat_id, link, open_links)
     if not allowed:
-        render_messages(chat_id, [free_limit.limit_message(lang_code, wait)])
-        return
+        if not quiet:
+            render_messages(chat_id, [free_limit.limit_message(lang_code, wait)])
+        return False
 
     outbox.enqueue_user_rec(
         {
@@ -649,6 +661,31 @@ def send_record_direct(
                 'link': link, 'chat_ids': {chat_id: {}}, 'utglangs': utglangs,
                 'bitratestg': bitratestg, 'podcastInfo': podcast_info}
         })
+    return True
+
+
+def send_latest_episode(channel_id, chat_id: int, lang_code: str) -> bool:
+    """Right after a subscription, the show's newest episode, as a click on it would send it:
+    a newcomer used to wait days for a new one and saw nothing arrive. The subscription's cursor
+    is already at it, so the circle does not send it again. Counts toward the free limit and
+    stops there, quietly; never fails the subscription."""
+    try:
+        db = SQLighter(db_path)
+        try:
+            row = db.get_channel(channel_id)
+        finally:
+            db.close()
+        if row is None:
+            return False
+        return send_record_direct(dict(row), chat_id, lang_code, None, None, latest=True, quiet=True)
+    except Exception as e:
+        logger.warn("latest episode after subscribing:", channel_id, e)
+        return False
+
+
+def send_latest_episode_later(channel_id, chat_id: int, lang_code: str):
+    """send_latest_episode off the tap's thread: it reads the feed, the tap is answered already."""
+    Thread(target=send_latest_episode, args=(channel_id, chat_id, lang_code), daemon=True).start()
 
 
 def send_record_thread(input_data, thonbot):
