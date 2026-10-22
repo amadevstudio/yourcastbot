@@ -56,6 +56,19 @@ def test_start(user):
     _assert(settings.edited and len(settings.edited[0].buttons) >= 2, "settings: a list of sections")
 
 
+def test_text_is_a_search(user):
+    """A podcast's name typed on the welcome screen or the menu is searched, not ignored."""
+    user.send('/start')
+    step = user.send('Some podcast')
+    _assert(step.handlers[-1] == 'processor(search)' and step.new, "on the welcome screen a text is a search")
+    user.send('/menu')
+    step = user.send('Some podcast')
+    _assert(step.handlers[-1] == 'processor(search)' and step.new, "on the menu too")
+    settings = user.send('/settings')
+    step = user.send('Some podcast')
+    _assert('processor(search)' not in step.handlers and settings.new, "other screens keep their own input")
+
+
 def test_storefront(user):
     step = user.send('/subscription')
     kinds = [json.loads(button['callback_data']).get('tp')
@@ -114,6 +127,7 @@ def main():
     try:
         user = sim.BotSim(USER, 'en')
         test_start(user)
+        test_text_is_a_search(user)
         test_storefront(user)
         test_opml_offline(user)
         test_summary_and_question(user)
