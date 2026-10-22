@@ -105,7 +105,8 @@ def test_tap_event():
 
 def test_deliveries(db):
     fake = FakeAnalytics()
-    count = analytics_events.episode_delivered([1001, -100123, 5555], 'circle', {1001: 'brief'}, db, analytics=fake)
+    count = analytics_events.episode_delivered([1001, -100123, 5555], 'circle', {1001: 'brief'}, db, analytics=fake,
+                                               background=False)
     _assert(count == 1 and fake.queued[0]['command'] == 'episode_delivered'
             and fake.queued[0]['event_properties'] == {'mode': 'circle', 'format': 'brief'},
             "one event per user chat that got the audio; a channel and an unknown chat are not users")
@@ -116,9 +117,34 @@ def test_deliveries(db):
         "CREATE TABLE user_tariff_cs(uid INTEGER, tariff_id INTEGER, time_left INTEGER);"
         "INSERT INTO tariffs VALUES (3, 3); INSERT INTO user_tariff_cs VALUES (7, 3, 100);")
     connection.close()
-    analytics_events.episode_delivered([1001], 'rec', None, db, analytics=fake)
+    queued = []
+    background = FakeAnalytics()
+    background.put = lambda item: queued.append(item)
+    _assert(analytics_events.episode_delivered([1001], 'rec', None, db, analytics=background) == 0
+            and len(queued) == 1 and not background.queued, "the sender only queues one job: lookups run on the analytics thread")
+    queued[0][0](queued[0][1])
+    fake.queued.append(queued[-1][1])
     _assert(fake.queued[-1]['user_properties']['plan'] == 3 and fake.queued[-1]['event_properties'] == {'mode': 'rec'},
             "the running plan's level is a user property: every chart splits by plan")
+
+
+def test_never_blocks():
+    try:
+        from lib.analytics.analytics import DroppingQueue
+    except Exception as e:  # CI has no bot requirements
+        print("skip queue (%s)" % e.__class__.__name__)
+        return
+    full = DroppingQueue(1)
+    full.put(1)
+    full.put(2)
+    _assert(full.qsize() == 1, "a full queue drops the event, never blocks the button or the sender")
+    broken = FakeAnalytics()
+
+    def boom(_item):
+        raise RuntimeError('db locked')
+    broken.put = boom
+    _assert(analytics_events.episode_delivered([1001], 'rec', analytics=broken) == 0,
+            "a tracker that fails to queue never fails the delivery")
 
 
 def main():
@@ -133,6 +159,7 @@ def main():
         test_deliveries(db)
     test_tap_source()
     test_tap_event()
+    test_never_blocks()
     print("all analytics event checks passed")
 
 
