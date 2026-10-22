@@ -19,10 +19,9 @@ from app.routes.message_tools import go_back_inline_markup, go_back_inline_butto
 from app.routes.ptypes import ControllerParams
 from app.service.payment.paymentSafeModule import \
     prepare_price, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
-from app.service.payment import stars_subscription
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
 from app.service.payment.storefront import (
-    RELAY_INVOICE_CALLBACK, tariffs_for_change_plan, subscription_pay_rows)
+    RELAY_INVOICE_CALLBACK, once_pay_rows, tariffs_for_change_plan, subscription_pay_rows)
 from config import botName
 from config import creatorId
 from config import db_path, tariff_period
@@ -131,17 +130,8 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
     message_text += "\n\n" + get_message("donate_page_referral", language_code) + "\n" \
                     + "t.me/" + botName + "?start=" + str(utgid)
 
-    menu_keyboard: list[list[InlineButtonData]] = subscription_pay_rows(
-        language_code, include_robokassa=(utgid == creatorId))
-    if prepaid_months_sold(tariff_lvl, tariff_lvl > 0 and time_left > 0):
-        if not stars_subscription.active(utgid):
-            menu_keyboard.append(stars_subscription.offer_row(language_code))
-        # the longest prepaid bundle in one tap; the shorter ones are on the Stars page
-        months, discount = longest_bundle()
-        menu_keyboard.append([{
-            'text': get_message('prepayLongestButton', language_code).format(
-                months=months, discount=discount),
-            'callback_data': dict(RELAY_INVOICE_CALLBACK, m=months)}])
+    # how to pay (a subscription, one payment), then change plan; the methods are one level down
+    menu_keyboard: list[list[InlineButtonData]] = subscription_pay_rows(language_code)
     menu_keyboard.append([go_back_inline_button(language_code)])
 
     result = {
@@ -149,6 +139,24 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
         "markup": menu_keyboard
     }
     return result
+
+
+def open_once_page(data: ControllerParams):
+    """One-time payments: Stars, CryptoBot (Robokassa for the creator) and Relay's
+    longest prepaid bundle in one tap (the shorter ones are on the Stars page)."""
+    language_code = data['language_code']
+    tariff, _balance, time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'])
+    menu_keyboard: list[list[InlineButtonData]] = once_pay_rows(
+        language_code, include_robokassa=(data['chat_id'] == creatorId))
+    if prepaid_months_sold(tariff['level'], tariff['level'] > 0 and time_left > 0):
+        months, discount = longest_bundle()
+        menu_keyboard.append([{
+            'text': get_message('prepayLongestButton', language_code).format(
+                months=months, discount=discount),
+            'callback_data': dict(RELAY_INVOICE_CALLBACK, m=months)}])
+    menu_keyboard.append([go_back_inline_button(language_code)])
+    render_messages(data['chat_id'], [{
+        'type': 'text', 'text': get_message('payOnceBody', language_code), 'reply_markup': menu_keyboard}])
 
 
 def open_subscription_tariffs_page(data: ControllerParams):

@@ -73,7 +73,12 @@ def test_storefront(user):
     step = user.send('/subscription')
     kinds = [json.loads(button['callback_data']).get('tp')
              for row in step.new[0].buttons for button in row if button.get('callback_data')]
-    _assert(kinds[:2] == ['bs_stars', 'bs_trfs'], "/subscription: Stars first, change-plan next to it")
+    _assert(kinds[:3] == ['bs_recur', 'bs_once', 'bs_trfs'],
+            "/subscription: a subscription, a one-time payment, change plan")
+    step = user.tap('💳')
+    once = [json.loads(button['callback_data']).get('tp')
+            for row in step.edited[0].buttons for button in row if button.get('callback_data')]
+    _assert(once[:2] == ['bs_stars', 'bs_cryptobot'], "one-time payment: Stars first, CryptoBot kept")
 
 
 def test_opml_offline(user):

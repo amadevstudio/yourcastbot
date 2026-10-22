@@ -298,16 +298,21 @@ def page_rows(stars):
                 if row[0]['callback_data'].get('m')]
 
     def main_page(level, time_left):
-        markup = paymentModule.get_sub_message(1, 'en', level, 0, 0, time_left, 0)['markup']
-        return [row[0]['callback_data'] for row in markup
-                if row[0]['callback_data'].get('m')]
+        """The one-time payment page (bs_once) of a user on that plan."""
+        sent = []
+        tariff = {'id': level, 'level': level, 'price': 500}
+        with patch.object(paymentModule, 'get_tariff_params_by_tg', lambda _c: (tariff, 0, time_left, 0)), \
+                patch.object(paymentModule, 'render_messages', lambda _c, msgs: sent.append(msgs[0])):
+            paymentModule.open_once_page({'chat_id': 1, 'language_code': 'en'})
+        return [row[0]['callback_data'] for row in sent[0]['reply_markup']
+                if row[0].get('callback_data', {}).get('m')]
     with patch.object(stars, 'SQLighter', _TariffsDB):
         _assert_eq(months(3, 3, 100), [3, 6, 12], "a Relay plan sees the prepaid months")
         _assert_eq(months(0, 0, 0), [3, 6, 12], "so does a user with no plan running")
         _assert_eq(months(1, 1, 0), [3, 6, 12], "and one whose Bronze has ended")
         _assert_eq(months(1, 1, 100), [], "a running Bronze does not")
     _assert_eq(main_page(0, 0), [{'tp': 'bs_stars_pay', 'm': 12}],
-               "/subscription bills the longest bundle in one tap")
+               "the one-time page bills the longest bundle in one tap")
     _assert_eq(main_page(1, 100), [], "but not to a running Bronze")
 
 
@@ -320,9 +325,10 @@ def subscription(stars):
     path = _temp_db()
     links, messages, toasts = [], [], []
 
-    def offer(chat_id, subscription_row=None):
+    def offer(chat_id, subscription_row=None, plan=None):
         data = {'chat_id': chat_id, 'language_code': 'en', 'message': None,
-                'callback': types.SimpleNamespace(data='{"tp": "bs_stars_sub"}'), 'united_data': {}}
+                'callback': types.SimpleNamespace(data='{"tp": "bs_stars_sub"}'),
+                'united_data': {} if plan is None else {'v': plan}}
         del links[:], messages[:], toasts[:]
         with patch.object(stars, 'SQLighter', _TariffsDB), \
                 patch.object(_TariffsDB, 'subscription', subscription_row), \
@@ -347,8 +353,14 @@ def subscription(stars):
         _assert(stars.validate_precheckout_payload(params['payload'], 603, 'XTR', payload['s'])[0],
                 "the first charge passes the pre-checkout")
         bronze = {'tariff_id': 1, 'balance': 0, 'time_left': 100, 'notify_count': 30}
-        offer(603, bronze)
+        offer(603, bronze, plan=3)
         _assert_eq(links, [], "a running Bronze is not sold Relay's subscription (it would renew Bronze)")
+        offer(603, bronze)
+        _assert_eq(stars.parse_payload(links[0][1]['payload'])['v'], 1,
+                   "without a plan on the button: the user's own plan, Bronze")
+        offer(603, plan=1)
+        _assert_eq((stars.parse_payload(links[0][1]['payload'])['v'], json.loads(links[0][1]['prices'])[0]['amount']),
+                   (1, stars.stars_for_balance(50, RATE)), "every plan has its subscription, at its price")
         forged = stars.create_payload(603, 3000, stars.stars_to_charge(3000, RATE, 15), RATE, 6, 15,
                                       plan_id=3, subscription=True)
         _assert_eq(stars.validate_payment_payload(forged, 603, 'XTR', json.loads(forged)['s']),
@@ -367,8 +379,11 @@ def subscription(stars):
                        (True, 3, stars.config.tariff_period + sub.GRACE_HOURS, 0),
                        "the first charge turns Relay on until a day after the next charge")
             _assert(sub.active(603, database=path), "the subscription is running")
-            _assert_eq(stars.validate_precheckout_payload(params['payload'], 603, 'XTR', payload['s']),
-                       (False, "Subscription is already active"), "a second one is refused before payment")
+            _assert(stars.validate_precheckout_payload(params['payload'], 603, 'XTR', payload['s'])[0],
+                    "a renewal (the running subscription's payload) passes a pre-checkout, if Telegram asks one")
+            other = stars.create_payload(603, 500, payload['s'], RATE, plan_id=3, subscription=True)
+            _assert_eq(stars.validate_precheckout_payload(other, 603, 'XTR', payload['s']),
+                       (False, "Subscription is already active"), "a second subscription is refused before payment")
             offer(603)
             _assert_eq((links, toasts), ([], [stars.get_message('starsSubActive', 'en')]), "and not offered")
             renewal = stars.process_successful_payment(
@@ -385,12 +400,20 @@ def subscription(stars):
                        "a renewal is credited once: the tick renews the plan from it")
             _assert_eq((flags[sub.FLAG_UNTIL], flags[sub.FLAG_CHARGE]), (int(until + 30 * 86400), 'sub-1'),
                        "the paid period moves on, the subscription keeps its first charge id")
-        with patch.object(stars, 'SQLighter', _TariffsDB):
-            def has_row(**kw):
-                markup = stars.get_sub_message('en', 3, 3, 500, 0, 100, 0, RATE, **kw)['markup']
-                return any(row[0].get('callback_data', {}).get('tp') == 'bs_stars_sub' for row in markup)
-            _assert(has_row(), "the Stars page offers the subscription under Relay")
-            _assert(not has_row(subscribed=True), "but not to a subscriber")
+        def recurring_page(chat_id):
+            sent = []
+            with patch.object(stars, 'SQLighter', _TariffsDB), patch.object(sub, 'db_path', path), \
+                    patch.object(stars, 'get_stars_withdraw_rate_x1000', lambda: RATE), \
+                    patch.object(stars, 'get_tariff_params_by_tg', lambda _c: ({'id': 0, 'level': 0, 'price': 0}, 0, 0, 0)), \
+                    patch.object(stars, 'render_messages', lambda _c, msgs: sent.append(msgs[0])):
+                stars.open_recurring_page({'chat_id': chat_id, 'language_code': 'en'})
+            return sent[0], [row[0].get('callback_data', {}) for row in sent[0]['reply_markup']]
+        _page, rows = recurring_page(604)
+        _assert_eq([row['tp'] + str(row.get('v', '')) for row in rows], ['bs_stars_sub3', 'bs_stars_sub1', 'bs_patr', 'bck'],
+                   "the subscription page: every plan by Stars (Relay first), Patreon, back")
+        page, rows = recurring_page(603)
+        _assert_eq([row['tp'] for row in rows], ['bs_patr', 'bck'], "a subscriber sees no second subscription")
+        _assert('next charge' in page['text'], "but when the next charge is")
     finally:
         os.remove(path)
 

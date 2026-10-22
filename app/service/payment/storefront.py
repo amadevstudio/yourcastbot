@@ -121,20 +121,34 @@ def relay_nudge_markup(language_code, extra_row=None, invoice=False):
     return rows
 
 
-def subscription_pay_rows(language_code, include_robokassa=False):
-    """Main /subscription pay buttons. Stars first, then change plan.
+RECURRING_CALLBACK = "bs_recur"
+ONCE_CALLBACK = "bs_once"
 
-    Change-plan is required. Do not drop pay methods or hide live SKUs.
+
+def subscription_pay_rows(language_code):
+    """Main /subscription buttons: how to pay (a subscription, one payment), then change plan.
+
+    Change-plan is required. Every pay method stays one level down: Stars
+    subscriptions and Patreon under the subscription, Stars, CryptoBot (and
+    Robokassa for the creator) under the one-time payment.
     """
+    return [
+        [{'text': get_message("payRecurringButton", language_code),
+          'callback_data': {'tp': RECURRING_CALLBACK}}],
+        [{'text': get_message("payOnceButton", language_code),
+          'callback_data': {'tp': ONCE_CALLBACK}}],
+        [{'text': get_message("tariffs", language_code),
+          'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}],
+    ]
+
+
+def once_pay_rows(language_code, include_robokassa=False):
+    """The one-time payment page: Stars first. Do not drop pay methods or hide live SKUs."""
     rows = [
         [{'text': get_message("payViaTelegramStars", language_code),
           'callback_data': {'tp': 'bs_stars'}}],
-        [{'text': get_message("tariffs", language_code),
-          'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}],
         [{'text': get_message("payViaCryptoBot", language_code),
           'callback_data': {'tp': 'bs_cryptobot'}}],
-        [{'text': get_message("payViaPatreon", language_code),
-          'callback_data': {'tp': 'bs_patr'}}],
     ]
     if include_robokassa:
         rows.append([{

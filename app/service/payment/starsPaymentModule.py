@@ -30,7 +30,7 @@ from app.service.payment.offers import (
     WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open,
     prepaid_months_sold)
 from app.service.payment.storefront import (
-    SHOWCASE_TARIFF_LEVEL, showcase_tariff, tariffs_for_storefront)
+    SHOWCASE_TARIFF_LEVEL, plan_name, showcase_tariff, tariffs_for_storefront)
 from config import db_path, prepay_bundles
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import InlineButtonData, outer_sender, render_messages
@@ -204,8 +204,8 @@ def validate_precheckout_payload(
         return False, "Invalid payment offer"
     if not offer_open(user_id, data["o"]):
         return False, "Offer is no longer available"
-    if data["u"] and stars_subscription.active(user_id):
-        # Telegram would charge both every month
+    if data["u"] and stars_subscription.second_subscription(user_id, data["p"]):
+        # Telegram would charge both every month; a renewal (same payload) passes
         return False, "Subscription is already active"
     return True, None
 
@@ -237,8 +237,7 @@ def open_subscription_page(data: ControllerParams):
 
     sub_msg = get_sub_message(
         data['language_code'], tariff['id'], tariff['level'],
-        tariff['price'], balance, time_left, notify_left, rate_x1000,
-        subscribed=stars_subscription.active(data['chat_id']))
+        tariff['price'], balance, time_left, notify_left, rate_x1000)
 
     render_messages(data['chat_id'], [{
         'type': 'text', 'text': sub_msg['message'], 'reply_markup': sub_msg['markup'],
@@ -247,7 +246,7 @@ def open_subscription_page(data: ControllerParams):
 
 def get_sub_message(
         language_code, tariff_id, tariff_lvl, tariff_price,
-        balance, time_left, notify_left, rate_x1000, subscribed=False):
+        balance, time_left, notify_left, rate_x1000):
     message_text = "<b>" + get_message("bot_sub_page_header", language_code) + "</b>\n\n"
     message_text += get_message("bot_sub_stars_page_body", language_code).format(
         rate=pretty_stars_usd_rate(rate_x1000)) + "\n\n"
@@ -273,10 +272,6 @@ def get_sub_message(
         }])
         if tariff['level'] == SHOWCASE_TARIFF_LEVEL and prepaid_months_sold(
                 tariff_lvl, tariff_id > 0 and time_left > 0):
-            if not subscribed:
-                menu_keyboard.append([{
-                    'text': get_message('starsSubPriceButton', language_code).format(stars=stars_amount),
-                    'callback_data': {'tp': stars_subscription.OFFER_CALLBACK}}])
             menu_keyboard += bundle_rows(tariff, language_code, rate_x1000)
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
@@ -386,10 +381,43 @@ def create_subscription_link(title, description, payload, stars) -> str:
         'subscription_period': stars_subscription.PERIOD_SECONDS})
 
 
+def open_recurring_page(data: ControllerParams):
+    """Pay by a subscription: every plan by a Stars subscription (Relay first, as
+    on the Stars page), and Patreon. A running Stars subscription shows its next
+    charge instead of the plans: Telegram would charge two."""
+    language_code = data['language_code']
+    tariff, _balance, _time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'])
+    text = get_message('payRecurringBody', language_code)
+    menu_keyboard: list[list[InlineButtonData]] = []
+    until = stars_subscription.until(data['chat_id'])
+    if until:
+        text += "\n\n" + get_message('starsSubActiveUntil', language_code).format(
+            date=datetime.datetime.fromtimestamp(until).strftime('%d.%m.%Y'))
+    else:
+        rate_x1000 = get_stars_withdraw_rate_x1000()
+        db_users = SQLighter(db_path)
+        try:
+            tariffs = db_users.getTariffs()
+        finally:
+            db_users.close()
+        for plan in tariffs_for_storefront(tariffs, tariff['id']):
+            if int(plan['price']) <= 0:
+                continue
+            menu_keyboard.append([{
+                'text': get_message('starsSubPlanButton', language_code).format(
+                    plan=plan_name(plan['level'], language_code) or decode_tariff(plan['level'], language_code),
+                    stars=stars_for_balance(plan['price'], rate_x1000)),
+                'callback_data': {'tp': stars_subscription.OFFER_CALLBACK, 'v': plan['id']}}])
+    menu_keyboard.append([{'text': get_message('payViaPatreon', language_code), 'callback_data': {'tp': 'bs_patr'}}])
+    menu_keyboard.append([go_back_inline_button(language_code)])
+    render_messages(data['chat_id'], [{'type': 'text', 'text': text, 'reply_markup': menu_keyboard}])
+
+
 def send_subscription_offer(data: ControllerParams):
-    """Relay by subscription: what it is and its invoice link. Sold where Relay's
-    prepaid months are (a running Bronze or Silver would renew itself from the
-    charges), never twice."""
+    """A plan by subscription: what it is and its invoice link. The plan is the
+    button's ('v'), else the user's own (D-3, plan-off), else Relay. Sold when no
+    plan runs or that plan runs: a running other plan would renew itself from
+    the charges (as prepaid months). Never twice."""
     language_code = data['language_code']
     db_users = SQLighter(db_path)
     try:
@@ -397,13 +425,18 @@ def send_subscription_offer(data: ControllerParams):
         subscription = db_users.getUserSubscriptionByTg(data['chat_id'])
     finally:
         db_users.close()
-    relay = showcase_tariff(tariffs)
-    current_level = next((t['level'] for t in tariffs if subscription is not None
-                          and t['id'] == subscription['tariff_id']), 0)
-    if relay is None or int(relay['price']) <= 0:
+    try:
+        plan_id = int(data['united_data'].get('v') or 0)
+    except (TypeError, ValueError):
+        plan_id = 0
+    if not plan_id and subscription is not None:
+        plan_id = int(subscription['tariff_id'] or 0)
+    plan = next((_t for _t in tariffs if int(_t['id']) == plan_id), None) if plan_id else None
+    plan = plan if plan is not None else showcase_tariff(tariffs)
+    if plan is None or int(plan['price']) <= 0:
         notify(data['callback'], data['message'], get_message('parsingError', language_code), alert=True)
         return False
-    if not prepaid_months_sold(current_level, is_subscription_active(subscription)):
+    if is_subscription_active(subscription) and int(subscription['tariff_id']) != int(plan['id']):
         notify(data['callback'], data['message'], get_message('starsSubNotForPlan', language_code), alert=True)
         return False
     if stars_subscription.active(data['chat_id']):
@@ -411,11 +444,13 @@ def send_subscription_offer(data: ControllerParams):
         return False
     try:
         rate_x1000 = get_invoice_stars_withdraw_rate_x1000()
-        stars = stars_for_balance(relay['price'], rate_x1000)
-        payload = create_payload(data['chat_id'], int(relay['price']), stars, rate_x1000,
-                                 plan_id=relay['id'], subscription=True)
+        stars = stars_for_balance(plan['price'], rate_x1000)
+        payload = create_payload(data['chat_id'], int(plan['price']), stars, rate_x1000,
+                                 plan_id=plan['id'], subscription=True)
+        name = plan_name(plan['level'], language_code) or 'Yourcast'
         link = create_subscription_link(
-            get_message('starsSubTitle', language_code), get_message('starsSubDescription', language_code),
+            get_message('starsSubTitle', language_code).format(plan=name)[:32],
+            get_message('starsSubDescription', language_code).format(plan=name)[:255],
             payload, stars)
     except Exception as e:
         logger.err(e)
@@ -423,7 +458,7 @@ def send_subscription_offer(data: ControllerParams):
         return False
     outer_sender(data['chat_id'], [{
         'type': 'text',
-        'text': get_message('starsSubOffer', language_code).format(stars=stars),
+        'text': get_message('starsSubOffer', language_code).format(plan=name, stars=stars),
         'reply_markup': [[{'text': get_message('starsSubPayButton', language_code).format(stars=stars),
                            'url': link}]]}])
 
@@ -503,7 +538,7 @@ def process_successful_payment(
         try:
             stars_subscription.note_charge(
                 user['telegramId'], subscription_until or time.time() + stars_subscription.PERIOD_SECONDS,
-                charge_id if recurring != 'renewal' else None)
+                payload_data['p'], charge_id if recurring != 'renewal' else None)
         except Exception as e:
             logger.warn("stars subscription flag:", type(e).__name__, e)
 

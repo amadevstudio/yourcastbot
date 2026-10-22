@@ -13,7 +13,7 @@ if _ROOT not in sys.path:
 
 from app.i18n.messages import get_message  # noqa: E402
 from app.service.payment.storefront import (  # noqa: E402
-    CHANGE_PLAN_CALLBACK, relay_nudge_markup, showcase_tariff, subscription_pay_rows,
+    CHANGE_PLAN_CALLBACK, once_pay_rows, relay_nudge_markup, showcase_tariff, subscription_pay_rows,
     tariffs_for_change_plan, tariffs_for_storefront)
 
 
@@ -75,21 +75,15 @@ def main():
         [1, 2, 3],
         "change-plan page lists Bronze, Silver, Relay")
 
-    page_types = [
-        row[0]["callback_data"]["tp"]
-        for row in subscription_pay_rows("en")
-    ]
-    _assert_eq(page_types[0], "bs_stars", "Stars is the first button")
-    if CHANGE_PLAN_CALLBACK not in page_types:
-        raise AssertionError(
-            "bs_trfs missing from /subscription. Selling Relay first is "
-            "copy and button order — do not drop change-plan or hide SKUs.")
+    # /subscription asks how to pay first (owner's call, 2026-10-22): a subscription
+    # or one payment, then change plan. Every method stays one level down.
+    page_types = [row[0]["callback_data"]["tp"] for row in subscription_pay_rows("en")]
+    _assert_eq(page_types, ["bs_recur", "bs_once", CHANGE_PLAN_CALLBACK],
+               "/subscription: subscription, one-time payment, change plan")
+    once_types = [row[0]["callback_data"]["tp"] for row in once_pay_rows("en")]
+    _assert_eq(once_types, ["bs_stars", "bs_cryptobot"], "one-time: Stars first, CryptoBot kept")
     _assert_eq(
-        page_types[1], CHANGE_PLAN_CALLBACK, "change plan is second")
-    _assert_eq(page_types[2], "bs_cryptobot", "Crypto is third")
-    _assert_eq(page_types[3], "bs_patr", "Patreon is fourth")
-    _assert_eq(
-        [row[0]["callback_data"]["tp"] for row in subscription_pay_rows("en", True)][-1],
+        [row[0]["callback_data"]["tp"] for row in once_pay_rows("en", True)][-1],
         "bs_robokassa",
         "creator still gets Robokassa last")
 

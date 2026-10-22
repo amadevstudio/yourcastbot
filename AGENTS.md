@@ -93,6 +93,12 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
 `/subscription` sells Relay first (Stars). That is not permission to
 remove plan management or hide Bronze/Silver.
 
+- `/subscription` asks how to pay first (the owner's call, 2026-10-22):
+  "Subscription" (`bs_recur`: every plan by a Stars subscription, Relay
+  first, then Patreon) and "One-time payment" (`bs_once`: Stars, CryptoBot,
+  Robokassa for the creator, Relay's longest prepaid bundle), then
+  change-plan. Every pay method stays one level down; none is dropped.
+  Lock: `python app/service/payment/test_storefront.py`.
 - Keep `bs_trfs` on the main `/subscription` keyboard. The change-plan
   page lists every SKU (Bronze / Silver / Relay + disable).
 - Stars, Crypto, and Robokassa list every live SKU. Relay may be first.
@@ -165,23 +171,25 @@ remove plan management or hide Bronze/Silver.
   sold to a Relay plan or to a user with no plan running
   (`prepaid_months_sold`), never to a running Bronze or Silver (the balance
   would renew that plan for years). The longest bundle is also a button on
-  /subscription, after the pay methods.
+  the one-time payment page (`bs_once`), after the pay methods.
   Lock: `python app/service/payment/test_stars_invoice.py` (bot requirements).
-- Relay by a Stars subscription (`app/service/payment/stars_subscription.py`,
-  action `bs_stars_sub`): an invoice link (`createInvoiceLink` with
+- A plan by a Stars subscription (`app/service/payment/stars_subscription.py`,
+  action `bs_stars_sub`, the plan in `v`, else the user's own, else Relay): an invoice link (`createInvoiceLink` with
   `subscription_period`, the raw request; `sendInvoice` has no
   subscriptions) that Telegram charges every 30 days. Payload `u: 1`, one
-  month of Relay, no discount. Every charge, the first and each renewal,
+  month of that plan at its price, no discount. Every charge, the first and each renewal,
   arrives as a payment of that payload with its own charge id
   (`MessageActionPaymentSentMe` `recurring_init` / `recurring_used`) and is
   credited once like any Stars payment: the tick renews the plan from the
   balance. A plan the first charge turns on runs `GRACE_HOURS` past the next
   charge, so the renewal lands before the tick could end it.
   `users.flags` `stars_sub_until` (and the first charge id): while it runs,
-  no second subscription (refused at the pre-checkout too: Telegram would
-  charge both) and no D-3. Sold where prepaid months are (Relay, or no plan
-  running). Offered on /subscription, the Stars page under Relay, D-3 (Relay)
-  and plan-off, below the rows that were there. A cancel is not reported
+  no second subscription (the page shows the next charge instead; refused at
+  the pre-checkout too: Telegram would charge both) and no D-3. Sold when no
+  plan runs or that same plan runs (another running plan would renew itself
+  from the charges: a toast says to switch first). Offered on the
+  subscription page, and in D-3 and plan-off for the user's own plan, below
+  the rows that were there. A cancel is not reported
   (no such update in Telethon): no charge comes and the plan ends at the
   tick. Locks: `python app/service/payment/test_stars_invoice.py`,
   `python app/jobs/test_relay_remind.py`.

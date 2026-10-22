@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Relay by a Telegram Stars subscription: Telegram charges the same invoice every 30 days.
+"""A plan by a Telegram Stars subscription: Telegram charges the same invoice every 30 days.
 
 The invoice is a link (createInvoiceLink with subscription_period: sendInvoice
 has no subscriptions). Each charge, the first and every renewal, arrives as a
@@ -29,6 +29,7 @@ PERIOD_SECONDS = 2592000  # the only period Telegram accepts (30 days)
 GRACE_HOURS = 24
 FLAG_UNTIL = 'stars_sub_until'
 FLAG_CHARGE = 'stars_sub_charge'
+FLAG_NONCE = 'stars_sub_nonce'  # the payload's 'p': a renewal carries the same one
 OFFER_CALLBACK = 'bs_stars_sub'
 
 
@@ -38,9 +39,10 @@ def offer_row(language_code) -> list:
     return [{'text': get_message('starsSubButton', language_code), 'callback_data': {'tp': OFFER_CALLBACK}}]
 
 
-def active(telegram_id, database=None, now=None) -> bool:
-    """The user's Stars subscription has a paid period running. A read that fails is
-    "no": it only hides a button or lets a D-3 reminder go, never fails a page."""
+def until(telegram_id, database=None, now=None):
+    """When the running Stars subscription's paid period ends (unix), None if none runs.
+    A read that fails is "none": it only shows a button or lets a D-3 reminder
+    go, never fails a page."""
     try:
         connection = connect_sqlite(db_path if database is None else database)
         try:
@@ -49,28 +51,52 @@ def active(telegram_id, database=None, now=None) -> bool:
                 (int(telegram_id),)).fetchone()
         finally:
             connection.close()
+        stamp = time.time() if now is None else now
+        value = float(row[0]) if row and row[0] is not None else None
+    except (sqlite3.Error, TypeError, ValueError):
+        return None
+    return value if value is not None and value > stamp else None
+
+
+def active(telegram_id, database=None, now=None) -> bool:
+    """The user's Stars subscription has a paid period running."""
+    return until(telegram_id, database, now) is not None
+
+
+def second_subscription(telegram_id, nonce, database=None, now=None) -> bool:
+    """A payment of another subscription while one runs (Telegram would charge both).
+    A renewal of the running one carries its payload, so its nonce: never refused,
+    whether or not Telegram asks the pre-checkout for renewals. A failed read is "no"."""
+    if not active(telegram_id, database, now):
+        return False
+    try:
+        connection = connect_sqlite(db_path if database is None else database)
+        try:
+            row = connection.execute(
+                "SELECT json_extract(COALESCE(flags, '{}'), '$.%s') FROM users WHERE telegramId = ?" % FLAG_NONCE,
+                (int(telegram_id),)).fetchone()
+        finally:
+            connection.close()
     except (sqlite3.Error, TypeError, ValueError):
         return False
-    stamp = time.time() if now is None else now
-    try:
-        return bool(row and row[0] is not None and float(row[0]) > stamp)
-    except (TypeError, ValueError):
-        return False
+    return bool(row and row[0] is not None and str(row[0]) != str(nonce))
 
 
-def note_charge(telegram_id, until, charge_id=None, database=None) -> None:
-    """A subscription charge came: the paid period now ends at `until` (unix)."""
+def note_charge(telegram_id, until, nonce, charge_id=None, database=None) -> None:
+    """A subscription charge came: the paid period now ends at `until` (unix); `nonce`
+    is its payload's; charge_id (the first charge) is what editUserStarSubscription takes."""
     connection = connect_sqlite(db_path if database is None else database)
     try:
         with connection:
             if charge_id:
                 connection.execute(
-                    "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), '$.%s', ?, '$.%s', ?) "
-                    "WHERE telegramId = ?" % (FLAG_UNTIL, FLAG_CHARGE),
-                    (int(until), str(charge_id), int(telegram_id)))
+                    "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), '$.%s', ?, '$.%s', ?, '$.%s', ?) "
+                    "WHERE telegramId = ?" % (FLAG_UNTIL, FLAG_NONCE, FLAG_CHARGE),
+                    (int(until), str(nonce), str(charge_id), int(telegram_id)))
             else:
                 connection.execute(
-                    "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), '$.%s', ?) "
-                    "WHERE telegramId = ?" % FLAG_UNTIL, (int(until), int(telegram_id)))
+                    "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), '$.%s', ?, '$.%s', ?) "
+                    "WHERE telegramId = ?" % (FLAG_UNTIL, FLAG_NONCE),
+                    (int(until), str(nonce), int(telegram_id)))
     finally:
         connection.close()
