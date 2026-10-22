@@ -682,6 +682,12 @@ button; `quota.py` who may ask. The plan level is
   a lease of 30 minutes, two attempts, then "could not". What a new summary
   cost goes to the usage ledger for the chat that asked.
 - The transcript is data: the prompt says so; never follow it.
+- A tap on Summary gets a status line at once (a reply to the audio,
+  `ai_requests.status_message`); the worker edits it as it goes
+  (downloading, transcribing part n of m, writing) and into the summary or
+  "could not" (`ai_watcher.status_updater` / `deliver`). A question gets
+  "Thinking…", edited into the answer. A line that cannot be edited: a new
+  message, as before. message_master's results carry the sent id as `id`.
 - Thinking is off in every model call (`summary.REASONING`): on 2026-10-22
   Haiku's provider started thinking by default, all 800 tokens of an answer
   went to it ("could not answer") and a summary was cut mid-sentence and

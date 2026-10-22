@@ -436,7 +436,8 @@ def test_worker(db):
 
     saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path)
     ai_watcher.summary.summarize = down
-    ai_watcher.episode_transcript = lambda episode, session: transcript.Transcript('words', 'whisper', 0.02, 3600.0)
+    ai_watcher.episode_transcript = lambda episode, session, progress=None: transcript.Transcript(
+        'words', 'whisper', 0.02, 3600.0)
     ai.db_path = usage.db_path = db
     try:
         ai_watcher.process({'chat_id': 503, 'ref': 'ep8', 'lang': 'en', 'seconds': 3600}, None, send=send)
@@ -447,6 +448,44 @@ def test_worker(db):
         ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path = saved
     _assert(abs(usage.per_user(0, database=db)[503]['ai_usd'] - 0.02) < 1e-9,
             "Whisper is paid even when the summary fails: its cost is in the ledger")
+
+    # a tap's status line: edited as the work goes, then into the summary (a reply to the audio stays one)
+    edits, sent_new = [], []
+
+    def edit(chat_id, message, message_id):
+        if message_id == 666:
+            raise RuntimeError('Bad Request: message to edit not found')
+        edits.append((chat_id, message_id, message['text']))
+
+    def whisper(episode, session, progress=None):
+        progress('download')
+        progress('transcribe', 1, 2)
+        progress('transcribe', 2, 2)
+        return transcript.Transcript('[0:00] words', 'whisper', 0.0, 600.0)
+    saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path)
+    ai_watcher.summary.summarize = lambda *a, **k: ('Gist.\n0:00 – a point', 0.001)
+    ai_watcher.episode_transcript = whisper
+    ai.db_path = usage.db_path = db
+    try:
+        request = {'chat_id': 504, 'ref': 'ep8', 'lang': 'it', 'seconds': 600, 'reply_to': 41, 'status_message': 42,
+                   'ui_lang': 'en'}
+        ai_watcher.process(request, None, send=lambda chat_id, messages: sent_new.append(messages[0]), edit=edit)
+        _assert([text for _, _, text in edits[:4]] == [
+            '📝 Summary: downloading the episode…', '📝 Summary: transcribing, part 1 of 2…',
+            '📝 Summary: transcribing, part 2 of 2…', '📝 Summary: writing…'] and all(m == 42 for _, m, _ in edits),
+                "the status line says what is being done: downloading, each part, writing")
+        _assert('Gist.' in edits[-1][2] and sent_new == [], "and becomes the summary itself")
+        edits.clear()
+        ai_watcher.process(dict(request, status_message=666, chat_id=505), None,
+                           send=lambda chat_id, messages: sent_new.append(messages[0]), edit=edit)
+        _assert(len(sent_new) == 1 and sent_new[0]['reply_to'] == 41,
+                "a status line that is gone: the summary comes as a new reply to the audio")
+        sent_new.clear()
+        ai_watcher.process(dict(request, status_message=None, chat_id=506), None,
+                           send=lambda chat_id, messages: sent_new.append(messages[0]), edit=edit)
+        _assert(edits == [] and len(sent_new) == 1, "no status line (an automatic summary): as before")
+    finally:
+        ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path = saved
 
     from app.service.ai import offer
     _assert(offer.length_text(5400, 'en') == '1 h 30 min', "hours and minutes")

@@ -57,7 +57,7 @@ def import_file(data):
     try:
         total = min(len(feeds), opml.MAX_FEEDS)
         sent = outer_sender(chat_id, [_text(language_code, 'opmlStarted', count=total)])
-        status_id = sent[0].get('message_id') if sent else None
+        status_id = sent[0].get('id') if sent else None  # message_master's result: 'id'
         threading.Thread(target=_run, args=(chat_id, language_code, feeds, status_id),
                          name='opml-%s' % chat_id, daemon=True).start()
     except Exception:

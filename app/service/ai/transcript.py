@@ -171,16 +171,21 @@ def transcribe_piece(session, path, offset=0.0) -> Transcript:
     return Transcript(text, 'whisper', openrouter.cost(body), seconds)
 
 
-def from_audio(requester, session, link, budget: DiskBudget | None = None) -> Transcript:
-    """Whisper on the episode's audio. The file and its pieces are deleted after."""
+def from_audio(requester, session, link, budget: DiskBudget | None = None, progress=None) -> Transcript:
+    """Whisper on the episode's audio. The file and its pieces are deleted after.
+    `progress(stage, done, total)`: 'download', then 'transcribe' before each piece."""
+    progress = progress or (lambda *args: None)
     budget = budget or DiskBudget(os.path.join(work_dir, 'records'))
     name = 'r_ai_%d.audio' % time.time_ns()
     download = BudgetedDownload(budget, os.path.join(work_dir, 'records', name))
     try:
+        progress('download', 0, 0)
         download.fetch(requester, link)
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
             pieces, offset = [], 0.0
-            for path in split_audio(download.path, pieces_dir):
+            paths = split_audio(download.path, pieces_dir)
+            for number, path in enumerate(paths, 1):
+                progress('transcribe', number, len(paths))
                 pieces.append(transcribe_piece(session, path, offset))
                 offset += pieces[-1].seconds or PIECE_SECONDS
                 os.remove(path)
