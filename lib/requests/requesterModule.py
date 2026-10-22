@@ -1,8 +1,9 @@
 import requests
 import urllib3
-from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib3.exceptions import InsecureRequestWarning
+
+from lib.net.public_only import PublicOnlyAdapter
 
 STD_REQUEST_HEADERS = {
     # 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:45.0)'
@@ -30,7 +31,8 @@ class Requester:
             retry_params['read'] = total_attempts
 
         retry = Retry(**retry_params)
-        self.adapter = HTTPAdapter(max_retries=retry)
+        # feeds and the files they name: public addresses only (lib/net/public_only.py)
+        self.adapter = PublicOnlyAdapter(max_retries=retry)
 
         self.headers = {
             "User-Agent": request_headers["User-Agent"]

@@ -184,10 +184,19 @@ never by `service_name`: since the ETag updater every channel with an
   Bigger, or refused by Telegram: download once, Bot API up to 50 MB,
   agent up to 2 GB, every other recipient reuses the file_id. Over 2 GB:
   too big with links.
-- **Added by a bare RSS link**: never downloaded by us unless
-  `trustRssPodcasts` is on. Up to 20 MB by URL; bigger gets the link and
-  `tooBigRecordRss`. Telegram refusing the URL is "unavailable", not a
-  download.
+- **Added by a bare RSS link** (or an OPML import the catalog did not
+  match): downloaded like a listed one since 2026-10-22 (`trustRssPodcasts`,
+  default on). With it off: up to 20 MB by URL; bigger gets the link and
+  `tooBigRecordRss`; Telegram refusing the URL is "unavailable".
+- **Public addresses only.** Every fetch of a URL a feed named (the feed,
+  the episode file, its HEAD, a transcript, a cover) goes through
+  `lib/net/public_only.py` (`Requester`'s adapter, `public_only.session()`):
+  a connection to a non-global address (local services, a cloud's metadata
+  endpoint) is refused on the connected socket,
+  redirects and names that resolve locally included. Anyone can publish a
+  feed, listed or not. Do not fetch a feed's URL with bare `requests`.
+  Tests serving from 127.0.0.1 call `public_only.allow_private(True)`.
+  Lock: `python lib/net/test_public_only.py` (CD gate).
 - Every `podcast_info` carries `itunes_listed`. A missing key means
   RSS-only (safe default), so a builder that drops it silently breaks
   delivery for listed podcasts.

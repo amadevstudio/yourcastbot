@@ -67,6 +67,7 @@ jobs:
           python3 db/test_listening.py
           python3 app/jobs/test_digest_episodes.py
           python3 lib/net/test_enclosure.py
+          python3 lib/net/test_public_only.py
           python3 app/jobs/test_feed_health.py
           python3 app/repository/storage/test_sqlite_storage.py
           python3 lib/telegram/general/test_errors.py

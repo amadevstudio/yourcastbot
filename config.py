@@ -18,7 +18,9 @@ creatorId = constants.creatorId
 storageChatId = getattr(constants, 'storageChatId', None) or creatorId
 # Download and re-upload episodes of podcasts added by a bare RSS link (not
 # found in iTunes). Off: those go by URL only, bigger files get a link.
-trust_rss_podcasts = bool(getattr(constants, 'trustRssPodcasts', False))
+# Episodes of podcasts added by a bare RSS link are downloaded like listed ones: every fetch
+# reaches public addresses only (lib/net/public_only.py). trustRssPodcasts = False turns it off.
+trust_rss_podcasts = bool(getattr(constants, 'trustRssPodcasts', True))
 # Read-only token for GET /api/diag/* (admin API). Unset or shorter than 32
 # chars: the endpoints answer 404. Never commit it: constants.py only.
 diag_token = getattr(constants, 'diagToken', None) or None

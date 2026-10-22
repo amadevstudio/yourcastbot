@@ -14,9 +14,8 @@ mark goes.
 """
 import threading
 
-import requests
-
 from app.repository.storage import telegram_cache
+from lib.net import public_only
 from lib.requests.url import normalize_url
 from lib.tools.logger import logger
 
@@ -46,7 +45,7 @@ def recheck_later(image, check=None):
 
 def download(image, get=None):
     """The cover's bytes, or None: not an image, too big, or the host does not answer."""
-    get = get or requests.get
+    get = get or public_only.session().get  # a URL a feed named: public addresses only
     try:
         with get(normalize_url(image), timeout=(5, 15), stream=True) as response:
             kind = response.headers.get('Content-Type', '')

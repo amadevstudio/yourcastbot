@@ -12,7 +12,7 @@ started with these values.
 creatorId = 0
 botId = 0
 storageChatId = 0
-trustRssPodcasts = False
+trustRssPodcasts = True  # False: RSS-only podcasts go by URL only (never downloaded)
 diagToken = ''  # read-only /api/diag token; empty = off
 
 donate_link = 'https://example.invalid/donate'
