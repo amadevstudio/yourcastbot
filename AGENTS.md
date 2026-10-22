@@ -129,7 +129,11 @@ remove plan management or hide Bronze/Silver.
   between loses one bonus, never doubles it. A `/start` link names an
   existing user other than oneself, or nobody (`user_exists_tg`):
   `get_user_by_tg` creates a row for any number. An invitee's welcome plan is
-  `tariff_ref_invitee_period` longer. "Invite a friend" (`referral.invite_row`,
+  `tariff_ref_invitee_period` longer. A user with podcasts and no plan who
+  sends /start is "returning" and gets the 2-day plan, unless the row is
+  under a day old (`paymentSafeModule._joined_recently`): a first command
+  from the bot's menu (/search) creates the user with no plan, and a
+  newcomer who subscribed before /start got 2 days instead of 14. "Invite a friend" (`referral.invite_row`,
   the share sheet with the user's own link) goes in D-3, plan-off and after a
   Stars payment, below Stars and change-plan.
   Lock: `python app/service/payment/test_referral_award.py`.

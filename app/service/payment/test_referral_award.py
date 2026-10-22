@@ -144,6 +144,36 @@ def _invitee_gets_longer_welcome():
         os.remove(path)
 
 
+def _newcomer_who_subscribed_first():
+    """A first command other than /start (/search from the bot's menu) creates the
+    user with no plan; subscribing before /start must not make them "returning"."""
+    from db.sqliteAdapter import SQLighter
+    path = _temp_db()
+    try:
+        db = SQLighter(path)
+        db.get_user_by_tg(4001)  # /search: the dispatcher creates the row
+        db.register_new_user(4002, 'en')
+        db.connection.execute("UPDATE users SET created_at = NULL WHERE telegramId = 4002")  # before the column
+        db.register_new_user(4003, 'en')
+        db.connection.execute("UPDATE users SET created_at = datetime('now', '-3 days') WHERE telegramId = 4003")
+        db.connection.executemany(
+            "INSERT INTO user_channel_cs (user_telegram_id, channel_id, notify) VALUES (?, ?, 1)",
+            [(4001, 1), (4001, 2), (4002, 1), (4003, 1)])
+        db.connection.commit()
+        db.close()
+        with patch.object(paymentSafeModule, 'db_path', path):
+            for telegram_id in (4001, 4002, 4003):
+                giveAward(telegram_id, 0, 'new')
+        _assert_eq(_plan(path, 4001), (3, paymentSafeModule.tariff_new_user_period),
+                   "a newcomer who subscribed before /start gets the welcome plan")
+        _assert_eq(_plan(path, 4002), (3, paymentSafeModule.tariff_secret_start_cmd_period),
+                   "an old user with podcasts and no plan gets the short one, as before")
+        _assert_eq(_plan(path, 4003), (3, paymentSafeModule.tariff_secret_start_cmd_period),
+                   "so does a user who joined days ago")
+    finally:
+        os.remove(path)
+
+
 def _link_naming_nobody_creates_nobody():
     from app.controller.builders.test_open_recs import import_builder
     welcomeModule = import_builder("welcomeModule")
@@ -184,6 +214,7 @@ def main():
     _assert_eq(_award_with(5)[3], 25, "giveAward adds the bonus to a counted plan")
     _payment_awards_once()
     _invitee_gets_longer_welcome()
+    _newcomer_who_subscribed_first()
     _link_naming_nobody_creates_nobody()
     print("all referral award checks passed")
 
