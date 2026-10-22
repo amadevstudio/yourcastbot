@@ -115,6 +115,10 @@ class Analytics(metaclass=Singleton):
             return
 
         event_properties = dict(event_properties, **(analytics_data.get('eventProperties') or {}))
+        # the button pressed inside the route (nrec, desc, sum, wSub...): the event is the route
+        action = analytics_data.get('actionName')
+        if action and action != 'None' and action != command:
+            event_properties["action"] = action
         event_properties["original_command"] = command
         event_properties["request_type"] = request_type
         command = command.split(" ")[0]
