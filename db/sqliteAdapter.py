@@ -1951,7 +1951,7 @@ class SQLighter:
     def get_users_nearing_expiry(self, max_hours):
         with self.connection:
             sql = """
-                SELECT utc.time_left, u.telegramId, u.lang, t.level
+                SELECT utc.time_left, u.telegramId, u.lang, t.level, utc.tariff_id, t.price
                 FROM user_tariff_cs utc
                 INNER JOIN tariffs t ON t.id = utc.tariff_id
                 INNER JOIN users u ON u.id = utc.uid

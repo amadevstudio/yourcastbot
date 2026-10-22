@@ -183,13 +183,20 @@ remove plan management or hide Bronze/Silver.
   credited once like any Stars payment: the tick renews the plan from the
   balance. A plan the first charge turns on runs `GRACE_HOURS` past the next
   charge, so the renewal lands before the tick could end it.
-  `users.flags` `stars_sub_until` (and the first charge id): while it runs,
-  no second subscription (the page shows the next charge instead; refused at
-  the pre-checkout too: Telegram would charge both) and no D-3. Sold when no
-  plan runs or that same plan runs (another running plan would renew itself
-  from the charges: a toast says to switch first). Offered on the
-  subscription page, and in D-3 and plan-off for the user's own plan, below
-  the rows that were there. A cancel is not reported
+  `users.flags` `stars_sub_until` (and the first charge id, the plan and the
+  cents a charge credits): while it runs, no second subscription (the page
+  shows the next charge instead; refused at the pre-checkout too: Telegram
+  would charge both), and no D-3 when its charge pays for the plan that ends
+  at today's price (`covers`; another plan or a raised price gets the D-3).
+  Sold when no plan runs or that same plan runs (another running plan would
+  renew itself from the charges: a toast says to switch first). The
+  change-plan page switching a subscriber to another plan (or off) cancels the
+  subscription (`editUserStarSubscription`, raw request; its paid period runs
+  out, the flags go) and offers one for the new plan: Bronze's $1 charges
+  would leave Relay unpaid, Relay's $5 would overpay Bronze. A cancel
+  Telegram refuses keeps the flags and tells the user to cancel in Settings.
+  Offered on the subscription page, and in D-3 and plan-off for the user's own
+  plan, below the rows that were there. A cancel by the user is not reported
   (no such update in Telethon): no charge comes and the plan ends at the
   tick. Locks: `python app/service/payment/test_stars_invoice.py`,
   `python app/jobs/test_relay_remind.py`.

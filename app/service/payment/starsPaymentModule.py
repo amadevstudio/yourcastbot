@@ -371,6 +371,39 @@ def send_invoice(data: ControllerParams):
         return False
 
 
+def cancel_subscription(user_id, charge_id) -> None:
+    """Stop a user's Stars subscription from renewing (the paid period runs to its
+    end). editUserStarSubscription is not in pyTelegramBotAPI 4.11: the raw request."""
+    apihelper._make_request(bot.token, 'editUserStarSubscription', method='post', params={
+        'user_id': int(user_id), 'telegram_payment_charge_id': charge_id, 'is_canceled': True})
+
+
+def plan_change_notice(chat_id, new_plan, language_code):
+    """After the change-plan page switched the user to new_plan: a Stars subscription
+    paying for the old plan is canceled (its charges would renew the new plan at the
+    old price: short for a dearer one, overpaid for a cheaper one). Returns the line
+    and the rows to add to the page's answer, (None, []) when there was nothing.
+    Never fails the change: a cancel that failed says how to cancel by hand."""
+    try:
+        old_plan_id = stars_subscription.cancel_for_plan_change(chat_id, new_plan['id'], cancel_subscription)
+    except Exception as e:
+        logger.warn("stars subscription cancel on plan change:", chat_id, type(e).__name__, e)
+        return get_message('starsSubCancelFailed', language_code), []
+    if old_plan_id is None:
+        return None, []
+    db_users = SQLighter(db_path)
+    try:
+        old_plan = db_users.getTariffById(old_plan_id) if old_plan_id else None
+    finally:
+        db_users.close()
+    old_name = (plan_name(old_plan['level'], language_code) if old_plan else None) or 'Yourcast'
+    rows = []
+    if int(new_plan['price'] or 0) > 0:
+        rows.append([{'text': get_message('starsSubButton', language_code),
+                      'callback_data': {'tp': stars_subscription.OFFER_CALLBACK, 'v': new_plan['id']}}])
+    return get_message('starsSubCanceledOnChange', language_code).format(plan=old_name), rows
+
+
 def create_subscription_link(title, description, payload, stars) -> str:
     """An invoice link Telegram charges every 30 days. Only createInvoiceLink takes
     subscription_period, and pyTelegramBotAPI 4.11 has neither: the raw request."""
@@ -538,7 +571,8 @@ def process_successful_payment(
         try:
             stars_subscription.note_charge(
                 user['telegramId'], subscription_until or time.time() + stars_subscription.PERIOD_SECONDS,
-                payload_data['p'], charge_id if recurring != 'renewal' else None)
+                payload_data['p'], charge_id if recurring != 'renewal' else None,
+                plan_id=payload_data['v'] or None, cents=payload_data['b'])
         except Exception as e:
             logger.warn("stars subscription flag:", type(e).__name__, e)
 

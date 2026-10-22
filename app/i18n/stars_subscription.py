@@ -114,6 +114,32 @@ ROWS = {
         'La suscripción renueva el plan que pagas. Cambia a ese plan primero.',
         'Das Abo verlängert den Tarif, den du zahlst. Wechsle zuerst zu diesem Tarif.',
         'המנוי מחדש את התוכנית שעליה משלמים. קודם עברו לתוכנית הזו.'),
+    'starsSubCanceledOnChange': (
+        '🔁 Подписка звёздами на {plan} отменена: её списания продлевали прежний тариф. '
+        'Оплаченный период и баланс остаются. Подписку на новый тариф можно оформить кнопкой ниже.',
+        '🔁 Your Stars subscription to {plan} is canceled: its charges paid for the old plan. '
+        'The paid period and your balance stay. Subscribe to the new plan with the button below.',
+        '🔁 Sua assinatura com Estrelas de {plan} foi cancelada: as cobranças pagavam o plano antigo. '
+        'O período pago e o saldo continuam. Assine o novo plano pelo botão abaixo.',
+        '🔁 Tu suscripción con Estrellas a {plan} se canceló: sus cobros pagaban el plan anterior. '
+        'El periodo pagado y el saldo se mantienen. Suscríbete al nuevo plan con el botón de abajo.',
+        '🔁 Dein Sterne-Abo für {plan} ist gekündigt: seine Abbuchungen zahlten den alten Tarif. '
+        'Der bezahlte Zeitraum und dein Guthaben bleiben. Das neue Abo gibt es mit dem Button unten.',
+        '🔁 המנוי שלך בכוכבים ל-{plan} בוטל: החיובים שלו שילמו על התוכנית הקודמת. '
+        'התקופה ששולמה והיתרה נשארות. אפשר להירשם לתוכנית החדשה בכפתור למטה.'),
+    'starsSubCancelFailed': (
+        '⚠️ Подписка звёздами на прежний тариф продолжает списываться. '
+        'Отмените её в Telegram: Настройки → Мои звёзды.',
+        '⚠️ Your Stars subscription to the old plan keeps charging. '
+        'Cancel it in Telegram: Settings → My Stars.',
+        '⚠️ Sua assinatura com Estrelas do plano antigo continua cobrando. '
+        'Cancele no Telegram: Configurações → Minhas Estrelas.',
+        '⚠️ Tu suscripción con Estrellas al plan anterior sigue cobrando. '
+        'Cancélala en Telegram: Ajustes → Mis Estrellas.',
+        '⚠️ Dein Sterne-Abo für den alten Tarif bucht weiter ab. '
+        'Kündige es in Telegram: Einstellungen → Meine Sterne.',
+        '⚠️ המנוי שלך בכוכבים לתוכנית הקודמת ממשיך לחייב. '
+        'בטלו אותו בטלגרם: הגדרות ← הכוכבים שלי.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}
