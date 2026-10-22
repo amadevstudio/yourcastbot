@@ -211,6 +211,7 @@ def toggle_pick(data: ControllerParams):
         done, failed, over = onboarding.subscribe(data['chat_id'], [row])
         if done:
             ticked.add(row['id'])
+            recsModule.send_latest_episode_later(row['id'], data['chat_id'], data['language_code'])
         elif failed or over:
             note = onboarding.result_message(data['language_code'], [], failed, over)[0]['text']
     _redraw(data, onboarding.welcome_message(data['language_code'], top_list, ticked, mark, note))
