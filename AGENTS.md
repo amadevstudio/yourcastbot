@@ -645,7 +645,11 @@ without it Amplitude counted them as gone). These carry the running plan's
 level as the user property `plan` (0: none). A digest's Listen button carries
 `"s": "d"` (compact JSON, within 64 bytes), so its tap has
 `source: digest`. Tracking never fails the caller and never creates a
-user row (it reads `users`, not `get_user_by_tg`).
+user row (it reads `users`, not `get_user_by_tg`). Nor does it slow one: events go
+through a queue that drops when full (`DroppingQueue`, 10k) to one thread
+that survives a bad event, each request has a timeout, and the sender only
+queues `episode_delivered` (its user lookups run on that thread). A tap is
+answered before its event is made.
 Lock: `python app/service/test_analytics_events.py` (CD gate),
 `python app/jobs/test_digest_episodes.py`.
 

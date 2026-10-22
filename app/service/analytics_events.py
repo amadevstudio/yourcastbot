@@ -79,9 +79,20 @@ def track(telegram_id, event, properties=None, database=None, analytics=None, sy
         return False
 
 
-def episode_delivered(chat_ids, mode, formats=None, database=None, analytics=None) -> int:
+def episode_delivered(chat_ids, mode, formats=None, database=None, analytics=None, background=True) -> int:
     """The audio reached these chats (mode: the outbox action, rec or circle). Users
-    only: a channel is not a user (negative ids, no users row). Returns how many."""
+    only: a channel is not a user (negative ids, no users row). In the background
+    by default: the user lookups run on the analytics thread, never in the
+    sender's. Returns how many were tracked (0 when queued)."""
+    if background:
+        try:
+            tracker = analytics or _analytics()
+            chats, kept = list(chat_ids), dict(formats or {})
+            tracker.queue.put((lambda _args: episode_delivered(
+                chats, mode, kept, database, tracker, background=False), None))
+        except Exception as e:
+            logger.warn("analytics deliveries not queued:", type(e).__name__, e)
+        return 0
     tracked = 0
     for chat_id in chat_ids:
         try:

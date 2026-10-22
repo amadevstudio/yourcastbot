@@ -31,6 +31,21 @@ class SmartEventTelegramProcessingType(TypedDict):
     eventProperties: NotRequired[dict]  # extra properties of a tap (its source)
 
 
+QUEUE_LIMIT = 10000  # events waiting to be sent; past it new ones are dropped
+REQUEST_TIMEOUT = (5, 10)  # connect, read: a hung Amplitude must not hold the sender thread
+
+
+class DroppingQueue(queue.Queue):
+    """put never blocks and never raises: a full queue (Amplitude down for long)
+    drops the event. Analytics must not slow or fail a button or a delivery."""
+
+    def put(self, item, block=False, timeout=None):
+        try:
+            super().put(item, block=False)
+        except queue.Full:
+            pass
+
+
 class Analytics(metaclass=Singleton):
 
     def __init__(self, adapter=None, test_mode=False):
@@ -41,7 +56,7 @@ class Analytics(metaclass=Singleton):
         self.__adapter = adapter
         self.__save_analytics = not test_mode
 
-        self.queue = queue.Queue()
+        self.queue = DroppingQueue(QUEUE_LIMIT)
 
         senderThread = threading.Thread(target=self.__thread_processor)
         senderThread.daemon = True
@@ -50,10 +65,11 @@ class Analytics(metaclass=Singleton):
     def __thread_processor(self):
         while True:
             items = self.queue.get()
-            func = items[0]
-            args = items[1]
-
-            func(args)
+            # one bad event must not end the thread (every later event would be lost)
+            try:
+                items[0](items[1])
+            except Exception as e:
+                print("analytics:", type(e).__name__, e, flush=True)
 
     def event(self, args):
 
@@ -161,7 +177,7 @@ class AmplitudeAnalytics:
             _ = requests.post(self.__endpoint, data=json.dumps({
                 'api_key': self.__api_key,
                 'events': [event],
-            }), headers=headers)
+            }), headers=headers, timeout=REQUEST_TIMEOUT)
 
         except Exception:
             # Unavailable
