@@ -122,6 +122,21 @@ def test_summary_and_question(user):
     _assert('processor(ask)' not in again.handlers, "after Done a text is no question")
 
 
+def test_show_notes(user):
+    """Show notes under a brief episode: the feed's text as a quote replying to the audio."""
+    from db import ai
+    ai.remember_episode('simref0000000002', 'https://cdn.example.com/ep2.mp3', None, 'Episode Two', 'Sim Show',
+                        600, descr='<p>Guests &amp; links: <a href="https://example.com">site</a></p>')
+    step = user.tap_data(json.dumps({'tp': 'desc', 'r': 'simref0000000002'}))
+    _assert(step.handlers == ['action_processor(recs, desc)'] and len(step.new) == 1
+            and step.new[0].text.startswith('<blockquote expandable>') and 'Guests &amp; links' in step.new[0].text,
+            "Show notes: the description as a collapsible quote")
+    _assert(step.new[0].reply_to is not None, "a reply to the message the button is on (the audio)")
+    ai.remember_episode('simref0000000003', 'https://cdn.example.com/ep3.mp3', None, 'Episode Three', 'Sim Show', 600)
+    empty = user.tap_data(json.dumps({'tp': 'desc', 'r': 'simref0000000003'}))
+    _assert(not empty.new and empty.toasts and empty.toasts[0][0], "no text: a toast, no empty message")
+
+
 def main():
     sim.boot(network=False, ai='fake')
     try:
@@ -131,6 +146,7 @@ def main():
         test_storefront(user)
         test_opml_offline(user)
         test_summary_and_question(user)
+        test_show_notes(user)
     finally:
         sim.shutdown()
     print("all botsim checks passed")

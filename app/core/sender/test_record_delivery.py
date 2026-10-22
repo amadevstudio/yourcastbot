@@ -284,6 +284,7 @@ class World:
         self.structures = []  # (chat_id, structure) of every text message
         self.hint_pending = set()  # chats app/service/ai/hint.py would send the Summary note to
         self.hints_marked = []
+        self.remembered = []  # (args, kwargs) of ai.remember_episode
 
         def notice(chat_id, structures, *args, **kwargs):
             self.notices.append((chat_id, structures[0]['text']))
@@ -309,6 +310,8 @@ class World:
             'bot_blocked_reaction': self._blocked_reaction,
             'bot_removed_from_channel_reaction': lambda error, chat_id: False,
             'time': _ns(sleep=self.slept.append, time=time.time, time_ns=time.time_ns),
+            # the episode is remembered for its buttons: never in a real database here
+            'ai': _ns(remember_episode=lambda *a, **k: self.remembered.append((a, k))),
             'summary_hint': _ns(pending=lambda chats: self.hint_pending & set(chats),
                                 mark=self.hints_marked.append),
             'usage': _ns(record_deliveries=lambda chats, kind, link, mb: self.usage.append(
@@ -349,14 +352,44 @@ class World:
 
 
 def _check_episode_text_formats():
-    """One rich message by default, a separate quote on request, the caption for channels."""
+    """Brief by default, one rich message or a separate quote on request, the caption for channels."""
     long_text = "Opening sentence. " + ("Body of the show notes. " * 150) + "THE END."
     assert len(long_text) > 3000
     hint = 'switch the format'
 
+    # Brief (the default, a stored NULL): the header only, Summary and Show notes under the audio
+    world = World(size_mb=12, formats={1: (None, False), 2: ('brief', True)})
+    sender = world.sender(chats=(1, 2), descr=long_text)
+    sender._summary_ref = 'ref1'  # AI on
+    sent = sender.send_record()
+    _assert(sorted(sent) == [1, 2] and world.rich.sent == [] and world.bot.messages == [],
+            "brief: a plain audio, no rich message, no description after it")
+    _assert('Record Club #1' in world.bot.captions[1] and 'Opening sentence' not in world.bot.captions[1],
+            "brief: the caption is the header only")
+    _assert([(a[0], k.get('descr')) for a, k in world.remembered] == [(sender._episode_ref, long_text)]
+            and sender._episode_ref, "brief: the episode is remembered with its description, for the button")
+    keyboard = sender.episode_buttons('en', chat_id=1)
+    _assert([json.loads(data)['tp'] for _, data in keyboard] == ['sum', 'desc']
+            and json.loads(keyboard[1][1])['r'] == sender._episode_ref,
+            "brief: Summary, then Show notes naming the episode")
+    _assert([t for _, t in world.notices if hint in t] == [] and world.hints_remembered == [],
+            "brief: no rich note")
+    _assert(sender.episode_buttons('en', chat_id=-1001) == [],
+            "a channel gets neither button")
+    world = World(size_mb=12, formats={1: (None, False)})
+    quiet = world.sender(chats=(1,), descr='   ')
+    quiet.send_record()
+    _assert([json.loads(data)['tp'] for _, data in quiet.episode_buttons('en', chat_id=1)] == [],
+            "brief: no Show notes for an episode without text (and no Summary with AI off)")
+    world = World(size_mb=12, formats={1: ('rich', True)})
+    rich = world.sender(chats=(1,), descr=long_text)
+    rich.send_record()
+    _assert('desc' not in [json.loads(data)['tp'] for _, data in rich.episode_buttons('en', chat_id=1)],
+            "rich (chosen): the text is in the message, no Show notes button")
+
     # Chat 1: default (rich), first time. Chat 2: rich, hint shown before. Chat 3: not a
     # user row (a channel), the caption as before.
-    world = World(size_mb=12, formats={1: (None, False), 2: (None, True)})
+    world = World(size_mb=12, formats={1: ('rich', False), 2: ('rich', True)})
     sent = world.sender(descr=long_text, chat_params={3: {'description_mode': 'none'}}).send_record()
     _assert(sorted(sent) == [1, 2, 3], "rich: everyone is delivered")
     _assert([(c, k) for c, k, _ in world.rich.sent] == [(1, 'url'), (2, 'url')],
@@ -371,7 +404,7 @@ def _check_episode_text_formats():
     _assert(world.bot.messages == [], "rich: no separate description message")
 
     # Same user again: remembered, no second note
-    world = World(size_mb=12, formats={1: (None, True)})
+    world = World(size_mb=12, formats={1: ('rich', True)})
     world.sender(chats=(1,)).send_record()
     _assert([t for _, t in world.notices if hint in t] == [] and world.hints_remembered == [],
             "rich: no note once it was shown")
@@ -408,7 +441,7 @@ def _check_episode_text_formats():
             "agent, meta: header only, nothing after")
 
     # A rich message that fails for a reason of its own: audio and quote, the text is not lost
-    world = World(size_mb=12, formats={1: (None, False)}, rich_error="Bad Request: rich messages are not supported")
+    world = World(size_mb=12, formats={1: ('rich', False)}, rich_error="Bad Request: rich messages are not supported")
     sent = world.sender(chats=(1,), descr=long_text).send_record()
     _assert(sent == [1] and [c for c, _ in world.bot.audio] == [1], "rich refused: the audio is delivered anyway")
     _assert(len(world.bot.messages) == 1 and 'Opening sentence.' in world.bot.messages[0][1],
@@ -417,7 +450,7 @@ def _check_episode_text_formats():
     _assert([t for _, t in world.notices if hint in t] == [], "rich refused: no 'how to switch' note")
 
     # A blocked user is not a failure of rich messages
-    world = World(size_mb=12, formats={1: (None, True), 2: (None, True)},
+    world = World(size_mb=12, formats={1: ('rich', True), 2: ('rich', True)},
                   rich_error="Forbidden: bot was blocked by the user", rich_error_chat=1)
     sent = world.sender(chats=(1, 2)).send_record()
     _assert(sent == [2], "blocked on rich: the other chat is delivered")
@@ -426,7 +459,7 @@ def _check_episode_text_formats():
 
     # Over 50 MB the agent uploads a plain audio: header, then the description apart;
     # the chats that reuse the file_id get the rich message
-    world = World(size_mb=389, formats={1: (None, True), 2: (None, True)})
+    world = World(size_mb=389, formats={1: ('rich', True), 2: ('rich', True)})
     sent = world.sender(chats=(1, 2), descr=long_text).send_record()
     _assert(sorted(sent) == [1, 2] and world.agent.sent_to == [1], "agent: first chat by the agent")
     _assert('Opening sentence' not in world.agent.captions[1], "agent: caption is the header only")
@@ -436,7 +469,7 @@ def _check_episode_text_formats():
             "agent: the next chat reuses the file_id in a rich message")
 
     # Rich upload from disk (Telegram refused the URL)
-    world = World(size_mb=12, formats={1: (None, True), 2: (None, True)})
+    world = World(size_mb=12, formats={1: ('rich', True), 2: ('rich', True)})
     world.rich.url_error = "Bad Request: failed to get HTTP URL content"
     sent = world.sender(chats=(1, 2)).send_record()
     _assert(sorted(sent) == [1, 2] and world.requester.downloads == 1,
@@ -460,9 +493,9 @@ def _check_summary_button():
     srh.InlineKeyboardMarkup = Keyboard
     srh.InlineKeyboardButton = lambda text, callback_data: (text, json.loads(callback_data))
     srh.ai_summary = _ns(enabled=lambda: True, button_data=saved[2].button_data)
-    srh.ai = _ns(remember_episode=lambda *a: remembered.append(a))
     try:
         sender = World(size_mb=12).sender()
+        srh.ai = _ns(remember_episode=lambda *a, **k: remembered.append(a))  # after World(), which sets its own
         _assert(sender.get_next_ep_button('en', chat_id=1) is None, "AI off until the episode is remembered")
         sender._remember_for_summary()
         _assert(len(remembered) == 1 and remembered[0][1] == sender.link, "the episode is remembered by its link")
@@ -475,9 +508,13 @@ def _check_summary_button():
         _assert([json.loads(data) for _, data in agent_buttons] == [{'tp': 'sum', 'r': remembered[0][0]}],
                 "an agent upload (over 50 MB) gets the same Summary button")
         srh.ai_summary = _ns(enabled=lambda: False, button_data=saved[2].button_data)
-        off = World(size_mb=12).sender()
+        off_world = World(size_mb=12)
+        off = off_world.sender()
         off._remember_for_summary()
-        _assert(off.get_next_ep_button('en', chat_id=1) is None, "AI off: no button, nothing remembered")
+        _assert(off.get_next_ep_button('en', chat_id=1) is None and off._summary_ref is None,
+                "AI off: no Summary button")
+        _assert(len(off_world.remembered) == 1 and off._episode_ref,
+                "but the episode is still remembered (Show notes needs its text)")
     finally:
         srh.InlineKeyboardMarkup, srh.InlineKeyboardButton, srh.ai_summary, srh.ai = saved
     _check_auto_summaries()

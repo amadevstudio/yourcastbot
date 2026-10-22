@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""users.episode_format / rich_hint_sent: created on open, default rich, switchable.
+"""users.episode_format / rich_hint_sent: created on open, default brief (rich before 2026-10-22), switchable.
 
 Temporary file DB only. Run from the repo root: python db/test_episode_format.py
 """
@@ -12,7 +12,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from app.service.record.text_format import CAPTION, META, RICH, SEPARATE, user_format  # noqa: E402
+from app.service.record.text_format import BRIEF, CAPTION, META, RICH, SEPARATE, user_format  # noqa: E402
 from db.sqliteAdapter import SQLighter  # noqa: E402
 
 
@@ -60,9 +60,9 @@ def main():
     finally:
         db.close()
 
-    _assert_eq([user_format(v) for v in (None, '', 'rich', 'junk', 'separate', 'caption', 'meta')],
-               [RICH, RICH, RICH, RICH, SEPARATE, CAPTION, META],
-               "stored value to format: the four choices, rich for anything else")
+    _assert_eq([user_format(v) for v in (None, '', 'rich', 'junk', 'separate', 'caption', 'meta', 'brief')],
+               [BRIEF, BRIEF, RICH, BRIEF, SEPARATE, CAPTION, META, BRIEF],
+               "stored value to format: a choice made stays (rich too), brief for anything else")
     print("all episode format checks passed")
 
 

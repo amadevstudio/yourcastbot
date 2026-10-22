@@ -1,12 +1,12 @@
 from typing import TypedDict, Callable, Literal, Dict, Optional, Required
 
 from app.controller.builders import welcomeModule, menuModule, subsModule, searchModule, podcastModule, recsModule, \
-    helpModule, channelModule, topModule, adminModule, settingsModule, summaryModule
+    helpModule, channelModule, topModule, adminModule, settingsModule, summaryModule, episodeTextModule
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
 from app.service.ai import auto as ai_auto, summary as ai_summary
-from app.service.record.text_format import EPISODE_FORMAT_ACTIONS, EPISODE_FORMAT_HINT_ACTION
+from app.service.record.text_format import DESCRIPTION_ACTION, EPISODE_FORMAT_ACTIONS, EPISODE_FORMAT_HINT_ACTION
 from app.service.payment import (
     paymentModule,
     patreonPaymentModule,
@@ -107,7 +107,12 @@ class RouteMap:
                 ai_summary.ACTION: {
                     'method': summaryModule.request_summary,
                     'state_independent': True,
-                }
+                },
+                # Show notes under a brief episode: the feed's text, a reply to the audio
+                DESCRIPTION_ACTION: {
+                    'method': episodeTextModule.show_description,
+                    'state_independent': True,
+                },
             }
         },
 
