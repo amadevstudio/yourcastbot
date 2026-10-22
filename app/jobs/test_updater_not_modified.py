@@ -45,6 +45,9 @@ from app.service.podcast.podcast import prepare_string_from_rss  # noqa: E402
 from app.service.record.helpers import get_record_uniq_id  # noqa: E402
 from db.sqliteAdapter import SQLighter  # noqa: E402
 from lib.tools.time_tools.general import format_rss_last_date  # noqa: E402
+from lib.net import public_only  # noqa: E402
+
+public_only.allow_private(True)  # this test serves from 127.0.0.1
 
 CHANNEL_ID = 7
 PAYER_A, PAYER_B, FREE_C = 1001, 1002, 1003

@@ -20,6 +20,9 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from lib.requests.requesterModule import Requester  # noqa: E402
+from lib.net import public_only  # noqa: E402
+
+public_only.allow_private(True)  # this test serves from 127.0.0.1
 
 BODY = bytes(range(256)) * 400          # 102400 bytes
 ETAG = '"v1"'
