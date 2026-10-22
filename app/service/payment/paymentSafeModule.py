@@ -193,6 +193,20 @@ def award_referrer_for_payment(invitee_tg_id):
 
 
 # Дать подарок за приглашение или начало использование
+# A first command other than /start (/search, /menu from the bot's menu) creates
+# the user with no plan; podcasts they subscribe to before /start used to make a
+# newcomer "returning" (tariff_secret_start_cmd_period, 2 days instead of 14).
+NEWCOMER_HOURS = 24
+
+
+def _joined_recently(db, telegram_id) -> bool:
+    """The user row is younger than NEWCOMER_HOURS (users.created_at; NULL for old users)."""
+    row = db.cursor.execute(
+        "SELECT created_at >= datetime('now', ?) FROM users WHERE telegramId = ?",
+        ('-%d hours' % NEWCOMER_HOURS, str(telegram_id))).fetchone()
+    return bool(row and row[0])
+
+
 def giveAward(refer_tg_id, refered_tg_id, mode, invited=False):
     if not mode:
         mode = 'reged'
@@ -249,7 +263,7 @@ def giveAward(refer_tg_id, refered_tg_id, mode, invited=False):
     elif mode == 'new':
         pc_count = db.select_users_subs_count(refer_tg_id)
 
-        if pc_count == 0:
+        if pc_count == 0 or _joined_recently(db, refer_tg_id):
             on_period = tariff_new_user_period
             if invited:
                 # a friend's link: the welcome plan is longer
