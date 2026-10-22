@@ -787,6 +787,25 @@ def send_new_records_by_channel(
     return ChannelUpdateResult(new_recs_flag, 'fetched')
 
 
+def _answered_feed_url(channel, pc_info):
+    """The feed's address when only its form without "www." answered.
+
+    podcast_info_query retries a refused www. address without it (Europe 1
+    answers 403 there and redirects the other to its new host): stored, the
+    next circle asks the address that answers instead of a refusal every
+    hour. It is the same feed that was parsed, so no cursor changes. A stored
+    address that answers keeps it (the feed's URL is never the catalog's).
+    """
+    try:
+        stored = str(channel['rss_link'] or '')
+    except (KeyError, IndexError, TypeError):
+        return None
+    answered = str((pc_info or {}).get('feedUrl') or '')
+    if stored and answered and answered != stored and answered == stored.replace("www.", ""):
+        return answered
+    return None
+
+
 def _persist_channel_http_validators(channel, pc_info):
     if not pc_info:
         return
@@ -800,12 +819,16 @@ def _persist_channel_http_validators(channel, pc_info):
         old_lm = channel['http_last_modified']
     except (KeyError, IndexError, TypeError):
         old_lm = None
-    if new_etag == old_etag and new_lm == old_lm:
+    answered = _answered_feed_url(channel, pc_info)
+    if new_etag == old_etag and new_lm == old_lm and answered is None:
         return
     db_users = SQLighter(db_path)
     try:
         db_users.update_channel_http_validators(
-            channel['id'], new_etag, new_lm, expected_rss_link=channel['rss_link'])
+            channel['id'], new_etag, new_lm, expected_rss_link=channel['rss_link'],
+            rss_link=answered)
+        if answered is not None:
+            logger.log("Feed answered without www for channel", channel['id'], "; stored:", answered)
     except Exception as e:
         logger.err("podcastsUpdater/persistHttpValidators: ", e)
     finally:
