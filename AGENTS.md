@@ -632,12 +632,17 @@ without server access. Rules:
 ## Amplitude
 
 Taps reach Amplitude from the bot role (`analytics_serving`, one event per
-route; the user is `users.id`). What the bot does on its own goes through
+route; the user is `users.id`). The event is the route, so a button inside it
+(`nrec`, `desc`, `sum`, `wSub`...) is the event property `action`: without
+it "Listen", "Show notes" and "Summary" were all `recs`. What the bot does on its own goes through
 `app/service/analytics_events.track` (any role; the payment scripts pass
 `sync=True`): `digest_sent {episodes}`, `plan_off {level, paid_before}`
 (the tick did not renew it; `paid_before` false is a trial that did not
 convert), `payment {method, amount_cents, ...}` (Stars, CryptoBot),
-`summary_ready {cached, seconds}`. A digest's Listen button carries
+`summary_ready {cached, seconds}`, `episode_delivered {mode, format}` (one per
+user chat that got the audio, from the sender: most listeners never tap, so
+without it Amplitude counted them as gone). These carry the running plan's
+level as the user property `plan` (0: none). A digest's Listen button carries
 `"s": "d"` (compact JSON, within 64 bytes), so its tap has
 `source: digest`. Tracking never fails the caller and never creates a
 user row (it reads `users`, not `get_user_by_tg`).

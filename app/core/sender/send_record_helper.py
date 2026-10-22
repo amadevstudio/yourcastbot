@@ -631,6 +631,7 @@ class Sender:
 
         self._sync_outbox_recipients()
         self._record_usage()
+        self._track_deliveries()
         self._queue_auto_summaries()
         self._send_summary_hints()
         complete = self._outbox_job_complete()
@@ -690,6 +691,17 @@ class Sender:
             usage.record_deliveries(delivered, self.usage_kind, self.link, downloaded_mb)
         except Exception as e:
             self.logger.warn("usage ledger:", e)
+
+    def _track_deliveries(self):
+        """episode_delivered in Amplitude for each user chat that got the audio
+        (analytics_events). Never fails the send."""
+        if not self.successfully_sent_to:
+            return
+        try:
+            from app.service import analytics_events
+            analytics_events.episode_delivered(set(self.successfully_sent_to), self.usage_kind, self.text_formats)
+        except Exception as e:
+            self.logger.warn("analytics deliveries:", e)
 
     def _note_audio_message(self, chat_id, sent):
         """The delivered audio's message id (a Bot API Message or the agent's dict), for an

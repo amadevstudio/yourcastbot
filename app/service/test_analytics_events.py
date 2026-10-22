@@ -95,6 +95,30 @@ def test_tap_event():
         'eventProperties': {'source': 'digest'}})
     _assert(queued[0]['command'] == 'recs' and queued[0]['event_properties']['source'] == 'digest'
             and queued[0]['event_properties']['request_type'] == 'call', "the tap's Amplitude event has the source")
+    _assert('action' not in queued[0]['event_properties'], "a route's own tap names no action")
+    tracker.smart_event_telegram_processing({
+        'tgData': {'callback': object(), 'route_name': 'recs', 'language_code': 'en', 'chat_id': 1001},
+        'userSystemId': 7, 'actionName': 'desc', 'language_code': 'en', 'specialEventData': None})
+    _assert(queued[1]['command'] == 'recs' and queued[1]['event_properties']['action'] == 'desc',
+            "a button inside the route (Show notes) is the event's action: the route alone hid it")
+
+
+def test_deliveries(db):
+    fake = FakeAnalytics()
+    count = analytics_events.episode_delivered([1001, -100123, 5555], 'circle', {1001: 'brief'}, db, analytics=fake)
+    _assert(count == 1 and fake.queued[0]['command'] == 'episode_delivered'
+            and fake.queued[0]['event_properties'] == {'mode': 'circle', 'format': 'brief'},
+            "one event per user chat that got the audio; a channel and an unknown chat are not users")
+    _assert('plan' not in fake.queued[0]['user_properties'], "a plan that cannot be read sends no plan property")
+    connection = sqlite3.connect(db)
+    connection.executescript(
+        "CREATE TABLE tariffs(id INTEGER PRIMARY KEY, level INTEGER);"
+        "CREATE TABLE user_tariff_cs(uid INTEGER, tariff_id INTEGER, time_left INTEGER);"
+        "INSERT INTO tariffs VALUES (3, 3); INSERT INTO user_tariff_cs VALUES (7, 3, 100);")
+    connection.close()
+    analytics_events.episode_delivered([1001], 'rec', None, db, analytics=fake)
+    _assert(fake.queued[-1]['user_properties']['plan'] == 3 and fake.queued[-1]['event_properties'] == {'mode': 'rec'},
+            "the running plan's level is a user property: every chart splits by plan")
 
 
 def main():
@@ -106,6 +130,7 @@ def main():
             "CREATE TABLE payment_history(user_id INTEGER, status TEXT);")
         test_track(db)
         test_plan_off(db)
+        test_deliveries(db)
     test_tap_source()
     test_tap_event()
     print("all analytics event checks passed")

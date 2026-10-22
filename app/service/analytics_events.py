@@ -13,7 +13,11 @@ is not tracked (never a row created for them), and tracking never fails the
 caller.
 
 Events: digest_sent {episodes}, plan_off {level, paid_before},
-payment {method, amount_cents, level}, summary_ready {cached, seconds}.
+payment {method, amount_cents, level}, summary_ready {cached, seconds},
+episode_delivered {mode: rec | circle, format} (one per user chat that got
+the audio: most listeners never tap, they get episodes; without it Amplitude
+saw them as gone). Each carries the user's running plan level as the user
+property `plan` (0: none), so any chart can be split by plan.
 """
 from db.connection import connect_sqlite
 from lib.tools.logger import logger
@@ -42,6 +46,15 @@ def _user(telegram_id, database=None):
         connection.close()
 
 
+def _plan_level(telegram_id, database=None):
+    """The running plan's level (0: none); None when it cannot be read (no property sent)."""
+    try:
+        from db.tariff_rows import running_plan_level
+        return running_plan_level(telegram_id, database)
+    except Exception:
+        return None
+
+
 def track(telegram_id, event, properties=None, database=None, analytics=None, sync=False) -> bool:
     """sync: send before returning (a script that exits next would drop the queue)."""
     try:
@@ -49,8 +62,12 @@ def track(telegram_id, event, properties=None, database=None, analytics=None, sy
         if user is None:
             return False
         analytics = analytics or _analytics()
+        user_properties = {'lang': user[1], 'telegram_id': int(telegram_id)}
+        plan = _plan_level(telegram_id, database)
+        if plan is not None:
+            user_properties['plan'] = plan
         args = {'user_id': user[0], 'command': event,
-                'user_properties': {'lang': user[1], 'telegram_id': int(telegram_id)},
+                'user_properties': user_properties,
                 'event_properties': dict(properties or {})}
         if sync:
             analytics.event(args)
@@ -60,6 +77,23 @@ def track(telegram_id, event, properties=None, database=None, analytics=None, sy
     except Exception as e:
         logger.warn("analytics event", event, "not tracked:", type(e).__name__, e)
         return False
+
+
+def episode_delivered(chat_ids, mode, formats=None, database=None, analytics=None) -> int:
+    """The audio reached these chats (mode: the outbox action, rec or circle). Users
+    only: a channel is not a user (negative ids, no users row). Returns how many."""
+    tracked = 0
+    for chat_id in chat_ids:
+        try:
+            if int(chat_id) <= 0:
+                continue
+        except (TypeError, ValueError):
+            continue
+        properties = {'mode': mode}
+        if formats and formats.get(chat_id):
+            properties['format'] = formats[chat_id]
+        tracked += bool(track(chat_id, 'episode_delivered', properties, database, analytics))
+    return tracked
 
 
 def plan_off(telegram_id, level, database=None) -> bool:
