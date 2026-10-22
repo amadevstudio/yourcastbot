@@ -681,13 +681,19 @@ Lock: `python app/admin_web/test_product.py` (CD gate).
 ## Welcome screen
 
 `/start` shows the top podcasts in the user's language (then worldwide) as
-checkboxes and one button subscribes to all ticked ones
+checkboxes, and a tap on one subscribes to it; a second tap unsubscribes
 (`app/controller/builders/onboarding.py`, actions `wPick` / `wSub`,
-state independent: the welcome message stays in the chat). Telethon
-callbacks do not carry the keyboard, so each button holds the selection as
-a bitmask over the list plus a checksum of the list; the list is rebuilt
-on each tap and a changed list is redrawn, never subscribed to. Search and
-"skip to menu" stay on the screen. Subscribing keeps the free
+state independent: the welcome message stays in the chat). It used to tick
+only, with a button that subscribed to the ticked ones: people ticked and
+left (26 ticks, 2 subscribe taps in two days, October 2026). "Done" (`wSub`)
+now only names what is subscribed. A tick is the chat's subscription, read
+on each tap. The list must not move when one is ticked, so each button holds
+the chat's newest subscription row when the screen was drawn (`u`): rows up
+to it stay out of the list (/start again offers new podcasts), later ones are
+ticks. A checksum of the list rides along: a changed list is redrawn, never
+subscribed to. A button drawn before (a bitmask `m`, no `u`) holds ticks
+that were never subscribed: its subscribe button still subscribes them, its
+tick redraws the new screen. Search and "skip to menu" stay on the screen. Subscribing keeps the free
 subscription limit. The new user's TED Talks Daily subscription
 (`referral_processing`) is unchanged: the digest audience comes from it.
 A link from Apple Podcasts typed into search opens that podcast.
