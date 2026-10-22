@@ -204,8 +204,8 @@ def validate_precheckout_payload(
         return False, "Invalid payment offer"
     if not offer_open(user_id, data["o"]):
         return False, "Offer is no longer available"
-    if data["u"] and stars_subscription.active(user_id):
-        # Telegram would charge both every month
+    if data["u"] and stars_subscription.second_subscription(user_id, data["p"]):
+        # Telegram would charge both every month; a renewal (same payload) passes
         return False, "Subscription is already active"
     return True, None
 
@@ -538,7 +538,7 @@ def process_successful_payment(
         try:
             stars_subscription.note_charge(
                 user['telegramId'], subscription_until or time.time() + stars_subscription.PERIOD_SECONDS,
-                charge_id if recurring != 'renewal' else None)
+                payload_data['p'], charge_id if recurring != 'renewal' else None)
         except Exception as e:
             logger.warn("stars subscription flag:", type(e).__name__, e)
 

@@ -379,8 +379,11 @@ def subscription(stars):
                        (True, 3, stars.config.tariff_period + sub.GRACE_HOURS, 0),
                        "the first charge turns Relay on until a day after the next charge")
             _assert(sub.active(603, database=path), "the subscription is running")
-            _assert_eq(stars.validate_precheckout_payload(params['payload'], 603, 'XTR', payload['s']),
-                       (False, "Subscription is already active"), "a second one is refused before payment")
+            _assert(stars.validate_precheckout_payload(params['payload'], 603, 'XTR', payload['s'])[0],
+                    "a renewal (the running subscription's payload) passes a pre-checkout, if Telegram asks one")
+            other = stars.create_payload(603, 500, payload['s'], RATE, plan_id=3, subscription=True)
+            _assert_eq(stars.validate_precheckout_payload(other, 603, 'XTR', payload['s']),
+                       (False, "Subscription is already active"), "a second subscription is refused before payment")
             offer(603)
             _assert_eq((links, toasts), ([], [stars.get_message('starsSubActive', 'en')]), "and not offered")
             renewal = stars.process_successful_payment(
