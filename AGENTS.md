@@ -428,7 +428,12 @@ role validates the stored URL first; only when it fails does it ask iTunes
 (exact collection id) and validate the returned RSS. A feed that answers
 keeps its address: a check of a healthy show must not move it to the
 catalog's URL (other guids/dates there break every cursor). RSS-only feeds
-are only rechecked. Manual refreshes queue a check at most every five
+are only rechecked. A `www.` address the host refuses while the same one
+without `www.` answers (`podcast_info_query` retries so; Europe 1 answered
+403 every hour for 11 feeds) is stored without it by the circle: it is the
+feed that was parsed, and the next circle asks that address first
+(`podcastsUpdater._answered_feed_url`; lock:
+`python app/jobs/test_updater_not_modified.py`). Manual refreshes queue a check at most every five
 minutes.
 
 The stored URL answering again ends the failure cooldown and keeps the

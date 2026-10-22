@@ -89,6 +89,12 @@ def _feed_xml(version):
 
 class _Feed(BaseHTTPRequestHandler):
     def do_GET(self):
+        if FEED.get("www_refused") and "www." in self.path:
+            FEED["requests"].append("403")  # europe1.fr: www. refused, the bare host redirects
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         etag = '"v%d%s"' % (FEED["version"], "r" if FEED.get("redate") else "")
         conditional = self.headers.get("If-None-Match")
         if conditional == etag:
@@ -476,6 +482,28 @@ def main():
             sent, requests = _circle()
         _assert_eq(sent, [('Tuesday',[PAYER_A,PAYER_B])], 'bookmark failure still delivers')
         _assert_eq(_cursor(FREE_C), _pgd(2), 'bookmark failure still moves the free cursor')
+
+        # A www. address refused while the same one without www. answers (the
+        # updater's retry): the address that answered is stored, the next
+        # circle asks it first and the refusal is not repeated every hour.
+        www_url = feed_url.replace("/feed.xml", "/www.feed.xml")
+        FEED['version'] = 1
+        FEED['www_refused'] = True
+        _setup(www_url)
+        sent, requests = _circle()
+        _assert_eq((requests[0], requests[-1]), ('403', '200 full'), 'the refused www. address is retried without it')
+        _assert_eq(SQLighter(config.db_path).get_channel(CHANNEL_ID)['rss_link'], feed_url,
+                   'the address that answered is stored')
+        FEED['version'] = 2
+        sent, requests = _circle()
+        _assert_eq((sent, requests), ([('Tuesday', [PAYER_A, PAYER_B])], ['200 conditional']),
+                   'the next circle asks the stored address once and delivers')
+        FEED['www_refused'] = False
+        FEED['version'] = 1
+        _setup(www_url)
+        _circle()
+        _assert_eq(SQLighter(config.db_path).get_channel(CHANNEL_ID)['rss_link'], www_url,
+                   'a www. address that answers keeps it')
     finally:
         server.shutdown()
     print("all updater 304 checks passed")
