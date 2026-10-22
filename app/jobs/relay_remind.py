@@ -137,7 +137,7 @@ def send_relay_d3_reminders(database=None):
         if not should_send_d3(
                 user["time_left"], d3_already_sent(telegram_id, database=db_file)):
             continue
-        if stars_subscription.active(telegram_id, database=db_file):
+        if stars_subscription.covers(telegram_id, user["tariff_id"], user["price"], database=db_file):
             continue  # the subscription's next charge renews the plan: nothing to pay by hand
         lang = user["lang"] if user["lang"] else "en"
         days = days_left_label(user["time_left"])

@@ -57,6 +57,9 @@ class _TariffsDB:
     def getUserSubscriptionByTg(self, _chat_id):
         return self.subscription
 
+    def getTariffById(self, tariff_id):
+        return next((tariff for tariff in TARIFFS if tariff['id'] == tariff_id), None)
+
     def close(self):
         pass
 
@@ -400,6 +403,11 @@ def subscription(stars):
                        "a renewal is credited once: the tick renews the plan from it")
             _assert_eq((flags[sub.FLAG_UNTIL], flags[sub.FLAG_CHARGE]), (int(until + 30 * 86400), 'sub-1'),
                        "the paid period moves on, the subscription keeps its first charge id")
+            _assert_eq((flags[sub.FLAG_PLAN], flags[sub.FLAG_CENTS]), (3, 500), "and what a charge pays for")
+            _assert(sub.covers(603, 3, 500, database=path), "it covers Relay at its price: no D-3")
+            _assert(not sub.covers(603, 1, 100, database=path), "it does not cover another plan")
+            _assert(not sub.covers(603, 3, 600, database=path), "nor Relay after a price rise")
+
         def recurring_page(chat_id):
             sent = []
             with patch.object(stars, 'SQLighter', _TariffsDB), patch.object(sub, 'db_path', path), \
@@ -414,6 +422,37 @@ def subscription(stars):
         page, rows = recurring_page(603)
         _assert_eq([row['tp'] for row in rows], ['bs_patr', 'bck'], "a subscriber sees no second subscription")
         _assert('next charge' in page['text'], "but when the next charge is")
+
+        # the change-plan page switched the subscriber: the charges paid for the old plan
+        edits = []
+
+        def plan_change(new_plan, request=None):
+            def make_request(_token, method_name, method=None, **kw):
+                if request:
+                    raise request
+                edits.append((method_name, kw['params']))
+                return True
+            with patch.object(stars, 'SQLighter', _TariffsDB), patch.object(sub, 'db_path', path), \
+                    patch.object(stars.apihelper, '_make_request', make_request):
+                return stars.plan_change_notice(603, new_plan, 'en')
+        relay = next(tariff for tariff in TARIFFS if tariff['id'] == 3)
+        bronze_plan = next(tariff for tariff in TARIFFS if tariff['id'] == 1)
+        _assert_eq(plan_change(relay), (None, []), "a change to the plan the subscription pays for: nothing")
+        notice, rows = plan_change(bronze_plan, RuntimeError('Bad Request'))
+        _assert_eq((notice, rows), (stars.get_message('starsSubCancelFailed', 'en'), []),
+                   "a cancel Telegram refused: the user hears how to cancel it by hand")
+        _assert(sub.active(603, database=path), "and the flags stay (the charges still come)")
+        notice, rows = plan_change(bronze_plan)
+        _assert_eq(edits, [('editUserStarSubscription',
+                            {'user_id': 603, 'telegram_payment_charge_id': 'sub-1', 'is_canceled': True})],
+                   "another plan: the subscription is canceled by its first charge id")
+        _assert('Relay' in notice and 'canceled' in notice, "the user is told which one")
+        _assert_eq(rows, [[{'text': stars.get_message('starsSubButton', 'en'),
+                            'callback_data': {'tp': 'bs_stars_sub', 'v': 1}}]],
+                   "and offered a subscription to the new plan")
+        _assert(not sub.active(603, database=path) and not sub.second_subscription(603, 'other', database=path),
+                "the canceled one is forgotten: a new one can be sold")
+        _assert_eq(plan_change({'id': 0, 'price': 0}), (None, []), "nothing left to cancel")
     finally:
         os.remove(path)
 

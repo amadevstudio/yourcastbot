@@ -365,8 +365,13 @@ def choose_bot_subscription_tariff(data: ControllerParams):
                 tariff_str, current_subscription['balance'], current_tariff['price'],
                 current_subscription['time_left'], current_subscription['notify_count'],
                 data['language_code'])
+            # a Stars subscription paid for the old plan: canceled, one for the new plan offered
+            from app.service.payment.starsPaymentModule import plan_change_notice
+            notice, rows = plan_change_notice(data['chat_id'], desire_tariff, data['language_code'])
+            if notice:
+                message_str += "\n\n" + notice
             render_messages(data['chat_id'], [{
-                'type': 'text', 'text': message_str, 'reply_markup': after_action_keyboard}])
+                'type': 'text', 'text': message_str, 'reply_markup': rows + after_action_keyboard}])
             return
         else:
             notify(data['callback'], data['message'], get_message('error', data['language_code']), alert=True)

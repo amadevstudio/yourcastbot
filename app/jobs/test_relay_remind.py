@@ -256,12 +256,21 @@ def main():
                      (time.time() + 86400,))
         conn.execute("UPDATE users SET flags = json_object('stars_sub_until', ?) WHERE telegramId = 108",
                      (time.time() - 86400,))
+        # a subscription that pays for this plan at its price (107 has neither noted: sold before)
+        _add_user(conn, 109, 40)
+        _add_user(conn, 110, 40)
+        _add_user(conn, 111, 40)
+        for telegram_id, plan, cents in ((109, 3, 500), (110, 1, 100), (111, 3, 300)):
+            conn.execute("UPDATE users SET flags = json_object('stars_sub_until', ?, 'stars_sub_plan', ?, "
+                         "'stars_sub_cents', ?) WHERE telegramId = ?",
+                         (time.time() + 86400, plan, cents, telegram_id))
         conn.commit()
         conn.close()
         del sent[:]
         relay_remind.send_relay_d3_reminders(database=path)
-        _assert_eq([row[0] for row in sent], [108],
-                   "a running Stars subscription gets no D-3; one whose period is over does")
+        _assert_eq([row[0] for row in sent], [108, 110, 111],
+                   "a running Stars subscription for this plan gets no D-3; one whose period is over, "
+                   "one paying for another plan (Bronze's $1 on Relay) and one below today's price do")
     finally:
         os.remove(path)
 
