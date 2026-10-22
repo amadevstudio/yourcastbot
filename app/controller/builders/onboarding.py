@@ -1,16 +1,22 @@
 # -*- coding: utf-8 -*-
-"""The welcome screen: tick several popular podcasts, subscribe in one tap.
+"""The welcome screen: a tap on a popular podcast subscribes to it.
 
 Most new users used to end with the one podcast /start gives them (TED
-Talks Daily): the old screen opened a podcast page per tap. Now the top
-podcasts in the user's language are checkboxes and one button subscribes
-to all ticked ones.
+Talks Daily): the old screen opened a podcast page per tap. Then the top
+podcasts in the user's language became checkboxes with one button that
+subscribed to the ticked ones, and people ticked and left (26 ticks, 2
+subscribe taps in two days of October 2026): a tick looked like done. Now
+the tick is the subscription, a second tap undoes it, "Done" only sums up.
 
 The handler cannot read the keyboard back (Telethon callbacks carry only
-the data), so every button carries the selection as a bitmask over the
-list and a checksum of the list: the list is rebuilt on each tap, and a
-list that changed in between is redrawn rather than subscribed to. Telethon
-gives the data as bytes.
+the data), and the ticks are the chat's subscriptions, read on each tap.
+The list must not move when one is ticked, so every button carries the
+chat's newest subscription row when the screen was drawn (`u`): rows up to
+it are what the user had and stay out of the list, later ones are this
+screen's ticks. A checksum of the list rides along too: a list that changed
+in between is redrawn, never subscribed to. Telethon gives the data as
+bytes. A button drawn before (no `u`) carries a bitmask of ticks that were
+never subscribed: its "subscribe" still subscribes them, a tick redraws.
 
 "Popular in your language" is popular among users whose Telegram has that
 language, and many listeners of Persian shows run Telegram in English. A
@@ -50,13 +56,17 @@ def readable(name, language_code) -> bool:
     return scripts is None or name_scripts(name) <= scripts
 
 
-def top_podcasts(language_code, chat_id=None, count=PICKS, database=None) -> list[dict]:
-    """Popular podcasts in the user's language first, then worldwide ones, readable names only,
-    without the ones this chat is subscribed to."""
+def picker(language_code, chat_id=None, mark=None, count=PICKS, database=None) -> tuple[list[dict], int, set]:
+    """(the list, its mark, the ids ticked in it): popular podcasts in the user's language first,
+    then worldwide ones, readable names only, without the ones this chat had when the screen was
+    drawn (subscription rows up to `mark`; None: draw it now). Ticked: subscribed since."""
     db_users = SQLighter(db_path if database is None else database)
     try:
-        seen = set() if chat_id is None else {
-            row['channel_id'] for row in db_users.get_uccs_by_tg(chat_id, notifications_enabled=False)}
+        subs = {} if chat_id is None else {
+            row['channel_id']: row['id'] for row in db_users.get_uccs_by_tg(chat_id, notifications_enabled=False)}
+        if mark is None:
+            mark = max(subs.values(), default=0)
+        seen = {channel_id for channel_id, row_id in subs.items() if row_id <= int(mark)}
         top_list, spare = [], count * 2 + len(seen)  # rows left out as unreadable or already subscribed
         for lang_top in (True, False):
             for row in db_users.select_top(None, language_code, lang_top, None, None, count + spare, 0):
@@ -67,7 +77,12 @@ def top_podcasts(language_code, chat_id=None, count=PICKS, database=None) -> lis
                     seen.add(row['id'])
     finally:
         db_users.close()
-    return top_list
+    return top_list, int(mark), {row['id'] for row in top_list if row['id'] in subs}
+
+
+def top_podcasts(language_code, chat_id=None, count=PICKS, database=None) -> list[dict]:
+    """The list as drawn now: without any podcast this chat is subscribed to."""
+    return picker(language_code, chat_id, None, count, database)[0]
 
 
 def list_checksum(top_list) -> int:
@@ -78,38 +93,43 @@ def picked(top_list, mask) -> list[dict]:
     return [row for index, row in enumerate(top_list) if int(mask) >> index & 1]
 
 
-def welcome_message(language_code, top_list, mask=0) -> list[MessageStructuresInterface]:
+def welcome_message(language_code, top_list, ticked=(), mark=0, note=None) -> list[MessageStructuresInterface]:
+    """The screen: a button per podcast (ticked: subscribed), "Done", search and skip.
+    `note` (plain text already escaped) goes under the hint: what a tap could not do."""
     checksum = list_checksum(top_list)
     rows = []
     for index, row in enumerate(top_list):
-        ticked = int(mask) >> index & 1
         name = telegram_html.plain_text(row['name'])[:NAME_LIMIT]
         rows.append([{
-            'text': ('✅ ' if ticked else '▫️ ') + name,
-            'callback_data': {'tp': PICK_ACTION, 'i': index, 'm': int(mask), 'h': checksum},
+            'text': ('✅ ' if row['id'] in ticked else '▫️ ') + name,
+            'callback_data': {'tp': PICK_ACTION, 'i': index, 'u': int(mark), 'h': checksum},
         }])
     if top_list:
         rows.append([{
             'text': get_message('welcomeSubscribePicked', language_code).format(
-                count=len(picked(top_list, mask))),
-            'callback_data': {'tp': SUBSCRIBE_ACTION, 'm': int(mask), 'h': checksum},
+                count=sum(1 for row in top_list if row['id'] in ticked)),
+            'callback_data': {'tp': SUBSCRIBE_ACTION, 'u': int(mark), 'h': checksum},
         }])
     rows.append([{'text': get_message('goToSearch', language_code), 'callback_data': {'tp': 'search'}}])
     rows.append([{'text': get_message('skipWelcome', language_code), 'callback_data': {'tp': 'menu'}}])
     text = get_message('welcome', language_code)
     if top_list:
         text += '\n' + get_message('welcomePickHint', language_code)
+    if note:
+        text += '\n\n' + note
     return [{'type': 'text', 'text': text, 'reply_markup': rows}]
 
 
-def read_tap(callback_data) -> tuple[int | None, int, int | None]:
-    """(index or None, mask, checksum or None) from a welcome button (str, bytes or dict)."""
+def read_tap(callback_data) -> tuple[int | None, int, int | None, int | None]:
+    """(index or None, mask, checksum or None, mark or None) from a welcome button (str, bytes
+    or dict). No mark: a button drawn before the tick subscribed, its mask the ticks."""
     try:
         data = json.loads(callback_data) if isinstance(callback_data, (str, bytes)) else dict(callback_data)
     except (TypeError, ValueError):
-        return None, 0, None
-    index = data.get('i')
-    return (int(index) if index is not None else None), int(data.get('m') or 0), data.get('h')
+        return None, 0, None, None
+    index, mark = data.get('i'), data.get('u')
+    return ((int(index) if index is not None else None), int(data.get('m') or 0), data.get('h'),
+            (int(mark) if mark is not None else None))
 
 
 def subscribe_room(chat_id, database=None):
@@ -152,6 +172,15 @@ def subscribe(chat_id, rows, database=None, subscriber=add_sub) -> tuple[list[st
             result = None
         (done if result is not None else failed).append(name)
     return done, failed, over
+
+
+def unsubscribe(chat_id, row, database=None):
+    """A second tap on a ticked podcast: the subscription this screen made goes."""
+    db_users = SQLighter(db_path if database is None else database)
+    try:
+        db_users.remove_sub(chat_id, row['id'], None, 'itunes')
+    finally:
+        db_users.close()
 
 
 def result_message(language_code, done, failed, over) -> list[MessageStructuresInterface]:

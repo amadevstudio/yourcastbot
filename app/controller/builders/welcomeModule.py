@@ -11,6 +11,7 @@ from app.routes.ptypes import ControllerParams
 from app.service.payment import paymentSafeModule
 from app.service.podcast.subscription import add_sub
 from db.sqliteAdapter import SQLighter
+from lib.markup import telegram_html
 from lib.telegram.general.message_master import render_messages, message_editor, MessageStructuresInterface
 from lib.tools.logger import logger
 
@@ -166,8 +167,9 @@ def action_processing(data: ControllerParams, action: str | None, *action_params
 
 
 def construct_welcome_message(language_code, chat_id=None) -> list[MessageStructuresInterface]:
-    # popular podcasts in the user's language as checkboxes, one tap subscribes to the ticked ones
-    return onboarding.welcome_message(language_code, onboarding.top_podcasts(language_code, chat_id))
+    # popular podcasts in the user's language as checkboxes, a tap subscribes to one
+    top_list, mark, ticked = onboarding.picker(language_code, chat_id)
+    return onboarding.welcome_message(language_code, top_list, ticked, mark)
 
 
 def _redraw(data: ControllerParams, screen: list[MessageStructuresInterface]):
@@ -180,24 +182,58 @@ def _redraw(data: ControllerParams, screen: list[MessageStructuresInterface]):
     render_messages(data['chat_id'], screen)
 
 
+def _fresh(data: ControllerParams, toast: str = ''):
+    """The list changed since it was drawn (or the button is from before): draw it again."""
+    notify(data['callback'], data['message'], toast)
+    top_list, mark, ticked = onboarding.picker(data['language_code'], data['chat_id'])
+    _redraw(data, onboarding.welcome_message(data['language_code'], top_list, ticked, mark))
+
+
 def toggle_pick(data: ControllerParams):
-    top_list = onboarding.top_podcasts(data['language_code'], data['chat_id'])
-    index, mask, checksum = onboarding.read_tap(data['callback'].data if data['callback'] else None)
-    if index is None or checksum != onboarding.list_checksum(top_list):
-        mask = 0  # the list changed since it was drawn: start over on the new one
+    # a tap is the subscription (ticks were left unsubscribed): a ticked one again unsubscribes
+    index, _, checksum, mark = onboarding.read_tap(data['callback'].data if data['callback'] else None)
+    if mark is None:
+        return _fresh(data)
+    top_list, mark, ticked = onboarding.picker(data['language_code'], data['chat_id'], mark)
+    if index is None or index >= len(top_list) or checksum != onboarding.list_checksum(top_list):
+        return _fresh(data)
+    row, note = top_list[index], None
+    if row['id'] in ticked:
+        notify(data['callback'], data['message'], '')
+        onboarding.unsubscribe(data['chat_id'], row)
+        ticked.discard(row['id'])
+    elif onboarding.subscribe_room(data['chat_id']) == 0:
+        notify(data['callback'], data['message'], get_message('freeLimitReached', data['language_code']).format(
+            limit=config.max_subscriptions_without_tariff), alert=True)
+        return
     else:
-        mask ^= 1 << index
-    notify(data['callback'], data['message'], '')
-    _redraw(data, onboarding.welcome_message(data['language_code'], top_list, mask))
+        notify(data['callback'], data['message'], get_message("welcomeSubscribing", data['language_code']))
+        done, failed, over = onboarding.subscribe(data['chat_id'], [row])
+        if done:
+            ticked.add(row['id'])
+        elif failed or over:
+            note = onboarding.result_message(data['language_code'], [], failed, over)[0]['text']
+    _redraw(data, onboarding.welcome_message(data['language_code'], top_list, ticked, mark, note))
 
 
 def subscribe_picked(data: ControllerParams):
-    top_list = onboarding.top_podcasts(data['language_code'], data['chat_id'])
-    _, mask, checksum = onboarding.read_tap(data['callback'].data if data['callback'] else None)
-    if checksum != onboarding.list_checksum(top_list):
-        notify(data['callback'], data['message'], get_message("screenOutdated", data['language_code']))
-        _redraw(data, onboarding.welcome_message(data['language_code'], top_list))
+    _, mask, checksum, mark = onboarding.read_tap(data['callback'].data if data['callback'] else None)
+    if mark is not None:
+        # "Done": the ticks are subscribed already, this sums them up
+        top_list, mark, ticked = onboarding.picker(data['language_code'], data['chat_id'], mark)
+        if checksum != onboarding.list_checksum(top_list):
+            return _fresh(data, get_message("screenOutdated", data['language_code']))
+        names = [telegram_html.plain_text(row['name']) for row in top_list if row['id'] in ticked]
+        if not names:
+            notify(data['callback'], data['message'], get_message("welcomePickNothing", data['language_code']))
+            return
+        notify(data['callback'], data['message'], '')
+        _redraw(data, onboarding.result_message(data['language_code'], names, [], []))
         return
+    # a button drawn before: its ticks were never subscribed, subscribe them now
+    top_list = onboarding.top_podcasts(data['language_code'], data['chat_id'])
+    if checksum != onboarding.list_checksum(top_list):
+        return _fresh(data, get_message("screenOutdated", data['language_code']))
     rows = onboarding.picked(top_list, mask)
     if not rows:
         notify(data['callback'], data['message'], get_message("welcomePickNothing", data['language_code']))

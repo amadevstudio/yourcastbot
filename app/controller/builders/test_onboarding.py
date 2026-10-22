@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Welcome picker: checkboxes carry the selection, a changed list is not
-subscribed to, the free subscription limit holds, callbacks fit Telegram's
-64 bytes and are read as Telethon sends them (bytes), names in a script the
-language does not use stay out; a link from Apple Podcasts opens that podcast.
+"""Welcome picker: a tap subscribes (a tick is a subscription, a second tap
+undoes it), the list does not move when one is ticked, a changed list is not
+subscribed to, "Done" only sums up, a button drawn before (a mask of ticks
+never subscribed) still subscribes them, the free subscription limit holds,
+callbacks fit Telegram's 64 bytes and are read as Telethon sends them
+(bytes), names in a script the language does not use stay out; a link from
+Apple Podcasts opens that podcast.
 
 Run from the repo root: python app/controller/builders/test_onboarding.py
 (the behaviour runs where the bot's requirements are installed).
@@ -34,6 +37,7 @@ def _assert(cond, label):
 class FakeDB:
     tariff = None
     subs = 0
+    rows = {}  # chat -> {channel_id: subscription row id}, for the tap flow
 
     def __init__(self, *_):
         pass
@@ -43,7 +47,12 @@ class FakeDB:
         return [PERSIAN] + TOP if args[2] else TOP
 
     def get_uccs_by_tg(self, chat_id, notifications_enabled=True):
-        return [{'channel_id': 10001}] if chat_id == 4002 else []
+        if chat_id in self.rows:
+            return [{'id': row_id, 'channel_id': channel_id} for channel_id, row_id in self.rows[chat_id].items()]
+        return [{'id': 7, 'channel_id': 10001}] if chat_id == 4002 else []
+
+    def remove_sub(self, chat_id, channel_id, service_id, service_name):
+        self.rows.get(chat_id, {}).pop(channel_id, None)
 
     def getUserSubscriptionByTg(self, chat_id):
         return self.tariff
@@ -75,7 +84,7 @@ def test_picker(onboarding):
             and not onboarding.readable('پادکست WonderLand', 'en'),
             "Russian reads Cyrillic and Latin, Portuguese not Arabic, no letters is fine, no mixed names")
 
-    screen = onboarding.welcome_message('en', top, mask=0b101)
+    screen = onboarding.welcome_message('en', top, {10000, 10002}, mark=35506)
     _assert('popular channels' not in screen[0]['text'], "one invitation, not two")
     buttons = _buttons(screen)
     picks = [b for b in buttons if b['callback_data']['tp'] == onboarding.PICK_ACTION]
@@ -88,14 +97,38 @@ def test_picker(onboarding):
     _assert(tps[-3:] == [onboarding.SUBSCRIBE_ACTION, 'search', 'menu'], "subscribe, search and skip stay")
     _assert('(2)' in buttons[8]['text'], "the subscribe button counts the ticked ones")
 
-    index, mask, checksum = onboarding.read_tap(json.dumps(picks[1]['callback_data']))
-    _assert((index, mask) == (1, 0b101), "a tap carries its index and the selection")
+    index, _, checksum, mark = onboarding.read_tap(json.dumps(picks[1]['callback_data']))
+    _assert((index, mark) == (1, 35506), "a tap carries its index and the mark of the screen")
     _assert(checksum == onboarding.list_checksum(top), "and the checksum of the list it was drawn from")
     _assert(onboarding.list_checksum(list(reversed(top))) != checksum, "a reordered list has another checksum")
+    _assert(onboarding.read_tap(json.dumps(picks[1]['callback_data']).encode())[::3] == (1, 35506),
+            "Telethon's bytes are read the same")
+    _assert(onboarding.read_tap('not json') == (None, 0, None, None), "a broken callback selects nothing")
+    old = {'tp': onboarding.SUBSCRIBE_ACTION, 'm': 0b101, 'h': checksum}
+    _assert(onboarding.read_tap(json.dumps(old))[1:] == (0b101, checksum, None),
+            "a button drawn before has no mark: its mask is ticks never subscribed")
     _assert([row['id'] for row in onboarding.picked(top, 0b101)] == [10000, 10002], "mask to podcasts")
-    _assert(onboarding.read_tap(json.dumps(picks[1]['callback_data']).encode())[:2] == (1, 0b101),
-            "Telethon's bytes are read the same: a tap ticks")
-    _assert(onboarding.read_tap('not json') == (None, 0, None), "a broken callback selects nothing")
+    big = onboarding.welcome_message('en', top, set(range(10000, 10008)), mark=10 ** 9)
+    _assert(all(len(json.dumps(b['callback_data']).encode()) <= 64 for b in _buttons(big)),
+            "and with a mark of ten digits")
+
+
+def test_ticks_are_subscriptions(onboarding):
+    """The list stays put when a tick subscribes: rows up to the mark are what the chat had."""
+    onboarding.SQLighter = FakeDB
+    FakeDB.rows = {4003: {10001: 40}}
+    top, mark, ticked = onboarding.picker('en', 4003)
+    _assert(mark == 40 and 10001 not in [row['id'] for row in top] and ticked == set(),
+            "drawn: what the chat had stays out, the mark is its newest subscription")
+    FakeDB.rows[4003][10003] = 41  # the tap on Show 3 subscribed
+    again, mark2, ticked2 = onboarding.picker('en', 4003, mark)
+    _assert(onboarding.list_checksum(again) == onboarding.list_checksum(top) and mark2 == 40 and ticked2 == {10003},
+            "the next tap sees the same list, the new subscription ticked")
+    _assert(10003 not in [row['id'] for row in onboarding.picker('en', 4003)[0]],
+            "/start again: it is something the chat has, and new ones are offered")
+    onboarding.unsubscribe(4003, {'id': 10003})
+    _assert(onboarding.picker('en', 4003, mark)[2] == set(), "a second tap unsubscribes: the tick goes")
+    FakeDB.rows = {}
 
 
 def test_subscribe(onboarding):
@@ -158,6 +191,7 @@ def main():
     if onboarding is None:
         return
     test_picker(onboarding)
+    test_ticks_are_subscriptions(onboarding)
     test_subscribe(onboarding)
     welcome = import_builder("welcomeModule")
     if welcome is not None:
