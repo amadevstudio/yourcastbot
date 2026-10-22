@@ -5,6 +5,7 @@ Runs from the existing hourly balance_watcher. Does not touch payment apply.
 Under the plan's text, what the plan brought (recap_text): what stops is
 easier to weigh when it is counted.
 """
+import sqlite3
 import time
 
 from app.i18n.messages import get_message
@@ -54,18 +55,37 @@ def clear_relay_d3_sent(telegram_id, database=None):
     runtime_kv.delete_kv(d3_kv_key(telegram_id), database=database)
 
 
+def _ledger_covers(connection, telegram_id, since) -> bool:
+    """The usage ledger started on 2026-10-21; deliveries before it were never
+    counted. Its count is the user's only when it covers the window, or the
+    user's whole time with the bot: a two-week trial would read "1 episode"."""
+    first = connection.execute("SELECT MIN(at) FROM usage_events").fetchone()[0]
+    if first is None or first <= since:
+        return True
+    try:
+        joined = connection.execute(
+            "SELECT CAST(strftime('%s', created_at) AS REAL) FROM users WHERE telegramId = ?",
+            (int(telegram_id),)).fetchone()
+    except sqlite3.OperationalError:  # a database without users.created_at
+        return False
+    return bool(joined and joined[0] is not None and first <= joined[0])
+
+
 def recap_counts(telegram_id, database=None, now=None) -> dict:
-    """In the last RECAP_DAYS: episodes delivered (clicks and automatic, the usage ledger),
-    summaries received (done, cached ones too), and podcasts on auto-delivery now."""
+    """In the last RECAP_DAYS: episodes delivered (clicks and automatic, the usage ledger;
+    None when the ledger is younger than that and than the user), summaries received
+    (done, cached ones too), and podcasts on auto-delivery now."""
     since = (time.time() if now is None else now) - RECAP_DAYS * 86400
     database = db_path if database is None else database
     usage.connect(database).close()
     ai.connect(database).close()
     connection = connect_sqlite(database)
     try:
-        episodes = connection.execute(
-            "SELECT COUNT(*) FROM usage_events WHERE user_id = ? AND kind IN ('rec', 'circle') AND at >= ?",
-            (int(telegram_id), since)).fetchone()[0]
+        episodes = None
+        if _ledger_covers(connection, telegram_id, since):
+            episodes = int(connection.execute(
+                "SELECT COUNT(*) FROM usage_events WHERE user_id = ? AND kind IN ('rec', 'circle') AND at >= ?",
+                (int(telegram_id), since)).fetchone()[0])
         summaries = connection.execute(
             "SELECT COUNT(*) FROM ai_requests WHERE chat_id = ? AND status = 'done' AND created_at >= ?",
             (int(telegram_id), since)).fetchone()[0]
@@ -74,11 +94,12 @@ def recap_counts(telegram_id, database=None, now=None) -> dict:
             (int(telegram_id),)).fetchone()[0]
     finally:
         connection.close()
-    return {'episodes': int(episodes), 'summaries': int(summaries), 'shows': int(shows)}
+    return {'episodes': episodes, 'summaries': int(summaries), 'shows': int(shows)}
 
 
 def recap_text(telegram_id, lang, database=None, now=None) -> str:
-    """The recap under the D-3 text, '' when the plan brought nothing yet. Never fails the reminder."""
+    """The recap under the D-3 text, '' when the plan brought nothing yet (or nothing the
+    ledger can count: no number at all beats a number too small). Never fails the reminder."""
     try:
         counts = recap_counts(telegram_id, database, now)
     except Exception as e:
