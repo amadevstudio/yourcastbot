@@ -11,7 +11,7 @@ import time
 from app.i18n.messages import get_message
 from app.service.payment.referral import invite_row
 # relay_nudge_markup is imported from here by the digest and the balance watcher
-from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL, plan_ending_text, relay_nudge_markup  # noqa: F401
+from app.service.payment.storefront import plan_ending_text, relay_nudge_markup  # noqa: F401
 from app.service.payment import stars_subscription
 from config import db_path
 from db import ai, runtime_kv, usage
@@ -147,8 +147,8 @@ def send_relay_d3_reminders(database=None):
             text += "\n\n" + recap
         # a friend's sign-up adds days: the cheapest way to keep the plan
         markup = relay_nudge_markup(lang, extra_row=invite_row(telegram_id, lang))
-        if int(user["level"] or 0) == SHOWCASE_TARIFF_LEVEL:
-            markup.append(stars_subscription.offer_row(lang))  # below Stars, change-plan and the invite
+        # the user's own plan by a Stars subscription: below Stars, change-plan and the invite
+        markup.append(stars_subscription.offer_row(lang))
         try:
             _send(telegram_id, [{
                 "type": "text",

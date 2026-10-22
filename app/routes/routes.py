@@ -148,7 +148,17 @@ class RouteMap:
             'method': paymentModule.open_subscription_page,
             'available_from': ['call', 'command'],
             'commands': ['subscription', 'payment'],
-            'routes': ['bs_trfs', 'bs_patr', 'bs_cryptobot', 'bs_stars', 'bs_robokassa']
+            'routes': ['bs_recur', 'bs_once', 'bs_trfs']
+        },
+        'bs_recur': {
+            'method': starsPaymentModule.open_recurring_page,
+            'available_from': ['call'],
+            'routes': ['bs_stars_sub', 'bs_patr']
+        },
+        'bs_once': {
+            'method': paymentModule.open_once_page,
+            'available_from': ['call'],
+            'routes': ['bs_stars', 'bs_cryptobot', 'bs_robokassa', 'bs_stars_pay']
         },
         'bs_trfs': {
             'method': paymentModule.open_subscription_tariffs_page,
@@ -186,7 +196,7 @@ class RouteMap:
         'bs_stars': {
             'method': starsPaymentModule.open_subscription_page,
             'available_from': ['call'],
-            'routes': ['bs_stars_pay', 'bs_stars_sub']
+            'routes': ['bs_stars_pay']
         },
         'bs_stars_pay': {
             'method': starsPaymentModule.send_invoice,

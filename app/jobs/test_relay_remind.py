@@ -238,7 +238,7 @@ def main():
         _assert("start%3D101" in markup[2][0]["url"],
                 "D-3 offers to invite a friend with the user's own link")
         _assert_eq(markup[3][0]["callback_data"], {"tp": "bs_stars_sub"},
-                   "and Relay by a Stars subscription below it")
+                   "and the plan by a Stars subscription below it")
 
         second = relay_remind.send_relay_d3_reminders(database=path)
         _assert_eq(second, 0, "second hourly tick does not spam")

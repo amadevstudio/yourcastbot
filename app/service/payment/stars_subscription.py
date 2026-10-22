@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Relay by a Telegram Stars subscription: Telegram charges the same invoice every 30 days.
+"""A plan by a Telegram Stars subscription: Telegram charges the same invoice every 30 days.
 
 The invoice is a link (createInvoiceLink with subscription_period: sendInvoice
 has no subscriptions). Each charge, the first and every renewal, arrives as a
@@ -38,9 +38,10 @@ def offer_row(language_code) -> list:
     return [{'text': get_message('starsSubButton', language_code), 'callback_data': {'tp': OFFER_CALLBACK}}]
 
 
-def active(telegram_id, database=None, now=None) -> bool:
-    """The user's Stars subscription has a paid period running. A read that fails is
-    "no": it only hides a button or lets a D-3 reminder go, never fails a page."""
+def until(telegram_id, database=None, now=None):
+    """When the running Stars subscription's paid period ends (unix), None if none runs.
+    A read that fails is "none": it only shows a button or lets a D-3 reminder
+    go, never fails a page."""
     try:
         connection = connect_sqlite(db_path if database is None else database)
         try:
@@ -49,13 +50,16 @@ def active(telegram_id, database=None, now=None) -> bool:
                 (int(telegram_id),)).fetchone()
         finally:
             connection.close()
+        stamp = time.time() if now is None else now
+        value = float(row[0]) if row and row[0] is not None else None
     except (sqlite3.Error, TypeError, ValueError):
-        return False
-    stamp = time.time() if now is None else now
-    try:
-        return bool(row and row[0] is not None and float(row[0]) > stamp)
-    except (TypeError, ValueError):
-        return False
+        return None
+    return value if value is not None and value > stamp else None
+
+
+def active(telegram_id, database=None, now=None) -> bool:
+    """The user's Stars subscription has a paid period running."""
+    return until(telegram_id, database, now) is not None
 
 
 def note_charge(telegram_id, until, charge_id=None, database=None) -> None:
