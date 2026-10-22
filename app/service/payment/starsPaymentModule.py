@@ -6,7 +6,7 @@ import time
 import uuid
 from typing import TypedDict
 
-from telebot import types
+from telebot import apihelper, types
 from telethon import TelegramClient
 from telethon.sessions import MemorySession
 from telethon.tl.functions.help import GetAppConfigRequest
@@ -24,6 +24,7 @@ from app.service.payment.paymentModule import (
 from app.service.payment.paymentSafeModule import (
     award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg,
     is_subscription_active, prepare_price)
+from app.service.payment import stars_subscription
 from app.service.payment.referral import invite_row
 from app.service.payment.offers import (
     WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open,
@@ -61,6 +62,7 @@ class StarsPayload(TypedDict):
     d: int  # % off the charge (offers.offer_discount)
     o: str  # offer the discount comes from ("" or offers.WINBACK_OFFER)
     v: int  # plan the invoice is for, turned on if none runs (0: an invoice from before)
+    u: int  # 1: a Stars subscription, Telegram charges this payload every 30 days
 
 
 def _json_value_to_py(value):
@@ -141,7 +143,8 @@ def stars_to_charge(balance_amount: int, rate_x1000: int, discount: int = 0) -> 
 
 
 def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1000: int,
-                   months: int = 1, discount: int = 0, offer: str = "", plan_id: int = 0) -> str:
+                   months: int = 1, discount: int = 0, offer: str = "", plan_id: int = 0,
+                   subscription: bool = False) -> str:
     payload = {
         "t": int(chat_id),
         "b": int(balance_amount),
@@ -156,6 +159,8 @@ def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1
         payload["o"] = str(offer)
     if plan_id:
         payload["v"] = int(plan_id)
+    if subscription:
+        payload["u"] = 1
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -178,6 +183,7 @@ def parse_payload(payload: bytes | str) -> StarsPayload | None:
             "d": int(data.get("d", 0)),
             "o": str(data.get("o", "")),
             "v": int(data.get("v", 0)),
+            "u": int(data.get("u", 0)),
         }
     except Exception:
         return None
@@ -198,6 +204,9 @@ def validate_precheckout_payload(
         return False, "Invalid payment offer"
     if not offer_open(user_id, data["o"]):
         return False, "Offer is no longer available"
+    if data["u"] and stars_subscription.active(user_id):
+        # Telegram would charge both every month
+        return False, "Subscription is already active"
     return True, None
 
 
@@ -217,6 +226,8 @@ def validate_payment_payload(
         return False, "Invalid payment offer"
     if data["s"] != stars_to_charge(data["b"], data["r"], data["d"]):
         return False, "Invalid balance amount"
+    if data["u"] and (data["m"] != 1 or data["d"] or data["o"] or not data["v"]):
+        return False, "Invalid subscription"
     return True, None
 
 
@@ -226,7 +237,8 @@ def open_subscription_page(data: ControllerParams):
 
     sub_msg = get_sub_message(
         data['language_code'], tariff['id'], tariff['level'],
-        tariff['price'], balance, time_left, notify_left, rate_x1000)
+        tariff['price'], balance, time_left, notify_left, rate_x1000,
+        subscribed=stars_subscription.active(data['chat_id']))
 
     render_messages(data['chat_id'], [{
         'type': 'text', 'text': sub_msg['message'], 'reply_markup': sub_msg['markup'],
@@ -235,7 +247,7 @@ def open_subscription_page(data: ControllerParams):
 
 def get_sub_message(
         language_code, tariff_id, tariff_lvl, tariff_price,
-        balance, time_left, notify_left, rate_x1000):
+        balance, time_left, notify_left, rate_x1000, subscribed=False):
     message_text = "<b>" + get_message("bot_sub_page_header", language_code) + "</b>\n\n"
     message_text += get_message("bot_sub_stars_page_body", language_code).format(
         rate=pretty_stars_usd_rate(rate_x1000)) + "\n\n"
@@ -261,6 +273,10 @@ def get_sub_message(
         }])
         if tariff['level'] == SHOWCASE_TARIFF_LEVEL and prepaid_months_sold(
                 tariff_lvl, tariff_id > 0 and time_left > 0):
+            if not subscribed:
+                menu_keyboard.append([{
+                    'text': get_message('starsSubPriceButton', language_code).format(stars=stars_amount),
+                    'callback_data': {'tp': stars_subscription.OFFER_CALLBACK}}])
             menu_keyboard += bundle_rows(tariff, language_code, rate_x1000)
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
@@ -360,6 +376,58 @@ def send_invoice(data: ControllerParams):
         return False
 
 
+def create_subscription_link(title, description, payload, stars) -> str:
+    """An invoice link Telegram charges every 30 days. Only createInvoiceLink takes
+    subscription_period, and pyTelegramBotAPI 4.11 has neither: the raw request."""
+    return apihelper._make_request(bot.token, 'createInvoiceLink', method='post', params={
+        'title': title, 'description': description, 'payload': payload, 'provider_token': '',
+        'currency': STARS_CURRENCY,
+        'prices': json.dumps([{'label': title, 'amount': int(stars)}]),
+        'subscription_period': stars_subscription.PERIOD_SECONDS})
+
+
+def send_subscription_offer(data: ControllerParams):
+    """Relay by subscription: what it is and its invoice link. Sold where Relay's
+    prepaid months are (a running Bronze or Silver would renew itself from the
+    charges), never twice."""
+    language_code = data['language_code']
+    db_users = SQLighter(db_path)
+    try:
+        tariffs = db_users.getTariffs()
+        subscription = db_users.getUserSubscriptionByTg(data['chat_id'])
+    finally:
+        db_users.close()
+    relay = showcase_tariff(tariffs)
+    current_level = next((t['level'] for t in tariffs if subscription is not None
+                          and t['id'] == subscription['tariff_id']), 0)
+    if relay is None or int(relay['price']) <= 0:
+        notify(data['callback'], data['message'], get_message('parsingError', language_code), alert=True)
+        return False
+    if not prepaid_months_sold(current_level, is_subscription_active(subscription)):
+        notify(data['callback'], data['message'], get_message('starsSubNotForPlan', language_code), alert=True)
+        return False
+    if stars_subscription.active(data['chat_id']):
+        notify(data['callback'], data['message'], get_message('starsSubActive', language_code), alert=True)
+        return False
+    try:
+        rate_x1000 = get_invoice_stars_withdraw_rate_x1000()
+        stars = stars_for_balance(relay['price'], rate_x1000)
+        payload = create_payload(data['chat_id'], int(relay['price']), stars, rate_x1000,
+                                 plan_id=relay['id'], subscription=True)
+        link = create_subscription_link(
+            get_message('starsSubTitle', language_code), get_message('starsSubDescription', language_code),
+            payload, stars)
+    except Exception as e:
+        logger.err(e)
+        notify(data['callback'], data['message'], get_message('telegram_stars_invoice_error', language_code), alert=True)
+        return False
+    outer_sender(data['chat_id'], [{
+        'type': 'text',
+        'text': get_message('starsSubOffer', language_code).format(stars=stars),
+        'reply_markup': [[{'text': get_message('starsSubPayButton', language_code).format(stars=stars),
+                           'url': link}]]}])
+
+
 def _payment_result_message(result, current_tariff, current_subscription, language_code):
     tariff_str = decode_tariff(current_tariff['level'], language_code)
     tariff_info_message = get_tariff_info_message(
@@ -395,7 +463,10 @@ def _payment_result_message(result, current_tariff, current_subscription, langua
 
 def process_successful_payment(
         chat_id: int, currency: str, total_amount: int, payload: bytes | str,
-        charge_id: str, provider_charge_id: str | None = None):
+        charge_id: str, provider_charge_id: str | None = None,
+        recurring: str | None = None, subscription_until: float | None = None):
+    """recurring: 'first' or 'renewal' for a subscription's charges (each has its own
+    charge id and is credited once); subscription_until: when its paid period ends."""
     ok, error = validate_payment_payload(payload, chat_id, currency, total_amount)
     if not ok:
         logger.err(error)
@@ -404,6 +475,7 @@ def process_successful_payment(
     payload_data = parse_payload(payload)
     if payload_data is None:
         return False
+    subscription = bool(payload_data['u'])
 
     db = SQLighter(config.db_path)
     try:
@@ -414,7 +486,8 @@ def process_successful_payment(
 
         result_data = db.applyPaymentReplenishmentOnce(
             user, STARS_SERVICE_TYPE, charge_id, datetime.datetime.now(),
-            payload_data["b"], config.tariff_period,
+            # a plan a subscription charge turns on outlasts the next charge (stars_subscription)
+            payload_data["b"], config.tariff_period + (stars_subscription.GRACE_HOURS if subscription else 0),
             invoiceHash=f"{payload_data['p']}:{payload_data['r']}:{provider_charge_id or ''}",
             status="paid",
             userFlag=WINBACK_OFFER_FLAG if payload_data['o'] == WINBACK_OFFER else None,
@@ -426,9 +499,17 @@ def process_successful_payment(
     finally:
         db.close()
 
+    if subscription:
+        try:
+            stars_subscription.note_charge(
+                user['telegramId'], subscription_until or time.time() + stars_subscription.PERIOD_SECONDS,
+                charge_id if recurring != 'renewal' else None)
+        except Exception as e:
+            logger.warn("stars subscription flag:", type(e).__name__, e)
+
     analytics_events.track(user['telegramId'], 'payment', {
         'method': STARS_SERVICE_TYPE, 'amount_cents': payload_data['b'], 'plan': payload_data['v'] or None,
-        'months': payload_data['m']})
+        'months': payload_data['m'], 'recurring': recurring if subscription else None})
     # the balance is in; the referral bonus goes before any message can fail
     refer_tg_id, award_message = award_referrer_for_payment(user['telegramId'])
 

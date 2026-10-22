@@ -186,10 +186,14 @@ class RouteMap:
         'bs_stars': {
             'method': starsPaymentModule.open_subscription_page,
             'available_from': ['call'],
-            'routes': ['bs_stars_pay']
+            'routes': ['bs_stars_pay', 'bs_stars_sub']
         },
         'bs_stars_pay': {
             'method': starsPaymentModule.send_invoice,
+            'available_from': ['call']
+        },
+        'bs_stars_sub': {
+            'method': starsPaymentModule.send_subscription_offer,
             'available_from': ['call']
         },
         'bs_robokassa': {

@@ -311,6 +311,90 @@ def page_rows(stars):
     _assert_eq(main_page(1, 100), [], "but not to a running Bronze")
 
 
+def subscription(stars):
+    """Relay by a Stars subscription: an invoice link Telegram charges every 30 days;
+    each charge is credited once, the first turns Relay on past the next charge."""
+    import time
+    from db.sqliteAdapter import SQLighter
+    from app.service.payment import stars_subscription as sub
+    path = _temp_db()
+    links, messages, toasts = [], [], []
+
+    def offer(chat_id, subscription_row=None):
+        data = {'chat_id': chat_id, 'language_code': 'en', 'message': None,
+                'callback': types.SimpleNamespace(data='{"tp": "bs_stars_sub"}'), 'united_data': {}}
+        del links[:], messages[:], toasts[:]
+        with patch.object(stars, 'SQLighter', _TariffsDB), \
+                patch.object(_TariffsDB, 'subscription', subscription_row), \
+                patch.object(stars, 'get_invoice_stars_withdraw_rate_x1000', lambda: RATE), \
+                patch.object(stars, 'notify', lambda _c, _m, text, **kw: toasts.append(text)), \
+                patch.object(stars.apihelper, '_make_request',
+                             lambda _token, method_name, method=None, **kw: links.append((method_name, kw['params'])) or 'https://t.me/$sub'), \
+                patch.object(stars, 'outer_sender', lambda chat, msgs: messages.append(msgs[0])), \
+                patch.object(sub, 'db_path', path):
+            stars.send_subscription_offer(data)
+
+    try:
+        offer(603)
+        method, params = links[0]
+        payload = stars.parse_payload(params['payload'])
+        _assert_eq((method, params['subscription_period'], params['currency']), ('createInvoiceLink', 2592000, 'XTR'),
+                   "a subscription is an invoice link charged every 30 days")
+        _assert_eq((payload['u'], payload['v'], payload['b'], payload['m']), (1, 3, 500, 1),
+                   "for one month of Relay")
+        _assert_eq(json.loads(params['prices'])[0]['amount'], payload['s'], "at the price the payload names")
+        _assert_eq(messages[0]['reply_markup'][0][0]['url'], 'https://t.me/$sub', "the offer carries the link")
+        _assert(stars.validate_precheckout_payload(params['payload'], 603, 'XTR', payload['s'])[0],
+                "the first charge passes the pre-checkout")
+        bronze = {'tariff_id': 1, 'balance': 0, 'time_left': 100, 'notify_count': 30}
+        offer(603, bronze)
+        _assert_eq(links, [], "a running Bronze is not sold Relay's subscription (it would renew Bronze)")
+        forged = stars.create_payload(603, 3000, stars.stars_to_charge(3000, RATE, 15), RATE, 6, 15,
+                                      plan_id=3, subscription=True)
+        _assert_eq(stars.validate_payment_payload(forged, 603, 'XTR', json.loads(forged)['s']),
+                   (False, "Invalid subscription"), "a subscription is one month, no discount")
+
+        until = time.time() + 30 * 86400
+        with patch.object(stars.config, 'db_path', path), patch.object(sub, 'db_path', path), \
+                patch.object(stars, 'outer_sender', lambda *a, **kw: True), \
+                patch.object(stars, 'award_referrer_for_payment', lambda _tg: (None, None)):
+            first = stars.process_successful_payment(
+                603, 'XTR', payload['s'], params['payload'], 'sub-1', recurring='first', subscription_until=until)
+            db = SQLighter(path)
+            plan = db.getUserSubscriptionByTg(603)
+            db.close()
+            _assert_eq((first, plan['tariff_id'], plan['time_left'], plan['balance']),
+                       (True, 3, stars.config.tariff_period + sub.GRACE_HOURS, 0),
+                       "the first charge turns Relay on until a day after the next charge")
+            _assert(sub.active(603, database=path), "the subscription is running")
+            _assert_eq(stars.validate_precheckout_payload(params['payload'], 603, 'XTR', payload['s']),
+                       (False, "Subscription is already active"), "a second one is refused before payment")
+            offer(603)
+            _assert_eq((links, toasts), ([], [stars.get_message('starsSubActive', 'en')]), "and not offered")
+            renewal = stars.process_successful_payment(
+                603, 'XTR', payload['s'], params['payload'], 'sub-2', recurring='renewal',
+                subscription_until=until + 30 * 86400)
+            again = stars.process_successful_payment(
+                603, 'XTR', payload['s'], params['payload'], 'sub-2', recurring='renewal',
+                subscription_until=until + 30 * 86400)
+            db = SQLighter(path)
+            plan = db.getUserSubscriptionByTg(603)
+            flags = json.loads(db.connection.execute("SELECT flags FROM users WHERE telegramId = 603").fetchone()[0])
+            db.close()
+            _assert_eq((renewal, again, plan['balance']), (True, False, 500),
+                       "a renewal is credited once: the tick renews the plan from it")
+            _assert_eq((flags[sub.FLAG_UNTIL], flags[sub.FLAG_CHARGE]), (int(until + 30 * 86400), 'sub-1'),
+                       "the paid period moves on, the subscription keeps its first charge id")
+        with patch.object(stars, 'SQLighter', _TariffsDB):
+            def has_row(**kw):
+                markup = stars.get_sub_message('en', 3, 3, 500, 0, 100, 0, RATE, **kw)['markup']
+                return any(row[0].get('callback_data', {}).get('tp') == 'bs_stars_sub' for row in markup)
+            _assert(has_row(), "the Stars page offers the subscription under Relay")
+            _assert(not has_row(subscribed=True), "but not to a subscriber")
+    finally:
+        os.remove(path)
+
+
 def main():
     pricing()
     from app.controller.builders.test_open_recs import import_builder
@@ -324,6 +408,7 @@ def main():
     old_price_invoice(stars)
     winback_offer(stars)
     page_rows(stars)
+    subscription(stars)
     print("all Stars invoice checks passed")
 
 

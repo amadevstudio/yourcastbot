@@ -5028,3 +5028,5 @@ from app.i18n.ai import TRANSLATIONS as _AI_TRANSLATIONS
 messages.update(_AI_TRANSLATIONS)
 from app.i18n.episode_text import TRANSLATIONS as _EPISODE_TEXT_TRANSLATIONS
 messages.update(_EPISODE_TEXT_TRANSLATIONS)
+from app.i18n.stars_subscription import TRANSLATIONS as _STARS_SUBSCRIPTION_TRANSLATIONS
+messages.update(_STARS_SUBSCRIPTION_TRANSLATIONS)

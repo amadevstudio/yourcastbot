@@ -11,7 +11,8 @@ import time
 from app.i18n.messages import get_message
 from app.service.payment.referral import invite_row
 # relay_nudge_markup is imported from here by the digest and the balance watcher
-from app.service.payment.storefront import plan_ending_text, relay_nudge_markup  # noqa: F401
+from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL, plan_ending_text, relay_nudge_markup  # noqa: F401
+from app.service.payment import stars_subscription
 from config import db_path
 from db import ai, runtime_kv, usage
 from db.connection import connect_sqlite
@@ -136,19 +137,23 @@ def send_relay_d3_reminders(database=None):
         if not should_send_d3(
                 user["time_left"], d3_already_sent(telegram_id, database=db_file)):
             continue
+        if stars_subscription.active(telegram_id, database=db_file):
+            continue  # the subscription's next charge renews the plan: nothing to pay by hand
         lang = user["lang"] if user["lang"] else "en"
         days = days_left_label(user["time_left"])
         text = plan_ending_text(user["level"], days, lang)
         recap = recap_text(telegram_id, lang, database=db_file)
         if recap:
             text += "\n\n" + recap
+        # a friend's sign-up adds days: the cheapest way to keep the plan
+        markup = relay_nudge_markup(lang, extra_row=invite_row(telegram_id, lang))
+        if int(user["level"] or 0) == SHOWCASE_TARIFF_LEVEL:
+            markup.append(stars_subscription.offer_row(lang))  # below Stars, change-plan and the invite
         try:
             _send(telegram_id, [{
                 "type": "text",
                 "text": text,
-                # a friend's sign-up adds days: the cheapest way to keep the plan
-                "reply_markup": relay_nudge_markup(
-                    lang, extra_row=invite_row(telegram_id, lang)),
+                "reply_markup": markup,
             }])
         except Exception as e:
             logger.err("relay_d3:", telegram_id, e)
