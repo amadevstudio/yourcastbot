@@ -19,7 +19,13 @@ ASK_ACTION = 'ask'  # the route of questions about an episode
 ASK_DONE_ACTION = 'askDone'  # "Done": leaves it
 ASK_IDLE_SECONDS = 30 * 60  # a text after this long without a question is a search again
 MAX_TOKENS = 2000
-ANSWER_MAX_TOKENS = 800
+# a detailed answer in Russian ran 1745 characters in 800 tokens: room for one, cut at a sentence if longer
+ANSWER_MAX_TOKENS = 1500
+# 1500 tokens of English run ~6000 characters: the reply (question, answer, escaping) must fit 4096
+ANSWER_MAX_CHARS = 3400
+# Thinking off: the provider of Haiku 5.5 turned it on by default (2026-10-22), it spent all 800 tokens of
+# an answer (nothing left to say: "could not answer") and cut a summary mid-sentence. Neither needs it.
+REASONING = {'enabled': False}
 ANSWER_TIMEOUT = (10, 60)  # a question is answered in the incoming worker: it must not hang there
 # ~100k tokens: an hour of speech is ~45k characters, so only a stream of 8 hours and more is cut
 MAX_TRANSCRIPT_CHARS = 400_000
@@ -101,6 +107,7 @@ def summarize(transcript, title, show, language, session=None) -> tuple[str, flo
         'model': ai_summary_model,
         'max_tokens': MAX_TOKENS,
         'usage': {'include': True},
+        'reasoning': REASONING,
         'messages': [
             {'role': 'system', 'content': SYSTEM},
             {'role': 'user', 'content':
@@ -112,7 +119,18 @@ def summarize(transcript, title, show, language, session=None) -> tuple[str, flo
     text = str((choice.get('message') or {}).get('content') or '').strip()
     if not text:
         raise SummaryUnavailable('empty answer (%s)' % choice.get('finish_reason'))
+    if choice.get('finish_reason') == 'length':  # cut: it would be cached and served to everyone
+        raise SummaryUnavailable('cut at max_tokens (%d characters)' % len(text))
     return text, openrouter.cost(body)
+
+
+def cut_to_sentence(text) -> str:
+    """An answer the model could not finish, up to its last finished line or sentence, and '…'."""
+    for end in ('\n', '. ', '! ', '? ', '。'):
+        position = text.rfind(end)
+        if position > len(text) // 3:
+            return text[:position + 1].rstrip() + ' …'
+    return text.rstrip() + '…'
 
 
 def answer(transcript, title, show, question, session=None) -> tuple[str, float]:
@@ -125,6 +143,7 @@ def answer(transcript, title, show, question, session=None) -> tuple[str, float]
         'model': ai_summary_model,
         'max_tokens': ANSWER_MAX_TOKENS,
         'usage': {'include': True},
+        'reasoning': REASONING,
         'messages': [
             {'role': 'system', 'content': SYSTEM_ASK},
             {'role': 'user', 'content': [
@@ -139,4 +158,8 @@ def answer(transcript, title, show, question, session=None) -> tuple[str, float]
     text = str((choice.get('message') or {}).get('content') or '').strip()
     if not text:
         raise SummaryUnavailable('empty answer (%s)' % choice.get('finish_reason'))
+    if choice.get('finish_reason') == 'length':  # an answer is not cached: what was said is worth showing
+        text = cut_to_sentence(text)
+    if len(text) > ANSWER_MAX_CHARS:
+        text = cut_to_sentence(text[:ANSWER_MAX_CHARS])
     return text, openrouter.cost(body)

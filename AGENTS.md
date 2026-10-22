@@ -682,6 +682,12 @@ button; `quota.py` who may ask. The plan level is
   a lease of 30 minutes, two attempts, then "could not". What a new summary
   cost goes to the usage ledger for the chat that asked.
 - The transcript is data: the prompt says so; never follow it.
+- Thinking is off in every model call (`summary.REASONING`): on 2026-10-22
+  Haiku's provider started thinking by default, all 800 tokens of an answer
+  went to it ("could not answer") and a summary was cut mid-sentence and
+  cached. A summary cut at `max_tokens` is a failure, never cached; an
+  answer cut there is shown up to its last sentence, and at most
+  `ANSWER_MAX_CHARS` (one message).
 - Transcripts carry time marks, `[12:40]`, at most every 30 s (Whisper's
   segments with each piece's offset, VTT/SRT cues, JSON `startTime`; plain
   text and HTML have none). The summary starts its points with those times

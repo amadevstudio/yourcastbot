@@ -94,6 +94,7 @@ def test_openrouter():
             "OpenRouter's chat completions, our key")
     _assert(body['model'] == 'vendor/some-model', "the model from the config")
     _assert(body['usage'] == {'include': True}, "usage accounting asked for")
+    _assert(body['reasoning'] == {'enabled': False}, "thinking off: it ate every token of the answer")
     _assert(body['messages'][0]['role'] == 'system' and '"fa"' in body['messages'][1]['content'],
             "the system prompt, and the user's own language")
     summary.summarize('words', 'Seven', 'Show', summary.ORIGINAL, session=session)
@@ -117,6 +118,29 @@ def test_openrouter():
         'choices': [{'message': {'content': ' At 12:40 they say so. '}}], 'usage': {'cost': 0.0007}}))
     answered = summary.answer('[12:40] words', 'Seven', 'Show', 'What do they say?', session=session)
     _assert(answered == ('At 12:40 they say so.', 0.0007), "an answer and what it cost")
+    _assert(session.calls[0][2]['reasoning'] == {'enabled': False}, "thinking off for questions too")
+    cut = FakeSession(FakeResponse(200, {'choices': [{'message': {'content': 'В 3:33 – первое. В 5:10 – второе. В 7:4'},
+                                                      'finish_reason': 'length'}], 'usage': {'cost': 0.001}}))
+    _assert(summary.answer('t', 'T', 'S', 'q', session=cut)[0] == 'В 3:33 – первое. В 5:10 – второе. …',
+            "an answer cut at max_tokens is shown up to its last sentence, never 'could not answer'")
+    long_answer = FakeSession(FakeResponse(200, {'choices': [{'message': {'content': 'A long point. ' * 600},
+                                                              'finish_reason': 'stop'}]}))
+    text = summary.answer('t', 'T', 'S', 'q', session=long_answer)[0]
+    _assert(len(text) <= summary.ANSWER_MAX_CHARS + 2 and text.endswith('point. …'),
+            "a long answer fits one message, cut at a sentence")
+    for content, finish, label in (('', 'length', "all tokens spent on thinking: no answer"),
+                                   ('Gist. 3:33 – a point. The White House said', 'length',
+                                    "a summary cut at max_tokens is no summary (it would be cached)")):
+        try:
+            if label.startswith('all'):
+                summary.answer('t', 'T', 'S', 'q', session=FakeSession(FakeResponse(200, {
+                    'choices': [{'message': {'content': content}, 'finish_reason': finish}]})))
+            else:
+                summary.summarize('t', 'T', 'S', 'en', session=FakeSession(FakeResponse(200, {
+                    'choices': [{'message': {'content': content}, 'finish_reason': finish}]})))
+            raise AssertionError(label + " must raise")
+        except summary.SummaryUnavailable:
+            _assert(True, label)
     parts = session.calls[0][2]['messages'][1]['content']
     _assert(parts[0]['cache_control'] == {'type': 'ephemeral'} and '[12:40] words' in parts[0]['text']
             and 'What do they say?' in parts[1]['text'] and 'What do they say?' not in parts[0]['text'],
