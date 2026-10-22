@@ -60,6 +60,9 @@ class RouteMap:
         'search': {
             'method': searchModule.search,
             'available_from': ['command', 'call', 'message'],
+            # a podcast's name typed on the welcome screen or the menu is a search too:
+            # it used to be ignored there (only the search screen took text)
+            'states_for_input': ['search', 'start', 'menu'],
             'routes': ['podcast'],
             'waits_for_input': True,
         },
