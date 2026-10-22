@@ -4,6 +4,7 @@
 Run from the repo root: python app/jobs/test_relay_remind.py
 """
 import os
+import sqlite3
 import sys
 import tempfile
 
@@ -152,6 +153,32 @@ def _recap(sent):
                     "📝 ИИ-пересказов: 1"], "then what the plan brought")
         _assert_eq(by_user[302], get_message("relay_trial_ending", "en") % 2,
                    "nothing delivered yet: no recap, the text alone")
+
+        # The ledger started on 2026-10-21: younger than the window, its count is
+        # not the user's (a two-week trial read "1 episode"), unless the user is
+        # younger still.
+        conn = sqlite3.connect(path)
+        conn.execute("DELETE FROM usage_events WHERE at < ?", (now - 30 * 86400,))
+        conn.execute("UPDATE users SET created_at = datetime(?, 'unixepoch') WHERE telegramId = 301",
+                     (now - 10 * 86400,))
+        conn.commit()
+        conn.close()
+        _assert_eq(relay_remind.recap_counts(301, database=path), {'episodes': None, 'summaries': 1, 'shows': 2},
+                   "a ledger younger than the window and the user: no episode count")
+        _assert_eq(relay_remind.recap_text(301, "ru", database=path).split("\n"),
+                   [get_message("planRecap", "ru"), "🎙 подкастов на автодоставке: 2", "📝 ИИ-пересказов: 1"],
+                   "the recap goes without the episodes line")
+        usage.record_deliveries([302], 'circle', 'https://a/0.mp3', database=path, at=now - 3600)
+        _assert_eq(relay_remind.recap_text(302, "en", database=path), "",
+                   "no count and no summary: no recap")
+        usage.record_deliveries([999], 'rec', 'https://a/x.mp3', database=path, at=now - 5 * 86400)
+        conn = sqlite3.connect(path)
+        conn.execute("UPDATE users SET created_at = datetime(?, 'unixepoch') WHERE telegramId = 301",
+                     (now - 2 * 86400,))
+        conn.commit()
+        conn.close()
+        _assert_eq(relay_remind.recap_counts(301, database=path)['episodes'], 4,
+                   "a user who joined after the ledger started: the count is whole")
     finally:
         os.remove(path)
 

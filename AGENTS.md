@@ -114,7 +114,10 @@ remove plan management or hide Bronze/Silver.
 - Under the D-3 text (Relay's verbatim, first) goes what the plan brought
   (`relay_remind.recap_text`): episodes delivered and summaries received in
   the last 30 days, podcasts on auto-delivery now. Nothing delivered and no
-  summary: no recap. It never fails the reminder.
+  summary: no recap. The ledger started on 2026-10-21: the episode count
+  shows only when it covers the 30 days or the user's whole time (joined
+  after it began), else a two-week trial read "1 episode". It never fails
+  the reminder.
   Lock: `python app/jobs/test_relay_remind.py`.
 
 ## Referrals, paywall, prepaid months, win-back
