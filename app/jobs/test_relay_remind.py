@@ -7,6 +7,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _ROOT not in sys.path:
@@ -236,6 +237,8 @@ def main():
         _assert_eq(nudge_types[1], "bs_trfs", "D-3 still offers change-plan")
         _assert("start%3D101" in markup[2][0]["url"],
                 "D-3 offers to invite a friend with the user's own link")
+        _assert_eq(markup[3][0]["callback_data"], {"tp": "bs_stars_sub"},
+                   "and Relay by a Stars subscription below it")
 
         second = relay_remind.send_relay_d3_reminders(database=path)
         _assert_eq(second, 0, "second hourly tick does not spam")
@@ -244,6 +247,21 @@ def main():
         third = relay_remind.send_relay_d3_reminders(database=path)
         _assert_eq(third, 1, "renewal clears the flag")
         _assert_eq(sent[-1][0], 101, "and only that user is reminded again")
+
+        # A Stars subscription renews the plan by itself: "pay or it ends" would be false.
+        conn = sqlite3.connect(path)
+        _add_user(conn, 107, 40)
+        _add_user(conn, 108, 40)
+        conn.execute("UPDATE users SET flags = json_object('stars_sub_until', ?) WHERE telegramId = 107",
+                     (time.time() + 86400,))
+        conn.execute("UPDATE users SET flags = json_object('stars_sub_until', ?) WHERE telegramId = 108",
+                     (time.time() - 86400,))
+        conn.commit()
+        conn.close()
+        del sent[:]
+        relay_remind.send_relay_d3_reminders(database=path)
+        _assert_eq([row[0] for row in sent], [108],
+                   "a running Stars subscription gets no D-3; one whose period is over does")
     finally:
         os.remove(path)
 

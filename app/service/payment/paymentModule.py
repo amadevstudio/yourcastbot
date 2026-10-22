@@ -19,6 +19,7 @@ from app.routes.message_tools import go_back_inline_markup, go_back_inline_butto
 from app.routes.ptypes import ControllerParams
 from app.service.payment.paymentSafeModule import \
     prepare_price, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
+from app.service.payment import stars_subscription
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
 from app.service.payment.storefront import (
     RELAY_INVOICE_CALLBACK, tariffs_for_change_plan, subscription_pay_rows)
@@ -133,6 +134,8 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
     menu_keyboard: list[list[InlineButtonData]] = subscription_pay_rows(
         language_code, include_robokassa=(utgid == creatorId))
     if prepaid_months_sold(tariff_lvl, tariff_lvl > 0 and time_left > 0):
+        if not stars_subscription.active(utgid):
+            menu_keyboard.append(stars_subscription.offer_row(language_code))
         # the longest prepaid bundle in one tap; the shorter ones are on the Stars page
         months, discount = longest_bundle()
         menu_keyboard.append([{

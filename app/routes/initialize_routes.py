@@ -169,16 +169,24 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
             logger.err("Telegram Stars successful payment without charge id")
             return
 
+        # a Stars subscription: the first charge and each renewal (the same payload)
+        recurring = ('first' if getattr(action, 'recurring_init', None)
+                     else 'renewal' if getattr(action, 'recurring_used', None) else None)
+        until = getattr(action, 'subscription_until_date', None)
+
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None,
-            starsPaymentModule.process_successful_payment,
-            chat_id,
-            action.currency,
-            action.total_amount,
-            action.payload,
-            charge_id,
-            getattr(action.charge, 'provider_charge_id', None))
+            partial(
+                starsPaymentModule.process_successful_payment,
+                chat_id,
+                action.currency,
+                action.total_amount,
+                action.payload,
+                charge_id,
+                getattr(action.charge, 'provider_charge_id', None),
+                recurring=recurring,
+                subscription_until=until.timestamp() if until else None))
 
     # Outer middlewares
     # Catch all message when under maintenance

@@ -6,6 +6,7 @@ from app.jobs.relay_remind import (
     clear_relay_d3_sent, relay_nudge_markup, send_relay_d3_reminders)
 from app.jobs.tariff_tick import run_tariff_tick
 from app.service import analytics_events
+from app.service.payment import stars_subscription
 from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
 from app.service.payment.referral import invite_row
@@ -77,12 +78,13 @@ def balance_watcher(update_time):
                            + get_tariff_description_and_button_text(
                                tariff_row, {'id': npu['tid']}, lang,
                                show_tariff_level_text=False)['text']
+            markup = relay_nudge_markup(lang, extra_row=invite_row(npu['telegramId'], lang))
+            markup.append(stars_subscription.offer_row(lang))  # below Stars, change-plan and the invite
             try:
                 outer_sender(npu['telegramId'], [{
                     'type': 'text',
                     'text': message,
-                    'reply_markup': relay_nudge_markup(
-                        lang, extra_row=invite_row(npu['telegramId'], lang)),
+                    'reply_markup': markup,
                 }])
             except Exception as e:
                 logger.err(e)

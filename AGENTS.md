@@ -167,6 +167,24 @@ remove plan management or hide Bronze/Silver.
   would renew that plan for years). The longest bundle is also a button on
   /subscription, after the pay methods.
   Lock: `python app/service/payment/test_stars_invoice.py` (bot requirements).
+- Relay by a Stars subscription (`app/service/payment/stars_subscription.py`,
+  action `bs_stars_sub`): an invoice link (`createInvoiceLink` with
+  `subscription_period`, the raw request; `sendInvoice` has no
+  subscriptions) that Telegram charges every 30 days. Payload `u: 1`, one
+  month of Relay, no discount. Every charge, the first and each renewal,
+  arrives as a payment of that payload with its own charge id
+  (`MessageActionPaymentSentMe` `recurring_init` / `recurring_used`) and is
+  credited once like any Stars payment: the tick renews the plan from the
+  balance. A plan the first charge turns on runs `GRACE_HOURS` past the next
+  charge, so the renewal lands before the tick could end it.
+  `users.flags` `stars_sub_until` (and the first charge id): while it runs,
+  no second subscription (refused at the pre-checkout too: Telegram would
+  charge both) and no D-3. Sold where prepaid months are (Relay, or no plan
+  running). Offered on /subscription, the Stars page under Relay, D-3 (Relay)
+  and plan-off, below the rows that were there. A cancel is not reported
+  (no such update in Telethon): no charge comes and the plan ends at the
+  tick. Locks: `python app/service/payment/test_stars_invoice.py`,
+  `python app/jobs/test_relay_remind.py`.
 - Win-back (`app/jobs/winback.py`, `db/winback.py`): a schedule starts only
   from the tick's plan-off list, for Relay (`start_winback`); the old
   expiries (15.5k on 2026-10-20) are never mailed. Messages at
