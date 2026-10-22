@@ -45,7 +45,17 @@ not raise that for bots (Bot API 10.3 checked: Premium only allows custom
 emoji). The description used to be cut to ~1000. Now (`app/service/record/text_format.py`,
 `users.episode_format`):
 
-- **rich** (default, NULL in the column): one `sendRichMessage` with the
+- **brief** (default since 2026-10-22, NULL in the column; the owner's call:
+  the text under an episode is the summary, the feed's text on request, at no
+  new AI cost): the audio with its header only, and under it "Summary" (AI
+  on) and "Show notes" (`DESCRIPTION_ACTION` `desc`, the episode's ref). The
+  sender keeps every delivered episode with its description
+  (`ai_episodes.descr`, `ai.remember_episode`, AI on or off);
+  `episodeTextModule.show_description` sends it as a collapsible quote
+  replying to the audio, or a toast when there is none. A format chosen in
+  Settings stays (16 users on 2026-10-22). Locks:
+  `python app/core/sender/test_record_delivery.py`, `python tools/botsim/test_botsim.py`.
+- **rich** (the default before 2026-10-22): one `sendRichMessage` with the
   player and the whole description (`lib/telegram/rich_message.py`, up to
   32768 characters; pyTelegramBotAPI 4.11 has no such method, it goes
   through `apihelper._make_request`). The first one a user gets is followed
@@ -64,7 +74,7 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
   format lookup, the caption as before. `/settings` is a list of sections (Episode text;
   Reminders, without a plan only), each a page of its own (`settsText`,
   `settsRem`) and each button names what is set; the episode text page has
-  four buttons (one per format, the current marked). The note after the first
+  five buttons (one per format, brief first, the current marked). The note after the first
   rich message has its own action (`episodeFormatHint`) because it also closes
   the note. Lock: `python app/controller/builders/test_settings_screens.py`.
 - A rich message that fails for a reason of its own (not a blocked user, not

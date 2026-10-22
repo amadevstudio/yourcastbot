@@ -45,9 +45,9 @@ AvailableActions = Literal[
     'rate',
     'rec', 'nrec',
     'wPick', 'wSub',
-    'sum', 'sumLangOrig', 'sumLangMine', 'sumAuto', 'askDone',
+    'sum', 'sumLangOrig', 'sumLangMine', 'sumAuto', 'askDone', 'desc',
     'digestMute', 'digestToggle',
-    'episodeFormatRich', 'episodeFormatSeparate', 'episodeFormatCaption', 'episodeFormatMeta',
+    'episodeFormatBrief', 'episodeFormatRich', 'episodeFormatSeparate', 'episodeFormatCaption', 'episodeFormatMeta',
     'episodeFormatHint',
     'bs_patrupd',
     'myTgChDel', 'changeTgChActive', 'myTgChDel', 'myTgChSubChActive'

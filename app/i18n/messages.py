@@ -5026,3 +5026,5 @@ from app.i18n.onboarding import TRANSLATIONS as _ONBOARDING_TRANSLATIONS
 messages.update(_ONBOARDING_TRANSLATIONS)
 from app.i18n.ai import TRANSLATIONS as _AI_TRANSLATIONS
 messages.update(_AI_TRANSLATIONS)
+from app.i18n.episode_text import TRANSLATIONS as _EPISODE_TEXT_TRANSLATIONS
+messages.update(_EPISODE_TEXT_TRANSLATIONS)

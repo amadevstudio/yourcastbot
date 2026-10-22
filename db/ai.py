@@ -29,7 +29,7 @@ _lock = threading.Lock()
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS ai_episodes (
     ref TEXT PRIMARY KEY, link TEXT NOT NULL, channel_id INTEGER, title TEXT NOT NULL,
-    show TEXT NOT NULL, seen_at REAL NOT NULL, seconds INTEGER NOT NULL DEFAULT 0
+    show TEXT NOT NULL, seen_at REAL NOT NULL, seconds INTEGER NOT NULL DEFAULT 0, descr TEXT
 );
 CREATE TABLE IF NOT EXISTS ai_transcripts (
     ref TEXT PRIMARY KEY, text TEXT NOT NULL, source TEXT NOT NULL,
@@ -56,6 +56,8 @@ def connect(database=None):
     with _lock:
         if database not in _ready or database == ':memory:':
             c.executescript(SCHEMA)
+            # descr: the feed's description, shown by "Show notes" under a brief episode
+            _add_column(c, 'ai_episodes', 'descr', 'descr TEXT')
             columns = {row[1] for row in c.execute('PRAGMA table_info(ai_requests)')}
             # reply_to: the audio message the summary answers (its times play the episode from there);
             # auto: queued for a new episode (app/service/ai/auto.py), after every tap
@@ -71,6 +73,16 @@ def connect(database=None):
                         raise
             _ready.add(database)
     return c
+
+
+def _add_column(c, table, column, sql):
+    if column in {row[1] for row in c.execute('PRAGMA table_info(%s)' % table)}:
+        return
+    try:
+        c.execute('ALTER TABLE %s ADD COLUMN %s' % (table, sql))
+    except sqlite3.OperationalError as e:  # another role added it first
+        if 'duplicate column' not in str(e):
+            raise
 
 
 def _one(database, sql, params=()):
@@ -91,14 +103,20 @@ def _write(database, sql, params=()):
         c.close()
 
 
-def remember_episode(ref, link, channel_id, title, show, seconds=0, database=None):
-    """`seconds`: the episode's length as its feed gives it (itunes:duration), 0 if unknown."""
+DESCR_CHARS = 40000
+
+
+def remember_episode(ref, link, channel_id, title, show, seconds=0, database=None, descr=None):
+    """`seconds`: the episode's length as its feed gives it (itunes:duration), 0 if unknown;
+    `descr`: its description as the feed gives it (kept unless a new one is given)."""
     _write(database,
-           'INSERT INTO ai_episodes VALUES (?,?,?,?,?,?,?) ON CONFLICT(ref) DO UPDATE SET '
+           'INSERT INTO ai_episodes (ref, link, channel_id, title, show, seen_at, seconds, descr) '
+           'VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(ref) DO UPDATE SET '
            'title=excluded.title, show=excluded.show, seen_at=excluded.seen_at, '
-           'seconds=CASE WHEN excluded.seconds>0 THEN excluded.seconds ELSE ai_episodes.seconds END',
+           'seconds=CASE WHEN excluded.seconds>0 THEN excluded.seconds ELSE ai_episodes.seconds END, '
+           'descr=COALESCE(excluded.descr, ai_episodes.descr)',
            (ref, link, channel_id, str(title or '')[:500], str(show or '')[:300], time.time(),
-            max(int(seconds or 0), 0)))
+            max(int(seconds or 0), 0), str(descr)[:DESCR_CHARS] if descr else None))
 
 
 def episode(ref, database=None):

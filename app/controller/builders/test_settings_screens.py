@@ -46,8 +46,8 @@ def test_sections(settings):
     free = settings.construct_settings_message('en', 1)
     _assert(_tps(free) == ['settsText', 'settsRem', 'bck'],
             "without a plan: both sections, then Back")
-    _assert(get_message("episodeFormatRich", "en") in _texts(free)[0],
-            "the episode text button shows what is set (the default: one message)")
+    _assert(get_message("episodeFormatBrief", "en") in _texts(free)[0],
+            "the episode text button shows what is set (the default: brief)")
     _assert(_texts(free)[1].endswith(settings.reminders_mark(True)), "the reminders button shows on")
 
     user['nosub_digest_enabled'] = 0
@@ -78,7 +78,8 @@ def test_pages(settings):
     settings._read_user = lambda chat_id: (user, False)
     page = settings.construct_episode_text_message('en', 1)
     marked = [text for text in _texts(page) if text.startswith('✅')]
-    _assert(len(_tps(page)) == 5 and _tps(page)[-1] == 'bck', "episode text: four formats, Back")
+    _assert(_tps(page) == ['episodeFormatBrief', 'episodeFormatRich', 'episodeFormatSeparate', 'episodeFormatCaption',
+                           'episodeFormatMeta', 'bck'], "episode text: five formats, brief first, Back")
     _assert(len(marked) == 1 and get_message("episodeFormatCaption", "en") in marked[0],
             "episode text: the current format is the marked one")
     _assert(get_message("episodeFormatHelp", "en") in page[0]['text'], "episode text: the explanation is here")

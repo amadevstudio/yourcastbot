@@ -21,7 +21,7 @@ from app.repository.storage import storage, telegram_cache
 from app.service.record.caption import (
     DescriptionModeOptions, record_caption, record_description_message, record_rich_html)
 from app.service.record.text_format import (
-    CAPTION, EPISODE_FORMAT_HINT_ACTION, META, RICH, SEPARATE, user_format)
+    BRIEF, CAPTION, DESCRIPTION_ACTION, EPISODE_FORMAT_HINT_ACTION, META, RICH, SEPARATE, user_format)
 from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
 from app.service.ai import hint as summary_hint, summary as ai_summary
 from db import ai, usage
@@ -190,6 +190,8 @@ class Sender:
         self.usage_kind = usage_kind
         # the episode's ref when AI summaries are on: the Summary button under the file
         self._summary_ref: str | None = None
+        # the episode's ref once remembered (db/ai.py): the Show notes button of a brief episode
+        self._episode_ref: str | None = None
         self.outbox_id = outbox_id
         self.outbox_attempts = outbox_attempts
         self._last_outbox_touch = None
@@ -489,9 +491,9 @@ class Sender:
 
     def _caption_mode(self, chat_id, via_agent=False) -> DescriptionModeOptions:
         """Header only when the description travels apart (a separate quote, or the agent's
-        upload, which is a plain audio message) or the user wants none (meta)."""
+        upload, which is a plain audio message), comes on a tap (brief) or is not wanted (meta)."""
         fmt = self._chat_format(chat_id)
-        if fmt in (SEPARATE, META) or (fmt == RICH and via_agent):
+        if fmt in (BRIEF, SEPARATE, META) or (fmt == RICH and via_agent):
             return 'none'
         return self.__description_mode(chat_id)
 
@@ -1317,6 +1319,11 @@ class Sender:
         if self._summary_ref is not None and str(chat_id).isdigit():
             buttons.append((get_message("summaryButton", lang_code),
                             json.dumps(ai_summary.button_data(self._summary_ref))))
+        # brief: the feed's text on a tap, under the summary
+        if (self._episode_ref is not None and str(chat_id).isdigit() and self._chat_format(chat_id) == BRIEF
+                and str(self.podcast_info.get('descr') or '').strip()):
+            buttons.append((get_message("descriptionButton", lang_code),
+                            json.dumps({'tp': DESCRIPTION_ACTION, 'r': self._episode_ref})))
         return buttons
 
     def get_next_ep_button(self, lang_code='en', chat_id=None):
@@ -1330,15 +1337,16 @@ class Sender:
         return keyboard
 
     def _remember_for_summary(self):
-        """With AI summaries on, the episode a Summary button will name. Never fails a send."""
-        if not ai_summary.enabled():
-            return
+        """The episode the buttons under the file name: Show notes (its description is kept)
+        and, with AI summaries on, Summary. Never fails a send."""
         try:
             ref = usage.episode_ref(self.link)
             ai.remember_episode(ref, self.link, self.podcast_info.get('id'),
                                 self.podcast_info.get('title'), self.podcast_info.get('chName'),
-                                self.podcast_info.get('duration_sec') or 0)
-            self._summary_ref = ref
+                                self.podcast_info.get('duration_sec') or 0, descr=self.podcast_info.get('descr'))
+            self._episode_ref = ref
+            if ai_summary.enabled():
+                self._summary_ref = ref
         except Exception as e:
             self.logger.warn("ai episode:", e)
 
