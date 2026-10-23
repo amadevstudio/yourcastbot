@@ -21,7 +21,7 @@ if _ROOT not in sys.path:
 
 from app.admin_web import diag  # noqa: E402
 from db.sqliteAdapter import SQLighter  # noqa: E402
-from db.tariff_rows import ensure_tariff_rows  # noqa: E402
+from db.tariff_rows import ensure_tariff_rows, paid_for_days  # noqa: E402
 
 
 def _assert_eq(got, expected, label):
@@ -133,9 +133,28 @@ def test_supervisor_heals_at_start():
     _assert_eq(tries[0].lineno < run[0], True, "and before the children are spawned")
 
 
+def test_paid_for_days():
+    path = _fixture()
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE payment_history (user_id INTEGER, service_type TEXT, invoice_id TEXT, status TEXT);
+        CREATE TABLE payment_service_user_data (user_id INTEGER, service_type TEXT, email TEXT,
+            last_replenishment TEXT, active INTEGER);
+        INSERT INTO payment_history VALUES (1, 'stars', 'a', 'paid');
+        INSERT INTO payment_service_user_data VALUES (2, 'patreon', 'x@example.com', '2026-10-01', 1),
+            (3, 'patreon', 'y@example.com', NULL, 1);
+    """)
+    conn.commit()
+    conn.close()
+    _assert_eq(paid_for_days(PAID, path), True, "a payment")
+    _assert_eq(paid_for_days(EXPIRED, path), True, "a Patreon replenishment (no payment_history row)")
+    _assert_eq(paid_for_days(NO_ROW, path), False, "a Patreon email that never brought money")
+    _assert_eq(paid_for_days(NULL_COUNT, path), False, "nothing at all")
+
+
 def main():
     for case in (test_free_list_is_the_complement, test_heal,
-                 test_nothing_to_heal_on_a_bare_database, test_supervisor_heals_at_start):
+                 test_nothing_to_heal_on_a_bare_database, test_supervisor_heals_at_start, test_paid_for_days):
         print("-- %s" % case.__name__)
         case()
     print("all tariff rows checks passed")

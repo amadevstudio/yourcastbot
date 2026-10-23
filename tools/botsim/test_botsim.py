@@ -143,6 +143,36 @@ def test_show_notes(user):
     _assert(not empty.new and empty.toasts and empty.toasts[0][0], "no text: a toast, no empty message")
 
 
+def _plan_row(user_id):
+    return _db().execute("SELECT ut.tariff_id, ut.balance, ut.time_left FROM user_tariff_cs ut "
+                         "JOIN users u ON u.id = ut.uid WHERE u.telegramId = ?", (user_id,)).fetchone()
+
+
+def test_downgrade_refund():
+    """Moving to a cheaper plan gives back half of the days left, only when the
+    chat ever paid: the welcome trial's days must not become balance."""
+    db = _db()
+    bronze = db.execute("SELECT id FROM tariffs WHERE level = 1").fetchone()[0]
+    db.close()
+    trial = sim.BotSim(2001, 'en')
+    trial.send('/start')
+    before = _plan_row(2001)
+    trial.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
+    after = _plan_row(2001)
+    _assert(before[1] == 0 and after[0] == bronze and after[1] == 0,
+            "the welcome trial moved to Bronze: the plan changes, no money appears")
+
+    payer = sim.BotSim(2002, 'en')
+    payer.send('/start')
+    db = _db()
+    db.execute("INSERT INTO payment_history (user_id, service_type, invoice_id, status, amount, datetime) "
+               "SELECT id, 'stars', 'sim-1', 'paid', 500, datetime('now') FROM users WHERE telegramId = 2002")
+    db.commit()
+    db.close()
+    payer.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
+    _assert(_plan_row(2002)[1] > 0, "a chat that paid still gets half of the days left back")
+
+
 def main():
     sim.boot(network=False, ai='fake')
     try:
@@ -153,6 +183,7 @@ def main():
         test_opml_offline(user)
         test_summary_and_question(user)
         test_show_notes(user)
+        test_downgrade_refund()
     finally:
         sim.shutdown()
     print("all botsim checks passed")
