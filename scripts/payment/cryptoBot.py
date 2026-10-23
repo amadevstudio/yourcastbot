@@ -1,5 +1,4 @@
 #!/usr/bin/python3.7
-import datetime
 
 # ATTENTION!
 # visudo
@@ -26,7 +25,6 @@ bot_path = str(sys.argv[1])
 sys.path.insert(1, bot_path)
 os.chdir(bot_path)
 
-from db.sqliteAdapter import SQLighter
 # import storage
 import config
 
@@ -37,6 +35,7 @@ from lib.api.payment.cryptoBotApi import CryptoBotApi
 from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, award_referrer_for_payment
 from app.service import analytics_events
 from scripts.payment.webhook_input import crypto_invoice
+from scripts.payment.credit import credit_once
 
 # TODO: refactor the file, make some tests
 
@@ -47,88 +46,6 @@ payment_log_path = f"{config.BASE_DIR}/log/payment.log"
 
 isOk = False
 output = ""
-
-def updateSubscription(db, user, amountCents):
-
-	chat_tg_id = user['telegramId']
-
-	current_subscription = db.getUserSubscriptionByTg(chat_tg_id)
-	if current_subscription is None:
-		current_tariff = None
-	else:
-		current_subscription = {
-			'id': current_subscription['id'],
-			'uid': current_subscription['uid'],
-			'tariff_id': current_subscription['tariff_id'],
-			'balance': current_subscription['balance'],
-			'time_left': current_subscription['time_left'],
-			'notify_count': current_subscription['notify_count']
-		}
-		current_tariff = db.getTariffById(current_subscription['tariff_id'])
-	if current_tariff is None:
-		current_tariff = {'id': 0, 'level': 0, 'price': 0}
-
-	if current_subscription is None or current_subscription['id'] == 0:
-		current_tariff_id = 0
-		current_subscription_time_left = 0
-		balance = int(amountCents)
-		db.subscribeUserToTariffByTg(
-			chat_tg_id, current_tariff_id,
-			balance, current_subscription_time_left, 0)
-		current_subscription = {
-			'balance': balance,
-			'time_left': current_subscription_time_left,
-			'notify_count': 0
-		}
-		# деньги пришли, подпишитесь
-		result_mode = 0
-
-	elif current_subscription['time_left'] > 0:
-		new_user_balance = current_subscription['balance'] + int(amountCents)
-		db.subscribeUserToTariffByTg(
-			chat_tg_id, current_subscription['tariff_id'],
-			new_user_balance, current_subscription['time_left'],
-			current_subscription['notify_count'])
-		current_subscription['balance'] = new_user_balance
-		# деньги пришли, осталось до конца х дней, хватает для продления?
-		result_mode = 1
-
-	# elif current_subscription['time_left'] == 0:
-	else:
-		# current_tariff = db.getTariffById(current_subscription['tariff_id'])
-		# if current_tariff is None:
-		# 	current_tariff = {'id': 0, 'level': 0, 'price': 0}
-		new_user_balance = current_subscription['balance'] + int(amountCents)
-		if current_tariff['price'] != 0:
-			if new_user_balance >= current_tariff['price']:
-				new_user_balance -= current_tariff['price']
-				db.subscribeUserToTariffByTg(
-					chat_tg_id, current_subscription['tariff_id'],
-					new_user_balance, config.tariff_period,
-					current_tariff['notify_count'])
-				current_subscription['balance'] = new_user_balance
-				current_subscription['time_left'] = config.tariff_period
-				current_subscription['notify_count'] = current_tariff['notify_count']
-				# деньги пришли, тариф продлен
-				result_mode = 2
-			else:
-				db.subscribeUserToTariffByTg(
-					chat_tg_id, current_subscription['tariff_id'],
-					new_user_balance, current_subscription['time_left'], 0)
-				current_subscription['balance'] = new_user_balance
-				current_subscription['notify_count'] = 0
-				# деньги пришли, не хватает на продление
-				result_mode = 3
-		else:
-			db.subscribeUserToTariffByTg(
-				chat_tg_id, current_subscription['tariff_id'],
-				new_user_balance, current_subscription['time_left'], 0)
-			current_subscription['balance'] = new_user_balance
-			# деньги пришли, подпишитесь
-			result_mode = 0
-
-	return [result_mode, current_tariff, current_subscription]
-
 
 # !!!
 # Точка входа
@@ -235,30 +152,18 @@ def income_processing():
 		chat_tg_id = customPayload["tgid"]
 		amountCents = customPayload["amount"]
 
-		db = SQLighter(config.db_path)
-		# db.subscribeUserToTariffByTg(
-		# 	call.chat.id, desire_tariff['id'], new_balance, new_time_left)
-		user = db.get_user_by_tg(chat_tg_id)
+		if status != "paid":
+			print("OK")
+			return
 
-		# user_language = user_language_processor(user['lang'])
+		# the invoice is checked and written with the credit: a retried webhook credits nothing
+		user, credited = credit_once(chat_tg_id, "cryptoBot", invoice_id, amountCents, invoice_hash)
 		user_language = user['lang'] if user['lang'] is not None else 'en'
-
-		invoice = db.findInvoice(
-			user['id'], "cryptoBot", invoice_id,
-			invoiceHash=invoice_hash)
-
-		if invoice is None:
-			invoice_already_paid = False
-			[result_mode, current_tariff, current_subscription] \
-				= updateSubscription(db, user, amountCents)
-
-			invoice = db.createInvoice(
-				user['id'], "cryptoBot", invoice_id, datetime.datetime.now(),  # formatRssLastDate(paid_at),
-				invoiceHash=invoice_hash, status=status, amount=amountCents)
-		else:
-			invoice_already_paid = True
-
-		db.close()
+		invoice_already_paid = credited['already_processed']
+		if not invoice_already_paid:
+			result_mode = credited['result_mode']
+			current_tariff = credited['current_tariff']
+			current_subscription = credited['current_subscription']
 
 		if not invoice_already_paid:
 			try:
