@@ -6,6 +6,15 @@ require __DIR__ . '/../../config.php';
 error_reporting(0);
 ini_set('display_errors', '0');
 
+// Robokassa notifies from these addresses only (docs.robokassa.ru, "Уведомления и
+// переадресация"); nginx serves PHP directly, so REMOTE_ADDR is the sender
+$robokassa_ips = array('185.59.216.65', '185.59.217.65');
+if (!in_array($_SERVER['REMOTE_ADDR'] ?? '', $robokassa_ips, true)) {
+    http_response_code(403);
+    echo "bad sign\n";
+    exit;
+}
+
 $get_b64 = base64_encode(json_encode($_GET, JSON_FORCE_OBJECT));
 
 $python = $bot_path . '/venv/bin/python';
