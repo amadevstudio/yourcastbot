@@ -210,6 +210,14 @@ remove plan management or hide Bronze/Silver.
   `users.flags.winback_offer_used`, set in the payment's own transaction
   (`applyPaymentReplenishmentOnce(userFlag=...)`).
   Lock: `python app/jobs/test_winback.py`.
+- Patreon (`patreonPaymentModule`): the bot cannot tell whose email it is
+  told, so one membership pays one account. An email another account has is
+  not saved (`savePaymentServiceEmail` answers False, text `email_taken`;
+  case and spaces do not matter), and accounts that already share one are
+  credited once a month between them (`one_row_per_email`: the monthly check
+  is the email's, not the account's). The creator's debug address
+  (`creator_email`, 100 cents) credits the creator's account only.
+  Lock: `python app/service/payment/test_patreon_credit.py` (CD gate).
 
 ## Tariff clock
 

@@ -3164,6 +3164,26 @@ messages = {
             "ro_msg": "Erro ao salvar"
         }
     },
+    "email_taken": {
+        "ru": {
+            "ro_msg": "Эта почта уже привязана к другому аккаунту. Одна подписка Patreon оплачивает один аккаунт."
+        },
+        "en": {
+            "ro_msg": "This email is already linked to another account. One Patreon membership pays for one account."
+        },
+        "pt-BR": {
+            "ro_msg": "Este e-mail já está vinculado a outra conta. Uma assinatura do Patreon paga uma conta."
+        },
+        "es": {
+            "ro_msg": "Este correo ya está vinculado a otra cuenta. Una suscripción de Patreon paga una cuenta."
+        },
+        "de": {
+            "ro_msg": "Diese E-Mail ist bereits mit einem anderen Konto verknüpft. Eine Patreon-Mitgliedschaft bezahlt ein Konto."
+        },
+        "he": {
+            "ro_msg": "כתובת המייל הזו כבר מקושרת לחשבון אחר. מנוי Patreon אחד משלם על חשבון אחד."
+        }
+    },
     "donate_page_referral": {
         "ru": {
             "ro_msg": "Приводите друзей и получайте бонусы! Если по вашей ссылке "

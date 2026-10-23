@@ -1602,11 +1602,17 @@ class SQLighter:
             else:
                 return email['email']
 
-    def savePaymentServiceEmail(self, telegramId, email, service):
+    def savePaymentServiceEmail(self, telegramId, email, service) -> bool:
+        """False when another account has the email: one membership pays one account."""
         with self.connection:
             user = self.cursor.execute(
                 'SELECT id from users WHERE telegramId = ?',
                 (str(telegramId),)).fetchone()
+            if user and self.cursor.execute(
+                    "SELECT 1 FROM payment_service_user_data WHERE service_type = ? "
+                    "AND lower(trim(email)) = lower(trim(?)) AND user_id != ?",
+                    (service, email, user['id'])).fetchone() is not None:
+                return False
             if user:
                 query = """
                     SELECT COUNT(*) AS count
@@ -1635,6 +1641,7 @@ class SQLighter:
                         query, (email, str(user['id']), service,))
 
                 self.connection.commit()
+        return True
 
     def updatePaymentServiceLastReplenishment(
             self, user_id, service, last_replenishment
@@ -1649,7 +1656,9 @@ class SQLighter:
     def getPaymentDataByService(self, service):
         with self.connection:
             return self.cursor.execute(
-                "SELECT * FROM payment_service_user_data").fetchall()
+                "SELECT p.*, u.telegramId FROM payment_service_user_data AS p "
+                "JOIN users AS u ON u.id = p.user_id WHERE p.service_type = ? "
+                "ORDER BY p.rowid", (service,)).fetchall()
 
     def findInvoice(self, tgId, serviceType, invoiceId, invoiceHash=None):
         with self.connection:

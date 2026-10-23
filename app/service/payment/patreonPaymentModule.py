@@ -16,7 +16,7 @@ from app.repository.storage import storage
 from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_info_message, get_tariff_params_by_tg)
 from config import (
-    db_path, creator_email, special_paid_emails,
+    db_path, creatorId, creator_email, special_paid_emails,
     patreon_creator_access_token, patreon_subs_perpage,
     patreon_api_v2_url, patreon_request_timeout,
     donate_link)
@@ -64,11 +64,11 @@ def patreon_email_input_page(data: ControllerParams):
         email = data['message'].text if data['message'] is not None else None
 
         db = SQLighter(db_path)
-        db.savePaymentServiceEmail(data['chat_id'], email, "patreon")
+        taken = not db.savePaymentServiceEmail(data['chat_id'], email, "patreon")
         saved_email = db.getPaymentServiceEmail(data['chat_id'], "patreon")
         db.close()
 
-        saved = (True if saved_email == email else False)
+        saved = 'taken' if taken else (True if saved_email == email else False)
         tariff_payment_message = get_patreon_email_message(saved_email, data['language_code'], saved)
 
     # Show status message
@@ -84,7 +84,7 @@ def patreon_email_input_page(data: ControllerParams):
                     resending=data['callback'] is None)
 
 
-def get_patreon_email_message(current_email, language_code, status: bool | None = None):
+def get_patreon_email_message(current_email, language_code, status: bool | str | None = None):
     message_text = get_message("donate_page_email_input", language_code)
     if current_email is not None and current_email != "":
         message_text += "\n\n" + get_message("current_email", language_code) + ": " \
@@ -95,6 +95,8 @@ def get_patreon_email_message(current_email, language_code, status: bool | None 
             message_text += "\n\n" + get_message("email_saved", language_code)
         elif status is False:
             message_text += "\n\n" + get_message("save_error", language_code)
+        elif status == 'taken':
+            message_text += "\n\n" + get_message("email_taken", language_code)
 
     menu_key_board = go_back_inline_markup(language_code)
 
@@ -105,6 +107,23 @@ def get_patreon_email_message(current_email, language_code, status: bool | None 
     return result
 
 
+def normal_email(email) -> str:
+    return (email or '').strip().lower()
+
+
+def one_row_per_email(rows):
+    """One membership pays one account. Rows that share an email (saved before an
+    email could be taken only once) are credited once: the row credited last, so
+    the monthly check reads the latest replenishment of that email."""
+    chosen = {}
+    for row in rows:
+        email = normal_email(row['email'])
+        kept = chosen.get(email)
+        if kept is None or (row['last_replenishment'] or '') > (kept['last_replenishment'] or ''):
+            chosen[email] = row
+    return list(chosen.values())
+
+
 def check_patreon_accounts(initiator=None):
     logger.log("Patron update, initiator: ", initiator)
     patrons = load_patrons()
@@ -112,13 +131,17 @@ def check_patreon_accounts(initiator=None):
         logger.warn("Can't load patrons")
         return
 
-    # Send to creator too for debug
-    patrons[creator_email] = {
+    # Send to creator too for debug: to the creator's own account only, never to
+    # whoever types that address
+    creator = normal_email(creator_email)
+    patrons[creator] = {
         "cents": 100,
     }
 
     db = SQLighter(db_path)
-    payments_data = db.getPaymentDataByService("patreon")
+    payments_data = one_row_per_email(
+        row for row in db.getPaymentDataByService("patreon")
+        if normal_email(row['email']) != creator or str(row['telegramId']) == str(creatorId))
 
     today = datetime.datetime.today().date()
 
@@ -129,7 +152,7 @@ def check_patreon_accounts(initiator=None):
     db.close()
 
     for data in payments_data:
-        patron_email = data['email'].lower()
+        patron_email = normal_email(data['email'])
 
         if patron_email in patrons:
             patron = patrons[patron_email]
