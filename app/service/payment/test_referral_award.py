@@ -201,6 +201,31 @@ def _link_naming_nobody_creates_nobody():
         os.remove(path)
 
 
+def _first_start_after_the_dispatcher():
+    """Every update reads the user first (get_user_by_tg makes the row): the first
+    /start is still a sign-up, and a friend's link in it is still the inviter."""
+    from db.sqliteAdapter import SQLighter
+    path = _temp_db()
+    try:
+        db = SQLighter(path)
+        db.register_new_user(5000, 'en')  # the inviter
+        db.get_user_by_tg(5001)
+        _assert_eq(db.register_new_user(5001, 'en', 5000), (True, True),
+                   "a row the dispatcher just made: the first /start signs up by the link")
+        _assert_eq(db.get_user_by_tg(5001)['ref_id'], 5000, "and keeps the inviter")
+        _assert_eq(db.register_new_user(5001, 'en', 5000), (False, False), "a second /start is no sign-up")
+        db.get_user_by_tg(5002)
+        db.connection.execute("UPDATE users SET created_at = datetime('now', '-3 days') WHERE telegramId = 5002")
+        db.connection.commit()
+        _assert_eq(db.register_new_user(5002, 'en', 5000), (False, False),
+                   "an account days old that never sent /start is not an invitee")
+        _assert_eq(db.get_user_by_tg(5002)['ref_id'], None, "nor gets an inviter")
+        _assert_eq(db.register_new_user(5003, 'en'), (True, False), "no row at all is still a sign-up")
+        db.close()
+    finally:
+        os.remove(path)
+
+
 def _source_link_is_kept_once():
     from app.controller.builders.test_open_recs import import_builder
     welcomeModule = import_builder("welcomeModule")
@@ -209,6 +234,9 @@ def _source_link_is_kept_once():
     from db.sqliteAdapter import SQLighter
     path = _temp_db()
     try:
+        db = SQLighter(path)
+        db.get_user_by_tg(3002)  # the dispatcher reads (makes) the user before /start is handled
+        db.close()
         with patch.object(welcomeModule.config, 'db_path', path), \
                 patch.object(paymentSafeModule, 'db_path', path), \
                 patch.object(welcomeModule, 'render_messages'), \
@@ -243,6 +271,7 @@ def main():
     _invitee_gets_longer_welcome()
     _newcomer_who_subscribed_first()
     _link_naming_nobody_creates_nobody()
+    _first_start_after_the_dispatcher()
     _source_link_is_kept_once()
     print("all referral award checks passed")
 

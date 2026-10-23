@@ -1202,7 +1202,20 @@ class SQLighter:
             isreg = self.cursor.execute(
                 'SELECT * FROM users WHERE telegramId = ?',
                 (str(telegram_id),)).fetchall()
-            if len(isreg) == 0:
+            # every update reads the user first (get_user_by_tg makes the row), so a
+            # row is no proof of an earlier /start: only /start writes lang. A row
+            # without it, made in the last day, is a first /start (an old one is not:
+            # a link must not turn an account of years into an invitee)
+            first_start = len(isreg) == 1 and self.cursor.execute(
+                "SELECT lang IS NULL AND created_at >= datetime('now', '-1 day') "
+                "FROM users WHERE telegramId = ?", (str(telegram_id),)).fetchone()[0] == 1
+            if first_start:
+                new_user = True
+                by_refer = refer_id is not None
+                self.cursor.execute(
+                    'UPDATE users SET lang = ?, ref_id = COALESCE(ref_id, ?) WHERE telegramId = ?',
+                    (str(user_lang), None if refer_id is None else str(refer_id), str(telegram_id),))
+            elif len(isreg) == 0:
                 new_user = True
                 if refer_id is not None:
                     self.cursor.execute(
