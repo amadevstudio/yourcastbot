@@ -58,6 +58,9 @@ def get_sub_message(language_code, tariff_lvl, tariff_price, balance, time_left,
 
 
 # страница ввода почты patreon / сохранение почты
+# The email is not verified, on purpose for now: whoever saves a patron's address
+# first holds it (one membership pays one account, savePaymentServiceEmail). Few
+# patrons, small sums; a Patreon login (OAuth) is the fix if Patreon grows.
 def patreon_email_input_page(data: ControllerParams):
     # Update email if it is sent
     if data['callback'] is None:

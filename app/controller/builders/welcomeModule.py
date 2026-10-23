@@ -28,7 +28,9 @@ def link_source(start_data: str) -> str | None:
 def start(data: ControllerParams):
     welcome_message = construct_welcome_message(data['language_code'], data['chat_id'])
 
-    render_messages(data['chat_id'], message_structures=welcome_message)
+    # a command's screen is a new message: a newcomer's welcome plan (sent just before,
+    # referral_processing) would else be edited into this screen and never read
+    render_messages(data['chat_id'], message_structures=welcome_message, resending=bool(data['is_command']))
 
     if data['is_command']:
         storage.clear_user_storage(data['chat_id'])

@@ -217,6 +217,9 @@ remove plan management or hide Bronze/Silver.
   credited once a month between them (`one_row_per_email`: the monthly check
   is the email's, not the account's). The creator's debug address
   (`creator_email`, 100 cents) credits the creator's account only.
+  The email is not verified, on purpose for now (the owner's call,
+  2026-10-23: few patrons, small sums): the first account to save an
+  address holds it. A Patreon login (OAuth) is the fix if Patreon grows.
   Lock: `python app/service/payment/test_patreon_credit.py` (CD gate).
 - CryptoBot and Robokassa webhooks (`scripts/payment/cryptoBot.py`,
   `subscription_income.py`) credit through `credit.credit_once`
@@ -708,7 +711,9 @@ Lock: `python app/admin_web/test_product.py` (CD gate).
 
 ## Welcome screen
 
-`/start` shows the top podcasts in the user's language (then worldwide) as
+`/start` is a new message (`resending` for a command): a newcomer's welcome
+plan, sent just before it, used to be edited into the screen and never read.
+It shows the top podcasts in the user's language (then worldwide) as
 checkboxes, and a tap on one subscribes to it; a second tap unsubscribes
 (`app/controller/builders/onboarding.py`, actions `wPick` / `wSub`,
 state independent: the welcome message stays in the chat). It used to tick
