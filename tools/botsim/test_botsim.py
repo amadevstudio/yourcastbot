@@ -47,7 +47,8 @@ def test_start(user):
     plan = _db().execute("SELECT ut.tariff_id, ut.time_left FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
                          "WHERE u.telegramId = ?", (USER,)).fetchone()
     _assert(plan is not None and plan[0] == 3 and plan[1] > 0, "a new user gets the welcome Relay")
-    _assert(('start', ) == step.analytics[0][:1], "the tap reaches Amplitude (recorded, not sent)")
+    _assert(('new_user', ) == step.analytics[0][:1],
+            "a newcomer's first /start reaches Amplitude as new_user (recorded, not sent)")
 
     menu = user.tap('menu')
     _assert(menu.edited and any('RSS & Import' in text for text in menu.edited[0].button_texts()),
