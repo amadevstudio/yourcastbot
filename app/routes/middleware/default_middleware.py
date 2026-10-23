@@ -70,7 +70,7 @@ def check_threads(threads_to_watch: list[threading.Thread]):
 
 
 def analytics_serving(tg_data: ControllerParams, user: Any, is_new_user: bool = False,
-                      is_by_refer: bool = False, action: str | None = None):
+                      is_by_refer: bool = False, action: str | None = None, source: str | None = None):
 
     # Аналитика
     try:
@@ -84,6 +84,8 @@ def analytics_serving(tg_data: ControllerParams, user: Any, is_new_user: bool = 
             special_event_data_new_user: SpecialEventDataNewUserType = {'mode': 'new_user'}
             if is_by_refer:
                 special_event_data_new_user['is_referred'] = True
+            if source is not None:
+                special_event_data_new_user['link_source'] = source
             # analyticsData['specialEventData']['refer_id'] = refer_id
             analytics_data['specialEventData'] = special_event_data_new_user
         elif action is not None:

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Referral rewards: an unlimited plan (-1) stays unlimited, a payment awards
 the inviter once whatever the pay method or retries, an invitee gets the
-longer welcome plan, and a link naming nobody creates nobody.
+longer welcome plan, a link naming nobody creates nobody, and a sign-up by a
+source link (?start=src_ph) keeps where it came from.
 
 Run from the repo root: python app/service/payment/test_referral_award.py
 """
@@ -200,6 +201,32 @@ def _link_naming_nobody_creates_nobody():
         os.remove(path)
 
 
+def _source_link_is_kept_once():
+    from app.controller.builders.test_open_recs import import_builder
+    welcomeModule = import_builder("welcomeModule")
+    if welcomeModule is None:
+        return
+    from db.sqliteAdapter import SQLighter
+    path = _temp_db()
+    try:
+        with patch.object(welcomeModule.config, 'db_path', path), \
+                patch.object(paymentSafeModule, 'db_path', path), \
+                patch.object(welcomeModule, 'render_messages'), \
+                patch.object(welcomeModule, 'add_sub', return_value=(None, None)):
+            new_user, _ = welcomeModule.referral_processing({'chat_id': 3002, 'language_code': 'en'}, None,
+                                                            source='ph')
+            again, _ = welcomeModule.referral_processing({'chat_id': 3002, 'language_code': 'en'}, None,
+                                                         source='x')
+        db = SQLighter(path)
+        try:
+            _assert_eq((new_user, again), (True, False), "the first link signs up, the second does not")
+            _assert_eq(db.get_user_flag(3002, 'source'), 'ph', "the sign-up keeps its source, not a later link")
+        finally:
+            db.close()
+    finally:
+        os.remove(path)
+
+
 def _assert(cond, label):
     if not cond:
         raise AssertionError(label)
@@ -216,6 +243,7 @@ def main():
     _invitee_gets_longer_welcome()
     _newcomer_who_subscribed_first()
     _link_naming_nobody_creates_nobody()
+    _source_link_is_kept_once()
     print("all referral award checks passed")
 
 

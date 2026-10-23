@@ -182,6 +182,15 @@ def test_taps_reach_the_handler(welcome):
                 "a tap goes to its handler: the bot's text is no /start parameter")
         command = {'route_name': 'start', 'callback': None, 'message': types.SimpleNamespace(text='/start podcast_5')}
         _assert(welcome.start_related_options(command)['action'] == 'podcast', "a /start link still opens its podcast")
+        called.clear()
+        welcome.referral_processing = lambda *args: called.append(args[3]) or (True, False)
+        launch = {'route_name': 'start', 'callback': None, 'message': types.SimpleNamespace(text='/start src_PH')}
+        options = welcome.start_related_options(launch)
+        _assert(options['action'] is None and options['source'] == 'ph' and called[0] == 'ph',
+                "a source link is no action (the /start screen runs) and its source reaches the sign-up")
+        _assert(welcome.link_source('src_') is None and welcome.link_source('src_a b') is None
+                and welcome.link_source('podcast_5') is None and welcome.link_source('src_' + 'x' * 33) is None,
+                "anything else is not a source")
     finally:
         welcome.referral_processing, welcome.action_processing = saved
 
