@@ -15,6 +15,7 @@ from lib.python.singletonBase import Singleton
 class SpecialEventDataNewUserType(TypedDict, total=False):
     mode: Required[Literal['new_user']]
     is_referred: bool
+    link_source: str  # t.me/<bot>?start=src_<name>, also the user's property
 
 
 class SpecialEventDataPodcastOpenedByLink(TypedDict):
@@ -107,6 +108,8 @@ class Analytics(metaclass=Singleton):
                 user_telegram_id = analytics_data['tgData']['chat_id']
 
                 request_type = "start_special"
+                # is_referred, link_source, action: they used to be dropped here
+                event_properties = dict(analytics_data['specialEventData'])
 
         else:
             controller_params = typing.cast(ControllerParams, analytics_data['tgData'])
@@ -149,13 +152,16 @@ class Analytics(metaclass=Singleton):
         }
         command = same_actions.get(command, command)
 
+        user_properties = {"lang": user_lang, "telegram_id": user_telegram_id}
+        if event_properties.get("link_source"):
+            # set once, on the sign-up: every later event of the user can be split by it
+            user_properties["link_source"] = event_properties["link_source"]
+
         self.queue.put((
             self.event,
             {
                 "user_id": analytics_data['userSystemId'], "command": command,
-                "user_properties": {
-                    "lang": user_lang,
-                    "telegram_id": user_telegram_id},
+                "user_properties": user_properties,
                 "event_properties": event_properties}))
 
 

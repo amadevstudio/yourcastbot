@@ -119,7 +119,8 @@ class TheSender(threading.Thread):
                 controller_params, input_data['data']['user'],
                 start_related_params['is_new_user'],
                 start_related_params['is_by_refer'],
-                start_related_params['action'])
+                start_related_params['action'],
+                start_related_params['source'])
 
         elif 'inline' in input_data['data']:
             log_incoming_inline(input_data['data']['inline'])

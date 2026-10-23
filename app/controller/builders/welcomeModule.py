@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import re
 from typing import TypedDict
 
 import config
@@ -15,6 +16,14 @@ from lib.markup import telegram_html
 from lib.telegram.general.message_master import render_messages, message_editor, MessageStructuresInterface
 from lib.tools.logger import logger
 
+# t.me/<bot>?start=src_ph: where a launch post's reader came from, the /start screen as usual
+SOURCE_LINK = re.compile(r'src_([a-z0-9_-]{1,32})', re.IGNORECASE)
+
+
+def link_source(start_data: str) -> str | None:
+    found = SOURCE_LINK.fullmatch(start_data)
+    return found.group(1).lower() if found else None
+
 
 def start(data: ControllerParams):
     welcome_message = construct_welcome_message(data['language_code'], data['chat_id'])
@@ -25,7 +34,8 @@ def start(data: ControllerParams):
         storage.clear_user_storage(data['chat_id'])
 
 
-def referral_processing(data: ControllerParams, refer_id: int | None, action_mode: bool = False):
+def referral_processing(data: ControllerParams, refer_id: int | None, action_mode: bool = False,
+                        source: str | None = None):
     db_users = SQLighter(config.db_path)
 
     # A link names its inviter: only an existing user other than oneself.
@@ -37,6 +47,9 @@ def referral_processing(data: ControllerParams, refer_id: int | None, action_mod
     # регистрируем, если он ещё нет, с учётом рефералки
     is_new_user, is_by_refer = db_users.register_new_user(
         data['chat_id'], data['language_code'], refer_id)
+    # the first link a user came by stays: a later one is not where they came from
+    if is_new_user and source is not None:
+        db_users.set_user_flag(data['chat_id'], 'source', source)
 
     if is_by_refer is True and refer_id is not None:
         result_message_for_refer = paymentSafeModule.giveAward(refer_id, data['chat_id'], 'reged')
@@ -89,11 +102,13 @@ class StartRelatedParamsType(TypedDict):
     action: str | None
     is_new_user: bool
     is_by_refer: bool
+    source: str | None
 
 
 def start_related_options(data: ControllerParams) -> StartRelatedParamsType:
     action: str | None = None  # Открытие подкаста или выпуска из бота
     refer_id = None
+    source = None
     action_params = []
 
     # a button of the welcome screen (wPick, wSub) is routed as 'start' too: its message is the
@@ -102,7 +117,8 @@ def start_related_options(data: ControllerParams) -> StartRelatedParamsType:
         return {
             'action': None,
             'is_new_user': False,
-            'is_by_refer': False
+            'is_by_refer': False,
+            'source': None
         }
 
     if data['message'] is not None:
@@ -112,19 +128,23 @@ def start_related_options(data: ControllerParams) -> StartRelatedParamsType:
             try:
                 refer_id = int(start_data)
             except ValueError:
-                # podcast + id
-                # podcastItunes + itunes id
-                action, *action_params = start_data.split("_")
-                if action == '':
-                    action = None
+                # a source link is no action: the start route runs as for a bare /start
+                source = link_source(start_data)
+                if source is None:
+                    # podcast + id
+                    # podcastItunes + itunes id
+                    action, *action_params = start_data.split("_")
+                    if action == '':
+                        action = None
 
-    is_new_user, is_by_refer = referral_processing(data, refer_id, action is not None)
+    is_new_user, is_by_refer = referral_processing(data, refer_id, action is not None, source)
     action_processing(data, action, *action_params)
 
     return {
         'action': action,
         'is_new_user': is_new_user,
-        'is_by_refer': is_by_refer
+        'is_by_refer': is_by_refer,
+        'source': source
     }
 
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Amplitude events that are not taps: tracked under users.id from any role,
 never for a chat the bot does not know (no row created), never failing the
-caller; a digest's Listen tap carries its source.
+caller; a digest's Listen tap carries its source, a sign-up its source link.
 
 Run from the repo root: python app/service/test_analytics_events.py
 """
@@ -101,6 +101,15 @@ def test_tap_event():
         'userSystemId': 7, 'actionName': 'desc', 'language_code': 'en', 'specialEventData': None})
     _assert(queued[1]['command'] == 'recs' and queued[1]['event_properties']['action'] == 'desc',
             "a button inside the route (Show notes) is the event's action: the route alone hid it")
+    tracker.smart_event_telegram_processing({
+        'tgData': {'callback': None, 'message': object(), 'route_name': 'start', 'language_code': 'en',
+                   'chat_id': 1001},
+        'userSystemId': 7, 'actionName': 'None', 'language_code': 'en',
+        'specialEventData': {'mode': 'new_user', 'is_referred': True, 'link_source': 'ph'}})
+    _assert(queued[2]['command'] == 'new_user' and queued[2]['event_properties']['link_source'] == 'ph'
+            and queued[2]['event_properties']['is_referred'] is True
+            and queued[2]['user_properties']['link_source'] == 'ph',
+            "a sign-up by a source link carries it on the event and as the user's property")
 
 
 def test_deliveries(db):
