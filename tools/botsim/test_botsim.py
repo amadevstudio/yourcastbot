@@ -42,7 +42,9 @@ def _db():
 
 def test_start(user):
     step = user.send('/start')
-    _assert(step.handlers[-1] == 'processor(start)' and len(step.new) == 1, "/start: one welcome message")
+    _assert(step.handlers[-1] == 'processor(start)' and len(step.new) == 2 and not step.edited
+            and '14 days free' in step.new[0].text and 'Welcome!' in step.new[1].text,
+            "/start: the welcome plan stays, the welcome screen comes under it (it used to be edited into it)")
     _assert(not step.errors, "no error on the way")
     plan = _db().execute("SELECT ut.tariff_id, ut.time_left FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
                          "WHERE u.telegramId = ?", (USER,)).fetchone()
