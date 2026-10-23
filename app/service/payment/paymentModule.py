@@ -26,6 +26,7 @@ from config import botName
 from config import creatorId
 from config import db_path, tariff_period
 from db.sqliteAdapter import SQLighter
+from db.tariff_rows import paid_for_days
 from lib.telegram.general.message_master import render_messages, InlineButtonData
 
 
@@ -308,7 +309,9 @@ def choose_bot_subscription_tariff(data: ControllerParams):
                     ((current_subscription['time_left'] - 1) / tariff_period)
                     * (current_tariff['price'] - desire_tariff['price']) / 2)
                 new_balance = int(current_subscription['balance'])
-                if price_diff > 0:
+                # half of the days left goes back to the balance, if anything was ever
+                # paid: the welcome trial's days were not, they must not become money
+                if price_diff > 0 and paid_for_days(data['chat_id']):
                     new_balance += price_diff
 
             # If new tariff notify_count is inf, set inf

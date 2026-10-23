@@ -228,6 +228,11 @@ remove plan management or hide Bronze/Silver.
   request reaches the creator only: it names any uid, never write to it or
   make its users row. Lock: `python scripts/payment/test_webhook_credit.py`
   (the scripts run whole, Telethon stubbed; bot requirements).
+- Moving to a cheaper plan (the change-plan page) gives back half of the
+  days left, only to a chat that ever paid (`tariff_rows.paid_for_days`: a
+  payment, or a Patreon replenishment): the welcome trial's or referral days
+  never become balance. Lock: `python tools/botsim/test_botsim.py`,
+  `python db/test_tariff_rows.py`.
 
 ## Tariff clock
 

@@ -15,6 +15,8 @@ anti-join); a user who has a row, whatever it says, is never touched.
 """
 from __future__ import annotations
 
+import sqlite3
+
 from db.connection import connect_sqlite
 from lib.tools.logger import logger
 
@@ -55,6 +57,26 @@ def running_plan_level(chat_id, database=None) -> int:
             "WHERE u.telegramId = ? AND ut.tariff_id > 0 AND ut.time_left > 0",
             (int(chat_id),)).fetchone()
         return int(row[0]) if row else 0
+    finally:
+        connection.close()
+
+
+def paid_for_days(chat_id, database=None) -> bool:
+    """Money of this chat ever reached its balance: a payment, or a Patreon
+    replenishment (those write no payment_history). Days without it (the
+    welcome trial, referral days) were never paid for."""
+    if ever_paid(chat_id, database):
+        return True
+    if database is None:
+        from config import db_path as database
+    connection = connect_sqlite(database)
+    try:
+        return connection.execute(
+            "SELECT 1 FROM payment_service_user_data p JOIN users u ON u.id = p.user_id "
+            "WHERE u.telegramId = ? AND p.last_replenishment IS NOT NULL LIMIT 1",
+            (int(chat_id),)).fetchone() is not None
+    except sqlite3.OperationalError:  # no Patreon table in this database
+        return False
     finally:
         connection.close()
 
