@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """A webhook's payment, credited once per invoice.
 
-CryptoBot and Robokassa retry a webhook they did not see answered (a slow
-Telegram connection, a restart), and nothing stops a second delivery while
-the first one runs. The invoice is looked up and written in the transaction
-that credits it (applyPaymentReplenishmentOnce, as for Stars): a retry finds
-it and credits nothing.
+CryptoBot sends a webhook "at least one time" and retries one that failed
+(Crypto Pay API docs, Webhooks). A Robokassa ResultURL is signed with
+OutSum:InvId:Password#2:Shp_*, the same for every delivery of that invoice:
+whoever has the URL (a log line) can send it again. The invoice is looked up
+and written in the transaction that credits it (applyPaymentReplenishmentOnce,
+as for Stars): a second delivery finds it and credits nothing.
 """
 import datetime
 

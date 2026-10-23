@@ -100,8 +100,9 @@ try:
 		isOk = True
 		output = "OK" + inv_id + "\n"
 
-		# Robokassa repeats the notice until it reads OK<InvId>: the invoice is checked
-		# and written with the credit, a repeat credits nothing (and is answered OK)
+		# the signature is the same for every delivery of an invoice, so a notice sent
+		# again (by Robokassa or by anyone holding the URL) must credit nothing: the
+		# invoice is checked and written with the credit, a repeat is answered OK
 		user, credited = credit_once(
 			params['Shp_uid'], "robokassa", inv_id, int(round(float(params['Shp_summa']) * 100)))
 		user_language = app.service.user.language.user_language(user['lang'])

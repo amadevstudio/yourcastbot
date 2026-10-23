@@ -149,7 +149,7 @@ def main():
         _robokassa(9001, 6002, "4.99")
         _assert(_balance(path, 6002) == (499, 3), "a Robokassa invoice is credited, to the cent")
         _robokassa(9001, 6002, "4.99")
-        _assert(_balance(path, 6002) == (499, 3), "Robokassa repeating its notice credits nothing")
+        _assert(_balance(path, 6002) == (499, 3), "the same signed notice again credits nothing")
 
         SENT.clear()
         _robokassa(9002, 6003, "5.0", sign=False)

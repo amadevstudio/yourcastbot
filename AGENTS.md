@@ -221,8 +221,10 @@ remove plan management or hide Bronze/Silver.
 - CryptoBot and Robokassa webhooks (`scripts/payment/cryptoBot.py`,
   `subscription_income.py`) credit through `credit.credit_once`
   (`applyPaymentReplenishmentOnce`, as Stars): the invoice is checked and
-  written in the transaction that credits it, so a retried or concurrent
-  webhook credits nothing and is still answered OK. An unsigned Robokassa
+  written in the transaction that credits it, so a retried, concurrent or
+  replayed webhook (CryptoBot delivers "at least one time"; a Robokassa
+  signature never changes for its invoice) credits nothing and is still
+  answered OK. An unsigned Robokassa
   request reaches the creator only: it names any uid, never write to it or
   make its users row. Lock: `python scripts/payment/test_webhook_credit.py`
   (the scripts run whole, Telethon stubbed; bot requirements).
