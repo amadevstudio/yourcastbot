@@ -10,14 +10,15 @@ only summaries someone already made, which are free.
 
 A plan nobody paid for yet (the welcome Relay, referral days) has
 config.ai_summary_trial_hours whatever its level: every new user gets
-two weeks of Relay. The first payment opens the plan's own hours.
+two weeks of Relay. The first payment opens the plan's own hours; a
+Patreon pledge credited to the balance is a payment (tariff_rows.paid_for_days).
 """
 import time
 from typing import NamedTuple
 
 from config import ai_summary_hours_per_month, ai_summary_trial_hours
 from db import ai
-from db.tariff_rows import ever_paid, running_plan_level
+from db.tariff_rows import paid_for_days, running_plan_level
 
 QUOTA_DAYS = 30
 # a feed without itunes:duration: charged an hour until Whisper measures the audio
@@ -54,7 +55,7 @@ def check(chat_id, needed, level=None, trial=False, now=None, database=None) -> 
     `level` and `trial` are read for the chat unless given."""
     if level is None:
         level = running_plan_level(chat_id, database)
-        trial = level > 0 and not ever_paid(chat_id, database)
+        trial = level > 0 and not paid_for_days(chat_id, database)
     level, trial = int(level), bool(trial)
     hours = ai_summary_trial_hours if trial else ai_summary_hours_per_month.get(level, 0)
     limit = int(hours * 3600)
@@ -82,7 +83,7 @@ def questions(chat_id, now=None, database=None) -> Questions:
     level = running_plan_level(chat_id, database)
     if level <= 0:
         return Questions(False, 0, 0)
-    trial = not ever_paid(chat_id, database)
+    trial = not paid_for_days(chat_id, database)
     limit = TRIAL_QUESTIONS_PER_DAY if trial else QUESTIONS_PER_DAY
     since = (time.time() if now is None else now) - 86400
     left = max(limit - usage.count_since(chat_id, 'ask', since, database), 0)
