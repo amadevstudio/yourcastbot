@@ -109,6 +109,7 @@ export type Product = {
   weeks: (ProductFunnel & { week: string })[];
   plans: { paid: number; trial: number; trial_ending: number };
   payments: { payments: number; payers: number; first_time: number; revenue_usd: number };
+  paid_first_days: { days: number; matured: number; paid: number; own_sub: number; own_sub_paid: number };
   ai: {
     summary_taps: number;
     summary_auto: number;

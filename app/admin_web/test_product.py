@@ -2,7 +2,8 @@
 """Admin product page: the newcomers' funnel (the welcome show is not a
 subscription of their own), plans now (trial vs paid, trials ending without
 the balance to renew), payments without the creator's tests (first-time
-payers), AI summaries and questions, the digest, newcomers by week.
+payers), AI summaries and questions, the digest, newcomers by week, the
+share of newcomers who paid in their first 30 days.
 
 Temporary file DB only. Run from the repo root:
 python app/admin_web/test_product.py
@@ -23,6 +24,7 @@ from app.admin_web import product  # noqa: E402
 from db import ai, usage  # noqa: E402
 
 NEW_ACTIVE, NEW_IDLE, NEW_GONE, OLD_PAYER = 1001, 1002, 1003, 1004
+PAID_EARLY, PAID_LATE, NEVER_PAID = 1006, 1007, 1008
 
 
 def _assert_eq(got, expected, label):
@@ -55,7 +57,11 @@ def _setup(path, now):
          (2, NEW_IDLE, None, stamp(10)[:19], None, 1, stamp(1)[:19]),
          (3, NEW_GONE, stamp(1)[:19], stamp(3)[:19], None, 0, None),
          (4, OLD_PAYER, None, stamp(200)[:19], None, 1, stamp(20)[:19]),
-         (5, creator, None, stamp(1)[:19], None, 1, None)])
+         (5, creator, None, stamp(1)[:19], None, 1, None),
+         # their first 30 days are over: paid on day 2, paid on day 40, never paid
+         (6, PAID_EARLY, None, stamp(40)[:19], None, 1, None),
+         (7, PAID_LATE, None, stamp(80)[:19], None, 1, None),
+         (8, NEVER_PAID, None, stamp(50)[:19], None, 1, None)])
     conn.executemany("INSERT INTO user_tariff_cs VALUES (?, ?, ?, ?, -1, ?)",
                      [(1, 1, 3, 0, 48),     # paid (in the period): not a trial
                       (2, 2, 3, 600, 48),   # a trial ending, but its balance renews it
@@ -64,13 +70,16 @@ def _setup(path, now):
                       (5, 5, 3, 0, 48)])    # the creator's tests are not payments: a trial ending
     conn.executemany("INSERT INTO user_channel_cs (user_telegram_id, channel_id) VALUES (?, ?)",
                      [(NEW_ACTIVE, product.WELCOME_CHANNEL_ID), (NEW_ACTIVE, 77),
-                      (NEW_IDLE, product.WELCOME_CHANNEL_ID), (NEW_GONE, product.WELCOME_CHANNEL_ID)])
+                      (NEW_IDLE, product.WELCOME_CHANNEL_ID), (NEW_GONE, product.WELCOME_CHANNEL_ID),
+                      (PAID_EARLY, 78), (NEVER_PAID, 78), (PAID_LATE, product.WELCOME_CHANNEL_ID)])
     conn.executemany("INSERT INTO payment_history VALUES (?, 'telegramStars', ?, '', ?, ?, ?)",
                      [(1, 'a', 'paid', 500, stamp(1)),         # a newcomer pays: first time
                       (4, 'b', 'paid', 500, stamp(5)),         # an old payer again
                       (4, 'old', 'paid', 500, stamp(100)),     # before the period
                       (2, 'c', 'canceled', 500, stamp(1)),     # not paid
-                      (5, 'd', 'paid', 500, stamp(1))])        # the creator's own test
+                      (5, 'd', 'paid', 500, stamp(1)),         # the creator's own test
+                      (6, 'e', 'paid', 500, stamp(38)),        # day 2 after joining
+                      (7, 'f', 'paid', 500, stamp(40))])       # day 40: not in the first 30
     conn.commit()
     conn.close()
     at = now - 3600
@@ -109,6 +118,14 @@ def main():
         _assert_eq(report['activity'], {'clickers': 1, 'clicks': 1, 'automatic': 2, 'listeners': 2},
                    'who got episodes')
         _assert_eq(report['digest'], {'last_week': 1, 'muted': 0}, 'digest: last week, a blocked user left out')
+
+        _assert_eq(report['paid_first_days'], {'days': 30, 'matured': 0, 'paid': 0, 'own_sub': 0,
+                                               'own_sub_paid': 0},
+                   "30 days back: nobody's first 30 days are over yet")
+        quarter = product.product(days=90, database=path, now=later)
+        _assert_eq(quarter['paid_first_days'], {'days': 30, 'matured': 3, 'paid': 1, 'own_sub': 2,
+                                                'own_sub_paid': 1},
+                   'paid in the first 30 days: day 2 counts, day 40 does not; of those with a show of their own')
 
         week = product.product(days=7, database=path, now=later)
         _assert_eq(week['newcomers']['new'], 3, 'a shorter period, fewer newcomers')
