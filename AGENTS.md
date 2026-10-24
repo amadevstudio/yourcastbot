@@ -220,6 +220,13 @@ remove plan management or hide Bronze/Silver.
   The email is not verified, on purpose for now (the owner's call,
   2026-10-23: few patrons, small sums): the first account to save an
   address holds it. A Patreon login (OAuth) is the fix if Patreon grows.
+  A month's credit is a payment (`db/patreon.py` `credit_month`): the
+  balance, a `payment_history` row (`patreon`, invoice id the month,
+  `2026-10`, the pledge's cents; a pledge of nothing is `credited`, not
+  `paid`) and `last_replenishment` in one transaction, and a `payment`
+  event. Before, Patreon wrote no row: revenue, payers and "ever paid" never
+  saw a patron. Credits before that are `last_replenishment` only, so "paid
+  for" is `tariff_rows.paid_for_days` (a payment or a Patreon credit).
   Lock: `python app/service/payment/test_patreon_credit.py` (CD gate).
 - CryptoBot and Robokassa webhooks (`scripts/payment/cryptoBot.py`,
   `subscription_income.py`) credit through `credit.credit_once`
@@ -796,8 +803,9 @@ button; `quota.py` who may ask. The plan level is
   (an hour when there is none) when asked, what Whisper measured once
   transcribed, and 0 when someone else's summary served the request;
   requests on their way count, failed ones do not (`ai_requests.seconds`).
-  A plan nobody paid for yet (the welcome Relay, referral days; no `paid`
-  row in `payment_history`) has `config.ai_summary_trial_hours` (5) whatever
+  A plan nobody paid for yet (the welcome Relay, referral days; not
+  `tariff_rows.paid_for_days`: no `paid` row in `payment_history`, no
+  Patreon credit) has `config.ai_summary_trial_hours` (5) whatever
   its level: 153 of 155 running plans were unpaid on 2026-10-21. The first
   payment opens the plan's own hours.
   No plan: every plan's invoice, as at the free episode limit. A running

@@ -110,8 +110,8 @@ def episode_delivered(chat_ids, mode, formats=None, database=None, analytics=Non
 def plan_off(telegram_id, level, database=None) -> bool:
     """A plan ended (the tick did not renew it); paid_before False is a trial that did not convert."""
     try:
-        from db.tariff_rows import ever_paid
-        paid_before = ever_paid(telegram_id, database)
+        from db.tariff_rows import paid_for_days
+        paid_before = paid_for_days(telegram_id, database)
     except Exception as e:
         logger.warn("analytics plan_off:", type(e).__name__, e)
         paid_before = None

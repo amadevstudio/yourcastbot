@@ -204,10 +204,12 @@ def test_queue_and_quota(db):
         CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER);
         CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, time_left INTEGER);
         CREATE TABLE payment_history (user_id INTEGER, status TEXT);
-        INSERT INTO users VALUES (1, 501, 'ru'), (2, 502, 'en'), (3, 503, 'en'), (4, 504, 'en');
+        CREATE TABLE payment_service_user_data (user_id INTEGER, service_type TEXT, last_replenishment TEXT);
+        INSERT INTO users VALUES (1, 501, 'ru'), (2, 502, 'en'), (3, 503, 'en'), (4, 504, 'en'), (5, 505, 'en');
         INSERT INTO tariffs VALUES (1, 1), (3, 3);
-        INSERT INTO user_tariff_cs VALUES (1, 1, 1, 100), (2, 2, 0, 0), (3, 3, 3, 100), (4, 4, 3, 100);
+        INSERT INTO user_tariff_cs VALUES (1, 1, 1, 100), (2, 2, 0, 0), (3, 3, 3, 100), (4, 4, 3, 100), (5, 5, 3, 100);
         INSERT INTO payment_history VALUES (1, 'paid'), (3, 'paid'), (4, 'canceled');
+        INSERT INTO payment_service_user_data VALUES (5, 'patreon', '2026-10-13');
     """)
     c.commit()
     c.close()
@@ -219,6 +221,8 @@ def test_queue_and_quota(db):
             "a paid Relay has its 30 hours")
     _assert((trial_relay.limit, trial_relay.trial, trial_relay.top_plan) == (5 * 3600, True, False),
             "the welcome Relay nobody paid for has the trial's 5 hours (a canceled payment is no payment)")
+    _assert(quota.check(505, 60, database=db).limit == 30 * 3600,
+            "a patron credited before Patreon wrote payment rows has the plan's hours, not the trial's")
     _assert(quota.check(502, 60, database=db).limit == 0, "no plan, no new summaries")
 
     hour = 3600

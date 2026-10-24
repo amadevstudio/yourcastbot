@@ -20,6 +20,8 @@ from config import (
     patreon_creator_access_token, patreon_subs_perpage,
     patreon_api_v2_url, patreon_request_timeout,
     donate_link)
+from app.service import analytics_events
+from db import patreon as patreon_ledger
 from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
 
@@ -201,26 +203,27 @@ def check_patreon_accounts(initiator=None):
                                 "thisMonthHasAlreadyBeenReplenished", initiator['language_code'])
                     continue
 
-            # Пополняем баланс в бд
             if current_subscription is None:
-                db.subscribeUserToTariffByUid(
-                    user['id'], 0, cents, 0, 0)
                 current_subscription = {
                     'tariff_id': 0,
                     'balance': 0,
                     'time_left': 0,
                     'notify_count': 0
                 }
-            else:
-                db.subscribeUserToTariffByUid(
-                    user['id'], current_subscription['tariff_id'],
-                    int(current_subscription['balance']) + cents,
-                    current_subscription['time_left'],
-                    current_subscription['notify_count'])
 
+            # Пополняем баланс в бд: с записью платежа и датой, одной транзакцией
             now_utc = datetime.datetime.now(datetime.timezone.utc)
-
-            db.updatePaymentServiceLastReplenishment(user_id, 'patreon', now_utc.strftime("%Y-%m-%d"))
+            paid_cents = int(patron['cents'])
+            if not patreon_ledger.credit_month(
+                    user['id'], now_utc.strftime("%Y-%m"), cents, paid_cents,
+                    now_utc.strftime("%Y-%m-%d"), database=db_path):
+                db.close()
+                if initiator is not None and initiator['telegramId'] == user['telegramId']:
+                    initiator_answer = get_message(
+                        "thisMonthHasAlreadyBeenReplenished", initiator['language_code'])
+                continue
+            analytics_events.track(user['telegramId'], 'payment', {
+                'method': 'patreon', 'amount_cents': paid_cents})
 
             message = get_message("balanceFromPatreonAdded", user['lang'])
 
