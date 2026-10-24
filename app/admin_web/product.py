@@ -4,7 +4,8 @@
 Over a period: the newcomers' funnel (came, subscribed to a show of their
 own, got an episode, asked for a summary, paid, blocked the bot), plans and
 payments, AI summaries and questions, the digest; and the newcomers by
-week. Money per user is the economics page; behaviour in the bot (taps,
+week; the share of newcomers who paid in their first 30 days. Money per
+user is the economics page; behaviour in the bot (taps,
 the digest's clicks) is Amplitude's.
 
 Every new user is subscribed to the welcome show (welcomeModule), so
@@ -25,6 +26,7 @@ from db import ai, usage
 WELCOME_CHANNEL_ID = 21  # the show welcomeModule subscribes every newcomer to
 ENDING_HOURS = 72  # a trial "ends soon": the D-3 reminder's window
 MAX_WEEKS = 13
+PAY_DAYS = 30  # "paid within the first N days": the share of newcomers that pay
 _FMT = '%Y-%m-%d %H:%M:%S'
 
 
@@ -62,6 +64,20 @@ def _newcomers(conn, params) -> tuple[dict, list]:
             week[key] += int(bool(row[key]))
     ordered = [{'week': day.isoformat(), **weeks[day]} for day in sorted(weeks, reverse=True)]
     return total, ordered[:MAX_WEEKS]
+
+
+def _paid_first_days(conn, params) -> dict:
+    """Newcomers of the period whose first PAY_DAYS are over, and who paid in them: all of
+    them, and those who subscribed to a show of their own. A share over a fixed window does
+    not move when a trial starts later or ends sooner; "paid" over the period would."""
+    row = conn.execute(
+        "SELECT COUNT(*) matured, COALESCE(SUM(paid), 0) paid, COALESCE(SUM(own_sub), 0) own_sub, "
+        "COALESCE(SUM(own_sub AND paid), 0) own_sub_paid FROM (SELECT %s own_sub, "
+        "EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id AND p.status = 'paid' "
+        "AND u.telegramId != :creator AND p.datetime < datetime(u.created_at, :window)) paid "
+        "FROM users u WHERE u.created_at >= :since AND u.created_at < :matured)" % _OWN_SUB,
+        {**params, 'window': '+%d days' % PAY_DAYS}).fetchone()
+    return {'days': PAY_DAYS, **{key: int(row[key]) for key in ('matured', 'paid', 'own_sub', 'own_sub_paid')}}
 
 
 def _plans(conn, params) -> dict:
@@ -132,6 +148,7 @@ def product(days: int = 30, database: Optional[str] = None, now: Optional[float]
     usage.connect(database).close()  # the ledger and the AI queue exist even before their first row
     ai.connect(database).close()
     params = {'since': _stamp(since), 'until': _stamp(until), 'creator': int(config.creatorId),
+              'matured': _stamp(until - PAY_DAYS * 86400),
               'welcome': WELCOME_CHANNEL_ID, 'ending': ENDING_HOURS}
     conn = connect(database)
     try:
@@ -142,6 +159,7 @@ def product(days: int = 30, database: Optional[str] = None, now: Optional[float]
             'weeks': weeks,
             'plans': _plans(conn, params),
             'payments': _payments(conn, params),
+            'paid_first_days': _paid_first_days(conn, params),
             'ai': _ai(conn, since, until),
             'activity': _activity(conn, since, until),
             'digest': _digest(conn, until),

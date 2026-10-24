@@ -109,6 +109,32 @@ export default function Product() {
             </div>
           </Card>
 
+          <Card className="min-w-0">
+            <h2 className="mb-1 font-semibold">
+              Заплатили в первые {data.paid_first_days.days} дн.
+            </h2>
+            <Hint className="mb-4">
+              Новички периода, у которых эти {data.paid_first_days.days} дн. уже прошли. Доля не
+              меняется от того, когда начинается и кончается пробный период.
+            </Hint>
+            {data.paid_first_days.matured === 0 ? (
+              <Hint>Среди пришедших за {data.days} дн. таких ещё нет: выберите 90 дн.</Hint>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Metric
+                  label="Все новички"
+                  value={`${pct(data.paid_first_days.paid, data.paid_first_days.matured)}%`}
+                  hint={`${data.paid_first_days.paid} из ${data.paid_first_days.matured}.`}
+                />
+                <Metric
+                  label="Подписались сами"
+                  value={`${pct(data.paid_first_days.own_sub_paid, data.paid_first_days.own_sub)}%`}
+                  hint={`${data.paid_first_days.own_sub_paid} из ${data.paid_first_days.own_sub}: подкаст, кроме приветственного.`}
+                />
+              </div>
+            )}
+          </Card>
+
           <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             <Card className="min-w-0">
               <h2 className="mb-4 font-semibold">Тарифы сейчас</h2>

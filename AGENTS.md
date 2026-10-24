@@ -705,7 +705,9 @@ subscribed to a show of their own (the welcome show every newcomer gets
 does not count), got an episode, asked for a summary, paid, blocked the
 bot; plans now (a trial ending in 3 days without the balance to renew);
 payments (first-time payers); summaries, questions, auto opt-ins; the
-digest; newcomers by week. Read-only, the creator's tests are not payments,
+digest; newcomers by week; the share of newcomers whose first 30 days are
+over who paid in them (`paid_first_days`, all and those with a show of
+their own): a fixed window, so moving the trial's start cannot inflate it. Read-only, the creator's tests are not payments,
 blocked users hold no plan. Taps and the digest's clicks are Amplitude's.
 Lock: `python app/admin_web/test_product.py` (CD gate).
 
