@@ -1,4 +1,4 @@
-Полная инструкция: docs/DEPLOY.md (два дерева, PHP→Python для оплаты, роли, nginx, CD).
+Полная инструкция: docs/DEPLOY.md (два дерева, вебхуки оплаты, роли, nginx, CD, бэкапы).
 
 Ниже — поля constants.py (файл в git не кладётся). Полный список с заглушками — .claude/templates/constants.example.py (его же берёт CI); если список ниже разошёлся с ним, верен шаблон.
 
@@ -8,8 +8,13 @@
 creatorId = int
 botId = int
 storageChatId = int  # private chat/channel where bot is admin, used to obtain Bot API file_id after Telethon uploads (falls back to creatorId if not set)
-trustRssPodcasts = Bool  # optional, default False: download big episodes of podcasts added by RSS link (not in iTunes)
+trustRssPodcasts = Bool  # optional, default True: download big episodes of podcasts added by RSS link (not in iTunes)
 diagToken = 'str'  # optional: read-only token for GET /api/diag/* (>= 32 chars; unset = endpoints off)
+
+# AI summaries and questions (optional: without all three there is no Summary button and no worker)
+openrouterApiKey = 'str'
+openrouterModel = 'str'  # OpenRouter id of the chat model, e.g. 'anthropic/claude-haiku-5.5'
+openrouterTranscribeModel = 'str'  # OpenRouter id of speech to text, e.g. 'openai/whisper-large-v3-turbo'
 
 transmitterBotToken = 'str'
 
@@ -52,11 +57,12 @@ crypto_bot_api_key_test = 'str'
 patreon_creator_access_token = 'str'
 yandex_disk_backup_token = 'str'  # backups
 yandex_disk_mail = 'str'
+special_paid_emails = list[str]  # Patreon emails credited the top plan's price whatever their pledge (usually [])
 isTest = Bool
 testToken = 'str'
 testBotName = 'str'
 
 
 
-2. Everything else (nginx, php-fpm, sudo for the PHP webhooks, file rights,
-   certificates, supervisor, deploy): docs/DEPLOY.md and install.sh.
+2. Everything else (packages, database, admin login, nginx snippets, certificates,
+   supervisor, deploy, backups): docs/DEPLOY.md and install.sh. No PHP, no sudo.

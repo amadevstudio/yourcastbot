@@ -65,6 +65,11 @@ yandex_disk_backup_token = ''
 
 special_paid_emails: list[str] = []
 
+# AI summaries and questions: optional, off unless all three are set (OpenRouter ids)
+openrouterApiKey = ''
+openrouterModel = ''
+openrouterTranscribeModel = ''
+
 patreon_creator_access_token = ''
 
 crypto_bot_api_key = ''
