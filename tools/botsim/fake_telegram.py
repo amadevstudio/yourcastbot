@@ -68,6 +68,9 @@ class FakeBotApi:
         self.toasts: list = []  # (text, alert) of answered taps
         self._ids = itertools.count(1001)
         self._files = itertools.count(1)
+        # parts of photo URLs Telegram will not fetch ("failed to get HTTP URL content", cdn.mave.digital);
+        # an uploaded file always goes
+        self.refused_urls: set = set()
 
     # --- the chat ---------------------------------------------------------
     def next_id(self) -> int:
@@ -90,6 +93,7 @@ class FakeBotApi:
         params = dict(params or {})
         with self.lock:
             self.log.append((method_name, params, sorted((files or {}).keys())))
+            self._refuse_url(method_name, params)
             handler = getattr(self, '_' + method_name, None)
             if handler is not None:
                 return handler(params, files or {})
@@ -99,6 +103,19 @@ class FakeBotApi:
                 return self._send(method_name[4:].lower(), params, text=str(_param(params, 'text', 'caption',
                                                                                      default='')))
             return True  # setMyCommands, sendChatAction, pinChatMessage, ...
+
+    def _refuse_url(self, method_name, params):
+        if method_name == 'sendPhoto':
+            url = params.get('photo')
+        elif method_name == 'editMessageMedia':
+            media = params.get('media')
+            url = (json.loads(media) if isinstance(media, str) else (media or {})).get('media')
+        else:
+            return
+        if isinstance(url, str) and url.startswith('http') and any(part in url for part in self.refused_urls):
+            from telebot.apihelper import ApiTelegramException
+            raise ApiTelegramException(method_name, None, {
+                'error_code': 400, 'description': 'Bad Request: failed to get HTTP URL content'})
 
     def _message_json(self, sent: Sent) -> dict:
         data = {'message_id': sent.message_id, 'date': int(time.time()), 'from': self.BOT,
@@ -169,11 +186,17 @@ class FakeBotApi:
         sent = self._target(params)
         if sent is None or sent.deleted:
             self._not_found()
+        if sent.kind not in ('text', 'rich'):  # Telegram: a photo's caption is not its text
+            from telebot.apihelper import ApiTelegramException
+            raise ApiTelegramException('sim', None, {'error_code': 400, 'description':
+                                                     'Bad Request: there is no text in the message to edit'})
         new_buttons = _buttons(params.get('reply_markup'))
         if sent.text == params.get('text') and sent.buttons == new_buttons:
             from telebot.apihelper import ApiTelegramException
             raise ApiTelegramException('sim', None, {'error_code': 400, 'description':
-                                                     'Bad Request: message is not modified'})
+                                                     'Bad Request: message is not modified: specified new message content and reply '
+                                                     'markup are exactly the same as a current content and reply '
+                                                     'markup of the message'})
         sent.text, sent.buttons = str(params.get('text', '')), new_buttons
         sent.kind = 'text' if sent.kind == 'rich' else sent.kind
         return self._message_json(sent)

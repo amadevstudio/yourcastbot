@@ -136,10 +136,9 @@ def channel_query(data: ControllerParams):
     ch_msg = construct_channel_message(data['chat_id'], data['language_code'], podcast_data)
     cover = ch_msg[1].get('image')
 
-    # A cover Telegram refused before: the page goes at once, the cover is checked in the background
+    # A cover Telegram refused before: no second wait for its refusal, we upload it ourselves
     if cover_service.known_unreachable(cover):
-        render_messages(data['chat_id'], without_cover(ch_msg))
-        cover_service.recheck_later(cover)
+        render_with_uploaded_cover(data['chat_id'], ch_msg, cover)
         return
 
     try:
@@ -150,11 +149,25 @@ def channel_query(data: ControllerParams):
         if media_fetch_failed(e):
             logger.warn("Podcast cover is unreachable for telegram:", cover, "|", e)
             cover_service.mark_unreachable(cover)
-            render_messages(data['chat_id'], without_cover(ch_msg))
-            cover_service.recheck_later(cover)  # the next open may already have it
+            render_with_uploaded_cover(data['chat_id'], ch_msg, cover)
 
         else:
             raise e
+
+
+def render_with_uploaded_cover(chat_id, ch_msg, cover):
+    """A cover Telegram refuses by URL: uploaded as a file we download, and the page goes with it
+    (the first open used to go without it). When that fails too, the page as text with its
+    buttons, and the cover is checked in the background: the next open may have it."""
+    if cover_service.upload_now(cover):
+        try:
+            render_messages(chat_id, ch_msg)  # the cached file_id now
+            return
+        except Exception as e:
+            if not media_fetch_failed(e):
+                raise
+    render_messages(chat_id, without_cover(ch_msg))
+    cover_service.recheck_later(cover)
 
 
 def without_cover(ch_msg) -> list[MessageStructuresInterface]:

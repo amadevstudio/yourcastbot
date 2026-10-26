@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Covers Telegram cannot fetch: a refused cover is marked and the page goes
-at once without it; a background check, once an hour, clears the mark and
-caches the file_id when Telegram fetches it again; the buttons of a page
-without its picture still update.
+"""Covers Telegram cannot fetch: a refused cover is marked and uploaded as a
+file we download, so the page has its picture on the first open; when the
+host does not give it to us either, the page goes without it and a
+background check, once an hour, clears the mark and caches the file_id
+later; the buttons of a page without its picture still update.
 
 Run from the repo root: python app/service/podcast/test_cover.py
 (the page and editor parts run where the bot's requirements are installed).
@@ -106,6 +107,20 @@ def test_marks():
     _assert(not cover.known_unreachable(URL) and telegram_cache.get_file_id(URL, 'img') == 'FID'
             and uploaded.deleted == [5], "the uploaded cover is shown from then on")
 
+    cover.mark_unreachable(URL)
+    now = FakeBot(fetches=False)
+    _assert(cover.upload_now(URL, bot=now, storage_chat_id=-100, get=host()) is True
+            and now.sent == [(-100, b'JPEG')], "a page that waits: the cover is uploaded at once, no URL try")
+    _assert(not cover.known_unreachable(URL) and telegram_cache.get_file_id(URL, 'img') == 'FID'
+            and now.deleted == [5], "its file_id is cached and the mark goes")
+    _assert(cover.upload_now(URL, bot=now, storage_chat_id=-100, get=host()) is False and len(now.sent) == 1,
+            "one upload try an hour per cover: a dead host does not slow every open")
+    other = URL + '?v=2'
+    _assert(cover.upload_now(other, bot=now, storage_chat_id=-100, get=host(error=OSError('timed out'))) is False,
+            "a host that does not answer us: no upload")
+    _assert(cover.upload_now('/app/static/no_photo.png', bot=now, storage_chat_id=-100, get=host()) is False,
+            "a local placeholder is never uploaded")
+
     _assert(telegram_cache.claim_once('coverCheck:' + URL, cover.RECHECK_SECONDS)
             and not telegram_cache.claim_once('coverCheck:' + URL, cover.RECHECK_SECONDS),
             "one background check an hour per cover")
@@ -136,13 +151,20 @@ def test_page(cache_db):
         def close(self):
             pass
 
+    uploaded, upload_works = [], [False]
+
     def render(chat_id, structures, resending=False):
         rendered.append([s['type'] for s in structures])
-        if any(s['type'] == 'image' for s in structures):
-            raise REFUSED
+        if any(s['type'] == 'image' for s in structures) and not uploaded:
+            raise REFUSED  # Telegram refuses the URL; a cached file_id goes
+
+    def upload_now(image):
+        if upload_works[0]:
+            uploaded.append(image)
+        return upload_works[0]
 
     saved = (page.SQLighter, page.storage, page.get_and_set_podcast_data, page.construct_channel_message,
-             page.render_messages, page.cover_service.recheck_later)
+             page.render_messages, page.cover_service.recheck_later, page.cover_service.upload_now)
     page.SQLighter = DB
     page.storage = types.SimpleNamespace(del_user_state_data=lambda *a: None,
                                          get_user_state_data_empty=lambda *a: True)
@@ -151,6 +173,7 @@ def test_page(cache_db):
         {'type': 'text', 'text': 'Show'}, {'type': 'image', 'image': URL, 'reply_markup': keyboard}]
     page.render_messages = render
     page.cover_service.recheck_later = checked.append
+    page.cover_service.upload_now = upload_now
     data = {'chat_id': 1, 'language_code': 'en', 'callback': None, 'united_data': {},
             'message': types.SimpleNamespace(text=json.dumps({'id': 7}))}
     try:
@@ -165,9 +188,21 @@ def test_page(cache_db):
                 "marked: the page goes at once without the cover, the check runs in the background")
         _assert(page.without_cover(page.construct_channel_message())[0]['reply_markup'] == keyboard,
                 "the buttons that live on the cover come with the text")
+
+        upload_works[0] = True
+        del rendered[:], checked[:]
+        telegram_cache.clear_image_unreachable(URL)
+        page.channel_query(data)
+        _assert(rendered == [['text'], ['text', 'image'], ['text', 'image']] and uploaded == [URL]
+                and not checked, "first refusal, the host gives us the file: the first open has its picture")
+        del rendered[:], uploaded[:]
+        telegram_cache.mark_image_unreachable(URL)
+        page.channel_query(data)
+        _assert(rendered == [['text'], ['text', 'image']] and uploaded == [URL] and not checked,
+                "marked: uploaded at once, no wait for Telegram's refusal, the page with its picture")
     finally:
         (page.SQLighter, page.storage, page.get_and_set_podcast_data, page.construct_channel_message,
-         page.render_messages, page.cover_service.recheck_later) = saved
+         page.render_messages, page.cover_service.recheck_later, page.cover_service.upload_now) = saved
 
 
 def test_page_buttons():
