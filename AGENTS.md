@@ -381,8 +381,11 @@ episodes, ~2 s for a slow host.
   512 MB + room for episode downloads.
 - A cover Telegram refuses (`failed to get HTTP URL content`, cdn.mave.digital
   15 times on 2026-10-21) is marked in `telegram_cache` for 7 days
-  (`app/service/podcast/cover.py`): the page goes at once as one text
-  message with its buttons. The refusal and, while marked, an open start a
+  (`app/service/podcast/cover.py`) and uploaded right then as a file we
+  download (`upload_now`, at most one try an hour per cover): the page goes
+  with its picture on the first open (it used to come only on the next one,
+  2026-10-26). Only when we cannot get the file either the page goes as one
+  text message with its buttons. The refusal and, while marked, an open start a
   background check at most once an hour (send to the storage chat): by URL,
   and when Telegram still refuses the URL, as a file we download (an image,
   at most 5 MB: the mave cover is a 208 KB JPEG our server gets at once).

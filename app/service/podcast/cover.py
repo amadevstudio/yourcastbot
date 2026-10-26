@@ -11,6 +11,12 @@ chat by URL and, if Telegram still refuses the URL, as a file we download
 (the same mave cover is a 208 KB JPEG our server gets at once). When it
 goes through, its file_id is cached (later pages show it at once) and the
 mark goes.
+
+The page itself does not wait for the hour: a refusal, or an open while
+marked, uploads the cover as a file we download right then (upload_now, at
+most once an hour per cover, so a dead host does not slow every open) and
+the page goes with it. Before, the first open of such a show had no picture
+and only the next one had it (2026-10-26, a mave cover).
 """
 import threading
 
@@ -62,12 +68,39 @@ def download(image, get=None):
         return None
 
 
-def recheck(image, bot=None, storage_chat_id=None, get=None):
+def _bot_and_chat(bot, storage_chat_id):
     from config import storageChatId
-    from lib.telegram.general.errors import media_fetch_failed
     if bot is None:
         from agent.bot_telebot import bot
-    chat_id = storageChatId if storage_chat_id is None else storage_chat_id
+    return bot, storageChatId if storage_chat_id is None else storage_chat_id
+
+
+def _upload(image, bot, chat_id, get):
+    """The cover as a file we download, sent to the storage chat; the sent message or None."""
+    content = download(image, get)
+    try:
+        return bot.send_photo(chat_id, content) if content else None
+    except Exception as upload_error:
+        logger.warn("cover upload:", image, upload_error)
+        return None
+
+
+def upload_now(image, bot=None, storage_chat_id=None, get=None) -> bool:
+    """A cover Telegram refuses by URL, uploaded now as a file we download, for a page that waits
+    for it: its file_id is cached and the mark goes. At most one try an hour per cover."""
+    if not is_url(image) or not telegram_cache.claim_once('coverUpload:' + image, RECHECK_SECONDS):
+        return False
+    bot, chat_id = _bot_and_chat(bot, storage_chat_id)
+    sent = _upload(image, bot, chat_id, get)
+    if sent is None:
+        return False
+    _cache(image, bot, chat_id, sent)
+    return True
+
+
+def recheck(image, bot=None, storage_chat_id=None, get=None):
+    from lib.telegram.general.errors import media_fetch_failed
+    bot, chat_id = _bot_and_chat(bot, storage_chat_id)
     try:
         sent = bot.send_photo(chat_id, image)
     except Exception as e:
@@ -75,19 +108,18 @@ def recheck(image, bot=None, storage_chat_id=None, get=None):
             logger.warn("cover check:", image, e)
             return False
         # Telegram refuses the URL: the host may still give the file to us
-        content = download(image, get)
-        try:
-            sent = bot.send_photo(chat_id, content) if content else None
-        except Exception as upload_error:
-            logger.warn("cover upload:", image, upload_error)
-            sent = None
+        sent = _upload(image, bot, chat_id, get)
         if sent is None:
             telegram_cache.mark_image_unreachable(image)  # still refused: keep the page without it
             return False
+    _cache(image, bot, chat_id, sent)
+    return True
+
+
+def _cache(image, bot, chat_id, sent):
     telegram_cache.add_file_id(image, sent.photo[-1].file_id, 'img')
     telegram_cache.clear_image_unreachable(image)
     try:
         bot.delete_message(chat_id, sent.message_id)
     except Exception:
         pass
-    return True
