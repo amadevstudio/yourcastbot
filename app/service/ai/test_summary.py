@@ -637,14 +637,28 @@ def test_ask(db, module):
                                             markups.append((chat, mid, reply_markup)))
         module.storage.clear_user_storage = lambda chat: states.clear()
         module.render_messages = lambda chat, structures, resending=False: menus.append((structures[0], resending))
+        from app.controller.builders import podcastModule
+        pages, saved_page = [], podcastModule.channel_query
+        podcastModule.channel_query = lambda page: pages.append(
+            (page['callback'], json.loads(page['message'].text), dict(states)))
+        stack = []
+        module.storage.add_user_state = lambda chat, name: stack.append(name) or states.__setitem__((chat, 'route'), name)
+        done = {'chat_id': 501, 'language_code': 'en', 'message': Tap({}, 77),
+                'callback': SimpleNamespace(data='{"tp": "askDone"}', message=Tap({}, 77))}
         try:
-            module.finish_ask({'chat_id': 501, 'language_code': 'en', 'message': Tap({}, 77),
-                               'callback': SimpleNamespace(data='{"tp": "askDone"}', message=Tap({}, 77))})
+            module.finish_ask(done)
+            _assert(markups == [(501, 77, None)] and not menus and stack == ['menu', 'podcast']
+                    and pages == [(None, {'id': 9}, {(501, 'route'): 'menu'})],
+                    "Done: its button goes, the questions end, the episode's podcast page comes as a new message"
+                    " (Back on it: the menu)")
+            stack.clear()
+            module.finish_ask(done)  # the state is gone (an old Done button): nothing to go back to
         finally:
             menuModule.construct_menu_message, telebot_agent.bot = saved_menu
-        _assert(markups == [(501, 77, None)] and menus == [({'type': 'text', 'text': 'Menu'}, True)]
+            podcastModule.channel_query = saved_page
+        _assert(len(pages) == 1 and menus == [({'type': 'text', 'text': 'Menu'}, True)] and stack == ['menu']
                 and states == {(501, 'route'): 'menu'},
-                "Done: its button goes, the questions end, the menu comes as a new message")
+                "Done with the podcast not known: the menu comes as a new message")
         states.clear()
         left[0] = quota.Questions(True, 5, 5)
         module.render_outdated_screen = lambda data: rendered.append({'text': 'outdated'}) or False

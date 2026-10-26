@@ -12,12 +12,14 @@ A summary is a reply to the episode's audio: Telegram turns its times
 next is a question, answered from the cached transcript in this worker (one
 model call with a short timeout), as a reply to the audio too. A running plan
 asks quota.QUESTIONS_PER_DAY a day (a trial fewer). "Done" leaves: its button
-goes and the menu comes as a new message at the bottom (a plain `menu` tap
-would redraw the old question screen up the chat). A text after
+goes and the episode's podcast page comes as a new message at the bottom
+(Back on it: the menu); the menu when the podcast is not known or gone (a
+plain `menu` tap would redraw the old question screen up the chat). A text after
 ASK_IDLE_SECONDS without a question is a search, as it was before Ask.
 """
 import json
 import time
+from types import SimpleNamespace
 
 from app.controller.general.notify import notify, render_outdated_screen
 from app.i18n.messages import get_message
@@ -229,18 +231,34 @@ def done_markup(language_code):
 
 
 def finish_ask(data):
-    """ "Done": the questions end here; the button goes, the menu comes at the bottom of the chat."""
+    """ "Done": the questions end here; the button goes, the episode's podcast page (else the menu)
+    comes at the bottom of the chat."""
     from app.controller.builders.menuModule import construct_menu_message
     from agent.bot_telebot import bot
     notify(data['callback'], data['message'], '')
     try:
         bot.edit_message_reply_markup(data['chat_id'], data['callback'].message.message_id, reply_markup=None)
     except Exception:
-        pass  # an old message: the menu still comes
+        pass  # an old message: the page still comes
+    channel_id = _asked_channel(data['chat_id'])
     storage.clear_user_storage(data['chat_id'])
     storage.add_user_state(data['chat_id'], 'menu')
+    if channel_id is not None:
+        from app.controller.builders.podcastModule import channel_query
+        # opened as by a message (as a /start link opens it): a new message, the question stays above
+        channel_query(dict(data, callback=None, route_name='podcast', united_data={},
+                           message=SimpleNamespace(text=json.dumps({'id': channel_id}))))
+        storage.add_user_state(data['chat_id'], 'podcast')
+        return
     render_messages(data['chat_id'], construct_menu_message(data['language_code'], data['chat_id']),
                     resending=True)
+
+
+def _asked_channel(chat_id) -> int | None:
+    """The channel of the episode the questions were about, while it is in the database."""
+    state = storage.get_user_state_data(chat_id, 'ask')
+    episode = ai.episode(state['ref']) if state and state.get('ref') else None
+    return episode['channel_found'] if episode else None
 
 
 def is_link(text) -> bool:
