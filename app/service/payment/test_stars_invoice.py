@@ -163,10 +163,11 @@ def plan_turns_on(stars):
     path = _temp_db()
     db = SQLighter(path)
     try:
-        for tg in (611, 612, 613, 614):
+        for tg in (611, 612, 613, 614, 615):
             db.register_new_user(tg, 'en')
         db.subscribeUserToTariffByTg(612, 1, 0, 0, 0)      # Bronze has ended
         db.subscribeUserToTariffByTg(613, 1, 0, 100, 30)   # Bronze runs
+        db.subscribeUserToTariffByTg(615, 0, 400, 720, 0)  # no plan, days and money from before
     finally:
         db.close()
     relay = stars.stars_for_balance(500, RATE)
@@ -176,9 +177,11 @@ def plan_turns_on(stars):
         _pay(stars, path, 613, stars.create_payload(613, 500, relay, RATE, plan_id=3), 'c-613')
         legacy = json.dumps({'t': 614, 'b': 500, 's': relay, 'r': RATE, 'p': 'old'})
         _pay(stars, path, 614, legacy, 'c-614')
+        _pay(stars, path, 615, stars.create_payload(615, 50, stars.stars_for_balance(50, RATE),
+                                                    RATE, plan_id=1), 'c-615')
         db = SQLighter(path)
         try:
-            plans = {tg: db.getUserSubscriptionByTg(tg) for tg in (611, 612, 613, 614)}
+            plans = {tg: db.getUserSubscriptionByTg(tg) for tg in (611, 612, 613, 614, 615)}
         finally:
             db.close()
         state = {tg: (p['tariff_id'], p['time_left'], p['balance']) for tg, p in plans.items()}
@@ -187,6 +190,8 @@ def plan_turns_on(stars):
         _assert_eq(state[612], (3, period, 0), "an ended Bronze paid for Relay switches to Relay")
         _assert_eq(state[613], (1, 100, 500), "a running Bronze is only topped up")
         _assert_eq(state[614], (0, 0, 500), "an invoice from before keeps the old top-up")
+        _assert_eq(state[615], (1, period, 400),
+                   "days on no plan are not a running plan: Bronze's invoice turns Bronze on")
     finally:
         os.remove(path)
 
