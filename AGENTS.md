@@ -151,8 +151,11 @@ remove plan management or hide Bronze/Silver.
   (`applyPaymentReplenishmentOnce(planId=..., planPrice=...)`): before, a free user who paid
   for Relay got a balance and "choose a plan", and an ended Bronze paid for
   Relay renewed Bronze. A running plan is only topped up, as before (a
-  mid-period change has a price difference: the change-plan page). An
-  invoice without `v` (sent before) is the old top-up.
+  mid-period change has a price difference: the change-plan page). "No
+  plan running" includes a row with no plan and days on it (tariff 0 with
+  `time_left`, 67 rows from before on 2026-10-26): a free user there paid
+  for Bronze, got "money came" and stayed free with the money on the
+  balance. An invoice without `v` (sent before) is the old top-up.
 - The free limits (the 16th podcast, the manual update, the channel page)
   carry `relay_nudge_markup(invoice=True)`: Relay's invoice in one tap
   (`bs_stars_pay` without `v` bills the showcase plan) and change-plan.

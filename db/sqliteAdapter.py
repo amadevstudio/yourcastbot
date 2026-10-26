@@ -1816,7 +1816,9 @@ class SQLighter:
                     (str(user_id), str(tariff_id), str(new_balance),
                      str(new_time_left), str(new_notify_count),))
 
-            elif current_subscription['time_left'] > 0:
+            # days on no plan (tariff 0, rows from before) are not a running plan:
+            # a plan's invoice turns that plan on instead of topping up nothing
+            elif plan is None and current_subscription['time_left'] > 0:
                 new_balance = current_subscription['balance'] + int(amountCents)
                 new_time_left = current_subscription['time_left']
                 new_notify_count = current_subscription['notify_count']
@@ -1833,7 +1835,7 @@ class SQLighter:
 
             else:
                 new_balance = current_subscription['balance'] + int(amountCents)
-                new_time_left = current_subscription['time_left']
+                new_time_left = current_subscription['time_left'] if plan is None else 0
                 new_notify_count = 0
 
                 price = current_tariff['price']
