@@ -130,6 +130,44 @@ def test_summary_and_question(user):
     _assert('processor(ask)' not in again.handlers, "after Done a text is no question")
 
 
+def test_show_question(user):
+    """Ask about the podcast: the page's button, a question, a text answer with a download button
+    per episode it names and Back (every screen has one), Back to the page."""
+    import xml.etree.ElementTree as ET
+    from app.controller.builders import showAskModule
+    from app.repository.storage import storage
+    from app.service.ai import show_ask
+    feed = ET.fromstring('<rss><channel><item><title>New one</title><guid>g2</guid>'
+                         '<description>About guests.</description><enclosure url="https://cdn.example.com/2.mp3"/>'
+                         '</item><item><title>Old one</title><guid>g1</guid>'
+                         '<enclosure url="https://cdn.example.com/1.mp3"/></item></channel></rss>').find('channel')
+    saved = showAskModule._context
+    showAskModule._context = lambda podcast: show_ask.build(show_ask.feed_episodes(feed), [])
+    try:
+        user.send('/menu')
+        storage.set_user_state_data(USER, 'podcast', {
+            'id': None, 'service_id': '42', 'service_name': 'itunes', 'title': 'Sim Show', 'descr': 'About.',
+            'imgUrl': None, 'recCount': 2, 'lastDate': '', 'subscribed': False, 'genres': []})
+        storage.add_user_state(USER, 'podcast')
+        opened = user.tap_data(json.dumps({'tp': show_ask.ACTION}))
+        screen = (opened.new + opened.edited)[-1]
+        _assert(opened.handlers == ['processor(showAsk)'] and 'Sim Show' in screen.text
+                and screen.buttons[-1][0]['text'] == 'Back', "the question screen names the show and has Back")
+        answer = user.send('What does the host ask guests?')
+        reply = (answer.new + answer.edited)[-1]
+        _assert(answer.handlers[-1] == 'processor(showAsk)' and '[1]' in reply.text and '[E1]' not in reply.text,
+                "a text there is a question about the show, its labels as numbers")
+        _assert([b['text'][:8] for row in reply.buttons for b in row] == ['⬇️ 1. Ne', '⬇️ 2. Ol', 'Back']
+                and json.loads(reply.buttons[0][0]['callback_data'])['tp'] == 'rec',
+                "a download button per episode it names, then Back")
+        back = user.tap('Back', message=reply)
+        _assert(back.handlers == ['go_back'] and any('Sim Show' in text for text in back.texts),
+                "Back opens the podcast page")
+        _assert(not (opened.errors or answer.errors or back.errors), "and nothing breaks")
+    finally:
+        showAskModule._context = saved
+
+
 def test_show_notes(user):
     """Show notes under a brief episode: the feed's text as a quote replying to the audio."""
     from db import ai
@@ -184,6 +222,7 @@ def main():
         test_storefront(user)
         test_opml_offline(user)
         test_summary_and_question(user)
+        test_show_question(user)
         test_show_notes(user)
         test_downgrade_refund()
     finally:

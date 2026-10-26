@@ -135,6 +135,18 @@ def save_transcript(ref, text, source, cost_usd, seconds=0.0, database=None):
            (ref, text, source, float(cost_usd), time.time(), float(seconds or 0)))
 
 
+def channel_transcripts(channel_id, database=None) -> list[dict]:
+    """The transcripts of a channel's episodes someone already paid for (ref, link, title, text),
+    newest first: questions about the whole show read them, nothing new is transcribed."""
+    c = connect(database)
+    try:
+        return [dict(row) for row in c.execute(
+            'SELECT e.ref, e.link, e.title, t.text FROM ai_episodes e JOIN ai_transcripts t ON t.ref = e.ref '
+            'WHERE e.channel_id=? ORDER BY e.seen_at DESC', (int(channel_id),))]
+    finally:
+        c.close()
+
+
 def summary(ref, lang, database=None):
     return _one(database, 'SELECT * FROM ai_summaries WHERE ref=? AND lang=?', (ref, lang))
 

@@ -83,6 +83,7 @@ jobs:
           python3 app/controller/builders/test_onboarding.py
           python3 app/controller/builders/test_latest_episode.py
           python3 app/service/ai/test_summary.py
+          python3 app/service/ai/test_show_ask.py
           python3 app/core/sender/test_record_delivery.py
           python3 db/test_send_outbox.py
           python3 app/core/sender/test_circle_charge.py
