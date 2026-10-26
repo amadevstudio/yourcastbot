@@ -130,6 +130,31 @@ def test_summary_and_question(user):
     _assert('processor(ask)' not in again.handlers, "after Done a text is no question")
 
 
+def test_done_opens_podcast(user):
+    """Done after questions about an episode of a known podcast: that podcast's page, Back to the menu."""
+    from db import ai
+    db = _db()
+    channel = db.execute("INSERT INTO channels (name, rss_link) VALUES ('Sim Show', 'https://feed.example/rss')"
+                         ).lastrowid
+    db.commit()
+    db.close()
+    ai.remember_episode('simref0000000004', 'https://cdn.example.com/ep4.mp3', channel, 'Episode Four', 'Sim Show',
+                        1800)
+    step = user.tap_data(json.dumps({'tp': 'sum', 'r': 'simref0000000004'}))
+    made = user.run_ai()
+    user.tap((0, 0), message=made.edited[0])
+    user.send('Who is the guest?')
+    done = user.tap('Done')
+    _assert(done.handlers == ['action_processor(ask, askDone)'] and done.new and not done.errors,
+            "Done: the podcast page as a new message")
+    from app.repository.storage import storage
+    _assert(storage.get_user_states(USER)[-1] == 'podcast', "the chat is on the podcast page")
+    back = user.tap('Back', message=done.new[-1])
+    _assert(back.handlers == ['go_back'] and not back.errors and storage.get_user_states(USER)[-1] == 'menu',
+            "Back on it: the menu")
+    _assert(step.new, "the summary was asked for")
+
+
 def test_show_question(user):
     """Ask about the podcast: the page's button, a question, a text answer with a download button
     per episode it names and Back (every screen has one), Back to the page."""
@@ -222,6 +247,7 @@ def main():
         test_storefront(user)
         test_opml_offline(user)
         test_summary_and_question(user)
+        test_done_opens_podcast(user)
         test_show_question(user)
         test_show_notes(user)
         test_downgrade_refund()

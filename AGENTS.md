@@ -863,8 +863,10 @@ button; `quota.py` who may ask. The plan level is
   questions, answered from the cached transcript in the incoming worker
   (one call, `ANSWER_TIMEOUT`, the transcript a prompt-cache block), as a
   reply to the audio. "Done" (`askDone`) leaves: its button goes and the
-  menu comes as a new message (a `menu` tap redraws the old question
-  screen up the chat: it looked like nothing happened). Half an hour after
+  episode's podcast page comes as a new message, Back on it the menu
+  (`ai_episodes.channel_id`; the menu when the channel is unknown or gone).
+  A `menu` tap would redraw the old question screen up the chat: it looked
+  like nothing happened. Half an hour after
   the last question, or a link, a text is a search again; a voice message
   or a photo is asked to be typed. Questions need the
   transcript (a summary first) and a running plan: `QUESTIONS_PER_DAY` (20),
