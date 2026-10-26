@@ -170,6 +170,141 @@ def test_page(cache_db):
          page.render_messages, page.cover_service.recheck_later) = saved
 
 
+def test_page_buttons():
+    """Notify, rate and unsubscribe on a podcast page refresh its keyboard, never
+    its media: Telegram turns a text message into a photo by editMessageMedia, so
+    the page sent without its cover lost its text once the cover came through."""
+    try:
+        from app.controller.builders.test_open_recs import import_builder
+        page = import_builder('podcastModule')
+    except Exception as e:
+        print("skip page buttons (%s)" % e.__class__.__name__)
+        return
+    if page is None:
+        return
+    keyboards, keyboard = [], [[{'text': 'Listen', 'callback_data': {'tp': 'recs', 'p': 1}}]]
+
+    class DB:
+        def __init__(self, *_):
+            pass
+
+        def turn_notify_tg(self, *a):
+            pass
+
+        def rate_podcast(self, *a):
+            pass
+
+        def get_uccs_count_by_tg(self, *a):
+            return 1
+
+        def getUserSubscriptionByTg(self, *a):
+            return None
+
+        def close(self):
+            pass
+
+    def media_edit(*a, **k):
+        raise AssertionError("a page button edited the media")
+
+    from app.service.podcast import subscription
+    saved = (page.SQLighter, page.storage, page.notify, page.set_podcast_data, page.get_and_set_podcast_data,
+             page.construct_channel_message, page.keyboard_editor, page.render_messages, subscription.remove_sub,
+             getattr(page, 'message_editor', None))
+    page.SQLighter = DB
+    page.storage = types.SimpleNamespace(get_user_state_data=lambda *a: {'id': 7},
+                                         set_user_state_data=lambda *a: None)
+    page.notify = lambda *a, **k: None
+    page.set_podcast_data = lambda *a: None
+    page.get_and_set_podcast_data = lambda *a, **k: (True, {'id': 7})
+    page.construct_channel_message = lambda *a, **k: [
+        {'type': 'text', 'text': 'Show'}, {'type': 'image', 'image': URL, 'reply_markup': keyboard}]
+    page.keyboard_editor = lambda chat_id, structure, message_id: keyboards.append(
+        (structure['reply_markup'], message_id))
+    page.render_messages = page.message_editor = media_edit
+    subscription.remove_sub = lambda *a: 'Show'
+    state = {'id': 7, 'notify': True, 'rate': 3, 'subscribed': True, 'service_id': '42', 'service_name': 'itunes'}
+
+    def data():
+        return {'chat_id': 1, 'language_code': 'en', 'message': None, 'united_data': dict(state),
+                'callback': types.SimpleNamespace(id=1, message=types.SimpleNamespace(message_id=55))}
+    try:
+        page.change_channel_notify(data())
+        page.rate(data())
+        page.switch_subscription(data())
+        _assert(keyboards == [(keyboard, 55)] * 3,
+                "notify, rate and unsubscribe refresh the keyboard of the tapped page, not its media")
+    finally:
+        (page.SQLighter, page.storage, page.notify, page.set_podcast_data, page.get_and_set_podcast_data,
+         page.construct_channel_message, page.keyboard_editor, page.render_messages,
+         subscription.remove_sub, page.message_editor) = saved
+
+
+def test_keyboard_editor():
+    try:
+        from lib.telegram.general import message_master
+    except Exception as e:
+        print("skip keyboard editor (%s)" % e.__class__.__name__)
+        return
+    calls = []
+
+    class Bot:
+        def __init__(self, markup_error=None):
+            self.markup_error = markup_error
+
+        def edit_message_media(self, **kwargs):
+            raise AssertionError("the keyboard editor edited the media")
+
+        def edit_message_reply_markup(self, **kwargs):
+            calls.append(kwargs['message_id'])
+            if self.markup_error:
+                raise self.markup_error
+
+    saved = message_master.bot
+    structure = {'type': 'image', 'image': URL, 'reply_markup': [[{'text': 'Rate', 'callback_data': {'tp': 'rate'}}]]}
+    try:
+        message_master.bot = Bot()
+        message_master.keyboard_editor(1, dict(structure), 77)
+        _assert(calls == [77], "the keyboard editor changes the buttons only")
+        message_master.bot = Bot(Exception('Bad Request: message is not modified: specified new message content '
+                                           'and reply markup are exactly the same as a current content and reply '
+                                           'markup of the message'))
+        message_master.keyboard_editor(1, dict(structure), 78)
+        _assert(calls == [77, 78], "the same keyboard again is not an error")
+    finally:
+        message_master.bot = saved
+
+
+def test_screen_resent():
+    """A screen stored as text whose message is now media (a page that became its
+    cover before this fix) is sent again, not left on "no text to edit"."""
+    try:
+        from lib.telegram.general import message_master
+    except Exception as e:
+        print("skip screen resent (%s)" % e.__class__.__name__)
+        return
+    calls = []
+
+    def master(bot, chat_id, resending=False, message_structures=None, previous_message_structures=None):
+        calls.append(resending)
+        if not resending:
+            raise message_master.ApiTelegramException(
+                'editMessageText', None, {'error_code': 400,
+                                          'description': 'Bad Request: there is no text in the message to edit'})
+        return [{'id': 9, 'type': 'text'}]
+
+    saved = (message_master.message_master, message_master.storage)
+    message_master.message_master = master
+    message_master.storage = types.SimpleNamespace(
+        get_user_resend_flag=lambda *a: False, get_message_structures=lambda *a: [{'id': 55, 'type': 'text'}],
+        set_user_message_structures=lambda *a: None, del_user_resend_flag=lambda *a: None)
+    try:
+        result = message_master.render_messages(1, [{'type': 'text', 'text': 'Episodes'}])
+        _assert(calls == [False, True] and result == [{'id': 9, 'type': 'text'}],
+                "no text to edit: the screen is sent again, once")
+    finally:
+        message_master.message_master, message_master.storage = saved
+
+
 def test_editor():
     try:
         from lib.telegram.general import message_master
@@ -213,6 +348,9 @@ def main():
         try:
             test_marks()
             test_page(telegram_cache.db_path)
+            test_page_buttons()
+            test_keyboard_editor()
+            test_screen_resent()
             test_editor()
         finally:
             telegram_cache.db_path = saved
