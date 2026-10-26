@@ -1,24 +1,20 @@
-# How to (the full guide is docs/DEPLOY.md; this script is the shell part of it)
-# 1. Clone bot as /home/yourcast/yourcast and yourcast_auxiliary as /home/yourcast/server
-# 2. Move db/yourcast.db (menu states and the Telegram cache live in it too)
-# 3. Move let's encrypt certificate /etc/letsencrypt
-# 4. Create yourcast/constants.py, yourcast/constant_texts.py and server/config.php
-# -5. Add to visudo (NO NEED)
-# www-data ALL =(root) NOPASSWD: /home/yourcast/yourcast/scripts/payment/cryptoBot.py
-# www-data ALL =(root) NOPASSWD: /home/yourcast/yourcast/scripts/send_message.py
+# How to (the full guide is docs/DEPLOY.md; this script is the shell part of it).
+# Run it step by step as root, not in one go: some steps want a decision (domain, database).
+#
+# 1. Clone the bot as /home/yourcast/yourcast and yourcast_auxiliary (the landing) as /home/yourcast/server
+# 2. Create yourcast/constants.py and yourcast/constant_texts.py from .claude/templates/
+# 3. Database: move db/yourcast.db from the old server (or unpack the latest backup), or create it
+#    from tools/botsim/schema.sql below
+# No PHP and no sudo: the payment webhooks are served by the bot's admin process.
 
-sudo apt update
-sudo apt install curl
+apt update
+apt install -y curl sqlite3 ffmpeg nginx supervisor certbot python3-certbot-nginx
 
-# Database
-sudo apt install sqlite3
-
-# Install Python via pyenv
-#sudo apt install build-essential zlib1g-dev
-sudo apt-get install -y make build-essential libssl-dev zlib1g-dev \
+# Python 3.11 via pyenv
+apt-get install -y make build-essential libssl-dev zlib1g-dev \
 libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev \
-libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev python-openssl
-curl -s https://pyenv.run | sudo PYENV_ROOT=/usr/local/.pyenv bash
+libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev python3-openssl
+curl -s https://pyenv.run | PYENV_ROOT=/usr/local/.pyenv bash
 echo 'export PYENV_ROOT="/usr/local/.pyenv"' >> ~/.bashrc
 echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
 echo 'eval "$(pyenv init -)"' >> ~/.bashrc
@@ -27,61 +23,58 @@ echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.
 echo 'eval "$(pyenv init -)"' >> ~/.profile
 exec "$SHELL"
 
-# Install python
+cd /home/yourcast/yourcast
 pyenv install 3.11.3
 pyenv local 3.11.3
 python -V
 
-# Install audio processing
-sudo apt install ffmpeg
-
 # Virtual env
 python -m venv venv
 source venv/bin/activate
-python -m pip install wheel # cchardet fails without that
-python -m pip install cython # cchardet fails without that
+python -m pip install wheel   # cchardet fails without it
+python -m pip install cython  # cchardet fails without it
 python -m pip install -r requirements.txt
 
-# Www-data access
-touch www-data.session
-sudo chown www-data www-data.session
-sudo chgrp www-data www-data.session
-sudo chmod a+w db/yourcast.db
-sudo chmod a+w db
-# ---
-addgroup pyenv
-sudo usermod -aG pyenv www-data
-sudo chgrp -R pyenv /usr/local/.pyenv
-sudo chmod -R g+rx /usr/local/.pyenv
+# Database from scratch (skip when you moved one): the structure and the plans, no users
+mkdir -p db log
+[ -f db/yourcast.db ] || sqlite3 db/yourcast.db < tools/botsim/schema.sql
 
-# Nginx
-cd ../server
-sudo apt install nginx
-sudo cp yourcast_nginx /etc/nginx/sites-available/yourcast
-sudo ln -s /etc/nginx/sites-available/yourcast /etc/nginx/sites-enabled/yourcast
-sudo rm /etc/nginx/sites-enabled/default
-sudo systemctl start nginx
-sudo systemctl enable nginx
+# Admin login (asks for the password; put your email in)
+hash=$(venv/bin/python -c "import getpass; from app.admin_web import auth; print(auth.make_password(getpass.getpass()))")
+sqlite3 db/yourcast.db "INSERT INTO admins (mail, password) VALUES ('you@example.com', '$hash')"
 
-# PHP
-sudo add-apt-repository universe
-sudo apt install php7.4-fpm php7.4-sqlite3
+# Admin UI (CD rebuilds it on every deploy)
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+(cd admin/web && npm ci && npm run build)
 
-# Certbot
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d example.org -d www.example.org  # your domain
+# Nginx: the landing as static files, the admin and the payment webhooks from snippets
+cat > /etc/nginx/sites-available/yourcast <<'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.org www.example.org;  # your domain
+    root /home/yourcast/server;
+    include /etc/nginx/snippets/yourcast-admin.conf;
+    include /etc/nginx/snippets/yourcast-php.conf;
+    index index.html;
+    location / {
+    }
+}
+EOF
+ln -sf /etc/nginx/sites-available/yourcast /etc/nginx/sites-enabled/yourcast
+rm -f /etc/nginx/sites-enabled/default
+cp deploy/nginx-yourcast-admin.conf /etc/nginx/snippets/yourcast-admin.conf
+cp deploy/nginx-yourcast-php.conf /etc/nginx/snippets/yourcast-php.conf
+nginx -t && systemctl enable --now nginx && systemctl reload nginx
 
-# Supervisor
-cd ../yourcast
-sudo apt install supervisor
-sudo cp supervisor.conf /etc/supervisor/conf.d/yourcast.conf
-sudo systemctl start supervisor
-sudo systemctl enable supervisor
+# TLS: certbot copies the server block to 443 with both includes
+certbot --nginx -d example.org -d www.example.org  # your domain
+
+# Supervisor: one unit, the parent starts the bot, updater, jobs and admin roles
+cp supervisor.conf /etc/supervisor/conf.d/yourcast.conf
+systemctl enable --now supervisor
 supervisorctl reread
 supervisorctl update
 
-# Actions
-# Manual deploy, if GitHub Actions is down: /home/yourcast/yourcast/pull_restart_clean.sh
-chmod u+x /home/yourcast/yourcast/pull_restart_clean.sh
-
-supervisorctl restart yourcast
+# Checks: docs/DEPLOY.md, "Первый запуск на чистой машине", the last step
