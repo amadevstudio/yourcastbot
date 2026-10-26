@@ -18,7 +18,7 @@ from lib.requests.url import normalize_url
 from app.routes.message_tools import go_back_inline_markup
 from lib.telegram.general.errors import media_fetch_failed
 from lib.telegram.general.message_master import message_master, render_messages, MessageStructuresInterface, \
-    message_editor, InlineButtonData, outer_sender
+    keyboard_editor, InlineButtonData, outer_sender
 from app.service.payment.storefront import relay_nudge_markup
 from app.service.podcast import cover as cover_service
 from lib.tools.logger import logger
@@ -527,7 +527,7 @@ def switch_subscription(data: ControllerParams):
 
     channel_msg = construct_channel_message(data['chat_id'], data['language_code'])
     if data['callback'].message is not None:
-        message_editor(data['chat_id'], channel_msg[1], data['callback'].message.message_id)
+        keyboard_editor(data['chat_id'], channel_msg[1], data['callback'].message.message_id)
     else:
         render_messages(data['chat_id'], channel_msg)
 
@@ -564,7 +564,7 @@ def change_channel_notify(data: ControllerParams):
     set_podcast_data(data['chat_id'], updated_state_data)
 
     channel_msg = construct_channel_message(data['chat_id'], data['language_code'], updated_state_data)
-    message_editor(data['chat_id'], channel_msg[1], data['callback'].message.message_id)
+    keyboard_editor(data['chat_id'], channel_msg[1], data['callback'].message.message_id)
 
 
 def rate(data: ControllerParams):
@@ -593,4 +593,4 @@ def rate(data: ControllerParams):
     storage.set_user_state_data(data['chat_id'], 'podcast', current_state_data)
 
     channel_msg = construct_channel_message(data['chat_id'], data['language_code'], current_state_data)
-    message_editor(data['chat_id'], channel_msg[1], data['callback'].message.message_id)
+    keyboard_editor(data['chat_id'], channel_msg[1], data['callback'].message.message_id)

@@ -384,7 +384,12 @@ episodes, ~2 s for a slow host.
   and when Telegram still refuses the URL, as a file we download (an image,
   at most 5 MB: the mave cover is a 208 KB JPEG our server gets at once).
   Through, its file_id is cached and the mark goes. A page without its picture is a text
-  message; its buttons refresh the keyboard only (`message_has_no_media`).
+  message. The page's own buttons (subscribe, notify, rate) refresh its keyboard
+  only (`keyboard_editor`), never the media: Telegram's `editMessageMedia` turns
+  a text message into a photo, so once the check cached the cover the next tap
+  replaced the page's text with a captionless cover (2026-10-26), and the
+  screen, stored as text, answered "no text in the message to edit" to every
+  later button. Such a screen is now sent again (`message_has_no_text`).
 Locks: `python app/service/podcast/test_feed_cache.py`,
 `python app/service/podcast/test_cover.py` (CD gates; the rss, page and
 editor parts run where the bot's requirements are installed).

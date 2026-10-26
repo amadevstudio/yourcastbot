@@ -105,6 +105,12 @@ def message_has_no_media(e):
 	return "there is no media in the message to edit" in str(e)
 
 
+# The stored screen says text, the message is media (a text page that became its cover):
+# a text edit cannot land on it, the screen has to be sent again.
+def message_has_no_text(e):
+	return "there is no text in the message to edit" in str(e)
+
+
 # The enclosure URL itself is refused. Retrying the same request cannot
 # help. 408/425/429 are "try later" and stay retryable.
 _ENCLOSURE_REFUSED = re.compile(r'\b(400|401|403|404|410|451) Client Error\b')

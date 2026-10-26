@@ -9,7 +9,8 @@ from typing import TypedDict, Literal, Required, Sequence
 
 from app.routes.routes_list import AvailableActions, AvailableRoutes
 from lib.telegram.general.errors import bot_blocked_reaction, get_timeout_from_error_bot, \
-    media_fetch_failed, message_has_no_media, message_to_edit_not_found, log_caught, telegram_server_error
+    media_fetch_failed, message_has_no_media, message_has_no_text, message_to_edit_not_found, log_caught, \
+    telegram_server_error
 from lib.telegram.telebot import types as telegram_types
 
 from agent.bot_telebot import bot
@@ -246,7 +247,7 @@ def render_messages(chat_id: int,
         elif bot_blocked_reaction(e, chat_id):
             return previous_message_structures
 
-        elif message_to_edit_not_found(e) and not _retry:
+        elif (message_to_edit_not_found(e) or message_has_no_text(e)) and not _retry:
             return render_messages(chat_id, message_structures, resending=True, _retry=True)
 
         # Telegram's gateway hiccuped (502): try once more instead of leaving the
@@ -296,6 +297,19 @@ def outer_sender(
 
 def message_deleter(chat_id: int, message_id: int):
     bot.delete_message(chat_id, message_id)
+
+
+def keyboard_editor(chat_id: int, message_structure: MessageStructuresInterface, message_id: int):
+    """Only the buttons of a message. A button that changes nothing else on its page
+    (subscribe, notify, rate) must not edit the media: Telegram turns a text message
+    into a photo by editMessageMedia, so a page that went out without its cover lost
+    its text once the cover could be fetched."""
+    try:
+        bot.edit_message_reply_markup(
+            chat_id=chat_id, message_id=message_id, reply_markup=build_markup(message_structure))
+    except Exception as e:
+        if skip_not_modified(e):
+            raise
 
 
 def message_editor(chat_id: int, message_structure: MessageStructuresInterface, old_message_id: int):
