@@ -10,12 +10,13 @@ from urllib.parse import urlparse
 from fastapi import (
     APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, Response,
     UploadFile)
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
-from app.admin_web import auth, diag, economics, mail_jobs, product, queries
+from app.admin_web import auth, diag, economics, mail_jobs, product, queries, webhooks
 from lib.tools.logger import logger
 
 ADMIN_HOST = "127.0.0.1"
@@ -342,6 +343,22 @@ async def generic_error(_request: Request, exc: Exception):
 
 
 app.include_router(api)
+
+
+# Payment webhooks at the paths the PHP listeners had (webhooks.py): outside /api, no admin session
+@app.post(webhooks.CRYPTOBOT_PATH)
+async def cryptobot_webhook(request: Request):
+    body = await request.body()
+    status, text = await run_in_threadpool(
+        webhooks.cryptobot, body, request.headers.get("crypto-pay-api-signature", ""))
+    return PlainTextResponse(text, status_code=status)
+
+
+@app.api_route(webhooks.ROBOKASSA_PATH, methods=["GET", "POST"])
+async def robokassa_webhook(request: Request):
+    status, text = await run_in_threadpool(
+        webhooks.robokassa, dict(request.query_params), _client_ip(request))
+    return HTMLResponse(text, status_code=status)
 
 
 @app.get("/app")
