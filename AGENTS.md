@@ -231,6 +231,15 @@ remove plan management or hide Bronze/Silver.
   saw a patron. Credits before that are `last_replenishment` only, so "paid
   for" is `tariff_rows.paid_for_days` (a payment or a Patreon credit).
   Lock: `python app/service/payment/test_patreon_credit.py` (CD gate).
+- The payment webhooks are served by the admin process
+  (`app/admin_web/webhooks.py`) at the paths the PHP listeners had
+  (`/payment/crypto-bot/listener.php`, `/payment/robokassa/result.php`),
+  never by PHP: PHP 7.4 on the server is open to PHP2Shell (2026-10). nginx
+  (`deploy/nginx-yourcast-php.conf`, installed by CD) proxies the two paths,
+  lets only Robokassa's addresses reach the Result URL, answers 404 to any
+  other `.php` and hides `.git` (the site folder is a git checkout). The
+  scripts get the arguments PHP gave them. Lock:
+  `python app/admin_web/test_admin_web.py` (CD gate).
 - CryptoBot and Robokassa webhooks (`scripts/payment/cryptoBot.py`,
   `subscription_income.py`) credit through `credit.credit_once`
   (`applyPaymentReplenishmentOnce`, as Stars): the invoice is checked and

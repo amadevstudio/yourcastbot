@@ -443,26 +443,94 @@ def test_payment_scripts_no_debug_side_effects():
         "'Key: ' + payment_p2" in robo,
         False,
         "robokassa must not telegram the merchant key")
-    listener = open(
-        os.path.join(root, "deploy/payment/crypto-bot/listener.php"),
-        encoding="utf-8",
-    ).read()
-    _assert_eq("testfile.txt" in listener, False, "no testfile in listener")
-    _assert_eq("shell_exec" in listener, False, "no shell_exec in listener")
-    _assert_eq("proc_open" in listener, True, "listener uses proc_open")
-    robo_php = open(
-        os.path.join(root, "deploy/payment/robokassa/result.php"),
-        encoding="utf-8",
-    ).read()
-    _assert_eq(
-        "JSON_FORCE_OBJECT" in robo_php, True,
-        "empty GET must encode as object not []")
+
+
+class _Done:
+    def __init__(self, stdout):
+        self.stdout = stdout
+
+
+def test_payment_webhooks():
+    """The payment webhooks are Python at the paths the PHP listeners had (PHP 7.4 is open
+    to PHP2Shell): the same script gets the same arguments, the answer is the listener's."""
+    import base64
+    import json as _json
+    from app.admin_web import webhooks
+    calls, out = [], [b"OK\n"]
+
+    def runner(args, **kwargs):
+        calls.append((args, kwargs))
+        return _Done(out[0])
+
+    saved = webhooks.subprocess.run
+    webhooks.subprocess.run = runner
+    try:
+        client = TestClient(app)
+        response = client.post(webhooks.CRYPTOBOT_PATH, content=b'{"update_type":"invoice_paid"}',
+                               headers={"Crypto-Pay-Api-Signature": "abc"})
+        _assert_eq((response.status_code, response.text), (200, "OK"),
+                   "CryptoBot: no Origin, no admin session, the script's OK is OK")
+        args = calls[-1][0]
+        _assert_eq(args[1].endswith("scripts/payment/cryptoBot.py") and args[2] == config.BASE_DIR, True,
+                   "the CryptoBot script from the bot's folder")
+        _assert_eq((base64.b64decode(args[3]), _json.loads(base64.b64decode(args[4]))),
+                   (b'{"update_type":"invoice_paid"}', {"Crypto-Pay-Api-Signature": "abc"}),
+                   "the raw body and the signature header, base64, as listener.php passed them")
+        out[0] = b"bad\n"
+        _assert_eq(client.post(webhooks.CRYPTOBOT_PATH, content=b"x").status_code, 400,
+                   "anything but OK from the script is 400")
+        _assert_eq(_json.loads(base64.b64decode(calls[-1][0][4])), {}, "no signature: an empty object")
+
+        out[0] = b"OK42\n"
+        response = client.get(webhooks.ROBOKASSA_PATH + "?OutSum=5.0&InvId=42&SignatureValue=S",
+                              headers={"X-Real-IP": webhooks.ROBOKASSA_IPS[0]})
+        _assert_eq((response.status_code, response.text), (200, "OK42\n"),
+                   "Robokassa from its address: the script's answer as it is")
+        args = calls[-1][0]
+        _assert_eq((args[1].endswith("scripts/payment/subscription_income.py"), args[3]),
+                   (True, config.BASE_DIR), "the Robokassa script, params first, then the bot's folder")
+        _assert_eq(_json.loads(base64.b64decode(args[2])), {"OutSum": "5.0", "InvId": "42", "SignatureValue": "S"},
+                   "the query parameters as a JSON object")
+        before = len(calls)
+        response = client.get(webhooks.ROBOKASSA_PATH + "?InvId=1", headers={"X-Real-IP": "203.0.113.9"})
+        _assert_eq((response.status_code, len(calls)), (403, before),
+                   "Robokassa from another address: 403, the script never runs")
+        _assert_eq(client.get(webhooks.CRYPTOBOT_PATH).status_code, 405, "CryptoBot posts only")
+    finally:
+        webhooks.subprocess.run = saved
+
+
+def test_nginx_php_snippet():
+    """CD swaps the site's php-fpm location for the snippet: no request reaches PHP 7.4."""
+    sys.path.insert(0, os.path.join(_ROOT, "deploy"))
+    import ensure_nginx_php
+    site = ("server {\n    root /home/yourcast/server;\n    location ~ \\.php$ {\n"
+            "        include snippets/fastcgi-php.conf;\n"
+            "        fastcgi_pass unix:/run/php/php7.4-fpm.sock;\n    }\n}\n") * 2
+    path = os.path.join(tempfile.mkdtemp(prefix="yourcast_nginx_"), "yourcast")
+    open(path, "w").write(site)
+    _assert_eq(ensure_nginx_php.ensure(path), True, "the php-fpm locations are replaced")
+    text = open(path).read()
+    _assert_eq((text.count(ensure_nginx_php.MARKER), "fastcgi_pass" in text), (2, False),
+               "both server blocks include the snippet, none passes to php-fpm")
+    _assert_eq(ensure_nginx_php.ensure(path), False, "a second run changes nothing")
+    snippet = open(os.path.join(_ROOT, "deploy", "nginx-yourcast-php.conf")).read()
+    _assert_eq(("fastcgi_pass" in snippet, "location ~ \\.php$ { return 404; }" in snippet,
+                "location ~ /\\. { deny all; }" in snippet),
+               (False, True, True), "the snippet sends nothing to PHP, hides .git, 404s other .php")
+    from app.admin_web import webhooks
+    for path_ in (webhooks.CRYPTOBOT_PATH, webhooks.ROBOKASSA_PATH):
+        _assert_eq("location = %s {" % path_ in snippet, True, "nginx proxies %s to the admin" % path_)
+    for ip in webhooks.ROBOKASSA_IPS:
+        _assert_eq("allow %s;" % ip in snippet, True, "nginx lets Robokassa's %s in" % ip)
 
 
 def main():
     test_auth_roundtrip()
     test_login_rate_limit()
     test_payment_scripts_no_debug_side_effects()
+    test_payment_webhooks()
+    test_nginx_php_snippet()
     test_feed_probe()
     tmpdir = tempfile.mkdtemp(prefix="yourcast_admin_web_")
     path = os.path.join(tmpdir, "admin.db")
