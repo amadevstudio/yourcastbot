@@ -239,7 +239,7 @@ remove plan management or hide Bronze/Silver.
   lets only Robokassa's addresses reach the Result URL, answers 404 to any
   other `.php` and hides `.git` (the site folder is a git checkout). The
   scripts get the arguments PHP gave them. Lock:
-  `python app/admin_web/test_admin_web.py` (CD gate).
+  `python app/admin_web/test_admin_web.py` (needs the bot's requirements).
 - CryptoBot and Robokassa webhooks (`scripts/payment/cryptoBot.py`,
   `subscription_income.py`) credit through `credit.credit_once`
   (`applyPaymentReplenishmentOnce`, as Stars): the invoice is checked and
