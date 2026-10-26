@@ -117,6 +117,35 @@ ROWS = {
         'es darum geht. Fragen heute übrig: {left}.',
         'כתבו שאלה על "{title}". אענה לפי התמליל ואגיד באיזו דקה מדברים על זה. שאלות שנותרו היום: {left}.'),
     'askDone': ('Готово', 'Done', 'Pronto', 'Listo', 'Fertig', 'סיום'),
+    # questions about a whole podcast (app/service/ai/show_ask.py)
+    'showAskButton': (
+        '💬 Спросить о подкасте', '💬 Ask about the podcast', '💬 Perguntar sobre o podcast',
+        '💬 Preguntar sobre el podcast', '💬 Frage zum Podcast', '💬 לשאול על הפודקאסט'),
+    'showAskPrompt': (
+        'Напишите вопрос о подкасте "{title}": о чём там говорили, в каком выпуске была тема, как ведущий '
+        'обычно что-то делает. Отвечу по описаниям выпусков и расшифровкам, которые уже есть, и дам кнопки, '
+        'чтобы скачать эти выпуски. Вопросов на сегодня: {left}.',
+        'Write a question about "{title}": what they talked about, which episode covered a topic, how the host '
+        'usually does something. I answer from the episode descriptions and the transcripts already made, '
+        'with buttons to download those episodes. Questions left today: {left}.',
+        'Escreva uma pergunta sobre "{title}": do que falaram, em que episódio um tema apareceu, como o '
+        'apresentador costuma fazer algo. Respondo pelas descrições dos episódios e pelas transcrições já '
+        'feitas, com botões para baixar esses episódios. Perguntas restantes hoje: {left}.',
+        'Escribe una pregunta sobre "{title}": de qué hablaron, en qué episodio salió un tema, cómo suele '
+        'hacer algo el presentador. Respondo con las descripciones de los episodios y las transcripciones ya '
+        'hechas, con botones para descargar esos episodios. Preguntas que quedan hoy: {left}.',
+        'Schreib eine Frage zu "{title}": worüber gesprochen wurde, in welcher Folge ein Thema vorkam, wie der '
+        'Host etwas meistens macht. Ich antworte anhand der Folgenbeschreibungen und der vorhandenen '
+        'Transkripte, mit Buttons zum Herunterladen dieser Folgen. Fragen heute übrig: {left}.',
+        'כתבו שאלה על "{title}": על מה דיברו, באיזה פרק עלה נושא, איך המגיש בדרך כלל עושה משהו. אענה לפי '
+        'תיאורי הפרקים והתמלילים שכבר קיימים, עם כפתורים להורדת הפרקים האלה. שאלות שנותרו היום: {left}.'),
+    'showAskBasis': (
+        'По расшифровкам: {transcripts}, по описаниям выпусков: {descriptions}.',
+        'Based on {transcripts} transcripts and {descriptions} episode descriptions.',
+        'Com base em {transcripts} transcrições e {descriptions} descrições de episódios.',
+        'Basado en {transcripts} transcripciones y {descriptions} descripciones de episodios.',
+        'Grundlage: {transcripts} Transkripte und {descriptions} Folgenbeschreibungen.',
+        'מבוסס על {transcripts} תמלילים ו-{descriptions} תיאורי פרקים.'),
     'askTextOnly': (
         'Напишите вопрос текстом.', 'Please type the question.', 'Escreva a pergunta em texto.',
         'Escribe la pregunta en texto.', 'Bitte schreib die Frage als Text.', 'כתבו את השאלה בטקסט.'),

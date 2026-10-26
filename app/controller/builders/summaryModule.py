@@ -89,7 +89,7 @@ def request_summary(data):
         return
     notify(data['callback'], data['message'], '')
     # a status line under the audio, edited by the worker as it goes and into the summary (ai_watcher)
-    status = _status_line(data['chat_id'], get_message('summaryStatusQueued', language_code), audio)
+    status = status_line(data['chat_id'], get_message('summaryStatusQueued', language_code), audio)
     _, new = ai.enqueue(data['chat_id'], ref, lang, quota.needed, reply_to=audio, status_message=status)
     if not new and status:  # a second tap: the first one's line is already there
         try:
@@ -98,7 +98,7 @@ def request_summary(data):
             pass
 
 
-def _status_line(chat_id, text, reply_to=None) -> int | None:
+def status_line(chat_id, text, reply_to=None) -> int | None:
     """A status message (a reply to the audio when known); its id, None if it did not go."""
     structure = {'type': 'text', 'text': text}
     if reply_to:
@@ -180,9 +180,9 @@ def answer_question(data):
     if state_lost(state, 'ref'):
         return render_outdated_screen(data)
     question = str(getattr(data['message'], 'text', '') or '').strip()
-    if time.time() - float(state.get('at') or 0) > summary.ASK_IDLE_SECONDS or _is_link(question):
+    if time.time() - float(state.get('at') or 0) > summary.ASK_IDLE_SECONDS or is_link(question):
         # long after the last question, or a podcast link: the user is searching, as before Ask
-        return _search_instead(data)
+        return search_instead(data)
     if not question:  # a voice message, a photo
         outer_sender(data['chat_id'], [{'type': 'text', 'text': get_message('askTextOnly', language_code)}])
         return
@@ -195,12 +195,12 @@ def answer_question(data):
                                        else ask_offer_message(language_code)])
         return
     # "Thinking...": a reply to the audio, edited into the answer (or into "could not")
-    status = _status_line(data['chat_id'], get_message('askThinking', language_code), state.get('audio'))
+    status = status_line(data['chat_id'], get_message('askThinking', language_code), state.get('audio'))
     try:
         text, cost = summary.answer(found['text'], episode['title'], episode['show'], question)
     except Exception as e:
         logger.warn('ask: no answer', state['ref'], type(e).__name__, str(e)[:200])
-        _result(data['chat_id'], {'type': 'text', 'text': get_message('askFailed', language_code)}, status)
+        show_result(data['chat_id'], {'type': 'text', 'text': get_message('askFailed', language_code)}, status)
         return
     usage.record_ask(data['chat_id'], state['ref'], cost)
     storage.set_user_state_data(data['chat_id'], 'ask', dict(state, at=time.time()))
@@ -210,10 +210,10 @@ def answer_question(data):
               'reply_markup': done_markup(language_code)}
     if state.get('audio'):
         answer['reply_to'] = int(state['audio'])
-    _result(data['chat_id'], answer, status)
+    show_result(data['chat_id'], answer, status)
 
 
-def _result(chat_id, message, status=None):
+def show_result(chat_id, message, status=None):
     """The status line edited into `message`; a new message when there is none or it is gone."""
     if status:
         try:
@@ -243,11 +243,11 @@ def finish_ask(data):
                     resending=True)
 
 
-def _is_link(text) -> bool:
+def is_link(text) -> bool:
     return text.lower().startswith(('http://', 'https://')) and ' ' not in text
 
 
-def _search_instead(data):
+def search_instead(data):
     """A text long after the last question: the user is searching again, as before Ask."""
     from app.controller.builders import searchModule
     storage.add_user_state(data['chat_id'], 'search')

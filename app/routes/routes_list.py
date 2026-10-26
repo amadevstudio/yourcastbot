@@ -6,7 +6,7 @@ AvailableRoutes = Literal[
     'subs',
     'search',
     'podcast', 'recs',
-    'ask',
+    'ask', 'showAsk',
     'another',
     'update',
     'donate',

@@ -1,11 +1,12 @@
 from typing import TypedDict, Callable, Literal, Dict, Optional, Required
 
 from app.controller.builders import welcomeModule, menuModule, subsModule, searchModule, podcastModule, recsModule, \
-    helpModule, channelModule, topModule, adminModule, settingsModule, summaryModule, episodeTextModule
+    helpModule, channelModule, topModule, adminModule, settingsModule, summaryModule, episodeTextModule, \
+    showAskModule
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
-from app.service.ai import auto as ai_auto, summary as ai_summary
+from app.service.ai import auto as ai_auto, show_ask as ai_show_ask, summary as ai_summary
 from app.service.record.text_format import DESCRIPTION_ACTION, EPISODE_FORMAT_ACTIONS, EPISODE_FORMAT_HINT_ACTION
 from app.service.payment import (
     paymentModule,
@@ -78,7 +79,7 @@ class RouteMap:
         'podcast': {
             'method': podcastModule.channel_query,
             'available_from': ['call'],
-            'routes': ['recs'],
+            'routes': ['recs', ai_show_ask.ACTION],
             'actions': {
                 'subscription': {
                     'method': podcastModule.switch_subscription
@@ -127,6 +128,13 @@ class RouteMap:
                     'state_independent': True,
                 },
             },
+        },
+
+        # Questions about the whole podcast: the button on its page, then the user's texts
+        ai_show_ask.ACTION: {
+            'method': showAskModule.show_ask_route,
+            'available_from': ['call', 'message'],
+            'waits_for_input': True,
         },
 
         'another': {

@@ -859,6 +859,23 @@ button; `quota.py` who may ask. The plan level is
   a trial `TRIAL_QUESTIONS_PER_DAY` (5; at its limit it hears what paying
   gives, with the Stars page and change-plan), in the last 24 hours (usage ledger
   kind `ask`, its cost in the AI spend). No plan: every plan's invoice.
+- "Ask about the podcast" on the podcast page (AI on; route `showAsk`,
+  `app/service/ai/show_ask.py`, `showAskModule`): questions about the whole
+  show, answered from what is already there (the owner's call, 2026-10-26:
+  nothing is transcribed for it). The material is the channel's transcripts
+  someone paid for (`ai.channel_transcripts`, matched to the feed by the
+  enclosure's ref, else the title) and the newest episodes' title, date and
+  description from the feed copy `feed_cache` keeps, within `CONTEXT_CHARS`
+  (a prompt-cache block). Each episode is labelled (E1 the newest); the
+  model cites the labels, the answer shows them as numbers with one download
+  button per cited episode (the rec button by hash from the start, as the
+  digest's; at most `MAX_CITED`) and a line on what it was based on. One
+  question, one text answer with Back (to the page); the next question is
+  typed on the same screen, no history. Same daily count as questions about
+  an episode (usage kind `ask`, ref `show:<channel>`), the same offers at
+  the limit or without a plan; `question_answered {scope: show}`.
+  Lock: `python app/service/ai/test_show_ask.py` (CD gate),
+  `python tools/botsim/test_botsim.py`.
 - Summaries of new episodes (opt-in, /settings AI summaries, `users.flags`
   `auto_summary`, action `sumAuto`; turning it on without a plan says
   they come with one; `app/service/ai/auto.py`): after the

@@ -411,6 +411,12 @@ def construct_channel_message(chat_id, language_code, channel_data=None) -> list
     button2 = {'text': new_eps + get_message("listen", language_code), 'callback_data': back_data}
     channel_actions.append([button1, button2])
 
+    # Questions about the whole show (app/service/ai/show_ask.py), while AI summaries are on
+    from app.service.ai import summary as ai_summary
+    if ai_summary.enabled():
+        from app.controller.builders.showAskModule import button as show_ask_button
+        channel_actions.append([show_ask_button(language_code)])
+
     if "subscribed" in channel_data and channel_data["subscribed"]:
         # subscribed
         if is_notify:

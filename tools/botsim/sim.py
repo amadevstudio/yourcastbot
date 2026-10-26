@@ -42,6 +42,8 @@ SCHEMA = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.sql')
 FAKE_TRANSCRIPT = '[0:00] The host opens the episode. [0:30] The guest explains the main idea. [1:00] Advice.'
 FAKE_SUMMARY = 'The episode in one sentence (botsim).\n0:00 – the opening\n0:30 – the main idea'
 FAKE_ANSWER = 'At 0:30 the guest explains it (botsim).'
+# a question about a whole show: it cites the newest episodes by their labels (show_ask.cite)
+FAKE_SHOW_ANSWER = 'The host mostly talks about the latest topics [E1], and once went deeper on it [E2, E1].'
 # threads that live as long as the process: never waited for
 _LONG_LIVED = ('__thread_processor', 'Telebot Balancer', 'heartbeat')
 
@@ -122,6 +124,8 @@ def boot(database: Optional[str] = None, network: bool = True, ai: str = 'fake',
         summary.enabled = lambda: True
         summary.summarize = lambda *args, **kwargs: (FAKE_SUMMARY, 0.0)
         summary.answer = lambda *args, **kwargs: (FAKE_ANSWER, 0.0)
+        from app.service.ai import show_ask
+        show_ask.answer = lambda *args, **kwargs: (FAKE_SHOW_ANSWER, 0.0)
     elif ai == 'off':
         summary.enabled = lambda: False
 
