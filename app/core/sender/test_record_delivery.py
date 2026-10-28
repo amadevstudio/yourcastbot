@@ -72,6 +72,7 @@ for _name in _OPTIONAL:
 from app.core.sender import outbox as real_outbox  # noqa: E402
 from app.core.sender import send_record_helper as srh  # noqa: E402
 from lib.net.enclosure import host_from_error  # noqa: E402
+from lib.telegram.general.errors import user_unavailable_error  # noqa: E402
 from lib.system.disk_budget import DiskBudget, DiskBusy  # noqa: E402
 from db import usage as real_usage  # noqa: E402
 
@@ -187,12 +188,13 @@ class FakeRich:
 
 
 class FakeAgent:
-    def __init__(self, unreachable_chat=None, send_error=None):
+    def __init__(self, unreachable_chat=None, send_error=None, blocked_chat=None):
         self.uploads = 0
         self.sent_to = []
         self.captions = {}
         self.unreachable_chat = unreachable_chat
         self.send_error = send_error  # every send fails: the agent itself is down
+        self.blocked_chat = blocked_chat
 
     def upload(self, thonbot, fname, callback=None):
         self.uploads += 1
@@ -203,6 +205,9 @@ class FakeAgent:
             raise ConnectionError(self.send_error)
         if data['chat_id'] == self.unreachable_chat:
             raise ValueError("Could not find the input entity for PeerUser")
+        if data['chat_id'] == self.blocked_chat:
+            raise type("UserIsBlockedError", (Exception,), {})(
+                "User is blocked (caused by SendMediaRequest)")
         self.sent_to.append(data['chat_id'])
         self.captions[data['chat_id']] = data['message_text']
         return {'message_id': 1, 'chat_id': data['chat_id']}
@@ -262,7 +267,7 @@ class World:
                  agent_unreachable_chat=None, bot_refuse_chat=None,
                  blocked_chat=None, flood_once_chat=None, size_known=True, trust_rss=False,
                  head_error=None, agent_send_error=None, formats=None, rich_error=None,
-                 rich_error_chat=None):
+                 rich_error_chat=None, agent_blocked_chat=None):
         self.tmp = tempfile.mkdtemp(prefix="yourcast_delivery_")
         os.makedirs(os.path.join(self.tmp, "records"))
         self.bot = FakeBot(url_error, flood_chat, bot_refuse_chat, blocked_chat, flood_once_chat)
@@ -271,7 +276,7 @@ class World:
         self.hints_remembered = []
         self.blocked_marked = []
         self.slept = []
-        self.agent = FakeAgent(agent_unreachable_chat, agent_send_error)
+        self.agent = FakeAgent(agent_unreachable_chat, agent_send_error, agent_blocked_chat)
         self.requester = FakeRequester(int(size_mb * MB), download_error, size_known, head_error)
         self.budget = DiskBudget(self.tmp, min_free_bytes=0, disk_free=lambda: disk_free_mb * MB)
         if reserved_mb:
@@ -324,7 +329,7 @@ class World:
         self.host_faults.append((link, error))
 
     def _blocked_reaction(self, error, chat_id):
-        if "bot was blocked" in str(error):
+        if user_unavailable_error(error):  # the real classifier, without the database
             self.blocked_marked.append(chat_id)
             return True
         return False
@@ -679,6 +684,21 @@ def main():
     _assert(len(world.notices) == 3 and all('too big' not in t and 'unava' in t.lower()
                                             for _, t in world.notices),
             "agent down, last attempt: unavailable, never too big")
+
+    # 28.10: a 93 MB click, its only chat blocked the bot. The agent's Telethon
+    # error went unrecognized: "delivered to no chat", 8 downloads and uploads.
+    world = World(size_mb=93, with_outbox=True, agent_blocked_chat=1)
+    sent = world.sender(chats=(1,)).send_record()
+    _assert(sent == [] and world.blocked_marked == [1], "agent, blocked chat: marked, no retry")
+    _assert(world.agent.uploads == 1 and world.requester.downloads == 1 and world.notices == [],
+            "agent, blocked chat: one download, one upload, no notice")
+    _assert(not any(level == 'err' and 'blocked' in text.lower() for level, text in world.logger.lines),
+            "agent, blocked chat: WARN, not ERR")
+
+    world = World(size_mb=389, agent_blocked_chat=1)
+    sent = world.sender().send_record()
+    _assert(sorted(sent) == [2, 3] and world.blocked_marked == [1] and world.agent.uploads == 1,
+            "agent, first chat blocked: the others get the file, one upload")
 
     world = World(size_mb=389, agent_send_error="Error code: 413. Description: Request Entity Too Large")
     sent = world.sender().send_record()

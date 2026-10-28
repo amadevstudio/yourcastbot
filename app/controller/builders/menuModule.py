@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import math
 
 from app.controller.builders import advertisingModule
 from app.controller.builders.advertisingModule import get_advertising_text
@@ -8,6 +7,7 @@ from lib.telegram.general.message_master import render_messages, MessageStructur
 from app.i18n.messages import get_message, standartSymbols
 from app.repository.storage import storage
 from app.service.payment import paymentModule
+from app.service.payment.paymentSafeModule import days_left_text
 from config import db_path, advertising_contact
 from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
@@ -37,13 +37,8 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
             "you_cant_recieve_notifications", language_code)
     else:
         if tariff['price'] > balance:
-            if 0 < time_left < 24:
-                days_left_str = "<1"
-            else:
-                days_left_str = str(math.floor(time_left / 24))
-
             message += "\n" + get_message("days_left", language_code) % \
-                       days_left_str + " "
+                       days_left_text(time_left) + " "
             message += \
                 get_message("not_enough_for_renewal", language_code) \
                 % str(paymentModule.prepare_price(tariff['price'] - balance, 0.5))
