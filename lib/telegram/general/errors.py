@@ -72,6 +72,25 @@ def bot_blocked_reaction(e, user_id):
 	else:
 		return False
 
+# The bot is no longer in the channel (or may not post there). The agent (Telethon,
+# files over 50 MB) names it by its class: unrecognized, the job read as
+# "delivered to no chat" and downloaded and uploaded the file on every retry.
+_CHANNEL_GONE_SNIPPETS = (
+	"bot is not a member of the channel",
+	"need administrator rights in the channel",
+	"bot was kicked from the channel",
+	"Could not find the input entity for PeerChannel",
+)
+_TELETHON_CHANNEL_GONE = ("ChannelPrivateError", "ChatWriteForbiddenError", "ChatAdminRequiredError")
+
+
+def channel_gone_error(e):
+	if type(e).__name__ in _TELETHON_CHANNEL_GONE:
+		return True
+	text = str(e)
+	return any(snippet in text for snippet in _CHANNEL_GONE_SNIPPETS)
+
+
 def message_to_edit_not_found(e):
 	text = str(e)
 	return (
@@ -159,7 +178,7 @@ def expected_send_noise(error) -> bool:
 	"""Blocked user, flood, stale edit, dead enclosure — not a process bug."""
 	if error is None:
 		return False
-	if user_unavailable_error(error):
+	if user_unavailable_error(error) or channel_gone_error(error):
 		return True
 	if message_to_edit_not_found(error) or message_to_delete_not_found(error):
 		return True

@@ -72,7 +72,7 @@ for _name in _OPTIONAL:
 from app.core.sender import outbox as real_outbox  # noqa: E402
 from app.core.sender import send_record_helper as srh  # noqa: E402
 from lib.net.enclosure import host_from_error  # noqa: E402
-from lib.telegram.general.errors import user_unavailable_error  # noqa: E402
+from lib.telegram.general.errors import channel_gone_error, user_unavailable_error  # noqa: E402
 from lib.system.disk_budget import DiskBudget, DiskBusy  # noqa: E402
 from db import usage as real_usage  # noqa: E402
 
@@ -188,13 +188,14 @@ class FakeRich:
 
 
 class FakeAgent:
-    def __init__(self, unreachable_chat=None, send_error=None, blocked_chat=None):
+    def __init__(self, unreachable_chat=None, send_error=None, blocked_chat=None, gone_channel=None):
         self.uploads = 0
         self.sent_to = []
         self.captions = {}
         self.unreachable_chat = unreachable_chat
         self.send_error = send_error  # every send fails: the agent itself is down
         self.blocked_chat = blocked_chat
+        self.gone_channel = gone_channel
 
     def upload(self, thonbot, fname, callback=None):
         self.uploads += 1
@@ -208,6 +209,9 @@ class FakeAgent:
         if data['chat_id'] == self.blocked_chat:
             raise type("UserIsBlockedError", (Exception,), {})(
                 "User is blocked (caused by SendMediaRequest)")
+        if data['chat_id'] == self.gone_channel:
+            raise type("ChannelPrivateError", (Exception,), {})(
+                "The channel specified is private and you lack permission to access it")
         self.sent_to.append(data['chat_id'])
         self.captions[data['chat_id']] = data['message_text']
         return {'message_id': 1, 'chat_id': data['chat_id']}
@@ -267,7 +271,7 @@ class World:
                  agent_unreachable_chat=None, bot_refuse_chat=None,
                  blocked_chat=None, flood_once_chat=None, size_known=True, trust_rss=False,
                  head_error=None, agent_send_error=None, formats=None, rich_error=None,
-                 rich_error_chat=None, agent_blocked_chat=None):
+                 rich_error_chat=None, agent_blocked_chat=None, agent_gone_channel=None):
         self.tmp = tempfile.mkdtemp(prefix="yourcast_delivery_")
         os.makedirs(os.path.join(self.tmp, "records"))
         self.bot = FakeBot(url_error, flood_chat, bot_refuse_chat, blocked_chat, flood_once_chat)
@@ -276,7 +280,8 @@ class World:
         self.hints_remembered = []
         self.blocked_marked = []
         self.slept = []
-        self.agent = FakeAgent(agent_unreachable_chat, agent_send_error, agent_blocked_chat)
+        self.agent = FakeAgent(agent_unreachable_chat, agent_send_error, agent_blocked_chat, agent_gone_channel)
+        self.channels_gone = []
         self.requester = FakeRequester(int(size_mb * MB), download_error, size_known, head_error)
         self.budget = DiskBudget(self.tmp, min_free_bytes=0, disk_free=lambda: disk_free_mb * MB)
         if reserved_mb:
@@ -313,7 +318,7 @@ class World:
             'message_editor': lambda *a, **k: None, 'message_deleter': lambda *a, **k: None,
             'trust_rss_podcasts': trust_rss,
             'bot_blocked_reaction': self._blocked_reaction,
-            'bot_removed_from_channel_reaction': lambda error, chat_id: False,
+            'bot_removed_from_channel_reaction': self._channel_gone_reaction,
             'time': _ns(sleep=self.slept.append, time=time.time, time_ns=time.time_ns),
             # the episode is remembered for its buttons: never in a real database here
             'ai': _ns(remember_episode=lambda *a, **k: self.remembered.append((a, k))),
@@ -331,6 +336,12 @@ class World:
     def _blocked_reaction(self, error, chat_id):
         if user_unavailable_error(error):  # the real classifier, without the database
             self.blocked_marked.append(chat_id)
+            return True
+        return False
+
+    def _channel_gone_reaction(self, error, chat_id):
+        if channel_gone_error(error):  # the real classifier, without the database
+            self.channels_gone.append(chat_id)
             return True
         return False
 
@@ -694,6 +705,11 @@ def main():
             "agent, blocked chat: one download, one upload, no notice")
     _assert(not any(level == 'err' and 'blocked' in text.lower() for level, text in world.logger.lines),
             "agent, blocked chat: WARN, not ERR")
+
+    world = World(size_mb=93, with_outbox=True, agent_gone_channel=-1001)
+    sent = world.sender(chats=(-1001,)).send_record()
+    _assert(sent == [] and world.channels_gone == [-1001] and world.agent.uploads == 1,
+            "agent, channel the bot left: marked, one upload, no retry")
 
     world = World(size_mb=389, agent_blocked_chat=1)
     sent = world.sender().send_record()

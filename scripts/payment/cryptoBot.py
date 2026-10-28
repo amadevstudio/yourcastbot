@@ -35,7 +35,7 @@ from lib.api.payment.cryptoBotApi import CryptoBotApi
 from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, award_referrer_for_payment
 from app.service import analytics_events
 from scripts.payment.webhook_input import crypto_invoice
-from scripts.payment.credit import credit_once
+from scripts.payment.credit import credit_once, notify
 
 # TODO: refactor the file, make some tests
 
@@ -168,9 +168,9 @@ def income_processing():
 		if not invoice_already_paid:
 			try:
 				with bot:
-					bot.loop.run_until_complete(send_to_user(
+					notify(bot, send_to_user(
 						user['telegramId'], result_mode, current_tariff,
-						current_subscription, user_language))
+						current_subscription, user_language), "payer")
 
 					if config.server:
 						with open(payment_log_path, 'a+') as psl:
@@ -182,7 +182,7 @@ def income_processing():
 				refer_id, message = award_referrer_for_payment(user['telegramId'])
 				if message is not None:
 					with bot:
-						bot.loop.run_until_complete(notify_refer(refer_id, message))
+						notify(bot, notify_refer(refer_id, message), "inviter")
 
 				with bot:
 					bot.loop.run_until_complete(

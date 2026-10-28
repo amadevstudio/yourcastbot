@@ -11,6 +11,7 @@ from lib.markup import telegram_html
 from app.core.message.navigationBuilder import determine_search_query_and_page, get_full_message_navigation, \
     FullMessageNavigation
 from app.routes.message_tools import go_back_inline_markup, go_back_inline_button
+from lib.telegram.general.errors import channel_gone_error
 from lib.telegram.general.message_master import message_master, render_messages, InlineButtonData
 from app.i18n.messages import get_message, get_message_rtd, emojiCodes
 from app.repository.storage import storage
@@ -430,7 +431,7 @@ def get_input_channel_id_message(language_code, status=None, channel=None):
 
         elif status == "added":
             message_text += "\n" + get_message("tgChannelAdded", language_code)
-            message_text += "\n<b>" + channel.title + "</b>"
+            message_text += "\n<b>" + telegram_html.escape(str(channel.title)) + "</b>"
 
     else:
         message_text += get_message("addTgChannelInput", language_code)
@@ -501,10 +502,7 @@ def channel_save_id(data: ControllerParams):
 # !!!!!!!!!!!!!!!!!!!!!!!!!
 
 def bot_removed_from_channel_reaction(e, tgChannelId):
-    if "bot is not a member of the channel" in str(e) \
-            or "need administrator rights in the channel" in str(e) \
-            or "bot was kicked from the channel" in str(e) \
-            or "Could not find the input entity for PeerChannel" in str(e):
+    if channel_gone_error(e):
 
         db_users = SQLighter(db_path)
         user_tg_id = db_users.getUserTgIdByChannelTg(tgChannelId)
@@ -531,7 +529,8 @@ def bot_removed_from_channel_reaction(e, tgChannelId):
 
             render_messages(user_tg_id, [{
                 'type': 'text',
-                'text': get_message('tgChannelNotFoundEnsureBotAdminWithName', language_code) % title
+                'text': get_message('tgChannelNotFoundEnsureBotAdminWithName', language_code)
+                % telegram_html.escape(str(title))
             }], resending=True)
 
         return True

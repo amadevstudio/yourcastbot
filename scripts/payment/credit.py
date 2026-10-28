@@ -26,3 +26,23 @@ def credit_once(tg_id, service: str, invoice_id, cents: int, invoice_hash=None):
         return user, result
     finally:
         db.close()
+
+
+def notify(bot, coroutine, what: str) -> bool:
+    """Run one Telegram notice of a payment already credited; a failure is logged, never raised.
+
+    The payer or the inviter may have blocked the bot (Telethon raises
+    UserIsBlockedError): what comes after the notice (the inviter's bonus, the
+    payment event, the creator's note) must still run.
+    """
+    try:
+        bot.loop.run_until_complete(coroutine)
+        return True
+    except Exception as e:
+        line = "%s %s: payment notice to the %s failed\n" % (type(e).__name__, e, what)
+        if config.server:
+            with open(f"{config.BASE_DIR}/log/payment.log", 'a+') as log:
+                log.write(line)
+        else:
+            print(line, flush=True)
+        return False
