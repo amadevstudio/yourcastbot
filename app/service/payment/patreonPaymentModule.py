@@ -10,6 +10,7 @@ from agent.bot_telebot import bot
 from app.controller.general.notify import notify
 from app.routes.message_tools import go_back_inline_button, go_back_inline_markup
 from app.routes.ptypes import ControllerParams
+from lib.markup import telegram_html
 from lib.telegram.general.message_master import message_master, render_messages, InlineButtonData, outer_sender
 from app.i18n.messages import get_message
 from app.repository.storage import storage
@@ -92,8 +93,9 @@ def patreon_email_input_page(data: ControllerParams):
 def get_patreon_email_message(current_email, language_code, status: bool | str | None = None):
     message_text = get_message("donate_page_email_input", language_code)
     if current_email is not None and current_email != "":
+        # whatever was typed is saved: escaped, a "<" refused this page for good
         message_text += "\n\n" + get_message("current_email", language_code) + ": " \
-                        + current_email
+                        + telegram_html.escape(current_email)
 
     if status is not None:
         if status is True:

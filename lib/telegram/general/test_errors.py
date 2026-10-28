@@ -14,7 +14,7 @@ if _ROOT not in sys.path:
 from lib.telegram.general.errors import (  # noqa: E402
     message_to_edit_not_found, user_unavailable_error,
     audio_source_gone, expected_send_noise, message_to_delete_not_found,
-    entities_parse_error, file_refused, telegram_server_error)
+    entities_parse_error, file_refused, telegram_server_error, channel_gone_error)
 
 
 def _assert_eq(got, expected, label):
@@ -57,6 +57,18 @@ def main():
         _assert_eq(expected_send_noise(error), True, name + " is WARN, not ERR")
     not_found = type("ValueError", (Exception,), {})("Could not find the input entity for PeerUser")
     _assert_eq(user_unavailable_error(not_found), False, "agent cannot resolve a chat: not blocked")
+
+    # A channel the bot is no longer in: Bot API wording and the agent's Telethon classes.
+    for error in ("Bad Request: bot is not a member of the channel chat",
+                  "Forbidden: bot was kicked from the channel chat",
+                  "Bad Request: need administrator rights in the channel chat",
+                  "Could not find the input entity for PeerChannel(channel_id=1)",
+                  type("ChannelPrivateError", (Exception,), {})("The channel specified is private"),
+                  type("ChatWriteForbiddenError", (Exception,), {})("You can't write in this chat"),
+                  type("ChatAdminRequiredError", (Exception,), {})("Chat admin privileges are required")):
+        _assert_eq(channel_gone_error(error), True, "channel gone: " + str(error)[:40])
+    _assert_eq(channel_gone_error(not_found), False, "agent cannot resolve a user: not a channel")
+    _assert_eq(channel_gone_error("Too Many Requests: retry after 5"), False, "flood: not a channel")
 
     stale_edit = [
         "Bad Request: message to edit not found",

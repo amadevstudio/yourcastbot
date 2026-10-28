@@ -23,6 +23,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 SENT = []  # (chat, text) the stub Telethon client was asked to send
+BLOCKED = set()  # chats that blocked the bot: Telethon raises UserIsBlockedError
 
 
 def _assert(cond, label):
@@ -56,6 +57,8 @@ def _stub_telethon():
             return False
 
         async def send_message(self, chat, text, **kwargs):
+            if int(chat) in BLOCKED:
+                raise type("UserIsBlockedError", (Exception,), {})("User is blocked (caused by SendMessageRequest)")
             SENT.append((int(chat), text))
 
     telethon = types.ModuleType("telethon")
@@ -85,6 +88,26 @@ def _balance(path, tg):
                            "WHERE u.telegramId = ?", (tg,)).fetchone()
         rows = conn.execute("SELECT COUNT(*) FROM payment_history").fetchone()[0]
         return (None if row is None else int(row[0])), rows
+    finally:
+        conn.close()
+
+
+def _invite(path, invitee, inviter):
+    from db.sqliteAdapter import SQLighter
+    db = SQLighter(path)
+    try:
+        db.get_user_by_tg(inviter)
+        db.get_user_by_tg(invitee)
+        db.cursor.execute("UPDATE users SET ref_id = ? WHERE telegramId = ?", (inviter, invitee))
+        db.connection.commit()
+    finally:
+        db.close()
+
+
+def _ref_id(path, tg):
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute("SELECT ref_id FROM users WHERE telegramId = ?", (tg,)).fetchone()[0]
     finally:
         conn.close()
 
@@ -150,6 +173,18 @@ def main():
         _assert(_balance(path, 6002) == (499, 3), "a Robokassa invoice is credited, to the cent")
         _robokassa(9001, 6002, "4.99")
         _assert(_balance(path, 6002) == (499, 3), "the same signed notice again credits nothing")
+
+        # A payer who blocked the bot: the notice fails, the inviter still gets the bonus
+        # (before, Telethon's error skipped everything after the payer's notice).
+        for invoice, payer, inviter, pay in ((79, 6004, 6005, lambda: _crypto(79, 6004, 500)),
+                                             (9003, 6006, 6007, lambda: _robokassa(9003, 6006, "5.0"))):
+            _invite(path, payer, inviter)
+            BLOCKED.add(payer)
+            SENT.clear()
+            pay()
+            _assert(_balance(path, payer)[0] == 500, "blocked payer, invoice %d: credited" % invoice)
+            _assert(_ref_id(path, payer) is None and any(chat == inviter for chat, _ in SENT),
+                    "blocked payer, invoice %d: the inviter is awarded and told" % invoice)
 
         SENT.clear()
         _robokassa(9002, 6003, "5.0", sign=False)

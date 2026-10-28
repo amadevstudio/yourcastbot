@@ -34,7 +34,7 @@ from app.i18n.messages import get_message
 
 from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, award_referrer_for_payment
 from scripts.payment.webhook_input import robokassa_result
-from scripts.payment.credit import credit_once
+from scripts.payment.credit import credit_once, notify
 
 getps = base64.b64decode(sys.argv[1]).decode('utf-8')
 
@@ -182,9 +182,9 @@ if isOk:
 				bot.loop.run_until_complete(send_to_creator(message))
 			except Exception:
 				pass
-			bot.loop.run_until_complete(send_to_user(
+			notify(bot, send_to_user(
 				params['Shp_uid'], result_mode, current_tariff,
-				current_subscription, user_language))
+				current_subscription, user_language), "payer")
 
 			if config.server:
 				with open(payment_log_path, 'a+') as psl:
@@ -194,7 +194,7 @@ if isOk:
 		refer_id, message = award_referrer_for_payment(user['telegramId'])
 		if message is not None:
 			with bot:
-				bot.loop.run_until_complete(notify_refer(refer_id, message))
+				notify(bot, notify_refer(refer_id, message), "inviter")
 
 	except Exception as e:
 		exc_type, exc_obj, exc_tb = sys.exc_info()

@@ -11,6 +11,7 @@ from app.routes.ptypes import ControllerParams
 from app.routes.routes_list import AvailableRoutes
 from app.service.payment import paymentModule
 from db.sqliteAdapter import SQLighter
+from lib.markup import telegram_html
 from lib.telegram.general.message_master import render_messages
 from lib.tools.logger import logger
 from scripts import restart_bot as restart_bot_script
@@ -105,7 +106,7 @@ def send_users_count_to_creator(data: ControllerParams):
             text = compute_users_count_text()
         except Exception as e:
             logger.err("usersCount failed:", e)
-            text = "Не получилось посчитать: %s" % e
+            text = "Не получилось посчитать: %s" % telegram_html.escape(str(e))
         try:
             storage.set_user_resend_flag(chat_id)
             render_messages(chat_id, [{
