@@ -312,6 +312,9 @@ def test_outbox_stats(work_dir):
     _assert_eq("5001" in text or "5002" in text, False, "no chat or user ids in the report")
 
 
+FAKE_TOKEN = "1234567890:AAFakeTokenForTestsOnly_abcdefghij-XYZ"  # made up
+
+
 def test_errors(work_dir):
     """ERR/WARN of every role log by message, chat ids masked; q finds a job's lines."""
     base = os.path.join(work_dir, "errors")
@@ -326,16 +329,20 @@ def test_errors(work_dir):
                 "Connection to Telegram failed 3 time(s) send_record_helper.py:812 \n\n")
         f.write("[09:14:00 30.09.2026] LOG Exit sending %s: delivered 0/2, 389.2 MB, "
                 "retry: agent delivered the downloaded file to no chat \n\n\n\n" % link)
+        f.write("[09:15:00 30.09.2026] WARN Can't set status | HTTPSConnectionPool(host='api.telegram.org'): "
+                "Max retries exceeded with url: /bot%s/editMessageText?text=x\n" % FAKE_TOKEN)
         f.write("[01:00:00 30.09.2026] ERR outside the window\n")
     with open(os.path.join(base, "log", "updater_30_09_2026.log"), "w", encoding="utf-8") as f:
         f.write("[10:00:00 30.09.2026] WARN Feed not modified for channel 21\n")
     text = diag.as_text(diag.errors, None, hours=6, now=NOW, work_dir=base)
-    _assert_in("sender         ERR 2, WARN 1", text, "per log totals")
+    _assert_in("sender         ERR 2, WARN 2", text, "per log totals")
     _assert_in("updater        ERR 0, WARN 1", text, "every role log is read")
     _assert_in("    2x sender   09-30 09:12 .. 09-30 09:13", text, "same message, other numbers: one kind")
     _assert_in("failed 3 time(s)", text, "the latest example is shown")
     _assert_eq("outside the window" in text, False, "lines before the window are skipped")
     _assert_eq("5550001" in text, False, "chat ids masked in the summary")
+    _assert_eq(FAKE_TOKEN.split(":")[1] in text, False, "a bot token in an old line is masked")
+    _assert_in("/bot<bot token>/editMessageText", text, "the rest of the line stays")
     text = diag.as_text(diag.errors, None, hours=6, now=NOW, work_dir=base, q="SCIM2211492808")
     _assert_in("== Log lines containing 'SCIM2211492808', last 6h (server-local): 2", text,
                "q: lines of that enclosure")

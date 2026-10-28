@@ -9,6 +9,18 @@ from lib.tools.runtime_logging import RuntimeHandler, install_runtime_logging
 
 
 class LoggingTest(unittest.TestCase):
+    def test_bot_token_never_reaches_a_log_line(self):
+        import io
+        from contextlib import redirect_stdout
+        from lib.tools.logger import Logger, redact
+        token = "1234567890:" + "AAFakeTokenForTestsOnly_abcdefghij-XYZ"  # made up
+        out = io.StringIO()
+        with patch("config.server", False), redirect_stdout(out):
+            Logger(file="test").warn("Max retries exceeded with url: /bot%s/editMessageText" % token)
+        self.assertNotIn(token.split(":")[1], out.getvalue())
+        self.assertIn("/bot<bot token>/editMessageText", out.getvalue())
+        self.assertEqual(redact("chat 5550001, 12:30"), "chat 5550001, 12:30")  # ids and times stay
+
     def test_library_error_and_warning_become_diagnostic_lines(self):
         target = Mock()
         handler = RuntimeHandler(target)
