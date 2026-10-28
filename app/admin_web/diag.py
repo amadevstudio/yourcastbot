@@ -45,6 +45,7 @@ import re
 import sqlite3
 
 import config
+from lib.tools.logger import redact
 
 LOSSY_SINCE = datetime.datetime(2026, 9, 3)  # 7830e35: the nosub flag moves the cursor
 OUTBOX_KEEP = datetime.timedelta(days=7)
@@ -830,7 +831,8 @@ def log_names(work_dir=None):
 
 
 def _flat(text, limit):
-    """One line, ids masked, at most limit characters."""
+    """One line, ids and bot tokens masked, at most limit characters."""
+    text = redact(text)  # lines written before the logger redacted them
     text = LONG_NUMBER.sub("#", " | ".join(p.strip() for p in text.split("\n") if p.strip()))
     return text if len(text) <= limit else text[:limit - 3] + "..."
 

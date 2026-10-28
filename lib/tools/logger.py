@@ -2,9 +2,20 @@ import sys
 import os
 import datetime
 import queue
+import re
 import threading
 
 import config
+
+
+# A bot token, "<bot id>:<secret>". telebot puts it in every request URL, and a
+# requests error quotes the URL: a WARN on 2026-10-26 wrote the whole token to
+# the sender log, which /api/diag/errors serves.
+BOT_TOKEN = re.compile(r"\d{6,}:[A-Za-z0-9_-]{30,}")
+
+
+def redact(text: str) -> str:
+    return BOT_TOKEN.sub("<bot token>", text)
 
 
 # class Logger(metaclass=Singleton):
@@ -60,7 +71,7 @@ class Logger:
                 result += str(arg) + " "
             result = result[0:-1]
 
-        result += "\n"
+        result = redact(result) + "\n"
 
         if config.server and self.file is not None:
             self.__set_dated_filename(now)
