@@ -46,7 +46,16 @@ _USER_UNAVAILABLE_SNIPPETS = (
 )
 
 
+# The agent (Telethon, files over 50 MB) says it in its own words: "User is
+# blocked (caused by SendMediaRequest)". Unrecognized, a blocked chat was
+# "delivered to no chat" and the job retried: 8 downloads and uploads of 93 MB
+# for one blocked user (2026-10-28).
+_TELETHON_USER_UNAVAILABLE = ("UserIsBlockedError", "InputUserDeactivatedError")
+
+
 def user_unavailable_error(e):
+	if type(e).__name__ in _TELETHON_USER_UNAVAILABLE:
+		return True
 	text = str(e)
 	return any(snippet in text for snippet in _USER_UNAVAILABLE_SNIPPETS)
 

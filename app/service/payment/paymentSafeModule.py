@@ -16,6 +16,17 @@ def prepare_price(price, ensurement: float = 0) -> float:
     return prepared_price
 
 
+def days_left_text(time_left) -> str:
+    """Whole days left on a plan, for our HTML messages.
+
+    Under a day is "&lt;1": a bare "<1" is a tag to Telegram, which refused the
+    whole menu on a trial's last day (2026-10-27) and the payment notices with it.
+    """
+    if 0 < time_left < 24:
+        return "&lt;1"
+    return str(math.floor(time_left / 24))
+
+
 def is_subscription_active(subscription):
     return subscription is not None and (subscription['tariff_id'] > 0 and subscription['time_left'] > 0)
 
@@ -34,11 +45,7 @@ def get_tariff_info_message(
             % str(prepare_price(price - balance, 0.5))
     tariff_info_message += "\n"
     if time_left is not None:
-        if 0 < time_left < 24:
-            days_left_str = "<1"
-        else:
-            days_left_str = str(math.floor(time_left / 24))
-        tariff_info_message += get_message("days_left", language_code) % days_left_str
+        tariff_info_message += get_message("days_left", language_code) % days_left_text(time_left)
     tariff_info_message += "\n"
     if notify_left is not None:
         if notify_left == -1:

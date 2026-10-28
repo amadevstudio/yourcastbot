@@ -37,6 +37,7 @@ jobs:
       - name: Storefront and copy guards
         run: |
           python3 app/service/payment/test_storefront.py
+          python3 app/service/payment/test_days_left.py
           python3 app/service/payment/test_referral_award.py
           python3 app/service/payment/test_patreon_credit.py
           python3 scripts/payment/test_webhook_credit.py

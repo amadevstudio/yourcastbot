@@ -48,6 +48,16 @@ def main():
     for text in still_alive:
         _assert_eq(user_unavailable_error(text), False, text[:48])
 
+    # The agent's Telethon errors: the class says it, the text is its own
+    # ("User is blocked (caused by SendMediaRequest)"). Their names, no telethon here.
+    for name, text in (("UserIsBlockedError", "User is blocked (caused by SendMediaRequest)"),
+                       ("InputUserDeactivatedError", "The specified user was deleted")):
+        error = type(name, (Exception,), {})(text)
+        _assert_eq(user_unavailable_error(error), True, name)
+        _assert_eq(expected_send_noise(error), True, name + " is WARN, not ERR")
+    not_found = type("ValueError", (Exception,), {})("Could not find the input entity for PeerUser")
+    _assert_eq(user_unavailable_error(not_found), False, "agent cannot resolve a chat: not blocked")
+
     stale_edit = [
         "Bad Request: message to edit not found",
         "Bad Request: MESSAGE_ID_INVALID",
