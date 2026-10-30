@@ -249,6 +249,9 @@ def main(argv=None):
             ensure_tariff_rows()
         except Exception as e:
             logger.err("Tariff rows skipped:", e)
+        # the creator sees every start: which commit, and whether the last run stopped cleanly
+        from app.core.start_notice import announce_start
+        announce_start(ROLES)
         run_supervisor()
         return
     os.environ.setdefault("YOURCAST_ROLE", args.role)
