@@ -15,7 +15,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from app.service.payment.paymentSafeModule import days_left_text, get_tariff_info_message  # noqa: E402
+from app.service.payment.paymentSafeModule import days_left_text, get_tariff_info_message, money_text  # noqa: E402
 
 # what Telegram's HTML parse mode takes; anything else after "<" is refused
 _TAG = re.compile(r'</?([a-zA-Z-]+)[^>]*>')
@@ -46,6 +46,10 @@ def main():
         for hours in (5, 1062):
             text = get_tariff_info_message('Relay', 100, 500, hours, -1, language)
             _assert_eq(_telegram_html(text), True, "tariff info, %s, %d h: Telegram HTML" % (language, hours))
+    _assert_eq((money_text(0), money_text(500), money_text(450), money_text(499)), ("0", "5", "4.50", "4.99"),
+               "dollars read 0, 5, 4.50, 4.99, not 0.0 and 5.0")
+    text = get_tariff_info_message('Relay', 0, 500, 300, -1, 'en')
+    _assert_eq("0💲</b> (not enough for renewal: 5💲)" in text, True, "the balance, a space, what renewal lacks")
     print("all days-left checks passed")
 
 

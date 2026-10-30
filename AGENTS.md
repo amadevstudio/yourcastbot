@@ -812,8 +812,12 @@ Lock: `python app/admin_web/test_product.py` (CD gate).
 
 `/start` is a new message (`resending` for a command): a newcomer's welcome
 plan, sent just before it, used to be edited into the screen and never read.
-It shows the top podcasts in the user's language (then worldwide) as
-checkboxes, and a tap on one subscribes to it; a second tap unsubscribes
+It shows the podcasts with the most listeners (subscriptions with new episodes
+on, the chat's own left out so a tick never moves the list; in Apple's catalog,
+an episode in the last 60 days, 3+ listeners) among users of the user's language
+(then worldwide) as checkboxes, not the "Top" screen's average rating, which put
+shows a few people rated high first (`onboarding.popular_podcasts`). "Done"
+shows once something is ticked. A tap on one subscribes to it; a second tap unsubscribes
 (`app/controller/builders/onboarding.py`, actions `wPick` / `wSub`,
 state independent: the welcome message stays in the chat). It used to tick
 only, with a button that subscribed to the ticked ones: people ticked and

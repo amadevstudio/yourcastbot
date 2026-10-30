@@ -7,7 +7,7 @@ from lib.telegram.general.message_master import render_messages, MessageStructur
 from app.i18n.messages import get_message, standartSymbols
 from app.repository.storage import storage
 from app.service.payment import paymentModule
-from app.service.payment.paymentSafeModule import days_left_text
+from app.service.payment.paymentSafeModule import days_left_text, money_text
 from config import db_path, advertising_contact
 from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
@@ -41,7 +41,7 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
                        days_left_text(time_left) + " "
             message += \
                 get_message("not_enough_for_renewal", language_code) \
-                % str(paymentModule.prepare_price(tariff['price'] - balance, 0.5))
+                % money_text(tariff['price'] - balance, 0.5)
 
     ad_message = get_advertising_text(chat_id, language_code)
     if ad_message is not None:
