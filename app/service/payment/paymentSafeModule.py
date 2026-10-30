@@ -16,6 +16,12 @@ def prepare_price(price, ensurement: float = 0) -> float:
     return prepared_price
 
 
+def money_text(cents, ensurement: float = 0) -> str:
+    """Dollars for a message: 5, 4.50, 0 (prepare_price printed 5.0 and 0.0)."""
+    value = prepare_price(cents, ensurement)
+    return "%d" % value if value == int(value) else "%.2f" % value
+
+
 def days_left_text(time_left) -> str:
     """Whole days left on a plan, for our HTML messages.
 
@@ -38,11 +44,11 @@ def get_tariff_info_message(
                           "</b>" + "\n"
     tariff_info_message += "<b>" + \
                            (get_message(
-                               "curr_balance", language_code) % str(prepare_price(balance))) + "</b>"
+                               "curr_balance", language_code) % money_text(balance)) + "</b>"
     if balance < price:
-        tariff_info_message += \
+        tariff_info_message += " " + \
             get_message("not_enough_for_renewal", language_code) \
-            % str(prepare_price(price - balance, 0.5))
+            % money_text(price - balance, 0.5)
     tariff_info_message += "\n"
     if time_left is not None:
         tariff_info_message += get_message("days_left", language_code) % days_left_text(time_left)

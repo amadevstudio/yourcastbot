@@ -24,6 +24,14 @@ show whose name is written in a script the language does not use (Arabic
 letters for English) is left out: the list stays readable. Podcasts the
 user already has are left out too: /start again suggests new ones, and
 ticking one they have would only re-fetch its feed and take a free slot.
+
+"Popular" is listeners (subscriptions with new episodes on), not the "Top"
+screen's average rating: by rating the list was shows a few people rated
+high (2026-10-30: an obscure show with a coarse name first in Spanish, while
+The Wild Project and Nadie Sabe Nada had 20 listeners each). Only shows in
+Apple's catalog with an episode in the last FRESH_DAYS and at least
+MIN_LISTENERS listeners: a dead or private feed is a bad first subscription.
+"Done" shows once something is ticked: "Done (0)" read as a button to press.
 """
 import json
 import unicodedata
@@ -31,6 +39,7 @@ import unicodedata
 from app.i18n.messages import get_message
 from app.service.podcast.subscription import add_sub
 from config import db_path, max_subscriptions_without_tariff
+from db.connection import connect_sqlite
 from db.sqliteAdapter import SQLighter
 from lib.markup import telegram_html
 from lib.tools.logger import logger
@@ -43,6 +52,8 @@ SCRIPTS = {'en': {'LATIN'}, 'pt': {'LATIN'}, 'es': {'LATIN'}, 'de': {'LATIN'},
 PICK_ACTION = 'wPick'
 SUBSCRIBE_ACTION = 'wSub'
 NAME_LIMIT = 48
+MIN_LISTENERS = 3
+FRESH_DAYS = 60
 
 
 def name_scripts(name) -> set:
@@ -54,6 +65,27 @@ def readable(name, language_code) -> bool:
     """Every letter in a script the language's readers read ('پادکست WonderLand' is not English)."""
     scripts = SCRIPTS.get(str(language_code or '').split('-')[0].lower())
     return scripts is None or name_scripts(name) <= scripts
+
+
+def popular_podcasts(language_code, lang_top, limit, database=None, chat_id=None) -> list[dict]:
+    """[{id, name}]: the shows with the most listeners (new episodes on), among users with
+    this Telegram language (lang_top) or anyone; in Apple's catalog, alive, MIN_LISTENERS+.
+    chat_id's own subscriptions do not count: its tick must not move the list it ticked in."""
+    connection = connect_sqlite(db_path if database is None else database)
+    try:
+        rows = connection.execute(
+            "SELECT ch.id, ch.name, COUNT(DISTINCT s.user_telegram_id) listeners "
+            "FROM user_channel_cs s JOIN users u ON u.telegramId = s.user_telegram_id "
+            "JOIN channels ch ON ch.id = s.channel_id "
+            "WHERE s.notify = 1 AND u.deleted_at IS NULL AND ch.itunes_id IS NOT NULL AND s.user_telegram_id != ? "
+            "AND substr(ch.last_date, 1, 10) >= date('now', ?) %s "
+            "GROUP BY ch.id HAVING listeners >= ? ORDER BY listeners DESC, ch.id LIMIT ?"
+            % ("AND u.lang = ?" if lang_top else ""),
+            ((int(chat_id or 0), '-%d days' % FRESH_DAYS) + ((str(language_code),) if lang_top else ())
+             + (MIN_LISTENERS, int(limit)))).fetchall()
+    finally:
+        connection.close()
+    return [{'id': row[0], 'name': row[1]} for row in rows]
 
 
 def picker(language_code, chat_id=None, mark=None, count=PICKS, database=None) -> tuple[list[dict], int, set]:
@@ -69,7 +101,7 @@ def picker(language_code, chat_id=None, mark=None, count=PICKS, database=None) -
         seen = {channel_id for channel_id, row_id in subs.items() if row_id <= int(mark)}
         top_list, spare = [], count * 2 + len(seen)  # rows left out as unreadable or already subscribed
         for lang_top in (True, False):
-            for row in db_users.select_top(None, language_code, lang_top, None, None, count + spare, 0):
+            for row in popular_podcasts(language_code, lang_top, count + spare, database, chat_id):
                 if len(top_list) >= count:
                     break
                 if row['id'] not in seen and readable(row['name'], language_code):
@@ -104,10 +136,10 @@ def welcome_message(language_code, top_list, ticked=(), mark=0, note=None) -> li
             'text': ('✅ ' if row['id'] in ticked else '▫️ ') + name,
             'callback_data': {'tp': PICK_ACTION, 'i': index, 'u': int(mark), 'h': checksum},
         }])
-    if top_list:
+    picked_count = sum(1 for row in top_list if row['id'] in ticked)
+    if picked_count:
         rows.append([{
-            'text': get_message('welcomeSubscribePicked', language_code).format(
-                count=sum(1 for row in top_list if row['id'] in ticked)),
+            'text': get_message('welcomeSubscribePicked', language_code).format(count=picked_count),
             'callback_data': {'tp': SUBSCRIBE_ACTION, 'u': int(mark), 'h': checksum},
         }])
     rows.append([{'text': get_message('goToSearch', language_code), 'callback_data': {'tp': 'search'}}])

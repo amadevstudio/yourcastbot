@@ -71,6 +71,11 @@ def _buttons(screen):
     return [button for row in screen[0]['reply_markup'] for button in row]
 
 
+def _fake_popular(onboarding):
+    onboarding.popular_podcasts = lambda language_code, lang_top, limit, database=None, chat_id=None: \
+        FakeDB().select_top(None, language_code, lang_top)
+
+
 def test_picker(onboarding):
     onboarding.SQLighter = FakeDB
     top = onboarding.top_podcasts('en')
@@ -108,9 +113,52 @@ def test_picker(onboarding):
     _assert(onboarding.read_tap(json.dumps(old))[1:] == (0b101, checksum, None),
             "a button drawn before has no mark: its mask is ticks never subscribed")
     _assert([row['id'] for row in onboarding.picked(top, 0b101)] == [10000, 10002], "mask to podcasts")
+    plain = [b['callback_data']['tp'] for b in _buttons(onboarding.welcome_message('en', top, set(), mark=1))]
+    _assert(onboarding.SUBSCRIBE_ACTION not in plain and plain[-2:] == ['search', 'menu'],
+            "nothing ticked: no \"Done (0)\", search and skip stay")
     big = onboarding.welcome_message('en', top, set(range(10000, 10008)), mark=10 ** 9)
     _assert(all(len(json.dumps(b['callback_data']).encode()) <= 64 for b in _buttons(big)),
             "and with a mark of ten digits")
+
+
+def test_popular(onboarding):
+    """Popular is listeners, not ratings: alive, in Apple's catalog, MIN_LISTENERS+, and the
+    chat's own subscriptions do not count (its tick must not move the list)."""
+    import sqlite3
+    import tempfile
+    import time
+    recent = time.strftime('%Y-%m-%dT%H:%M:%S+0000', time.gmtime(time.time() - 86400))
+    old = time.strftime('%Y-%m-%dT%H:%M:%S+0000', time.gmtime(time.time() - 200 * 86400))
+    fd, path = tempfile.mkstemp(suffix='.sqlite')
+    os.close(fd)
+    try:
+        c = sqlite3.connect(path)
+        c.executescript("""
+            CREATE TABLE users (telegramId INTEGER, lang TEXT, deleted_at TEXT);
+            CREATE TABLE channels (id INTEGER, itunes_id INTEGER, name TEXT, last_date TEXT);
+            CREATE TABLE user_channel_cs (user_telegram_id INTEGER, channel_id INTEGER, notify INTEGER);
+        """)
+        c.executemany("INSERT INTO channels VALUES (?, ?, ?, ?)", [
+            (1, 11, 'Big', recent), (2, 12, 'Small', recent), (3, None, 'Not listed', recent),
+            (4, 14, 'Dead', old), (5, 15, 'Spanish', recent)])
+        users = [(100 + i, 'en', None) for i in range(6)] + [(200 + i, 'es', None) for i in range(3)]
+        c.executemany("INSERT INTO users VALUES (?, ?, ?)", users + [(300, 'en', '2026-10-01')])
+        subs = [(100 + i, 1, 1) for i in range(5)] + [(100 + i, 2, 1) for i in range(3)] \
+            + [(100 + i, 3, 1) for i in range(6)] + [(100 + i, 4, 1) for i in range(6)] \
+            + [(200 + i, 5, 1) for i in range(3)] + [(105, 2, 0), (300, 2, 1)]
+        c.executemany("INSERT INTO user_channel_cs VALUES (?, ?, ?)", subs)
+        c.commit()
+        c.close()
+        _assert([r['name'] for r in onboarding.popular_podcasts('en', True, 8, path)] == ['Big', 'Small'],
+                "by listeners; not listed, dead, muted and blocked listeners left out")
+        _assert([r['name'] for r in onboarding.popular_podcasts('es', True, 8, path)] == ['Spanish'],
+                "in the user's language")
+        _assert([r['name'] for r in onboarding.popular_podcasts('es', False, 8, path)] == ['Big', 'Small', 'Spanish'],
+                "worldwide: everyone's")
+        _assert([r['name'] for r in onboarding.popular_podcasts('en', True, 8, path, chat_id=100)] == ['Big'],
+                "the chat's own subscriptions do not count: Small falls under the minimum without it")
+    finally:
+        os.remove(path)
 
 
 def test_ticks_are_subscriptions(onboarding):
@@ -199,6 +247,8 @@ def main():
     onboarding = import_builder("onboarding")
     if onboarding is None:
         return
+    test_popular(onboarding)
+    _fake_popular(onboarding)
     test_picker(onboarding)
     test_ticks_are_subscriptions(onboarding)
     test_subscribe(onboarding)
