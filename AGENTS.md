@@ -601,6 +601,15 @@ channel and sends `#restarted` with the channel id. So `#problem
 #restarted` always means something went wrong.
 Lock: `python app/jobs/test_updater_resume.py`.
 
+Every start of the supervisor (`python main.py`: a deploy, `supervisorctl
+restart`, a reboot) sends the creator one `#info` line
+(`app/core/start_notice.py`): the commit and its subject, the roles, and
+whether the last run stopped cleanly (the updater's clean-stop mark, read
+before the updater takes it). On the server only, in a thread of its own: it
+never delays or fails a start. A role the supervisor restarts says so
+itself (`main._announce_restart_if_needed`).
+Lock: `python app/core/test_start_notice.py`.
+
 ## Circle pace
 
 The circle fetches a feed in full for ~550 of ~3400 channels (the rest answer
