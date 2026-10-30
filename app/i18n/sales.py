@@ -57,6 +57,20 @@ ROWS = {
         'Cualquier plan quita el límite:',
         'Jeder Tarif hebt das Limit auf:',
         'כל מסלול מסיר את המגבלה:'),
+    'trialEpisodesUsed': (
+        'На пробном периоде можно скачать до {limit} выпусков в сутки, на сегодня они закончились.',
+        'The trial gives up to {limit} episodes a day by tap, and today’s are used up.',
+        'No período de teste são até {limit} episódios por dia, e os de hoje acabaram.',
+        'En la prueba puedes descargar hasta {limit} episodios al día, y los de hoy se acabaron.',
+        'Im Testzeitraum gibt es bis zu {limit} Folgen pro Tag, die von heute sind aufgebraucht.',
+        'בתקופת הניסיון אפשר לקבל עד {limit} פרקים ביום, ושל היום נגמרו.'),
+    'trialEpisodesNext': (
+        'Следующий – через {hours} ч. Оплата Relay сразу снимает лимит, а новые выпуски ваших подкастов приходят как обычно.',
+        'The next one in {hours} h. Paying for Relay lifts the limit at once; new episodes of your podcasts keep arriving as usual.',
+        'O próximo em {hours} h. Pagar o Relay remove o limite na hora; os episódios novos dos seus podcasts continuam chegando.',
+        'El siguiente en {hours} h. Pagar Relay quita el límite al instante; los episodios nuevos de tus pódcasts siguen llegando.',
+        'Die nächste in {hours} Std. Mit Relay fällt das Limit sofort weg; neue Folgen deiner Podcasts kommen weiter wie gewohnt.',
+        'הבא בעוד {hours} שעות. תשלום על Relay מסיר את המגבלה מיד, ופרקים חדשים של הפודקאסטים שלך ממשיכים להגיע כרגיל.'),
     'starsBundleButton': (
         '📅 Relay на {months} мес. · −{discount}% · {stars} ⭐',
         '📅 Relay for {months} mo · −{discount}% · {stars} ⭐',

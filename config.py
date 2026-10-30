@@ -93,6 +93,9 @@ server_usd_month = 10
 max_subscriptions_without_tariff = 15
 # episodes a listener without a plan gets by click in any 7 days (app/service/record/free_limit.py)
 free_rec_per_week = 10
+# episodes by click a plan nobody paid for (the welcome trial, referral days) gets in any 24 hours:
+# one trial took ~1000 episodes of one show in 4 days and held a rec worker of 4 (2026-10)
+trial_rec_per_day = 100
 
 # максимальная длина подкаста хэша для идентификации подкаста
 maxPodcastDateCallDataHexLen = 15
