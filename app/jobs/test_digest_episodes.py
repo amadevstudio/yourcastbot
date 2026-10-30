@@ -1,4 +1,5 @@
-"""The digest names its episodes, keeps the payment and mute controls, and its copy exists in every language."""
+"""The digest names its episodes, keeps the payment and mute controls, and its copy exists in every language;
+its A/B: variant b leads with the episodes, one line on Relay, and the first month's offer when given."""
 import json
 import os
 import sys
@@ -76,6 +77,34 @@ class DigestMessage(unittest.TestCase):
         self.assertNotIn('• point', text, "the first line only")
         with patch.object(ai, 'gist', side_effect=RuntimeError('locked')):
             self.assertNotIn('📝', self.digest_message([entry], 'en')['text'], "a failing lookup never fails the digest")
+
+    def test_variant_b(self):
+        from app.jobs.digest_watcher import digest_variant
+        self.assertEqual((digest_variant(1005), digest_variant(1015), digest_variant(-1015)), ('a', 'b', 'b'),
+                         "split by the tens digit, not parity (the own-show nudge's)")
+        listening.remember('Episode one', 'Show', {'tp': 'rec', 'id': 17, 'dh_n': 'abcdef_9'},
+                           self.db, channel_id=17, cursor='c')
+        listening.flag_digest([101], 17, 'c', self.db)
+        entry = listening.digest(101, self.db)[0]
+        offer_row = [{'text': 'offer', 'callback_data': {'tp': 'bs_stars_pay', 'o': 'wb', 's': 'd'}}]
+        for lang in LANGUAGES:
+            screen = self.digest_message([entry], lang, variant='b', offer=('🎁 offer line', offer_row))
+            self.assertTrue(screen['text'].startswith('<b>' + get_message('digestEpisodes', lang)),
+                            "the episodes first")
+            self.assertNotIn(get_message('youHaveNewEpisodes', lang), screen['text'])
+            self.assertTrue(screen['text'].endswith(get_message('digestRelayLine', lang) + '\n🎁 offer line'),
+                            "one line on Relay, then the offer")
+            tps = [_data(row[0])['tp'] for row in screen['reply_markup']]
+            self.assertEqual(tps, ['rec', 'bs_stars_pay', 'bs_stars', 'bs_trfs', 'digestMute'],
+                             "the offer's invoice above the Stars page, change-plan and mute stay")
+            self.assertEqual(_data(screen['reply_markup'][2][0]).get('s'), 'd', "pay taps say: digest")
+        plain = self.digest_message([entry], 'en', variant='b')
+        self.assertEqual([_data(row[0])['tp'] for row in plain['reply_markup']],
+                         ['rec', 'bs_stars', 'bs_trfs', 'digestMute'], "no offer given: no offer row")
+        self.assertTrue(self.digest_message([], 'en', variant='b')['text'].startswith(
+            get_message('youHaveNewEpisodes', 'en')), "no episodes to lead with: the old text")
+        self.assertEqual(self.digest_message([entry], 'en', variant='a', offer=('x', offer_row))['text'],
+                         self.digest_message([entry], 'en')['text'], "variant a is the digest as it was")
 
     def test_listen_buttons_share_rows(self):
         listening.remember('Episode', 'Show', {'tp': 'rec', 'id': 17, 'dh_n': 'abcdef_9'},

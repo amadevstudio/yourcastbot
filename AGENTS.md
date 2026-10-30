@@ -599,7 +599,15 @@ ACK deletes only the revision shown. An episode someone already has a
 summary of shows its first line (`ai.gist`, by channel and title, the
 episode's own language first): nothing new is made for a digest.
 "Listen" is the ordinary rec button
-and searches by hash from the start (positions change); three to a row. Snapshots nothing
+and searches by hash from the start (positions change); three to a row. The digest is an A/B
+(2026-10-30: ~5.2k a week, 0.5% tapped Listen; `digest_watcher.digest_variant`,
+by the tens digit of the chat id, not parity: the own-show nudge splits by
+parity): "a" is the digest as it was; "b" leads with the episodes, says Relay
+in one line under them and, to a chat that never paid and has not spent the
+win-back offer, offers Relay's first month at its discount
+(`plan_end.trial_offer`, source `d`: sending it opens the offer, its invoice
+above the Stars page). Both keep Relay, change-plan and mute; the pay buttons
+carry `s: d`, `digest_sent` carries `variant` and `offer`. Snapshots nothing
 refers to expire after 90 days; a hard user delete takes the user's queued
 digest episodes. A "listen later" list was tried and left out (it halved
 episode titles in the list for little use). Locks:
