@@ -145,6 +145,15 @@ remove plan management or hide Bronze/Silver.
   (`d3`, `po`, `wb`): their taps say where they were.
   Locks: `python app/jobs/test_relay_remind.py` (the plan-off part needs the
   bot's requirements), `python app/i18n/test_relay_copy.py`.
+- `outer_sender` never raises: what Telegram did not take (no network, a
+  flood wait, a blocked user) is an empty answer. A D-3 that got one is not
+  marked sent and goes again the next hour. A plan-off notice that got one is
+  noted (`bot_runtime_kv` `plan_off_retry_<chat>`) and goes again each hour,
+  built anew, for a day while the plan is still off
+  (`balance_watcher.retry_plan_off_notices`): the tick has already ended the
+  plan, and the notice used to be lost with the send (the server was without
+  network for 25 minutes on 2026-10-30). A blocked user is marked deleted and
+  leaves both. Lock: `python app/jobs/test_relay_remind.py`.
 
 ## Referrals, paywall, prepaid months, win-back
 

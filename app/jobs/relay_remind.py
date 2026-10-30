@@ -163,13 +163,19 @@ def send_relay_d3_reminders(database=None):
             # the discounted month in one tap; the Stars page of every plan stays next to it
             markup.insert(0, offer_row)
         try:
-            _send(telegram_id, [{
+            sent_messages = _send(telegram_id, [{
                 "type": "text",
                 "text": text,
                 "reply_markup": markup,
             }])
         except Exception as e:
             logger.err("relay_d3:", telegram_id, e)
+            continue
+        if not sent_messages:
+            # outer_sender answers [] for what Telegram did not take (no network, a flood
+            # wait, a blocked user): not marked, the next hour tries again; a blocked user
+            # is marked deleted and leaves the list
+            logger.warn("relay_d3 not sent, again next hour:", telegram_id)
             continue
         mark_d3_sent(telegram_id, database=db_file)
         analytics_events.plan_reminder_sent(

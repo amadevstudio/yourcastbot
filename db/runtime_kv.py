@@ -99,6 +99,17 @@ def delete_kv(key, database=None):
         conn.close()
 
 
+def items_with_prefix(prefix, database=None):
+    """[(key, value)] of every key that starts with prefix."""
+    conn = _connect(database)
+    try:
+        return [(row["key"], row["value"]) for row in conn.execute(
+            "SELECT key, value FROM bot_runtime_kv WHERE substr(key, 1, ?) = ?",
+            (len(prefix), str(prefix)))]
+    finally:
+        conn.close()
+
+
 def incr_kv(key, database=None):
     """Atomically increment an integer value, starting from 0."""
     conn = _connect(database)

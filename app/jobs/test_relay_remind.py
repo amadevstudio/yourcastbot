@@ -314,6 +314,36 @@ def _trial_end(sent):
         message, offered = balance_watcher.plan_off_message(npu, None, database=path)
         _assert(not offered and message['reply_markup'][0][0]["callback_data"] == {"tp": "bs_stars", "s": "po"},
                 "a payer's plan-off: no discount, Stars first as before")
+
+        # a plan-off Telegram did not take (no network, a flood wait) goes again next hour
+        from db import runtime_kv
+        conn = sqlite3.connect(path)
+        conn.execute("UPDATE user_tariff_cs SET time_left = 0 "
+                     "WHERE uid IN (SELECT id FROM users WHERE telegramId IN (401, 404))")
+        conn.commit()
+        conn.close()
+        balance_watcher.note_plan_off_unsent(401, database=path)
+        balance_watcher.note_plan_off_unsent(402, database=path)  # its plan runs again (paid since)
+        balance_watcher.note_plan_off_unsent(404, database=path, now=time.time() - 25 * 3600)
+        tries = []
+
+        def no_network(chat_id, messages):
+            tries.append(chat_id)
+            return []
+        balance_watcher.retry_plan_off_notices({}, database=path, send=no_network)
+        _assert_eq(tries, [401], "only a plan still off, within a day, is sent again")
+        _assert_eq([key for key, _ in runtime_kv.items_with_prefix(balance_watcher.PLAN_OFF_RETRY, database=path)],
+                   [balance_watcher.PLAN_OFF_RETRY + "401"], "and kept while Telegram does not take it")
+        delivered = []
+
+        def telegram(chat_id, messages):
+            delivered.append(messages[0])
+            return [{"id": 1}]
+        balance_watcher.retry_plan_off_notices({}, database=path, send=telegram)
+        _assert(len(delivered) == 1 and delivered[0]['reply_markup'][0][0]["callback_data"]
+                == {"tp": "bs_stars_pay", "o": WINBACK_OFFER, "s": "po"}, "the retry carries the trial's offer")
+        _assert_eq(runtime_kv.items_with_prefix(balance_watcher.PLAN_OFF_RETRY, database=path), [],
+                   "then it is forgotten")
     finally:
         os.remove(path)
 
@@ -405,6 +435,18 @@ def main():
         _assert_eq([row[0] for row in sent], [108, 110, 111],
                    "a running Stars subscription for this plan gets no D-3; one whose period is over, "
                    "one paying for another plan (Bronze's $1 on Relay) and one below today's price do")
+
+        # Telegram did not take it (no network, a flood wait): outer_sender answers []
+        conn = sqlite3.connect(path)
+        _add_user(conn, 112, 40)
+        conn.close()
+        relay_remind._send = lambda chat_id, messages, **_kwargs: []
+        _assert_eq(relay_remind.send_relay_d3_reminders(database=path), 0, "a D-3 Telegram did not take is not counted")
+        _assert_eq(relay_remind.d3_already_sent(112, database=path), False, "nor marked sent")
+        relay_remind._send = fake_sender
+        del sent[:]
+        relay_remind.send_relay_d3_reminders(database=path)
+        _assert_eq([row[0] for row in sent], [112], "the next hour sends it")
     finally:
         os.remove(path)
 
