@@ -135,6 +135,30 @@ export default function Product() {
             )}
           </Card>
 
+          <Card className="min-w-0">
+            <h2 className="mb-1 font-semibold">Напоминание "свой подкаст": A/B</h2>
+            <Hint className="mb-4">
+              Новички без своего подкаста через 1–6 ч после /start. Чётный id получает напоминание,
+              нечётный – контроль. "Не дошло": Telegram не принял сообщение.
+            </Hint>
+            {data.nudge.length === 0 ? (
+              <Hint>За {data.days} дн. в группах ещё никого нет.</Hint>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-3">
+                {data.nudge.map((g) => (
+                  <Metric
+                    key={g.group}
+                    label={
+                      g.group === "sent" ? "Получили" : g.group === "control" ? "Контроль" : "Не дошло"
+                    }
+                    value={`${pct(g.own_sub, g.new)}%`}
+                    hint={`Свой подкаст у ${g.own_sub} из ${g.new}; эпизод получили ${g.got_episode}, заблокировали ${g.blocked}, заплатили ${g.paid}.`}
+                  />
+                ))}
+              </div>
+            )}
+          </Card>
+
           <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             <Card className="min-w-0">
               <h2 className="mb-4 font-semibold">Тарифы сейчас</h2>

@@ -54,8 +54,8 @@ def _setup(path, now):
         "INSERT INTO users (id, telegramId, deleted_at, created_at, flags, nosub_digest_enabled, "
         "nosub_digest_sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [(1, NEW_ACTIVE, None, stamp(2)[:19], '{"auto_summary": true}', 1, None),
-         (2, NEW_IDLE, None, stamp(10)[:19], None, 1, stamp(1)[:19]),
-         (3, NEW_GONE, stamp(1)[:19], stamp(3)[:19], None, 0, None),
+         (2, NEW_IDLE, None, stamp(10)[:19], '{"own_show_nudge": "control"}', 1, stamp(1)[:19]),
+         (3, NEW_GONE, stamp(1)[:19], stamp(3)[:19], '{"own_show_nudge": "sent"}', 0, None),
          (4, OLD_PAYER, None, stamp(200)[:19], None, 1, stamp(20)[:19]),
          (5, creator, None, stamp(1)[:19], None, 1, None),
          # their first 30 days are over: paid on day 2, paid on day 40, never paid
@@ -117,6 +117,10 @@ def main():
         _assert_eq(got['ai_usd'], 0.012, 'AI spend: summaries and questions')
         _assert_eq(report['activity'], {'clickers': 1, 'clicks': 1, 'automatic': 2, 'listeners': 2},
                    'who got episodes')
+        _assert_eq(report['nudge'], [
+            {'group': 'control', 'new': 1, 'own_sub': 0, 'got_episode': 0, 'blocked': 0, 'paid': 0},
+            {'group': 'sent', 'new': 1, 'own_sub': 0, 'got_episode': 0, 'blocked': 1, 'paid': 0}],
+            "the own-show nudge's A/B: newcomers by group, the unmarked ones left out")
         _assert_eq(report['digest'], {'last_week': 1, 'muted': 0}, 'digest: last week, a blocked user left out')
 
         _assert_eq(report['paid_first_days'], {'days': 30, 'matured': 0, 'paid': 0, 'own_sub': 0,
