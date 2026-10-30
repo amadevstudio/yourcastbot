@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""D-3 Relay reminder: once per period. Temp DB only.
+"""D-3 Relay reminder: once per period. Under the plan's text: the user's podcasts
+that stop coming as files, the recap, and for a Relay trial nobody paid for the
+first month at the win-back discount (its invoice first, the Stars page and
+change-plan still next to it); the plan-off notice says the same. Temp DB only.
 
 Run from the repo root: python app/jobs/test_relay_remind.py
 """
@@ -184,6 +187,137 @@ def _recap(sent):
         os.remove(path)
 
 
+def _local(year, month, day):
+    import datetime
+    return datetime.datetime(year, month, day, 12).timestamp()
+
+
+def _trial_end(sent):
+    """The loss line and the trial's offer, in D-3 and in the plan-off notice."""
+    from unittest.mock import patch
+    from app.i18n.messages import get_message
+    from app.service import analytics_events
+    from app.service.payment import plan_end
+    from app.service.payment.offers import OFFER_SENT_FLAG, WINBACK_OFFER, offer_open
+    fd, path = tempfile.mkstemp(suffix=".sqlite")
+    os.close(fd)
+    events = []
+
+    def track(telegram_id, event, properties=None, database=None, **_kw):
+        events.append((telegram_id, event, properties))
+        return True
+    try:
+        db = SQLighter(path)
+        try:
+            _schema(db.connection)
+            db.connection.executescript("""
+                INSERT INTO tariffs (id, level, price, notify_count) VALUES (1, 1, 100, 100);
+                CREATE TABLE channels (id INTEGER PRIMARY KEY, name TEXT);
+                CREATE TABLE user_channel_cs (id INTEGER PRIMARY KEY, user_telegram_id INTEGER,
+                    channel_id INTEGER, notify INTEGER);
+                CREATE TABLE payment_history (id INTEGER PRIMARY KEY, user_id INTEGER, service_type TEXT,
+                    invoice_id TEXT, invoice_hash TEXT, status TEXT, amount INTEGER, datetime TEXT);
+                INSERT INTO channels VALUES (21, 'TED Talks Daily'), (5, 'Darknet &amp; Diaries'),
+                    (6, 'Lex <i>Fridman</i> & Co'), (7, 'Hard Fork'), (8, 'Huberman Lab');
+            """)
+            # 401: the welcome show and four of their own (newest last); 7 is muted
+            db.connection.executemany(
+                "INSERT INTO user_channel_cs (user_telegram_id, channel_id, notify) VALUES (?, ?, ?)",
+                [(401, 21, 1), (401, 7, 0), (401, 8, 1), (401, 6, 1), (401, 5, 1),
+                 (402, 21, 1), (403, 21, 1), (403, 6, 1), (404, 5, 1)])
+            db.connection.commit()
+            _add_user(db.connection, 401, 60, lang="ru")      # a Relay trial
+            _add_user(db.connection, 402, 60, lang="en")      # paid once: no discount
+            _add_user(db.connection, 403, 60, lang="en", tariff_id=1)  # a Bronze trial: Relay's terms are not its own
+            _add_user(db.connection, 404, 60, lang="en")      # the weekly digest is off
+            uid = db.connection.execute("SELECT id FROM users WHERE telegramId = 402").fetchone()[0]
+            db.connection.execute("INSERT INTO payment_history (user_id, status, amount) VALUES (?, 'paid', 500)",
+                                  (uid,))
+            db.connection.commit()
+        finally:
+            db.close()
+        SQLighter(path).close()  # the users columns the bot adds (digest, flags) now that the table exists
+        conn = sqlite3.connect(path)
+        conn.execute("UPDATE users SET nosub_digest_enabled = 0 WHERE telegramId = 404")
+        conn.commit()
+        conn.close()
+
+        _assert_eq(plan_end.user_shows(401, database=path),
+                   (["<b>Darknet &amp; Diaries</b>", "<b>Lex Fridman &amp; Co</b>"], 4),
+                   "the user's own shows first, newest first, escaped; the welcome show counts last")
+        _assert_eq(plan_end.shows_text(["<b>A</b>"], 1, "en"), "<b>A</b>", "one show")
+        _assert_eq(plan_end.shows_text(["<b>A</b>", "<b>B</b>"], 2, "ru"), "<b>A</b> и <b>B</b>", "two shows")
+        _assert_eq(plan_end.usd(350), "$3.50", "cents")
+        _assert_eq(plan_end.usd(500), "$5", "a round price")
+        _assert_eq(plan_end.date_text(_local(2026, 11, 8), "ru"), "8 ноября", "the day the plan ends, ru")
+        _assert_eq(plan_end.date_text(_local(2026, 11, 8), "en"), "Nov 8", "and en")
+        _assert_eq(plan_end.loss_text(999, "en", database=path), ("", 0), "no podcasts: no line")
+
+        del sent[:]
+        with patch.object(analytics_events, 'track', track):
+            count = relay_remind.send_relay_d3_reminders(database=path)
+        _assert_eq(count, 4, "every plan that will expire is reminded")
+        by_user = {row[0]: row for row in sent}
+        text, markup = by_user[401][1], by_user[401][2]
+        relay = get_message("relay_trial_ending", "ru") % 2
+        date = plan_end.date_text(plan_end.ends_at(60), "ru")
+        loss = ("🎙 С %s новые выпуски <b>Darknet &amp; Diaries</b>, <b>Lex Fridman &amp; Co</b> и ещё 2 "
+                "будут приходить текстом раз в неделю, а не файлом." % date)
+        offer = "🎁 Первый месяц Relay со скидкой 30%: $3.50 вместо $5."
+        _assert_eq(text, relay + "\n\n" + loss + "\n\n" + offer,
+                   "the Relay text as it is, first; then the shows that stop coming as files; then the offer")
+        _assert_eq(markup[0][0], {"text": "⭐ Relay −30%: первый месяц за $3.50",
+                                  "callback_data": {"tp": "bs_stars_pay", "o": WINBACK_OFFER, "s": "d3"}},
+                   "the discounted month's invoice in one tap, first")
+        _assert_eq([row[0]["callback_data"] for row in markup[1:3]],
+                   [{"tp": "bs_stars", "s": "d3"}, {"tp": "bs_trfs", "s": "d3"}],
+                   "the Stars page of every plan and change-plan still next to it, tagged for Amplitude")
+        _assert_eq(markup[-1][0]["callback_data"], {"tp": "bs_stars_sub"}, "the Stars subscription stays last")
+        _assert(offer_open(401, WINBACK_OFFER, database=path), "the offer is open: its invoice will be sold")
+        _assert("🎁" not in by_user[402][1] and by_user[402][2][0][0]["callback_data"]["tp"] == "bs_stars",
+                "a user who paid before renews at the price: no discount")
+        _assert("🎁" not in by_user[403][1] and "<b>Lex Fridman &amp; Co</b> and <b>TED Talks Daily</b>" in by_user[403][1],
+                "a Bronze plan: its shows are named, Relay's discount is not offered")
+        _assert_eq(offer_open(403, WINBACK_OFFER, database=path), False, "and stays closed")
+        _assert("of <b>Darknet &amp; Diaries</b> will stop arriving as files." in by_user[404][1]
+                and "will come as a weekly" not in by_user[404][1],
+                "the digest is off: the line promises no weekly text")
+        reminders = {chat: props for chat, event, props in events if event == 'plan_reminder_sent'}
+        _assert_eq(reminders[401], {'level': 3, 'days_left': 2, 'paid_before': False, 'offer': True, 'shows': 4},
+                   "D-3 is counted with its offer")
+        _assert_eq((reminders[402]['paid_before'], reminders[402]['offer']), (True, False), "a payer's without one")
+
+        # the plan-off notice (needs the bot's requirements: balance_watcher sends through telebot)
+        try:
+            from app.jobs import balance_watcher
+        except ModuleNotFoundError as e:
+            print("skip plan-off notice (%s)" % e.name)
+            return
+        conn = sqlite3.connect(path)
+        conn.execute("UPDATE users SET flags = json_remove(flags, '$.%s') WHERE telegramId = 401" % OFFER_SENT_FLAG)
+        conn.commit()
+        conn.close()
+        npu = {'telegramId': 401, 'lang': 'en', 'tlevel': 3, 'tprice': 500, 'tid': 3, 'balance': 0}
+        message, offered = balance_watcher.plan_off_message(npu, None, database=path)
+        _assert(offered and message['text'].startswith(
+                    get_message("tariff_cannot_be_prolonged_by_daemon", "en") + "\n\n🎙 New episodes of "
+                    "<b>Darknet &amp; Diaries</b>, <b>Lex Fridman &amp; Co</b> and 2 more now come as a weekly "
+                    "text reminder, not as files."),
+                "plan-off: the Relay text as it is, then the shows that no longer come as files")
+        _assert(message['text'].endswith("🎁 Your first month of Relay is 30% off: $3.50 instead of $5."),
+                "and the trial's offer last")
+        _assert_eq([row[0]["callback_data"] for row in message['reply_markup'][:3]],
+                   [{"tp": "bs_stars_pay", "o": WINBACK_OFFER, "s": "po"}, {"tp": "bs_stars", "s": "po"},
+                    {"tp": "bs_trfs", "s": "po"}], "the offer's invoice, the Stars page, change-plan")
+        _assert(offer_open(401, WINBACK_OFFER, database=path), "the plan-off notice opens the offer too")
+        npu = {'telegramId': 402, 'lang': 'en', 'tlevel': 3, 'tprice': 500, 'tid': 3, 'balance': 0}
+        message, offered = balance_watcher.plan_off_message(npu, None, database=path)
+        _assert(not offered and message['reply_markup'][0][0]["callback_data"] == {"tp": "bs_stars", "s": "po"},
+                "a payer's plan-off: no discount, Stars first as before")
+    finally:
+        os.remove(path)
+
+
 def main():
     _assert_eq(relay_remind.days_left_label(72), 3, "72h is 3 days")
     _assert_eq(relay_remind.days_left_label(25), 1, "25h floors to 1")
@@ -276,6 +410,7 @@ def main():
 
     _plans(sent)
     _recap(sent)
+    _trial_end(sent)
     print("all relay_remind checks passed")
 
 

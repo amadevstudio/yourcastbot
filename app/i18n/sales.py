@@ -135,6 +135,80 @@ ROWS = {
         '📝 resúmenes con IA: {n}',
         '📝 KI-Zusammenfassungen: {n}',
         '📝 סיכומי AI: {n}'),
+    # Under the plan's text at the end of a plan (app/service/payment/plan_end.py):
+    # the user's podcasts that stop arriving as files, on {date} (D-3) or now (plan-off);
+    # Muted: the weekly digest is off, so no text reminder either
+    'planLossAt': (
+        '🎙 С {date} новые выпуски {shows} будут приходить текстом раз в неделю, а не файлом.',
+        '🎙 From {date}, new episodes of {shows} will come as a weekly text reminder, not as files.',
+        '🎙 A partir de {date}, os episódios novos de {shows} chegarão como um lembrete semanal em texto, não como arquivo.',
+        '🎙 Desde el {date}, los episodios nuevos de {shows} llegarán como un recordatorio semanal de texto, no como archivo.',
+        '🎙 Ab dem {date} kommen neue Folgen von {shows} nur noch als wöchentliche Text-Erinnerung, nicht als Datei.',
+        '🎙 החל מ-{date} פרקים חדשים של {shows} יגיעו כתזכורת טקסט שבועית ולא כקובץ.'),
+    'planLossAtMuted': (
+        '🎙 С {date} новые выпуски {shows} перестанут приходить файлом.',
+        '🎙 From {date}, new episodes of {shows} will stop arriving as files.',
+        '🎙 A partir de {date}, os episódios novos de {shows} deixarão de chegar como arquivo.',
+        '🎙 Desde el {date}, los episodios nuevos de {shows} dejarán de llegar como archivo.',
+        '🎙 Ab dem {date} kommen neue Folgen von {shows} nicht mehr als Datei.',
+        '🎙 החל מ-{date} פרקים חדשים של {shows} יפסיקו להגיע כקובץ.'),
+    'planLossNow': (
+        '🎙 Теперь новые выпуски {shows} приходят текстом раз в неделю, а не файлом.',
+        '🎙 New episodes of {shows} now come as a weekly text reminder, not as files.',
+        '🎙 Agora os episódios novos de {shows} chegam como um lembrete semanal em texto, não como arquivo.',
+        '🎙 Ahora los episodios nuevos de {shows} llegan como un recordatorio semanal de texto, no como archivo.',
+        '🎙 Neue Folgen von {shows} kommen jetzt nur als wöchentliche Text-Erinnerung, nicht als Datei.',
+        '🎙 מעכשיו פרקים חדשים של {shows} מגיעים כתזכורת טקסט שבועית ולא כקובץ.'),
+    'planLossNowMuted': (
+        '🎙 Новые выпуски {shows} больше не приходят файлом.',
+        '🎙 New episodes of {shows} no longer arrive as files.',
+        '🎙 Os episódios novos de {shows} não chegam mais como arquivo.',
+        '🎙 Los episodios nuevos de {shows} ya no llegan como archivo.',
+        '🎙 Neue Folgen von {shows} kommen nicht mehr als Datei.',
+        '🎙 פרקים חדשים של {shows} כבר לא מגיעים כקובץ.'),
+    'planLossShowsTwo': (
+        '{a} и {b}',
+        '{a} and {b}',
+        '{a} e {b}',
+        '{a} y {b}',
+        '{a} und {b}',
+        '{a} ו{b}'),
+    'planLossShowsMore': (
+        '{shows} и ещё {n}',
+        '{shows} and {n} more',
+        '{shows} e mais {n}',
+        '{shows} y {n} más',
+        '{shows} und {n} weiteren',
+        '{shows} ועוד {n}'),
+    'planLossMonths': (
+        'января,февраля,марта,апреля,мая,июня,июля,августа,сентября,октября,ноября,декабря',
+        'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec',
+        'janeiro,fevereiro,março,abril,maio,junho,julho,agosto,setembro,outubro,novembro,dezembro',
+        'enero,febrero,marzo,abril,mayo,junio,julio,agosto,septiembre,octubre,noviembre,diciembre',
+        'Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember',
+        'ינואר,פברואר,מרץ,אפריל,מאי,יוני,יולי,אוגוסט,ספטמבר,אוקטובר,נובמבר,דצמבר'),
+    'planLossDate': (
+        '{d} {m}',
+        '{m} {d}',
+        '{d} de {m}',
+        '{d} de {m}',
+        '{d}. {m}',
+        '{d} ב{m}'),
+    # The end of a Relay trial: the win-back discount at once (plan_end.trial_offer)
+    'trialOfferLine': (
+        '🎁 Первый месяц Relay со скидкой {discount}%: {price} вместо {full}.',
+        '🎁 Your first month of Relay is {discount}% off: {price} instead of {full}.',
+        '🎁 O primeiro mês do Relay com {discount}% de desconto: {price} em vez de {full}.',
+        '🎁 Tu primer mes de Relay con {discount}% de descuento: {price} en lugar de {full}.',
+        '🎁 Dein erster Relay-Monat mit {discount}% Rabatt: {price} statt {full}.',
+        '🎁 החודש הראשון של Relay בהנחה של {discount}%: ‎{price} במקום ‎{full}.'),
+    'trialOfferButton': (
+        '⭐ Relay −{discount}%: первый месяц за {price}',
+        '⭐ Relay −{discount}%: first month for {price}',
+        '⭐ Relay −{discount}%: primeiro mês por {price}',
+        '⭐ Relay −{discount}%: primer mes por {price}',
+        '⭐ Relay −{discount}%: erster Monat für {price}',
+        '⭐ Relay ‎−{discount}%: חודש ראשון ב-‎{price}'),
     'offerNotAvailable': (
         'Это предложение уже недоступно.',
         'This offer is no longer available.',

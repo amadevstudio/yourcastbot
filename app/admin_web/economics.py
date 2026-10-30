@@ -6,9 +6,9 @@ AI spend (db/usage.py), revenue (payment_history). The server's monthly
 bill is a fixed cost spread over the chats that used the bot, by load:
 one delivery is one unit, LOAD_MB_PER_UNIT downloaded MB another.
 
-Revenue is the balance a payment credited (cents), the creator's own test
-payments left out. A discounted Stars bundle credits more than it charged,
-so revenue from bundles reads a little high.
+Revenue is what a payment charged (db/payments.py: a discounted Stars bundle
+or offer credits more than it charged; rows from before the column read as
+the balance they credited), the creator's own test payments left out.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 import config
 from app.admin_web.dbutil import connect
-from db import usage
+from db import payments, usage
 
 LOAD_MB_PER_UNIT = 50
 SEGMENTS = ('paid', 'trial', 'free')
@@ -57,7 +57,7 @@ def _revenue(conn, since: float, until: float) -> dict[int, float]:
     start = datetime.datetime.fromtimestamp(since).strftime(fmt)
     end = datetime.datetime.fromtimestamp(until).strftime(fmt)
     rows = conn.execute(
-        "SELECT u.telegramId tg, SUM(p.amount) cents FROM payment_history p "
+        "SELECT u.telegramId tg, SUM(%s) cents FROM payment_history p " % payments.revenue_sql(conn) +
         "JOIN users u ON u.id = p.user_id "
         "WHERE p.status = 'paid' AND p.datetime >= ? AND p.datetime < ? AND u.telegramId != ? "
         "GROUP BY u.telegramId", (start, end, int(config.creatorId))).fetchall()

@@ -6,7 +6,7 @@ from app.jobs.relay_remind import (
     clear_relay_d3_sent, relay_nudge_markup, send_relay_d3_reminders)
 from app.jobs.tariff_tick import run_tariff_tick
 from app.service import analytics_events
-from app.service.payment import stars_subscription
+from app.service.payment import plan_end, stars_subscription
 from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
 from app.service.payment.referral import invite_row
@@ -61,31 +61,17 @@ def balance_watcher(update_time):
             logger.warn("winback/start:", e)
 
         for npu in not_prolonged_users:
-            lang = npu['lang']
-            # the trial-to-paid funnel: a plan nobody paid for that ended is a trial that did not convert
-            analytics_events.plan_off(npu['telegramId'], npu['tlevel'])
-            # The plan that stopped is the user's own (Bronze, Silver, Relay).
-            message_base = plan_off_text(npu['tlevel'], lang) + "\n\n"
-
-            balance = int(npu['balance'])
-
-            tariff_str = decode_tariff(npu['tlevel'], lang)
-            message = message_base + get_tariff_info_message(
-                tariff_str, balance, npu['tprice'], 0, 0, lang)
-            tariff_row = tariffs_by_id.get(npu['tid'])
-            if tariff_row:
-                message += "\n\n" + get_message("your_tariff_description", lang) + ":\n" \
-                           + get_tariff_description_and_button_text(
-                               tariff_row, {'id': npu['tid']}, lang,
-                               show_tariff_level_text=False)['text']
-            markup = relay_nudge_markup(lang, extra_row=invite_row(npu['telegramId'], lang))
-            markup.append(stars_subscription.offer_row(lang))  # below Stars, change-plan and the invite
             try:
-                outer_sender(npu['telegramId'], [{
-                    'type': 'text',
-                    'text': message,
-                    'reply_markup': markup,
-                }])
+                message, offered = plan_off_message(npu, tariffs_by_id.get(npu['tid']))
+            except Exception as e:  # one user's notice never holds back the others'
+                logger.err("plan_off notice:", npu['telegramId'], e)
+                message, offered = None, False
+            # the trial-to-paid funnel: a plan nobody paid for that ended is a trial that did not convert
+            analytics_events.plan_off(npu['telegramId'], npu['tlevel'], offer=offered)
+            if message is None:
+                continue
+            try:
+                outer_sender(npu['telegramId'], [message])
             except Exception as e:
                 logger.err(e)
 
@@ -98,3 +84,35 @@ def balance_watcher(update_time):
             send_winback_messages()
         except Exception as e:
             logger.err("winback_batch:", e)
+
+
+def plan_off_message(npu, tariff_row, database=None):
+    """(the message, offered) for a plan the tick did not renew: the plan's own text,
+    the user's podcasts that stop coming as files, the plan, and for a Relay trial
+    the first month at the win-back discount, its invoice above the usual rows."""
+    lang = npu['lang']
+    # The plan that stopped is the user's own (Bronze, Silver, Relay)
+    message = plan_off_text(npu['tlevel'], lang) + "\n\n"
+    loss, _shows = plan_end.loss_text(npu['telegramId'], lang, database=database)
+    if loss:
+        message += loss + "\n\n"
+    # a Relay trial: the discount now, not with the win-back message a week later
+    offer, offer_row = plan_end.trial_offer(
+        npu['telegramId'], npu['tlevel'], npu['tprice'], lang, analytics_events.PLAN_OFF_SOURCE,
+        database=database)
+
+    tariff_str = decode_tariff(npu['tlevel'], lang)
+    message += get_tariff_info_message(tariff_str, int(npu['balance']), npu['tprice'], 0, 0, lang)
+    if tariff_row:
+        message += "\n\n" + get_message("your_tariff_description", lang) + ":\n" \
+                   + get_tariff_description_and_button_text(
+                       tariff_row, {'id': npu['tid']}, lang,
+                       show_tariff_level_text=False)['text']
+    if offer:
+        message += "\n\n" + offer
+    markup = relay_nudge_markup(lang, extra_row=invite_row(npu['telegramId'], lang),
+                                source=analytics_events.PLAN_OFF_SOURCE)
+    markup.append(stars_subscription.offer_row(lang))  # below Stars, change-plan and the invite
+    if offer_row:
+        markup.insert(0, offer_row)  # the discounted month first, the Stars page of every plan next
+    return {'type': 'text', 'text': message, 'reply_markup': markup}, bool(offer_row)

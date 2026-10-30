@@ -5,8 +5,10 @@ top-up invoices sent before bundles existed still pass; the win-back offer
 is billed only to a user it was sent to, closes at the pre-checkout once
 spent, and a payment that went through is credited whatever happened since.
 A payment turns on the plan it was for when no plan runs (a running one is
-only topped up); prepaid months are not sold to a running Bronze or Silver,
-and the longest bundle is one tap from /subscription.
+only topped up); prepaid months and the offer are not sold to a running
+Bronze or Silver, neither at the invoice nor at the pre-checkout (a switch in
+between), and the longest bundle is one tap from /subscription. The end of a
+trial opens the offer; payment_history keeps what a payment charged.
 
 Needs the bot's requirements (starsPaymentModule imports telebot).
 Run from the repo root: python app/service/payment/test_stars_invoice.py
@@ -84,7 +86,17 @@ def pricing():
     _assert_eq(charged_cents(1001, 10), 901, "the discounted charge rounds up to a cent")
 
 
+def _terms_open(stars):
+    """No plan running: Relay's terms are open (relay_terms reads a real database)."""
+    return patch.object(stars, 'relay_terms_open', lambda *_a, **_kw: True)
+
+
 def bundle_invoice(stars):
+    with _terms_open(stars):
+        _bundle_invoice(stars)
+
+
+def _bundle_invoice(stars):
     sent = _invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 3, 'm': 6})
     payload = json.loads(sent[0][3])
     _assert_eq((payload['b'], payload['m'], payload['d']), (3000, 6, 15),
@@ -107,6 +119,11 @@ def bundle_invoice(stars):
 
 
 def precheckout(stars):
+    with _terms_open(stars):
+        _precheckout(stars)
+
+
+def _precheckout(stars):
     forged = stars.create_payload(602, 3000, stars.stars_to_charge(3000, RATE, 60), RATE, 6, 60)
     _assert_eq(stars.validate_precheckout_payload(forged, 602, 'XTR', json.loads(forged)['s']),
                (False, "Invalid payment offer"), "a payload cannot choose its own discount")
@@ -249,6 +266,8 @@ def credit_once(stars):
         finally:
             db.close()
         _assert_eq((first, again), (True, False), "a charge is applied once, a redelivery is not")
+        _assert_eq(sqlite3.connect(path).execute("SELECT amount, charged FROM payment_history").fetchall(),
+                   [(3000, 2550)], "the payment credits 6 months and keeps what it charged: the revenue")
         _assert_eq((plan['tariff_id'], plan['time_left'], plan['balance']),
                    (3, stars.config.tariff_period, 2500),
                    "Relay renews at once and 5 more months stay on the balance")
@@ -291,8 +310,61 @@ def winback_offer(stars):
                            "the offer is spent with the payment that used it")
                 _assert_eq(db.getUserSubscriptionByTg(603)['balance'], 500,
                            "both payments credited: Relay renewed and a month on the balance")
+                _assert_eq(db.connection.execute("SELECT amount, charged FROM payment_history").fetchall()[0][:],
+                           (500, 350), "a month credited, 70% of it charged")
             finally:
                 db.close()
+    finally:
+        os.remove(path)
+
+
+def relay_terms(stars):
+    """Relay's terms (the offer, prepaid months) meet a Relay plan or none: not a running
+    Bronze, whose balance would renew Bronze with them, even after the invoice was sent.
+    The end of a trial opens the offer without a win-back schedule."""
+    from db import winback
+    from db.sqliteAdapter import SQLighter
+    from app.service.payment import offers
+    path = _temp_db()
+    db = SQLighter(path)
+    try:
+        for tg in (631, 632):
+            db.register_new_user(tg, 'en')
+        db.subscribeUserToTariffByTg(631, 3, 0, 0, -1)   # the Relay trial has ended
+        db.subscribeUserToTariffByTg(632, 3, 0, 60, -1)  # the Relay trial ends in 2.5 days (D-3)
+    finally:
+        db.close()
+    try:
+        with patch.object(offers, 'db_path', path), patch.object(winback, 'db_path', path):
+            offers.mark_offer_sent(631)
+            offers.mark_offer_sent(632)
+            sent = _invoice(stars, 631, {'tp': 'bs_stars_pay', 'o': 'wb', 's': 'po'})
+            _assert_eq(len(sent), 1, "the plan-off notice opened the offer: its invoice is sent, no schedule needed")
+            offer = sent[0][3]
+            months = stars.create_payload(631, 6000, stars.stars_to_charge(6000, RATE, 25), RATE, 12, 25, plan_id=3)
+            terms = {'offer': (offer, json.loads(offer)['s']), 'months': (months, json.loads(months)['s'])}
+            for what, (payload, amount) in terms.items():
+                _assert(stars.validate_precheckout_payload(payload, 631, 'XTR', amount)[0],
+                        "%s: no plan running, Relay's terms pass the pre-checkout" % what)
+            d3 = _invoice(stars, 632, {'tp': 'bs_stars_pay', 'o': 'wb', 's': 'd3'})
+            _assert(stars.validate_precheckout_payload(d3[0][3], 632, 'XTR', json.loads(d3[0][3])['s'])[0],
+                    "a Relay trial still running (D-3) may take the offer: Relay renews from it")
+            db = SQLighter(path)
+            try:
+                db.subscribeUserToTariffByTg(631, 1, 0, 100, 30)  # switched to Bronze after the invoice
+            finally:
+                db.close()
+            for what, (payload, amount) in terms.items():
+                _assert_eq(stars.validate_precheckout_payload(payload, 631, 'XTR', amount),
+                           (False, "Another plan is running"),
+                           "%s: refused at the pre-checkout once Bronze runs (Bronze would get it)" % what)
+            plain = stars.create_payload(631, 500, stars.stars_for_balance(500, RATE), RATE, plan_id=3)
+            _assert(stars.validate_precheckout_payload(plain, 631, 'XTR', json.loads(plain)['s'])[0],
+                    "a plain top-up of Relay's price still passes: it tops Bronze up, as before")
+            bronze = {'tariff_id': 1, 'balance': 0, 'time_left': 100, 'notify_count': 30}
+            with patch.object(_TariffsDB, 'subscription', bronze):
+                _assert_eq(_invoice(stars, 631, {'tp': 'bs_stars_pay', 'o': 'wb'}), [],
+                           "and a running Bronze is not sent the offer's invoice")
     finally:
         os.remove(path)
 
@@ -474,6 +546,7 @@ def main():
     plan_turns_on(stars)
     old_price_invoice(stars)
     winback_offer(stars)
+    relay_terms(stars)
     page_rows(stars)
     subscription(stars)
     print("all Stars invoice checks passed")

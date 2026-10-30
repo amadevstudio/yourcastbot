@@ -127,6 +127,16 @@ def main():
                                                 'own_sub_paid': 1},
                    'paid in the first 30 days: day 2 counts, day 40 does not; of those with a show of their own')
 
+        from db import payments
+        conn = sqlite3.connect(path)
+        payments.ensure_charged_column(conn)
+        conn.execute("UPDATE payment_history SET charged = 350 WHERE amount = 500 AND status = 'paid' "
+                     "AND rowid = (SELECT MIN(rowid) FROM payment_history WHERE status = 'paid')")
+        conn.commit()
+        conn.close()
+        _assert_eq(product.product(days=30, database=path, now=later)['payments']['revenue_usd'], 8.5,
+                   "revenue is what a payment charged: an offer's month counts 70%")
+
         week = product.product(days=7, database=path, now=later)
         _assert_eq(week['newcomers']['new'], 3, 'a shorter period, fewer newcomers')
 

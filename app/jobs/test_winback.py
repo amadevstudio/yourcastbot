@@ -2,7 +2,9 @@
 """Win-back: a schedule starts only when a Relay plan stops (the old expiries
 are never mailed), each message goes at most once, a flood wait retries it,
 a user back on a plan or gone hears nothing, and the discount is offered
-until it is spent. Temp DB only.
+until it is spent (open from the end of a trial that offered it). Each
+message sent is a `winback_sent` event; its buttons carry the source `wb`.
+Temp DB only.
 
 Run from the repo root: python app/jobs/test_winback.py
 """
@@ -18,7 +20,9 @@ if _ROOT not in sys.path:
 
 from app.core.sender.outbox import OutboxRetryableError  # noqa: E402
 from app.jobs import winback as job  # noqa: E402
-from app.service.payment.offers import WINBACK_OFFER, WINBACK_OFFER_FLAG, offer_open  # noqa: E402
+from app.service import analytics_events  # noqa: E402
+from app.service.payment.offers import (  # noqa: E402
+    WINBACK_OFFER, WINBACK_OFFER_FLAG, mark_offer_sent, offer_open)
 from db import winback  # noqa: E402
 from db.sqliteAdapter import SQLighter  # noqa: E402
 
@@ -49,7 +53,7 @@ def _temp_db():
     conn.commit()
     conn.close()
     db = SQLighter(path)
-    for tg in (701, 702, 703, 704, 705, 706):
+    for tg in (701, 702, 703, 704, 705, 706, 707):
         db.register_new_user(tg, 'en')
         db.subscribeUserToTariffByTg(tg, 3, 0, 0, -1)  # Relay has just stopped
     db.close()
@@ -68,8 +72,14 @@ class _Telegram:
         return [{}]
 
 
+EVENTS = []
+
+
 def _run(path, telegram, at):
-    with patch.object(job, '_send', telegram):
+    def track(telegram_id, event, properties=None, database=None, **_kw):
+        EVENTS.append((telegram_id, event, properties))
+        return True
+    with patch.object(job, '_send', telegram), patch.object(analytics_events, 'track', track):
         return job.send_winback_messages(now=at, database=path)
 
 
@@ -87,10 +97,12 @@ def schedule(path):
     _assert_eq(offer_open(701, WINBACK_OFFER, database=path), False,
                "the offer is not open before it is sent")
     _assert_eq(_run(path, telegram, T0 + 7 * DAY), 1, "the first message after a week")
-    _assert_eq(_cta(telegram.sent[0][1]), {'tp': 'bs_stars_pay', 'o': WINBACK_OFFER},
-               "it carries the offer's invoice")
-    _assert_eq(telegram.sent[0][1]['reply_markup'][1][0]['callback_data']['tp'], 'bs_trfs',
+    _assert_eq(_cta(telegram.sent[0][1]), {'tp': 'bs_stars_pay', 'o': WINBACK_OFFER, 's': 'wb'},
+               "it carries the offer's invoice, its tap says it came from win-back")
+    _assert_eq(telegram.sent[0][1]['reply_markup'][1][0]['callback_data'], {'tp': 'bs_trfs', 's': 'wb'},
                "with change-plan next to it")
+    _assert_eq(EVENTS[-1], (701, 'winback_sent', {'stage': 0, 'offer': True}),
+               "the message is counted, with its offer")
     _assert_eq(_run(path, telegram, T0 + 8 * DAY), 0, "and is never sent twice")
     _assert_eq(offer_open(701, WINBACK_OFFER, database=path), True, "the offer is open once sent")
     _assert_eq(_run(path, telegram, T0 + 30 * DAY), 1, "the last message after a month")
@@ -140,8 +152,30 @@ def spent_offer(path):
     _assert_eq(offer_open(701, WINBACK_OFFER, database=path), False, "a spent offer is closed")
     job.start_winback([{'telegramId': 701, 'tlevel': RELAY}], now=T0 + 100 * DAY, database=path)
     _run(path, telegram, T0 + 107 * DAY)
-    _assert_eq(_cta(telegram.sent[0][1]), {'tp': 'bs_stars_pay'},
+    _assert_eq(_cta(telegram.sent[0][1]), {'tp': 'bs_stars_pay', 's': 'wb'},
                "the next time Relay stops, the plain invoice without a discount")
+    _assert_eq([props for chat, _e, props in EVENTS if chat == 701][-1], {'stage': 0, 'offer': False},
+               "counted without an offer")
+
+
+def trial_end_offer(path):
+    """The end of a trial offered the discount (D-3 or plan-off): open at once, before
+    any win-back message, and the first win-back message repeats it."""
+    telegram = _Telegram()
+    _assert_eq(offer_open(707, WINBACK_OFFER, database=path), False, "not offered: closed")
+    mark_offer_sent(707, now=T0, database=path)
+    _assert_eq(offer_open(707, WINBACK_OFFER, database=path), True,
+               "offered at the end of the trial: open with no win-back message yet")
+    job.start_winback([{'telegramId': 707, 'tlevel': RELAY}], now=T0, database=path)
+    _assert_eq(offer_open(707, WINBACK_OFFER, database=path), True, "a new schedule does not close it")
+    _run(path, telegram, T0 + 7 * DAY)
+    _assert_eq(_cta(telegram.sent[0][1])['o'], WINBACK_OFFER, "the week's message repeats the offer")
+    db = SQLighter(path)
+    try:
+        db.set_user_flag(707, WINBACK_OFFER_FLAG)
+    finally:
+        db.close()
+    _assert_eq(offer_open(707, WINBACK_OFFER, database=path), False, "spent: closed, whoever offered it")
 
 
 def main():
@@ -152,6 +186,7 @@ def main():
         flood(path)
         back_or_gone(path)
         spent_offer(path)
+        trial_end_offer(path)
     finally:
         os.remove(path)
     print("all winback checks passed")

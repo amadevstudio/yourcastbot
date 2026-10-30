@@ -21,9 +21,9 @@ from typing import Any, Optional
 
 import config
 from app.admin_web.dbutil import connect
-from db import ai, usage
+from app.service.payment.plan_end import WELCOME_CHANNEL_ID  # the show every newcomer gets
+from db import ai, payments, usage
 
-WELCOME_CHANNEL_ID = 21  # the show welcomeModule subscribes every newcomer to
 ENDING_HOURS = 72  # a trial "ends soon": the D-3 reminder's window
 MAX_WEEKS = 13
 PAY_DAYS = 30  # "paid within the first N days": the share of newcomers that pay
@@ -93,7 +93,8 @@ def _plans(conn, params) -> dict:
 
 def _payments(conn, params) -> dict:
     row = conn.execute(
-        "SELECT COUNT(*) payments, COUNT(DISTINCT p.user_id) payers, COALESCE(SUM(p.amount), 0) cents, "
+        "SELECT COUNT(*) payments, COUNT(DISTINCT p.user_id) payers, COALESCE(SUM(%s), 0) cents, "
+        % payments.revenue_sql(conn) +
         "COUNT(DISTINCT CASE WHEN NOT EXISTS(SELECT 1 FROM payment_history o WHERE o.user_id = p.user_id "
         "AND o.status = 'paid' AND o.datetime < :since) THEN p.user_id END) first_time "
         "FROM payment_history p JOIN users u ON u.id = p.user_id "

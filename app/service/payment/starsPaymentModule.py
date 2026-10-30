@@ -28,7 +28,7 @@ from app.service.payment import stars_subscription
 from app.service.payment.referral import invite_row
 from app.service.payment.offers import (
     WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open,
-    prepaid_months_sold)
+    prepaid_months_sold, relay_terms_open)
 from app.service.payment.storefront import (
     SHOWCASE_TARIFF_LEVEL, plan_name, showcase_tariff, tariffs_for_storefront)
 from config import db_path, prepay_bundles
@@ -193,9 +193,12 @@ def validate_precheckout_payload(
         payload: bytes | str, user_id: int, currency: str, total_amount: int
 ) -> tuple[bool, str | None]:
     """Before Telegram takes the money: the payment matches its invoice, the
-    discount is the one sold for those terms, a one-time offer is still open.
-    The rules are checked only here: money taken is credited as it was sold,
-    even if the config or the offer changed in between."""
+    discount is the one sold for those terms, a one-time offer is still open,
+    and Relay's terms (prepaid months, an offer) meet a Relay plan or none: a
+    user who switched to Bronze after the invoice would have the discounted
+    Relay credited to Bronze's balance. The rules are checked only here: money
+    taken is credited as it was sold, even if the config or the offer changed
+    in between."""
     ok, error = validate_payment_payload(payload, user_id, currency, total_amount)
     if not ok:
         return ok, error
@@ -204,6 +207,8 @@ def validate_precheckout_payload(
         return False, "Invalid payment offer"
     if not offer_open(user_id, data["o"]):
         return False, "Offer is no longer available"
+    if (data["m"] != 1 or data["d"]) and not relay_terms_open(user_id):
+        return False, "Another plan is running"
     if data["u"] and stars_subscription.second_subscription(user_id, data["p"]):
         # Telegram would charge both every month; a renewal (same payload) passes
         return False, "Subscription is already active"
@@ -327,7 +332,8 @@ def send_invoice(data: ControllerParams):
         discount = None
     if (selected_tariff is None or selected_tariff['price'] <= 0 or discount is None
             or ((months != 1 or discount) and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)
-            or (months != 1 and not prepaid_months_sold(current_level, plan_running))):
+            # Relay's terms (months, an offer) are not sold to a running Bronze or Silver
+            or ((months != 1 or discount) and not prepaid_months_sold(current_level, plan_running))):
         notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
         return False
 
@@ -561,7 +567,9 @@ def process_successful_payment(
             userFlag=WINBACK_OFFER_FLAG if payload_data['o'] == WINBACK_OFFER else None,
             planId=payload_data['v'] or None,
             # the price one period was sold for: a later price rise does not undo the invoice
-            planPrice=payload_data['b'] // payload_data['m'] if payload_data['v'] else None)
+            planPrice=payload_data['b'] // payload_data['m'] if payload_data['v'] else None,
+            # what the payer was charged, for revenue: a bundle or an offer credits more
+            chargedCents=charged_cents(payload_data['b'], payload_data['d']))
         if result_data['already_processed']:
             return False
     finally:
@@ -577,8 +585,10 @@ def process_successful_payment(
             logger.warn("stars subscription flag:", type(e).__name__, e)
 
     analytics_events.track(user['telegramId'], 'payment', {
-        'method': STARS_SERVICE_TYPE, 'amount_cents': payload_data['b'], 'plan': payload_data['v'] or None,
-        'months': payload_data['m'], 'recurring': recurring if subscription else None})
+        'method': STARS_SERVICE_TYPE, 'amount_cents': payload_data['b'],
+        'charged_cents': charged_cents(payload_data['b'], payload_data['d']), 'plan': payload_data['v'] or None,
+        'months': payload_data['m'], 'offer': payload_data['o'] or None,
+        'recurring': recurring if subscription else None})
     # the balance is in; the referral bonus goes before any message can fail
     refer_tg_id, award_message = award_referrer_for_payment(user['telegramId'])
 
