@@ -821,6 +821,23 @@ A link from Apple Podcasts typed into search opens that podcast.
 Lock: `python app/controller/builders/test_onboarding.py` (the behaviour
 runs where the bot's requirements are installed).
 
+## Own-show nudge
+
+A newcomer with a show of their own (not only the welcome show) stays: of
+the newcomers of 21-30.10.2026, 13% of those blocked the bot and 96% of the
+rest took episodes; with only the welcome show, 33% blocked (mostly within
+a day, before anything reached them) and 20% took episodes. Between 1 and 6
+hours after joining (`users.created_at`, UTC), a chat still here with no
+subscription but the welcome show gets one message (`app/jobs/own_show_nudge.py`,
+jobs role, every 10 minutes): send a name or a link, or an OPML export, or
+tap a popular podcast (the welcome screen's buttons, state independent).
+An A/B test: even Telegram ids get it, odd ones are the control; both are
+marked (`users.flags` `own_show_nudge`: sent, unsent, control) and tracked
+(`own_show_nudge {group}`), and the page "Product" compares the groups. Once
+per chat: a send Telegram did not take is marked unsent, not retried.
+Lock: `python app/jobs/test_own_show_nudge.py` (CD gate),
+`python app/admin_web/test_product.py`.
+
 ## First episode after subscribing
 
 A subscription from the podcast page or the welcome screen queues the show's

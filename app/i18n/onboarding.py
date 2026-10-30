@@ -8,6 +8,13 @@ ROWS = {
         'Toca un pódcast para suscribirte: los episodios nuevos llegarán aquí. Tócalo otra vez para cancelar:',
         'Tippe auf einen Podcast, um ihn zu abonnieren: Neue Folgen kommen hier an. Nochmal tippen zum Abbestellen:',
         'הקישו על פודקאסט כדי להירשם: פרקים חדשים יגיעו לכאן. הקשה נוספת מבטלת:'),
+    'ownShowNudge': (
+        '🎧 Что вы слушаете? Пришлите название подкаста или ссылку на него, и новые выпуски будут приходить сюда файлом. Слушаете в другом приложении? Пришлите файл экспорта подписок (OPML), перенесём всё сразу. Или нажмите на популярный подкаст ниже:',
+        '🎧 What do you listen to? Send a podcast’s name or link, and new episodes will arrive here as files. Using another app? Send its subscriptions export (OPML) and we’ll move them all at once. Or tap a popular one below:',
+        '🎧 O que você ouve? Envie o nome ou o link de um podcast, e os episódios novos vão chegar aqui como arquivo. Usa outro app? Envie a exportação das assinaturas (OPML) e trazemos tudo de uma vez. Ou toque num popular abaixo:',
+        '🎧 ¿Qué escuchas? Envía el nombre o el enlace de un pódcast, y los episodios nuevos llegarán aquí como archivo. ¿Usas otra app? Envía la exportación de tus suscripciones (OPML) y las pasamos todas de una vez. O toca uno popular abajo:',
+        '🎧 Was hörst du? Schick den Namen oder Link eines Podcasts, und neue Folgen kommen hier als Datei an. Nutzt du eine andere App? Schick deren Abo-Export (OPML), wir übernehmen alles auf einmal. Oder tippe unten auf einen beliebten:',
+        '🎧 מה אתם שומעים? שלחו שם או קישור של פודקאסט, ופרקים חדשים יגיעו לכאן כקובץ. משתמשים באפליקציה אחרת? שלחו את קובץ ייצוא המינויים (OPML) ונעביר הכול בבת אחת. או הקישו על פודקאסט פופולרי למטה:'),
     'welcomeSubscribePicked': (
         '👍 Готово ({count})',
         '👍 Done ({count})',

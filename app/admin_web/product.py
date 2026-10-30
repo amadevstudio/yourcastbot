@@ -66,6 +66,20 @@ def _newcomers(conn, params) -> tuple[dict, list]:
     return total, ordered[:MAX_WEEKS]
 
 
+def _nudge(conn, params) -> list:
+    """The own-show nudge's A/B (app/jobs/own_show_nudge.py): newcomers of the period by
+    their mark (sent, unsent, control), with the funnel of each group."""
+    rows = conn.execute(
+        "SELECT json_extract(COALESCE(u.flags, '{}'), '$.own_show_nudge') grp, COUNT(*) n, "
+        "SUM(%s) own_sub, SUM(%s) got_episode, SUM(u.deleted_at IS NOT NULL) blocked, SUM(%s) paid "
+        "FROM users u WHERE u.created_at >= :since AND u.created_at < :until "
+        "AND json_extract(COALESCE(u.flags, '{}'), '$.own_show_nudge') IS NOT NULL GROUP BY grp ORDER BY grp"
+        % (_OWN_SUB, _GOT_EPISODE, _PAID), params).fetchall()
+    return [{'group': row['grp'], 'new': row['n'], 'own_sub': row['own_sub'] or 0,
+             'got_episode': row['got_episode'] or 0, 'blocked': row['blocked'] or 0,
+             'paid': row['paid'] or 0} for row in rows]
+
+
 def _paid_first_days(conn, params) -> dict:
     """Newcomers of the period whose first PAY_DAYS are over, and who paid in them: all of
     them, and those who subscribed to a show of their own. A share over a fixed window does
@@ -161,6 +175,7 @@ def product(days: int = 30, database: Optional[str] = None, now: Optional[float]
             'plans': _plans(conn, params),
             'payments': _payments(conn, params),
             'paid_first_days': _paid_first_days(conn, params),
+            'nudge': _nudge(conn, params),
             'ai': _ai(conn, since, until),
             'activity': _activity(conn, since, until),
             'digest': _digest(conn, until),

@@ -81,6 +81,7 @@ jobs:
           python3 db/test_usage.py
           python3 app/admin_web/test_economics.py
           python3 app/admin_web/test_product.py
+          python3 app/jobs/test_own_show_nudge.py
           python3 app/service/record/test_free_limit.py
           python3 app/controller/builders/test_onboarding.py
           python3 app/controller/builders/test_latest_episode.py

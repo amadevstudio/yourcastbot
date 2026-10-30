@@ -186,6 +186,12 @@ def run_jobs():
     t_digest_watcher.start()
     watched.append(t_digest_watcher)
 
+    # a newcomer with only the welcome show: one nudge to add their own (A/B, even ids)
+    from app.jobs.own_show_nudge import nudge_watcher
+    t_nudge_watcher = threading.Thread(target=nudge_watcher, name="Own show nudge", daemon=True)
+    t_nudge_watcher.start()
+    watched.append(t_nudge_watcher)
+
     from app.jobs.feed_recovery import recovery_watcher, notice_watcher
     t_feed_recovery = threading.Thread(
         target=recovery_watcher, name="Feed recovery", daemon=True)
