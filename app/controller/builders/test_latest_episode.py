@@ -54,8 +54,8 @@ def test_behaviour(recs):
     recs.app.service.podcast.podcast.podcast_info_query = lambda *a, **k: (state['root'], {'itunesLink': None})
     recs.outbox.open_user_rec_links = lambda chat_id: state['open']
     recs.outbox.enqueue_user_rec = lambda job: queued.append(job)
-    recs.free_limit.check = lambda chat_id, link, open_links: (state['allowed'], 60)
-    recs.free_limit.limit_message = lambda *a: {'type': 'text', 'text': 'limit'}
+    recs.free_limit.click_limit = lambda chat_id, link, open_links, lang: (
+        None if state['allowed'] else {'type': 'text', 'text': 'limit'})
     recs.render_messages = lambda chat_id, structures, *a, **k: renders.append(structures)
 
     _assert(recs.send_latest_episode(7, 1001, 'en') is True, "a subscription queues an episode")

@@ -840,9 +840,15 @@ Lock: `python app/controller/builders/test_latest_episode.py`.
 A listener without a running plan gets `free_rec_per_week` (10) episodes
 by click in any 7 days (`app/service/record/free_limit.py`), counted from
 the usage ledger (`rec`) plus their clicks still waiting in the outbox
-(fast taps must not slip past). The same episode again is free. Any
-running plan, the welcome trial included, has no limit, whatever its
-`notify_count` (clicks are not notifies). Automatic deliveries, manual
+(fast taps must not slip past). The same episode again is free. A plan
+someone paid for (`tariff_rows.paid_for_days`) has no limit, whatever its
+`notify_count` (clicks are not notifies). A running plan nobody paid for
+(the welcome trial, referral days) gets `trial_rec_per_day` (100) by click
+in any 24 hours, counted the same way (the owner's call, 2026-10-30: one
+trial took ~1000 episodes of one show in 4 days and held one of the 4 rec
+workers the whole time; the next most active user took 27 in 10 days). At
+it: Relay's invoice when the trial is Relay (paying lifts the limit at once),
+else the Stars page, and change-plan (`free_limit.click_limit`). Automatic deliveries, manual
 refresh, the episode list and the digest text are not limited; the
 digest's "Listen" is a click like any other. At the limit the click is
 not queued: the message lists every plan with its Stars price, Relay

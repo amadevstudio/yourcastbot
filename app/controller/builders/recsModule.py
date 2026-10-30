@@ -644,14 +644,15 @@ def send_record_direct(
         'recordUniqId': record_uniq_id
     }
 
-    # without a plan: free_rec_per_week episodes by click in any 7 days
+    # without a plan: free_rec_per_week episodes by click in any 7 days;
+    # a plan nobody paid for: trial_rec_per_day in any 24 hours
     open_links = outbox.open_user_rec_links(chat_id)
     if quiet and len(open_links) >= LATEST_OPEN_LIMIT:
         return False  # several podcasts ticked at once: a few episodes, not a flood
-    allowed, wait = free_limit.check(chat_id, link, open_links)
-    if not allowed:
+    limit_message = free_limit.click_limit(chat_id, link, open_links, lang_code)
+    if limit_message is not None:
         if not quiet:
-            render_messages(chat_id, [free_limit.limit_message(lang_code, wait)])
+            render_messages(chat_id, [limit_message])
         return False
 
     outbox.enqueue_user_rec(
