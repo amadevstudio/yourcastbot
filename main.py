@@ -252,7 +252,9 @@ def main(argv=None):
         # the creator sees every start: which commit, and whether the last run stopped cleanly
         from app.core.start_notice import announce_start
         announce_start(ROLES)
-        run_supervisor()
+        # after an outage the creator hears how long Telegram was gone (the lost #problem lines)
+        from app.core.telegram_link import start_watch
+        run_supervisor(on_child_exit=start_watch())
         return
     os.environ.setdefault("YOURCAST_ROLE", args.role)
     logger.log("The bot is starting", args.role, '---\n\n')

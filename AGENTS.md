@@ -610,6 +610,16 @@ never delays or fails a start. A role the supervisor restarts says so
 itself (`main._announce_restart_if_needed`).
 Lock: `python app/core/test_start_notice.py`.
 
+A message to the creator sent while the server has no network is lost: on
+2026-10-30 the network was gone for 25 minutes, the bot role exited 14 times
+(Telethon gives up after 5 reconnects) and none of its "#problem" lines
+arrived. The supervisor asks the Bot API's getMe every minute
+(`app/core/telegram_link.py`, server only, its own thread); when it answers
+again after two failed probes or a role exit, the creator gets one line: since
+when, until when, how many times each role exited meanwhile. A line that cannot
+go is tried with the next probe that answers. `send_message_to_creator` answers
+whether Telegram took the message. Lock: `python app/core/test_telegram_link.py`.
+
 ## Circle pace
 
 The circle fetches a feed in full for ~550 of ~3400 channels (the rest answer

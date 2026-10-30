@@ -175,10 +175,13 @@ def send_thread_dead_message_to_creator():
     send_message_to_creator('Поток упал! Перезагрузка роли...', level='fatal')
 
 
-def send_message_to_creator(message_text: str, level: CreatorAlertLevel = 'info'):
+def send_message_to_creator(message_text: str, level: CreatorAlertLevel = 'info') -> bool:
+    """True when Telegram took the message."""
     tagged = f"{_CREATOR_TAGS[level]}\n{message_text}"
     try:
         from agent.bot_telebot import bot
         bot.send_message(config.creatorId, tagged)
+        return True
     except Exception as e:
         logger.err("send_message_to_creator failed:", e)
+        return False
