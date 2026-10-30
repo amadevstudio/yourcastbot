@@ -12,8 +12,10 @@ The Amplitude user is `users.id`, as for taps. A user the bot does not know
 is not tracked (never a row created for them), and tracking never fails the
 caller.
 
-Events: digest_sent {episodes}, plan_off {level, paid_before},
-payment {method, amount_cents, level}, summary_ready {cached, seconds},
+Events: digest_sent {episodes}, plan_off {level, paid_before, offer},
+plan_reminder_sent {level, days_left, paid_before, offer, shows} (D-3),
+winback_sent {stage, offer}, payment {method, amount_cents, charged_cents,
+plan, months, offer, recurring}, summary_ready {cached, seconds},
 episode_delivered {mode: rec | circle, format} (one per user chat that got
 the audio: most listeners never tap, they get episodes; without it Amplitude
 saw them as gone). Each carries the user's running plan level as the user
@@ -23,7 +25,10 @@ from db.connection import connect_sqlite
 from lib.tools.logger import logger
 
 DIGEST_SOURCE = 'd'  # the `s` key of a digest's Listen button
-SOURCES = {DIGEST_SOURCE: 'digest'}
+# the `s` key of the pay buttons under the end of a plan and the win-back messages
+REMINDER_SOURCE, PLAN_OFF_SOURCE, WINBACK_SOURCE = 'd3', 'po', 'wb'
+SOURCES = {DIGEST_SOURCE: 'digest', REMINDER_SOURCE: 'reminder', PLAN_OFF_SOURCE: 'plan_off',
+           WINBACK_SOURCE: 'winback'}
 
 
 def _analytics():
@@ -107,15 +112,32 @@ def episode_delivered(chat_ids, mode, formats=None, database=None, analytics=Non
     return tracked
 
 
-def plan_off(telegram_id, level, database=None) -> bool:
-    """A plan ended (the tick did not renew it); paid_before False is a trial that did not convert."""
+def _paid_before(telegram_id, database=None):
     try:
         from db.tariff_rows import paid_for_days
-        paid_before = paid_for_days(telegram_id, database)
+        return paid_for_days(telegram_id, database)
     except Exception as e:
-        logger.warn("analytics plan_off:", type(e).__name__, e)
-        paid_before = None
-    return track(telegram_id, 'plan_off', {'level': level, 'paid_before': paid_before}, database)
+        logger.warn("analytics paid_before:", type(e).__name__, e)
+        return None
+
+
+def plan_off(telegram_id, level, database=None, offer=False) -> bool:
+    """A plan ended (the tick did not renew it); paid_before False is a trial that did not convert.
+    offer: the notice offered the first month at a discount."""
+    return track(telegram_id, 'plan_off', {'level': level, 'paid_before': _paid_before(telegram_id, database),
+                                           'offer': bool(offer)}, database)
+
+
+def plan_reminder_sent(telegram_id, level, days_left, offer, shows, database=None) -> bool:
+    """D-3 went out: the step between a plan that ends and a payment (or a plan_off)."""
+    return track(telegram_id, 'plan_reminder_sent', {
+        'level': level, 'days_left': days_left, 'paid_before': _paid_before(telegram_id, database),
+        'offer': bool(offer), 'shows': int(shows)}, database)
+
+
+def winback_sent(telegram_id, stage, offer, database=None) -> bool:
+    """A win-back message went out (stage 0: a week after the plan stopped, 1: a month)."""
+    return track(telegram_id, 'winback_sent', {'stage': int(stage), 'offer': bool(offer)}, database)
 
 
 def tap_properties(button_data) -> dict:

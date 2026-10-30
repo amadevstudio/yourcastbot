@@ -2,13 +2,17 @@
 """Once-per-period Relay reminder when time_left first enters 72 hours.
 
 Runs from the existing hourly balance_watcher. Does not touch payment apply.
-Under the plan's text, what the plan brought (recap_text): what stops is
-easier to weigh when it is counted.
+Under the plan's text: the user's podcasts that stop coming as files on that
+day (plan_end.loss_text), what the plan brought (recap_text): what stops is
+easier to weigh when it is counted, and for a Relay trial the first month at
+the win-back discount (plan_end.trial_offer), its invoice above the usual rows.
 """
 import sqlite3
 import time
 
 from app.i18n.messages import get_message
+from app.service import analytics_events
+from app.service.payment import plan_end
 from app.service.payment.referral import invite_row
 # relay_nudge_markup is imported from here by the digest and the balance watcher
 from app.service.payment.storefront import plan_ending_text, relay_nudge_markup  # noqa: F401
@@ -142,13 +146,22 @@ def send_relay_d3_reminders(database=None):
         lang = user["lang"] if user["lang"] else "en"
         days = days_left_label(user["time_left"])
         text = plan_ending_text(user["level"], days, lang)
+        loss, shows = plan_end.loss_text(
+            telegram_id, lang, ends_at=plan_end.ends_at(user["time_left"]), database=db_file)
         recap = recap_text(telegram_id, lang, database=db_file)
-        if recap:
-            text += "\n\n" + recap
+        offer, offer_row = plan_end.trial_offer(
+            telegram_id, user["level"], user["price"], lang, analytics_events.REMINDER_SOURCE, database=db_file)
+        for part in (loss, recap, offer):
+            if part:
+                text += "\n\n" + part
         # a friend's sign-up adds days: the cheapest way to keep the plan
-        markup = relay_nudge_markup(lang, extra_row=invite_row(telegram_id, lang))
+        markup = relay_nudge_markup(lang, extra_row=invite_row(telegram_id, lang),
+                                    source=analytics_events.REMINDER_SOURCE)
         # the user's own plan by a Stars subscription: below Stars, change-plan and the invite
         markup.append(stars_subscription.offer_row(lang))
+        if offer_row:
+            # the discounted month in one tap; the Stars page of every plan stays next to it
+            markup.insert(0, offer_row)
         try:
             _send(telegram_id, [{
                 "type": "text",
@@ -159,5 +172,7 @@ def send_relay_d3_reminders(database=None):
             logger.err("relay_d3:", telegram_id, e)
             continue
         mark_d3_sent(telegram_id, database=db_file)
+        analytics_events.plan_reminder_sent(
+            telegram_id, user["level"], days, bool(offer_row), shows, database=db_file)
         sent += 1
     return sent

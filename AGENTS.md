@@ -125,6 +125,26 @@ remove plan management or hide Bronze/Silver.
   after it began), else a two-week trial read "1 episode". It never fails
   the reminder.
   Lock: `python app/jobs/test_relay_remind.py`.
+- The end of a plan names what stops (`app/service/payment/plan_end.py`):
+  under the plan's text in D-3 and in the plan-off notice (built by
+  `balance_watcher.plan_off_message`), before the recap, a line with the
+  user's podcasts on auto-delivery (their own first, the welcome show last,
+  two named, "and N more") that stop coming as files on the day the plan
+  ends (D-3) or now (plan-off). With the weekly digest off it promises no
+  weekly text. Show names are feed text (`telegram_html`). No podcasts: no
+  line; it never fails the notice.
+- A Relay trial nobody paid for (`tariff_rows.paid_for_days`) that has not
+  spent the win-back offer gets it at the end of the trial, not a week
+  later (27 trials ended in October 2026, 3 tapped anything in the week
+  after): D-3 and plan-off add a line ("first month 30% off: $3.50 instead
+  of $5") and the offer's invoice as the first row, above the rows that were
+  there (Stars page of every plan, change-plan, invite, Stars subscription).
+  Sending it opens the offer (`offers.mark_offer_sent`, `users.flags`
+  `winback_offer_sent`); win-back repeats it. A payer, Bronze and Silver get
+  no discount. The pay buttons of D-3, plan-off and win-back carry `s`
+  (`d3`, `po`, `wb`): their taps say where they were.
+  Locks: `python app/jobs/test_relay_remind.py` (the plan-off part needs the
+  bot's requirements), `python app/i18n/test_relay_copy.py`.
 
 ## Referrals, paywall, prepaid months, win-back
 
@@ -168,13 +188,19 @@ remove plan management or hide Bronze/Silver.
   price and charge the discounted one; the tick renews month by month from
   the balance, so nothing else knows about them. The Stars payload carries
   `m` / `d` / `o`; the pre-checkout accepts only `offer_discount(m, o)` and,
-  for an offer, `offer_open`. `process_successful_payment` checks the payment
+  for an offer, `offer_open`, and Relay's terms (months, an offer) only while
+  Relay or no plan runs (`offers.relay_terms_open`, read then, not when the
+  invoice was sent: a switch to Bronze in between would credit Bronze with
+  Relay's discounted month). `process_successful_payment` checks the payment
   matches its invoice and nothing else: money Telegram took is credited as
   sold. A plain top-up keeps `m` / `d` / `o` out of the payload. Months are
   sold to a Relay plan or to a user with no plan running
   (`prepaid_months_sold`), never to a running Bronze or Silver (the balance
-  would renew that plan for years). The longest bundle is also a button on
-  the one-time payment page (`bs_once`), after the pay methods.
+  would renew that plan for years); the same holds for the offer. The
+  longest bundle is also a button on the one-time payment page (`bs_once`),
+  after the pay methods. `payment_history.amount` is the balance credited,
+  `charged` what the payer paid (`db/payments.py`; NULL: the same, rows
+  before it and other pay methods): revenue is the charge.
   Lock: `python app/service/payment/test_stars_invoice.py` (bot requirements).
 - A plan by a Stars subscription (`app/service/payment/stars_subscription.py`,
   action `bs_stars_sub`, the plan in `v`, else the user's own, else Relay): an invoice link (`createInvoiceLink` with
@@ -209,9 +235,10 @@ remove plan management or hide Bronze/Silver.
   `winback_after_days`, each claimed before it is sent (at most once); a
   flood wait gives it back for the next hour; the user is re-read when it
   goes (back on a plan or gone ends the schedule). The first month at
-  `winback_offer_discount` % off is open once the offer was sent and until
-  `users.flags.winback_offer_used`, set in the payment's own transaction
-  (`applyPaymentReplenishmentOnce(userFlag=...)`).
+  `winback_offer_discount` % off is open once the offer was sent (the end of
+  a trial, `users.flags.winback_offer_sent`, or the first win-back message)
+  and until `users.flags.winback_offer_used`, set in the payment's own
+  transaction (`applyPaymentReplenishmentOnce(userFlag=...)`).
   Lock: `python app/jobs/test_winback.py`.
 - Patreon (`patreonPaymentModule`): the bot cannot tell whose email it is
   told, so one membership pays one account. An email another account has is
@@ -689,15 +716,18 @@ route; the user is `users.id`). The event is the route, so a button inside it
 (`nrec`, `desc`, `sum`, `wSub`...) is the event property `action`: without
 it "Listen", "Show notes" and "Summary" were all `recs`. What the bot does on its own goes through
 `app/service/analytics_events.track` (any role; the payment scripts pass
-`sync=True`): `digest_sent {episodes}`, `plan_off {level, paid_before}`
+`sync=True`): `digest_sent {episodes}`, `plan_off {level, paid_before, offer}`
 (the tick did not renew it; `paid_before` false is a trial that did not
-convert), `payment {method, amount_cents, ...}` (Stars, CryptoBot),
+convert), `plan_reminder_sent {level, days_left, paid_before, offer, shows}`
+(D-3), `winback_sent {stage, offer}`, `payment {method, amount_cents,
+charged_cents, offer, ...}` (Stars, CryptoBot),
 `summary_ready {cached, seconds}`, `episode_delivered {mode, format}` (one per
 user chat that got the audio, from the sender: most listeners never tap, so
 without it Amplitude counted them as gone). These carry the running plan's
 level as the user property `plan` (0: none). A digest's Listen button carries
 `"s": "d"` (compact JSON, within 64 bytes), so its tap has
-`source: digest`. A link `t.me/<bot>?start=src_<name>` (a launch post:
+`source: digest`; the pay buttons of D-3, plan-off and win-back carry `d3`,
+`po`, `wb` (`source: reminder`, `plan_off`, `winback`). A link `t.me/<bot>?start=src_<name>` (a launch post:
 `src_ph`, `src_x`) is a bare /start (the welcome screen), never an action; a
 user it signs up keeps it (`users.flags` `source`, the first link only), and
 `new_user` carries `link_source`, also as the user property (lock:
@@ -720,8 +750,9 @@ the URL), and one row per AI summary with what the APIs charged. The
 sender writes it after the delivery (`Sender._record_usage`); it never fails
 a send. The free weekly limit and the admin page "Economics"
 (`app/admin_web/economics.py`, `GET /api/economics?days=`) read it.
-Revenue comes from `payment_history` (the creator's own test payments are
-not revenue); the server bill (`config.server_usd_month`) is spread over
+Revenue comes from `payment_history`, what a payment charged (`charged`,
+else `amount`: a bundle or an offer credits more), the creator's own test
+payments left out; the server bill (`config.server_usd_month`) is spread over
 chats by load. A channel's deliveries count for the user who added it.
 Locks: `python db/test_usage.py`, `python app/admin_web/test_economics.py`
 (CD gate), `python app/core/sender/test_record_delivery.py`.

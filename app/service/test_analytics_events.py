@@ -62,13 +62,21 @@ def test_plan_off(db):
     saved = analytics_events._analytics
     analytics_events._analytics = lambda: fake
     try:
-        analytics_events.plan_off(1001, 3, db)
-        _assert(fake.queued[-1]['event_properties'] == {'level': 3, 'paid_before': False},
-                "a plan nobody paid for that ended: a trial that did not convert")
+        analytics_events.plan_off(1001, 3, db, offer=True)
+        _assert(fake.queued[-1]['event_properties'] == {'level': 3, 'paid_before': False, 'offer': True},
+                "a plan nobody paid for that ended: a trial that did not convert, offered the discount")
+        analytics_events.plan_reminder_sent(1001, 3, 2, True, 4, db)
+        _assert(fake.queued[-1]['command'] == 'plan_reminder_sent' and fake.queued[-1]['event_properties'] == {
+                    'level': 3, 'days_left': 2, 'paid_before': False, 'offer': True, 'shows': 4},
+                "D-3 is counted: the step between a plan that ends and a payment")
+        analytics_events.winback_sent(1001, 1, False, db)
+        _assert(fake.queued[-1]['command'] == 'winback_sent'
+                and fake.queued[-1]['event_properties'] == {'stage': 1, 'offer': False}, "so is a win-back message")
         sqlite3.connect(db).executescript(
             "INSERT INTO payment_history(user_id, status) VALUES (7, 'paid');")
         analytics_events.plan_off(1001, 3, db)
-        _assert(fake.queued[-1]['event_properties']['paid_before'] is True, "a paid plan that ended")
+        _assert(fake.queued[-1]['event_properties'] == {'level': 3, 'paid_before': True, 'offer': False},
+                "a paid plan that ended")
     finally:
         analytics_events._analytics = saved
 
@@ -76,6 +84,9 @@ def test_plan_off(db):
 def test_tap_source():
     _assert(analytics_events.tap_properties({'tp': 'rec', 's': 'd'}) == {'source': 'digest'},
             "a digest's Listen tap carries its source")
+    for key, source in (('d3', 'reminder'), ('po', 'plan_off'), ('wb', 'winback')):
+        _assert(analytics_events.tap_properties({'tp': 'bs_stars_pay', 's': key}) == {'source': source},
+                "a pay button under %s carries its source" % source)
     _assert(analytics_events.tap_properties({'tp': 'rec'}) == {} and analytics_events.tap_properties(None) == {},
             "other taps carry nothing new")
 

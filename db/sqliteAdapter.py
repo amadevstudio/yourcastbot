@@ -11,6 +11,7 @@ from config import (
 
 from db.connection import connect_sqlite
 from db.dbTypes import UserDBType
+from db import payments
 from db.hot_indexes import ensure_hot_path_indexes
 
 from lib.tools.logger import logger
@@ -1716,7 +1717,7 @@ class SQLighter:
     def applyPaymentReplenishmentOnce(
             self, user, serviceType, invoiceId, paidAt, amountCents,
             tariff_period, invoiceHash=None, status=None, userFlag=None, planId=None,
-            planPrice=None
+            planPrice=None, chargedCents=None
     ):
         """userFlag: a users.flags key set with the payment, in its transaction
         (a one-time offer is spent exactly when its money is credited).
@@ -1729,7 +1730,13 @@ class SQLighter:
 
         planPrice: what the invoice sold one period of that plan for. The
         period it turns on costs that, not today's price: an invoice sent
-        before a price rise and paid after it still turns its plan on."""
+        before a price rise and paid after it still turns its plan on.
+
+        chargedCents: what the payer was charged when it is not amountCents (a
+        prepaid bundle or an offer credits more): payment_history.charged, the
+        revenue (db/payments.py)."""
+        if chargedCents is not None:
+            payments.ensure_charged_column(self.connection)
         try:
             self.cursor.execute("BEGIN IMMEDIATE")
             user_id = user['id']
@@ -1874,6 +1881,10 @@ class SQLighter:
                 (str(user_id), str(serviceType), str(invoiceId), invoiceHash,
                  status, int(amountCents) if amountCents is not None else amountCents,
                  str(paidAt),))
+            if chargedCents is not None:
+                self.cursor.execute(
+                    "UPDATE payment_history SET charged = ? WHERE rowid = ?",
+                    (int(chargedCents), self.cursor.lastrowid))
             if userFlag:
                 self.cursor.execute(
                     "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), ?, 1) "

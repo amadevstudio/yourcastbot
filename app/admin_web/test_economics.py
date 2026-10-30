@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Admin economics: segments, revenue without the creator's tests, the server
-bill spread by load, a channel's deliveries counted for its owner.
+"""Admin economics: segments, revenue without the creator's tests (what a payment
+charged, not the full price a bundle or an offer credits), the server bill
+spread by load, a channel's deliveries counted for its owner.
 
 Temporary file DB only. Run from the repo root:
 python app/admin_web/test_economics.py
@@ -111,6 +112,19 @@ def main():
         mine = {row['tg']: row for row in economics.economics(
             days=30, database=path, now=now, server_usd_month=10)['users']}
         _assert_eq(mine[int(config.creatorId)]['segment'], 'trial', "the creator's own tests do not make a payer")
+
+        # an offer credited a month ($5) and charged 70% of it: revenue is the charge
+        from db import payments
+        conn = sqlite3.connect(path)
+        payments.ensure_charged_column(conn)
+        conn.execute("INSERT INTO payment_history VALUES (1, 'telegramStars', 'wb', '', 'paid', 500, ?, 350)",
+                     (datetime.datetime.fromtimestamp(now - 60).strftime('%Y-%m-%d %H:%M:%S.%f'),))
+        conn.commit()
+        conn.close()
+        charged = {row['tg']: row for row in economics.economics(
+            days=30, database=path, now=now, server_usd_month=10)['users']}
+        _assert_close(charged[PAYER]['revenue_usd'], 5.0 + 3.5,
+                      "an offer's revenue is what it charged; rows before the column are their amount")
 
         quiet = economics.economics(days=7, database=path, now=now + 30 * 86400, server_usd_month=10)
         _assert_eq(quiet['users'], [], 'a period without events lists nobody')

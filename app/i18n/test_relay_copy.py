@@ -100,6 +100,23 @@ def main():
                 and plan_off_text(9, lang) == plan_off_text(3, lang),
                 "%s: an unknown level keeps the Relay text (as before)" % lang)
 
+    # The end of a plan (app/service/payment/plan_end.py): every language, its slots filled,
+    # the button within Telegram's 64 characters
+    for lang in langs:
+        for key, slots in (("planLossAt", {"shows": "<b>A</b>", "date": "8"}),
+                           ("planLossAtMuted", {"shows": "<b>A</b>", "date": "8"}),
+                           ("planLossNow", {"shows": "<b>A</b>"}), ("planLossNowMuted", {"shows": "<b>A</b>"}),
+                           ("planLossShowsTwo", {"a": "A", "b": "B"}), ("planLossShowsMore", {"shows": "A", "n": 2}),
+                           ("planLossDate", {"d": 8, "m": "11"}),
+                           ("trialOfferLine", {"discount": 30, "price": "$3.50", "full": "$5"}),
+                           ("trialOfferButton", {"discount": 30, "price": "$3.50"})):
+            text = get_message(key, lang).format(**slots)
+            _assert(text and "{" not in text and "—" not in text and "«" not in text,
+                    "%s/%s fills its slots" % (key, lang))
+        _assert(len(get_message("planLossMonths", lang).split(",")) == 12, "%s: twelve months" % lang)
+        button = get_message("trialOfferButton", lang).format(discount=30, price="$12.50")
+        _assert(len(button) <= 64, "%s: the offer button is %d chars" % (lang, len(button)))
+
     watcher = open(os.path.join(_ROOT, "app", "jobs", "balance_watcher.py"), encoding="utf-8").read()
     _assert("plan_off_text" in watcher and '"tariff_cannot_be_prolonged_by_daemon"' not in watcher,
             "the daemon's 'not prolonged' notice names the user's own plan")

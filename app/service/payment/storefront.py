@@ -103,18 +103,21 @@ def showcase_tariff(tariffs):
                  if int(_tariff_dict(t).get("level") or 0) == SHOWCASE_TARIFF_LEVEL), None)
 
 
-def relay_nudge_markup(language_code, extra_row=None, invoice=False):
+def relay_nudge_markup(language_code, extra_row=None, invoice=False, source=None):
     """Stars first, then change-plan. Do not trap the user on one SKU.
 
     invoice=True is for a limit the user has just hit: the Relay button opens
     its Stars invoice at once (one tap to pay) instead of the page of plans.
+    source: the message's key in analytics_events.SOURCES, carried by both
+    buttons (`s`) so their taps say where they were (D-3, plan-off, win-back).
     """
+    tag = {"s": source} if source else {}
     rows = [[{
         "text": get_message("relayEnableButton", language_code),
-        "callback_data": dict(RELAY_INVOICE_CALLBACK) if invoice else {"tp": "bs_stars"},
+        "callback_data": dict(RELAY_INVOICE_CALLBACK if invoice else {"tp": "bs_stars"}, **tag),
     }], [{
         "text": get_message("tariffs", language_code),
-        "callback_data": {"tp": CHANGE_PLAN_CALLBACK},
+        "callback_data": dict({"tp": CHANGE_PLAN_CALLBACK}, **tag),
     }]]
     if extra_row:
         rows.append(extra_row)
