@@ -39,7 +39,7 @@ from lib.telegram.general.message_master import MessageStructuresInterface
 PICKS = 8
 # the scripts a language's own listeners read; other languages are not filtered
 SCRIPTS = {'en': {'LATIN'}, 'pt': {'LATIN'}, 'es': {'LATIN'}, 'de': {'LATIN'},
-           'ru': {'CYRILLIC', 'LATIN'}, 'he': {'HEBREW', 'LATIN'}}
+           'ru': {'CYRILLIC', 'LATIN'}, 'he': {'HEBREW', 'LATIN'}, 'fa': {'ARABIC', 'LATIN'}}
 PICK_ACTION = 'wPick'
 SUBSCRIBE_ACTION = 'wSub'
 NAME_LIMIT = 48

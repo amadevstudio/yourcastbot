@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Every text in `messages` exists in all six languages, with the same slots.
+"""Every text in `messages` exists in all seven languages, with the same slots.
 
 A translation with another number of %s, or a {name} English does not have,
 crashes the format call; an unclosed tag makes Telegram reject the message.
@@ -17,7 +17,7 @@ if _ROOT not in sys.path:
 
 from app.i18n.messages import messages  # noqa: E402
 
-LANGUAGES = ("en", "ru", "pt-BR", "es", "de", "he")
+LANGUAGES = ("en", "ru", "pt-BR", "es", "de", "he", "fa")
 PERCENT = re.compile(r"%[sd]")
 NAME = re.compile(r"\{(\w+)\}")
 TAG = re.compile(r"<(/?)(b|i|u|s|a|code|pre)\b")

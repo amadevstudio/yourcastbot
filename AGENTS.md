@@ -351,6 +351,17 @@ never by `service_name`: since the ETag updater every channel with an
 - Locks: `python app/core/sender/test_record_delivery.py`,
   `python app/service/record/test_delivery.py`, `python lib/requests/test_url.py`.
 
+## Languages
+
+The bot speaks en, ru, pt-BR, es, de, he and fa (`messages.get_language`;
+anything else is English). Persian (`app/i18n/fa.py`, 2026-10-30) holds every
+text of every table and is merged last in `messages.py`: Persian-speaking
+newcomers were the most engaged group and read the bot in English. A new
+text needs all seven; the welcome list reads Persian names in Arabic or Latin
+letters only (`onboarding.SCRIPTS`). Persian copy uses Latin digits, as the
+numbers the bot inserts do. Lock: `python app/i18n/test_translations_complete.py`,
+`python app/i18n/test_routed_fallback.py`.
+
 ## Feed text in messages
 
 Titles, show names, descriptions and dates from feeds (and Telegram channel

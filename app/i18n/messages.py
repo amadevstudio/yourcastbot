@@ -22,6 +22,8 @@ def get_language(lang_code):
         return "de"
     elif lang_code == "he":
         return "he"
+    elif lang_code == "fa":
+        return "fa"
     else:
         return "en"
 
@@ -5050,3 +5052,15 @@ from app.i18n.episode_text import TRANSLATIONS as _EPISODE_TEXT_TRANSLATIONS
 messages.update(_EPISODE_TEXT_TRANSLATIONS)
 from app.i18n.stars_subscription import TRANSLATIONS as _STARS_SUBSCRIPTION_TRANSLATIONS
 messages.update(_STARS_SUBSCRIPTION_TRANSLATIONS)
+
+# Persian last: every text of every table above (app/i18n/fa.py)
+from app.i18n.fa import FA_MESSAGES as _FA_MESSAGES, FA_ROUTED as _FA_ROUTED
+for _key, _text in _FA_MESSAGES.items():
+    if _key in messages:
+        messages[_key]["fa"] = {"ro_msg": _text}
+for _path, _text in _FA_ROUTED.items():
+    _node = routed_messages
+    for _step in _path:
+        _node = _node.get(_step) if isinstance(_node, dict) else None
+    if isinstance(_node, dict):
+        _node["fa"] = _text

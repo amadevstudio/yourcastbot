@@ -15,7 +15,7 @@ if _ROOT not in sys.path:
 
 from app.i18n.messages import get_message_rtd, routed_messages  # noqa: E402
 
-LANGUAGES = ("en", "ru", "pt-br", "es", "de", "he", "zh-hans", None)
+LANGUAGES = ("en", "ru", "pt-br", "es", "de", "he", "fa", "zh-hans", None)
 
 
 def _assert(cond, label):
@@ -57,7 +57,7 @@ def main():
     # The episode list speaks of episodes, not subscriptions, in every language
     for key in ("empty", "empty_when_search"):
         texts = routed_messages["recs"]["errors"]["paging"][key]
-        _assert(set(texts) == {"en", "ru", "pt-BR", "es", "de", "he"},
+        _assert(set(texts) == {"en", "ru", "pt-BR", "es", "de", "he", "fa"},
                 "recs %s is translated to every language" % key)
     _assert(
         get_message_rtd(["recs", "errors", "paging", "empty_when_search"], "es")
@@ -67,8 +67,8 @@ def main():
     routes = list(_routes(routed_messages, []))
     _assert(len(routes) > 0, "routed messages found")
     untranslated = [".".join(route) for route in routes
-                    if set(_leaf(route)) < {"en", "ru", "pt-BR", "es", "de", "he"}]
-    _assert(not untranslated, "every routed text has all six languages: %r" % untranslated[:5])
+                    if set(_leaf(route)) < {"en", "ru", "pt-BR", "es", "de", "he", "fa"}]
+    _assert(not untranslated, "every routed text has all seven languages: %r" % untranslated[:5])
     empty = [(".".join(route), lang) for route in routes for lang in LANGUAGES
              if not get_message_rtd(list(route), lang)]
     _assert(not empty, "no routed message is empty in any language: %r" % empty[:5])
