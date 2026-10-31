@@ -23,6 +23,10 @@ function pct(part: number, whole: number) {
   return whole ? Math.round((part / whole) * 100) : 0;
 }
 
+function pct1(part: number, whole: number) {
+  return whole ? ((part / whole) * 100).toFixed(1) : "0.0";
+}
+
 function usd(value: number) {
   return `$${value < 1 && value > 0 ? value.toFixed(3) : value.toFixed(2)}`;
 }
@@ -138,21 +142,60 @@ export default function Product() {
           <Card className="min-w-0">
             <h2 className="mb-1 font-semibold">Напоминание "свой подкаст": A/B</h2>
             <Hint className="mb-4">
-              Новички без своего подкаста через 1–6 ч после /start. Чётный id получает напоминание,
-              нечётный – контроль. "Не дошло": Telegram не принял сообщение.
+              Новички без своего подкаста через 1–6 ч после /start, все с начала теста (период страницы
+              не влияет). Чётный id – напоминание, нечётный – контроль. Решение 30.11 по пришедшим до
+              23.11: у кого через неделю свой подкаст, "назначено" (получили и не дошло) против контроля.
             </Hint>
             {data.nudge.length === 0 ? (
-              <Hint>За {data.days} дн. в группах ещё никого нет.</Hint>
+              <Hint>В группах ещё никого нет.</Hint>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-3">
-                {data.nudge.map((g) => (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {(["assigned", "control"] as const).map((key) => {
+                    const g = data.nudge_read[key];
+                    return (
+                      <Metric
+                        key={key}
+                        label={key === "assigned" ? "Назначено" : "Контроль"}
+                        value={g.matured === 0 ? "–" : `${pct(g.matured_own_sub, g.matured)}%`}
+                        hint={`Прошла неделя у ${g.matured} из ${g.new}: свой подкаст у ${g.matured_own_sub}, заблокировали за неделю ${g.matured_blocked}.`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                  {data.nudge.map((g) => (
+                    <Metric
+                      key={g.group}
+                      label={
+                        g.group === "sent" ? "Получили" : g.group === "control" ? "Контроль" : "Не дошло"
+                      }
+                      value={g.new}
+                      hint={`Сейчас: свой подкаст у ${g.own_sub}, эпизод получили ${g.got_episode}, заблокировали ${g.blocked}, заплатили ${g.paid}.`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </Card>
+
+          <Card className="min-w-0">
+            <h2 className="mb-1 font-semibold">Дайджест: A/B</h2>
+            <Hint className="mb-4">
+              Получили дайджест с начала теста (30.10), по разряду десятков id: нечётный – b. Нажатия
+              "Слушать" – в Amplitude, решение 20.11. Здесь – сторожевые метрики: выключили, заблокировали,
+              и оплаты (сигнал, не статистика).
+            </Hint>
+            {data.digest_ab.length === 0 ? (
+              <Hint>Дайджестов с начала теста ещё не было.</Hint>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {data.digest_ab.map((v) => (
                   <Metric
-                    key={g.group}
-                    label={
-                      g.group === "sent" ? "Получили" : g.group === "control" ? "Контроль" : "Не дошло"
-                    }
-                    value={`${pct(g.own_sub, g.new)}%`}
-                    hint={`Свой подкаст у ${g.own_sub} из ${g.new}; эпизод получили ${g.got_episode}, заблокировали ${g.blocked}, заплатили ${g.paid}.`}
+                    key={v.variant}
+                    label={`Вариант ${v.variant}`}
+                    value={v.recipients}
+                    hint={`Выключили ${v.muted} (${pct1(v.muted, v.recipients)}%), заблокировали ${v.blocked} (${pct1(v.blocked, v.recipients)}%), заплатили ${v.paid}.`}
                   />
                 ))}
               </div>

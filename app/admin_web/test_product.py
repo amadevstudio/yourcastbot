@@ -25,6 +25,7 @@ from db import ai, usage  # noqa: E402
 
 NEW_ACTIVE, NEW_IDLE, NEW_GONE, OLD_PAYER = 1001, 1002, 1003, 1004
 PAID_EARLY, PAID_LATE, NEVER_PAID = 1006, 1007, 1008
+NUDGED_LONG_AGO, DIGEST_B = 1009, 1013  # tens digit 1: the digest's variant b
 
 
 def _assert_eq(got, expected, label):
@@ -61,7 +62,11 @@ def _setup(path, now):
          # their first 30 days are over: paid on day 2, paid on day 40, never paid
          (6, PAID_EARLY, None, stamp(40)[:19], None, 1, None),
          (7, PAID_LATE, None, stamp(80)[:19], None, 1, None),
-         (8, NEVER_PAID, None, stamp(50)[:19], None, 1, None)])
+         (8, NEVER_PAID, None, stamp(50)[:19], None, 1, None),
+         # long before any period: marked by the nudge, blocked on day 3 of the week
+         (9, NUDGED_LONG_AGO, stamp(397)[:19], stamp(400)[:19], '{"own_show_nudge": "unsent"}', 1, None),
+         # the digest's b: muted it, then blocked the bot
+         (10, DIGEST_B, stamp(1)[:19], stamp(400)[:19], None, 0, stamp(2)[:19])])
     conn.executemany("INSERT INTO user_tariff_cs VALUES (?, ?, ?, ?, -1, ?)",
                      [(1, 1, 3, 0, 48),     # paid (in the period): not a trial
                       (2, 2, 3, 600, 48),   # a trial ending, but its balance renews it
@@ -99,6 +104,7 @@ def main():
         path = os.path.join(tmp, 'test.sqlite')
         _setup(path, now)
         later = time.time()  # the AI queue stamps its rows itself
+        product.DIGEST_AB_SINCE = datetime.datetime.fromtimestamp(now - 25 * 86400).strftime('%Y-%m-%d %H:%M:%S')
         report = product.product(days=30, database=path, now=later)
 
         _assert_eq(report['newcomers'], {'new': 4, 'own_sub': 1, 'got_episode': 1, 'asked_summary': 1,
@@ -118,9 +124,32 @@ def main():
         _assert_eq(report['activity'], {'clickers': 1, 'clicks': 1, 'automatic': 2, 'listeners': 2},
                    'who got episodes')
         _assert_eq(report['nudge'], [
-            {'group': 'control', 'new': 1, 'own_sub': 0, 'got_episode': 0, 'blocked': 0, 'paid': 0},
-            {'group': 'sent', 'new': 1, 'own_sub': 0, 'got_episode': 0, 'blocked': 1, 'paid': 0}],
-            "the own-show nudge's A/B: newcomers by group, the unmarked ones left out")
+            {'group': 'control', 'new': 1, 'own_sub': 0, 'got_episode': 0, 'blocked': 0, 'paid': 0,
+             'matured': 1, 'matured_own_sub': 0, 'matured_blocked': 0},
+            {'group': 'sent', 'new': 1, 'own_sub': 0, 'got_episode': 0, 'blocked': 1, 'paid': 0,
+             'matured': 0, 'matured_own_sub': 0, 'matured_blocked': 0},
+            {'group': 'unsent', 'new': 1, 'own_sub': 0, 'got_episode': 0, 'blocked': 1, 'paid': 0,
+             'matured': 1, 'matured_own_sub': 0, 'matured_blocked': 1}],
+            "the own-show nudge's A/B: every marked newcomer whatever the period, the unmarked left out; "
+            "matured: the first week is over, blocked within it")
+        _assert_eq(product.product(days=1, database=path, now=later)['nudge'], report['nudge'],
+                   "the nudge's groups do not depend on the page's period")
+        _assert_eq(report['nudge_read'], {
+            'assigned': {'new': 2, 'matured': 1, 'matured_own_sub': 0, 'matured_blocked': 1},
+            'control': {'new': 1, 'matured': 1, 'matured_own_sub': 0, 'matured_blocked': 0}},
+            "the nudge is read on everyone it was meant for, sent and unsent, against the control")
+        _assert_eq(report['digest_ab'], [
+            {'variant': 'a', 'recipients': 2, 'muted': 0, 'blocked': 0, 'paid': 1},
+            {'variant': 'b', 'recipients': 1, 'muted': 1, 'blocked': 1, 'paid': 0}],
+            "the digest's A/B: who got one since it began, by the tens digit; mutes, blocks and "
+            "payments since (the old payment before it is not counted)")
+        try:
+            from app.jobs.digest_watcher import digest_variant
+        except ModuleNotFoundError as e:
+            print("skip digest_variant cross-check (%s)" % e.name)
+        else:
+            _assert_eq([digest_variant(tg) for tg in (NEW_IDLE, OLD_PAYER, DIGEST_B, -1013)], ['a', 'a', 'b', 'b'],
+                       "the page splits as the digest does")
         _assert_eq(report['digest'], {'last_week': 1, 'muted': 0}, 'digest: last week, a blocked user left out')
 
         _assert_eq(report['paid_first_days'], {'days': 30, 'matured': 0, 'paid': 0, 'own_sub': 0,
