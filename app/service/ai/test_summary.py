@@ -523,7 +523,11 @@ def test_worker(db):
         ai_watcher.summary.summarize, ai.db_path, usage.db_path = saved
     _assert(sent[0]['reply_to'] == 99 and sent[0]['reply_markup'][0][0]['text'] == '❓ Спросить о выпуске',
             "the worker's summary answers the audio, its button in the user's interface language")
+    _assert(sent[0]['reply_markup'][0][1]['callback_data'] == {'tp': 'trn', 'r': 'ep7', 'm': 99}
+            and sent[0]['reply_markup'][0][1]['text'] == '📥 Расшифровка',
+            "next to Ask: the transcript, for the same episode and audio")
     test_ask(db, summaryModule)
+    test_transcript_download(db, summaryModule)
 
 
 class Tap:
@@ -667,6 +671,69 @@ def test_ask(db, module):
     finally:
         (module.storage, module.outer_sender, module.render_messages, module.notify, module.summary.answer,
          module.summary.enabled, ai.db_path, usage.db_path, module.ai_quota.questions, free_limit.plans_offer) = saved
+
+
+def test_transcript_download(db, module):
+    """The Transcript button under a summary: the cached transcript as a text file replying to the audio."""
+    from types import SimpleNamespace
+    import agent.bot_telebot as telebot_agent
+    from lib.telegram.telebot.types import ApiTelegramException
+    documents, toasts = [], []
+
+    def send_document(chat_id, document, **kwargs):
+        documents.append(dict(kwargs, chat_id=chat_id, body=document.read().decode('utf-8')))
+
+    saved = (telebot_agent.bot, module.notify, ai.db_path)
+    telebot_agent.bot = SimpleNamespace(send_document=send_document)
+    module.notify = lambda call, message, text, alert=False: toasts.append((text, alert))
+    ai.db_path = db
+    try:
+        ai.remember_episode('ep9', 'https://cdn.example/show/ep9.mp3', 9, 'Q&amp;A: <b>why</b>/how?', 'Show',
+                            database=db)
+        ai.save_transcript('ep9', '[0:00] Hello there. [0:31] Second part. [1:02:15] Late.', 'whisper', 0.01,
+                           database=db)
+        tap = {'chat_id': 501, 'language_code': 'en', 'message': Tap({}, 55)}
+        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9', 'm': 4})))
+        document = documents[-1]
+        _assert(toasts[-1] == ('', False) and document['chat_id'] == 501 and document['reply_to_message_id'] == 4
+                and document['allow_sending_without_reply'] is True,
+                "the file replies to the audio (sent anyway if the audio is gone)")
+        _assert(document['visible_file_name'] == 'Q&A why how.txt',
+                "the file is named after the episode, without characters a file name cannot hold")
+        _assert(document['body'] == 'Show\nQ&A: why/how?\nhttps://cdn.example/show/ep9.mp3\n\n'
+                '[0:00] Hello there.\n[0:31] Second part.\n[1:02:15] Late.\n',
+                "the show, the title and the audio's link, then a line for each time mark")
+        _assert(document['caption'] == '📄 <b>Show – Q&amp;A: why/how?</b>\nTranscribed automatically: it may have '
+                'mistakes.' and document['parse_mode'] == 'HTML',
+                "the caption names the episode (escaped) and says Whisper's text may have mistakes")
+        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep7'})))
+        _assert('mistakes' not in documents[-1]['caption'] and documents[-1]['reply_to_message_id'] is None
+                and documents[-1]['body'].endswith('\n\nwords\n'),
+                "the feed's own transcript makes no such claim; no audio known: a plain message")
+        name, body = module.transcript_file({'show': 'S', 'title': 'T', 'link': 'L'}, {
+            'text': ' '.join(['Sentence number %d is here.' % i for i in range(100)])})
+        paragraphs = body.decode('utf-8').split('\n\n')[1:]
+        _assert(name == 'T.txt' and len(paragraphs) > 3 and all(p.rstrip().endswith('.') for p in paragraphs)
+                and all(len(p) < 2 * module.PARAGRAPH_CHARS for p in paragraphs),
+                "a transcript without time marks comes in paragraphs broken after a sentence, not one long line")
+        count = len(documents)
+        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'nots', 'm': 4})))
+        _assert(len(documents) == count and toasts[-1][1] is True and 'Tap "Summary"' in toasts[-1][0],
+                "no transcript (pruned): an alert that the Summary button makes it again, no file")
+        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'gone'})))
+        from app.i18n.messages import get_message
+        _assert(len(documents) == count and toasts[-1][0] == get_message('screenOutdated', 'en'),
+                "an unknown episode: an outdated screen")
+
+        def flood(chat_id, document, **kwargs):
+            raise ApiTelegramException('sendDocument', SimpleNamespace(status_code=429, reason='', text=''), {
+                'error_code': 429, 'description': 'Too Many Requests: retry after 7'})
+        telebot_agent.bot = SimpleNamespace(send_document=flood)
+        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9', 'm': 4})))  # does not raise
+        _assert(len(json.dumps(summary.transcript_button_data('0123456789abcdef', 2 ** 31), separators=(',', ':')))
+                <= 64, "the button's data fits Telegram's 64 bytes")
+    finally:
+        telebot_agent.bot, module.notify, ai.db_path = saved
 
 
 def main():

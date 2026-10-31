@@ -114,6 +114,10 @@ def test_summary_and_question(user):
             and sim.FAKE_SUMMARY.splitlines()[0] in made.edited[0].text,
             "the jobs process turns the status line into the summary")
     _assert(any(button.get('text') for button in made.edited[0].buttons[0]), "with its Ask button")
+    transcript = user.tap('Transcript', message=made.edited[0])
+    _assert(transcript.handlers == ['action_processor(recs, trn)'] and len(transcript.new) == 1
+            and transcript.new[0].kind == 'document' and 'Episode One' in transcript.new[0].text,
+            "Transcript: the text the summary was made from, as a file")
     ask = user.tap((0, 0), message=made.edited[0])
     _assert(ask.handlers == ['processor(ask)'] and ask.new, "Ask opens the question screen")
     answer = user.send('Who is the guest?')

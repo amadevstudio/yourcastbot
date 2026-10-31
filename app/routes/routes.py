@@ -109,6 +109,11 @@ class RouteMap:
                     'method': summaryModule.request_summary,
                     'state_independent': True,
                 },
+                # Transcript under a summary: the text file, a reply to the audio
+                ai_summary.TRANSCRIPT_ACTION: {
+                    'method': summaryModule.send_transcript,
+                    'state_independent': True,
+                },
                 # Show notes under a brief episode: the feed's text, a reply to the audio
                 DESCRIPTION_ACTION: {
                     'method': episodeTextModule.show_description,
