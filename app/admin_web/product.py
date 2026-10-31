@@ -27,6 +27,8 @@ from db import ai, payments, usage
 ENDING_HOURS = 72  # a trial "ends soon": the D-3 reminder's window
 MAX_WEEKS = 13
 PAY_DAYS = 30  # "paid within the first N days": the share of newcomers that pay
+NUDGE_WEEK_DAYS = 7  # the own-show nudge's A/B is read on newcomers whose first week is over
+DIGEST_AB_SINCE = '2026-10-30 21:04:00'  # the digest's A/B began (UTC, as nosub_digest_sent_at)
 _FMT = '%Y-%m-%d %H:%M:%S'
 
 
@@ -36,6 +38,8 @@ def _stamp(ts: float) -> str:
 
 _PAID = ("EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id "
          "AND p.status = 'paid' AND u.telegramId != :creator)")
+_PAID_SINCE = ("EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id "
+               "AND p.status = 'paid' AND p.datetime >= :ab AND u.telegramId != :creator)")
 _OWN_SUB = ("EXISTS(SELECT 1 FROM user_channel_cs s WHERE s.user_telegram_id = u.telegramId "
             "AND s.channel_id != :welcome)")
 _GOT_EPISODE = ("EXISTS(SELECT 1 FROM usage_events e WHERE e.user_id = u.telegramId "
@@ -67,17 +71,49 @@ def _newcomers(conn, params) -> tuple[dict, list]:
 
 
 def _nudge(conn, params) -> list:
-    """The own-show nudge's A/B (app/jobs/own_show_nudge.py): newcomers of the period by
-    their mark (sent, unsent, control), with the funnel of each group."""
+    """The own-show nudge's A/B (app/jobs/own_show_nudge.py): every newcomer it marked (the
+    marks began with it, so the page's period does not apply), by mark (sent, unsent,
+    control), with the funnel of each group. `matured`: those whose first week is over; of
+    them, a show of their own now (subscriptions keep no date) and a block within that week.
+    A block is seen when a send fails, and the nudge is a send: a week of the welcome show's
+    episodes evens that out between the groups."""
     rows = conn.execute(
-        "SELECT json_extract(COALESCE(u.flags, '{}'), '$.own_show_nudge') grp, COUNT(*) n, "
-        "SUM(%s) own_sub, SUM(%s) got_episode, SUM(u.deleted_at IS NOT NULL) blocked, SUM(%s) paid "
-        "FROM users u WHERE u.created_at >= :since AND u.created_at < :until "
-        "AND json_extract(COALESCE(u.flags, '{}'), '$.own_show_nudge') IS NOT NULL GROUP BY grp ORDER BY grp"
-        % (_OWN_SUB, _GOT_EPISODE, _PAID), params).fetchall()
-    return [{'group': row['grp'], 'new': row['n'], 'own_sub': row['own_sub'] or 0,
-             'got_episode': row['got_episode'] or 0, 'blocked': row['blocked'] or 0,
-             'paid': row['paid'] or 0} for row in rows]
+        "SELECT grp, COUNT(*) n, SUM(own) own_sub, SUM(got) got_episode, SUM(gone) blocked, "
+        "SUM(paid) paid, SUM(matured) matured, SUM(matured AND own) matured_own_sub, "
+        "SUM(matured AND gone_in_week) matured_blocked FROM ("
+        "SELECT json_extract(COALESCE(u.flags, '{}'), '$.own_show_nudge') grp, %s own, %s got, "
+        "u.deleted_at IS NOT NULL gone, %s paid, u.created_at <= :week_ago matured, "
+        "u.deleted_at IS NOT NULL AND u.deleted_at < datetime(u.created_at, :week) gone_in_week "
+        "FROM users u WHERE json_extract(COALESCE(u.flags, '{}'), '$.own_show_nudge') IS NOT NULL) "
+        "GROUP BY grp ORDER BY grp"
+        % (_OWN_SUB, _GOT_EPISODE, _PAID), {**params, 'week': '+%d days' % NUDGE_WEEK_DAYS}).fetchall()
+    keys = ('own_sub', 'got_episode', 'blocked', 'paid', 'matured', 'matured_own_sub', 'matured_blocked')
+    return [{'group': row['grp'], 'new': row['n'], **{key: row[key] or 0 for key in keys}} for row in rows]
+
+
+def _nudge_read(groups: list) -> dict:
+    """What the nudge is decided on: everyone it was meant for (sent and unsent: a nudge
+    Telegram did not take is still the nudge's group, else the blocked leave it) against
+    the control."""
+    def total(names):
+        picked = [g for g in groups if g['group'] in names]
+        return {key: sum(g[key] for g in picked) for key in ('new', 'matured', 'matured_own_sub', 'matured_blocked')}
+    return {'assigned': total(('sent', 'unsent')), 'control': total(('control',))}
+
+
+def _digest_ab(conn, params) -> list:
+    """The digest's A/B (digest_watcher.digest_variant: the tens digit of the chat id, odd is
+    b): who got a digest since it began, and of them who muted it, blocked the bot or paid
+    since. The table keeps the last digest's time only, and a muted or blocked chat gets no
+    more, so "the last one came since" is everyone it reached. Listen taps are Amplitude's."""
+    rows = conn.execute(
+        "SELECT CASE (ABS(u.telegramId) / 10) %% 2 WHEN 1 THEN 'b' ELSE 'a' END variant, COUNT(*) n, "
+        "SUM(u.nosub_digest_enabled = 0) muted, SUM(u.deleted_at IS NOT NULL AND u.deleted_at >= :ab) blocked, "
+        "SUM(%s) paid "
+        "FROM users u WHERE u.nosub_digest_sent_at >= :ab GROUP BY variant ORDER BY variant" % _PAID_SINCE,
+        {**params, 'ab': DIGEST_AB_SINCE}).fetchall()
+    return [{'variant': row['variant'], 'recipients': row['n'], 'muted': row['muted'] or 0,
+             'blocked': row['blocked'] or 0, 'paid': row['paid'] or 0} for row in rows]
 
 
 def _paid_first_days(conn, params) -> dict:
@@ -163,11 +199,12 @@ def product(days: int = 30, database: Optional[str] = None, now: Optional[float]
     usage.connect(database).close()  # the ledger and the AI queue exist even before their first row
     ai.connect(database).close()
     params = {'since': _stamp(since), 'until': _stamp(until), 'creator': int(config.creatorId),
-              'matured': _stamp(until - PAY_DAYS * 86400),
+              'matured': _stamp(until - PAY_DAYS * 86400), 'week_ago': _stamp(until - NUDGE_WEEK_DAYS * 86400),
               'welcome': WELCOME_CHANNEL_ID, 'ending': ENDING_HOURS}
     conn = connect(database)
     try:
         newcomers, weeks = _newcomers(conn, params)
+        nudge = _nudge(conn, params)
         return {
             'days': days,
             'newcomers': newcomers,
@@ -175,7 +212,9 @@ def product(days: int = 30, database: Optional[str] = None, now: Optional[float]
             'plans': _plans(conn, params),
             'payments': _payments(conn, params),
             'paid_first_days': _paid_first_days(conn, params),
-            'nudge': _nudge(conn, params),
+            'nudge': nudge,
+            'nudge_read': _nudge_read(nudge),
+            'digest_ab': _digest_ab(conn, params),
             'ai': _ai(conn, since, until),
             'activity': _activity(conn, since, until),
             'digest': _digest(conn, until),

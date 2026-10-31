@@ -103,6 +103,8 @@ export type ProductFunnel = {
   blocked: number;
 };
 
+export type NudgeRead = { new: number; matured: number; matured_own_sub: number; matured_blocked: number };
+
 export type Product = {
   days: number;
   newcomers: ProductFunnel;
@@ -110,7 +112,9 @@ export type Product = {
   plans: { paid: number; trial: number; trial_ending: number };
   payments: { payments: number; payers: number; first_time: number; revenue_usd: number };
   paid_first_days: { days: number; matured: number; paid: number; own_sub: number; own_sub_paid: number };
-  nudge: { group: string; new: number; own_sub: number; got_episode: number; blocked: number; paid: number }[];
+  nudge: (NudgeRead & { group: string; own_sub: number; got_episode: number; blocked: number; paid: number })[];
+  nudge_read: { assigned: NudgeRead; control: NudgeRead };
+  digest_ab: { variant: string; recipients: number; muted: number; blocked: number; paid: number }[];
   ai: {
     summary_taps: number;
     summary_auto: number;

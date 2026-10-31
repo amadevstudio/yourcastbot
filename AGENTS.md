@@ -607,7 +607,9 @@ in one line under them and, to a chat that never paid and has not spent the
 win-back offer, offers Relay's first month at its discount
 (`plan_end.trial_offer`, source `d`: sending it opens the offer, its invoice
 above the Stars page). Both keep Relay, change-plan and mute; the pay buttons
-carry `s: d`, `digest_sent` carries `variant` and `offer`. Snapshots nothing
+carry `s: d`, `digest_sent` carries `variant` and `offer`. The page "Product"
+shows each variant's recipients since the test began (`product.DIGEST_AB_SINCE`)
+with their mutes, blocks and payments, split as `digest_variant` splits. Snapshots nothing
 refers to expire after 90 days; a hard user delete takes the user's queued
 digest episodes. A "listen later" list was tried and left out (it halved
 episode titles in the list for little use). Locks:
@@ -856,7 +858,11 @@ jobs role, every 10 minutes): send a name or a link, or an OPML export, or
 tap a popular podcast (the welcome screen's buttons, state independent).
 An A/B test: even Telegram ids get it, odd ones are the control; both are
 marked (`users.flags` `own_show_nudge`: sent, unsent, control) and tracked
-(`own_show_nudge {group}`), and the page "Product" compares the groups. Once
+(`own_show_nudge {group}`), and the page "Product" compares the groups: every
+marked newcomer whatever the page's period, and the read it is decided on,
+those meant to get it (sent and unsent: a nudge Telegram did not take stays in
+its group, else the blocked leave it) against the control, on newcomers whose
+first week is over (a show of their own, a block within the week). Once
 per chat: a send Telegram did not take is marked unsent, not retried.
 Lock: `python app/jobs/test_own_show_nudge.py` (CD gate),
 `python app/admin_web/test_product.py`.
