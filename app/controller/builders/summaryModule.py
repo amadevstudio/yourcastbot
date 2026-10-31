@@ -16,8 +16,14 @@ goes and the episode's podcast page comes as a new message at the bottom
 (Back on it: the menu); the menu when the podcast is not known or gone (a
 plain `menu` tap would redraw the old question screen up the chat). A text after
 ASK_IDLE_SECONDS without a question is a search, as it was before Ask.
+
+Next to Ask, "Transcript" (summary.TRANSCRIPT_ACTION) sends the transcript the
+summary was made from as a .txt file replying to the audio: it is cached
+already, so it is free to anyone who has the summary, as the summary is.
 """
+import io
 import json
+import re
 import time
 from types import SimpleNamespace
 
@@ -33,7 +39,9 @@ from config import db_path
 from db import ai, usage
 from db.sqliteAdapter import SQLighter
 from lib.markup import telegram_html
+from lib.telegram.general.errors import bot_blocked_reaction, get_timeout_from_error_bot, log_caught
 from lib.telegram.general.message_master import message_deleter, message_editor, outer_sender, render_messages
+from lib.telegram.telebot.types import ApiException, ApiTelegramException
 from lib.tools.logger import logger
 
 
@@ -45,7 +53,9 @@ def summary_message(episode, text, ref=None, reply_to=None, language_code=None) 
                'disable_web_page_preview': True}
     if ref:
         message['reply_markup'] = [[{'text': get_message('askButton', language_code or 'en'),
-                                     'callback_data': summary.ask_button_data(ref, reply_to)}]]
+                                     'callback_data': summary.ask_button_data(ref, reply_to)},
+                                    {'text': get_message('transcriptButton', language_code or 'en'),
+                                     'callback_data': summary.transcript_button_data(ref, reply_to)}]]
     if reply_to:
         message['reply_to'] = int(reply_to)
     return message
@@ -111,6 +121,76 @@ def status_line(chat_id, text, reply_to=None) -> int | None:
     except Exception as e:
         logger.warn('summary status:', type(e).__name__, e)
         return None
+
+
+_MARK = re.compile(r' (?=\[\d+:\d\d(?::\d\d)?\] )')
+_SENTENCE_END = re.compile(r'(?<=[.!?…。؟])\s+')
+PARAGRAPH_CHARS = 700
+
+
+def _paragraphs(text) -> str:
+    """A transcript without time marks (one line of up to 45k characters before 2026-10-22, or the
+    feed's plain text): paragraphs of about PARAGRAPH_CHARS, broken after a sentence."""
+    paragraphs, current = [], ''
+    for sentence in _SENTENCE_END.split(text):
+        current = (current + ' ' + sentence).strip()
+        if len(current) >= PARAGRAPH_CHARS:
+            paragraphs.append(current)
+            current = ''
+    return '\n\n'.join(paragraphs + ([current] if current else []))
+
+
+def transcript_file(episode, found) -> tuple[str, bytes]:
+    """(file name, UTF-8 text) of an episode's transcript: the show, the title and the audio's link,
+    then the text with a line for each time mark (paragraphs when it has none)."""
+    title = telegram_html.plain_text(episode['title']).strip()
+    text = str(found['text']).strip()
+    text = _MARK.sub('\n', text) if _MARK.search(text) else _paragraphs(text)
+    lines = [telegram_html.plain_text(episode['show']).strip(), title, episode['link'], '', text, '']
+    # what a file name cannot hold on some system goes; Telegram keeps any other letter
+    name = ' '.join(re.sub(r'[\\/:*?"<>|\x00-\x1f]+', ' ', title).split())[:60].strip(' .') or 'transcript'
+    return name + '.txt', '\n'.join(lines).encode('utf-8')
+
+
+def send_transcript(data):
+    """The Transcript button under a summary: the transcript the summary was made from, as a text
+    file replying to the audio. It is made already (the summary needed it): free, as the summary is."""
+    language_code = data['language_code']
+    try:
+        call = json.loads(data['callback'].data)
+        ref, audio = str(call['r']), int(call.get('m') or 0) or None
+    except (AttributeError, TypeError, ValueError, KeyError):
+        ref, audio = None, None
+    episode = ai.episode(ref) if ref else None
+    if episode is None:
+        notify(data['callback'], data['message'], get_message('screenOutdated', language_code))
+        return
+    found = ai.transcript(ref)
+    if found is None:  # pruned with its summary after KEEP_DAYS: the Summary button makes both again
+        notify(data['callback'], data['message'], get_message('transcriptGone', language_code), alert=True)
+        return
+    notify(data['callback'], data['message'], '')
+    name, body = transcript_file(episode, found)
+    caption = '📄 <b>%s – %s</b>' % (telegram_html.escape(telegram_html.plain_text(episode['show'])[:200]),
+                                     telegram_html.escape(telegram_html.plain_text(episode['title'])[:300]))
+    if found['source'] == 'whisper':
+        caption += '\n' + get_message('transcriptMachine', language_code)
+    send_document(data['chat_id'], name, body, caption, audio)
+
+
+def send_document(chat_id, name, body, caption, reply_to=None):
+    """A file to a chat; what Telegram does not take (blocked, a flood) is a WARN, as in outer_sender."""
+    from agent.bot_telebot import bot
+    try:
+        bot.send_document(chat_id, io.BytesIO(body), visible_file_name=name, caption=caption, parse_mode='HTML',
+                          reply_to_message_id=reply_to, allow_sending_without_reply=True if reply_to else None)
+    except (ApiTelegramException, ApiException) as e:
+        if get_timeout_from_error_bot(e) or bot_blocked_reaction(e, chat_id):
+            logger.warn('transcript not sent:', e)
+            return
+        log_caught(logger, error=e)
+    except Exception as e:
+        log_caught(logger, error=e)
 
 
 def ask_offer_message(language_code) -> dict:

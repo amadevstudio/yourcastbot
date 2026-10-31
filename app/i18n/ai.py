@@ -117,6 +117,24 @@ ROWS = {
         'es darum geht. Fragen heute übrig: {left}.',
         'כתבו שאלה על "{title}". אענה לפי התמליל ואגיד באיזו דקה מדברים על זה. שאלות שנותרו היום: {left}.'),
     'askDone': ('Готово', 'Done', 'Pronto', 'Listo', 'Fertig', 'סיום'),
+    # the transcript as a text file, under a summary (summaryModule.send_transcript)
+    'transcriptButton': (
+        '📥 Расшифровка', '📥 Transcript', '📥 Transcrição', '📥 Transcripción', '📥 Transkript', '📥 תמליל'),
+    'transcriptMachine': (
+        'Расшифровка сделана автоматически, в ней возможны ошибки.',
+        'Transcribed automatically: it may have mistakes.',
+        'Transcrição automática: pode ter erros.',
+        'Transcripción automática: puede tener errores.',
+        'Automatisch transkribiert: Fehler sind möglich.',
+        'תומלל אוטומטית: ייתכנו טעויות.'),
+    'transcriptGone': (
+        'Расшифровки этого выпуска уже нет. Нажмите "Пересказ" под выпуском, и она появится снова.',
+        'This episode\'s transcript is gone. Tap "Summary" under the episode to make it again.',
+        'A transcrição deste episódio não existe mais. Toque em "Resumo" abaixo do episódio para refazê-la.',
+        'La transcripción de este episodio ya no está. Toca "Resumen" debajo del episodio para rehacerla.',
+        'Das Transkript dieser Folge ist nicht mehr da. Tippe unter der Folge auf "Zusammenfassung", '
+        'um es neu zu erstellen.',
+        'התמליל של הפרק הזה כבר לא קיים. לחצו על "סיכום" מתחת לפרק כדי ליצור אותו שוב.'),
     # questions about a whole podcast (app/service/ai/show_ask.py)
     'showAskButton': (
         '💬 Спросить о подкасте', '💬 Ask about the podcast', '💬 Perguntar sobre o podcast',

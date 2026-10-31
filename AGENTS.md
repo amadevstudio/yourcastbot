@@ -970,6 +970,14 @@ button; `quota.py` who may ask. The plan level is
   makes a time in a reply to the media play it from there. Transcripts made
   before have no marks, and their summaries no times. A transcript past
   `MAX_TRANSCRIPT_CHARS` (~100k tokens, 8+ hours of speech) is cut.
+- "Transcript" under a summary, next to Ask (action `trn`,
+  `summaryModule.send_transcript`): the transcript the summary was made from
+  as a `.txt` file (the show, the title, the audio's link, then a line per
+  time mark, or paragraphs after a sentence when it has none), a reply to the
+  audio. Nothing is made for it: free to whoever has the summary, as the
+  summary is. Whisper's text says it may have mistakes; a transcript pruned
+  with its summary (`KEEP_DAYS`) is an alert that "Summary" makes it again.
+  A file Telegram does not take is a WARN.
 - "Ask" under a summary opens the route `ask`: the user's next texts are
   questions, answered from the cached transcript in the incoming worker
   (one call, `ANSWER_TIMEOUT`, the transcript a prompt-cache block), as a
