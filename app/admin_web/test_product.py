@@ -96,6 +96,10 @@ def _setup(path, now):
     ai.enqueue(NEW_ACTIVE, 'ep', 'original', 600, database=path)
     request_id, _ = ai.enqueue(OLD_PAYER, 'ep2', 'original', 600, database=path, auto=True)
     ai.finish(request_id, 'failed', database=path)
+    # a transcript alone: a file in the ledger, its request not a summary
+    ai.enqueue(OLD_PAYER, 'ep3', '', 600, database=path, kind=ai.TRANSCRIPT)
+    usage.record_transcript(OLD_PAYER, 'ep3', 0.004, database=path, at=at)
+    usage.record_transcript(NEW_ACTIVE, 'ep', 0.0, database=path, at=at)
 
 
 def main():
@@ -120,7 +124,9 @@ def main():
         _assert_eq((got['summary_taps'], got['summary_auto'], got['summary_failed'], got['summary_chats']),
                    (1, 1, 1, 2), 'summaries: taps and automatic ones')
         _assert_eq((got['questions'], got['question_chats'], got['auto_on']), (2, 1, 1), 'questions, auto opt-ins')
-        _assert_eq(got['ai_usd'], 0.012, 'AI spend: summaries and questions')
+        _assert_eq((got['transcripts'], got['transcript_chats'], got['transcripts_made']), (2, 2, 1),
+                   'transcripts: files sent, to whom, made by Whisper; their requests are not summaries')
+        _assert_eq(got['ai_usd'], 0.016, 'AI spend: summaries, questions and transcripts')
         _assert_eq(report['activity'], {'clickers': 1, 'clicks': 1, 'automatic': 2, 'listeners': 2},
                    'who got episodes')
         _assert_eq(report['nudge'], [

@@ -267,6 +267,20 @@ def test_queue_and_quota(db):
     ai.finish(measured, 'done', seconds=5400, database=db)
     _assert(ai.seconds_used(501, now - 86400, db) == 3 * hour + 5400, "charged what Whisper measured, not the estimate")
 
+    summary_id, _ = ai.enqueue(506, 'both', 'original', hour, db)
+    transcript_id, new = ai.enqueue(506, 'both', '', hour, db, kind=ai.TRANSCRIPT)
+    _assert(new and transcript_id != summary_id
+            and ai.enqueue(506, 'both', '', hour, db, kind=ai.TRANSCRIPT) == (transcript_id, False),
+            "a transcript is a request of its own next to the summary; a second tap is the same one")
+    _assert(ai.audio_paid(506, 'both', db) and not ai.audio_paid(506, 'both', db, done_only=True),
+            "on its way, the audio counts as paid for a tap; for the worker only once done")
+    ai.finish(summary_id, 'done', seconds=1800, database=db)
+    _assert(ai.audio_paid(506, 'both', db, exclude=transcript_id, done_only=True)
+            and not ai.audio_paid(506, 'both', db, exclude=summary_id, done_only=True),
+            "a done request charged seconds pays the audio; a request does not pay for itself")
+    _assert(not ai.audio_paid(507, 'both', db) and not ai.audio_paid(501, 'served', db),
+            "another chat's request, or one a cached summary served (0 s), pays nothing")
+
     ai.enqueue(503, 'reply', 'en', hour, db, reply_to=4321)
     c = sqlite3.connect(db)
     _assert(c.execute("SELECT reply_to FROM ai_requests WHERE ref='reply'").fetchone()[0] == 4321,
@@ -281,8 +295,8 @@ def test_queue_and_quota(db):
     c.commit()
     c.close()
     ai.enqueue(1, 'x', 'en', 60, old_db, reply_to=5)
-    _assert(sqlite3.connect(old_db).execute('SELECT reply_to FROM ai_requests').fetchone()[0] == 5,
-            "a database from before gets the reply_to column")
+    _assert(sqlite3.connect(old_db).execute('SELECT reply_to, kind FROM ai_requests').fetchone() == (5, 'summary'),
+            "a database from before gets the reply_to and kind columns, its requests summaries")
 
     _assert(quota.questions(501, database=db) == (True, quota.QUESTIONS_PER_DAY, quota.QUESTIONS_PER_DAY, False),
             "a paid plan asks its questions a day")
@@ -491,6 +505,8 @@ def test_worker(db):
     finally:
         ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path = saved
 
+    test_transcript_requests(db, ai_watcher)
+
     from app.service.ai import offer
     _assert(offer.length_text(5400, 'en') == '1 h 30 min', "hours and minutes")
     _assert(offer.length_text(2701, 'ru') == '46 мин', "minutes round up")
@@ -526,8 +542,22 @@ def test_worker(db):
     _assert(sent[0]['reply_markup'][0][1]['callback_data'] == {'tp': 'trn', 'r': 'ep7', 'm': 99}
             and sent[0]['reply_markup'][0][1]['text'] == '📥 Расшифровка',
             "next to Ask: the transcript, for the same episode and audio")
+    from app.service.record import free_limit
+    saved_plans, free_limit.plans_offer = free_limit.plans_offer, lambda language_code: (
+        'Plans.', [[{'text': 'Relay', 'callback_data': {'tp': 'bs_stars_pay'}}]])  # the storefront reads tariffs
+    try:
+        for_plans = summaryModule.offer_message('en', quota.Quota(False, 0, 0, 3600, 0), transcript=True)
+    finally:
+        free_limit.plans_offer = saved_plans
+    _assert(for_plans['text'].startswith('Transcripts come with a plan') and 'the podcast publishes' in for_plans['text']
+            and for_plans['reply_markup'], "no plan, asked for a transcript: the plans, said for transcripts")
+    over = summaryModule.offer_message('en', quota.Quota(False, 5 * 3600, 4 * 3600, 7200, 3, True), transcript=True)
+    _assert(over['text'].startswith('Transcripts and summaries count by episode length')
+            and [b['callback_data']['tp'] for row in over['reply_markup'] for b in row] == ['bs_stars', 'bs_trfs'],
+            "over the hours: the same storefront rules as a summary, the text names transcripts")
     test_ask(db, summaryModule)
-    test_transcript_download(db, summaryModule)
+    test_feed_transcript(db, summaryModule)
+    test_transcript_button(db, summaryModule)
 
 
 class Tap:
@@ -673,31 +703,182 @@ def test_ask(db, module):
          module.summary.enabled, ai.db_path, usage.db_path, module.ai_quota.questions, free_limit.plans_offer) = saved
 
 
-def test_transcript_download(db, module):
-    """The Transcript button under a summary: the cached transcript as a text file replying to the audio."""
+def test_feed_transcript(db, module):
+    """The transcript a feed publishes, read at a tap from the feed's last copy, cached for everyone;
+    a feed that cannot be read now is no transcript, never an error."""
+    from app.service.podcast import rss
+    asked = []
+
+    class Requester:
+        def get(self, url, timeout=None):
+            asked.append((url, timeout))
+            return SimpleResponse(200, 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nFrom the feed.', 'text/vtt')
+
+    def feed(url, etag=None, last_modified=None, cached=False):
+        asked.append((url, cached))
+        return ET.fromstring(FEED), 'ok', {}
+
+    saved = (rss.get_rss_root_with_status, ai.db_path)
+    rss.get_rss_root_with_status = feed
+    ai.db_path = db
+    try:
+        episode = {'ref': 'f7', 'link': LINK, 'feed_url': 'https://feed.example/rss'}
+        found = transcript.from_episode_feed(Requester(), episode, cached=True, timeout=(5, 20))
+        _assert(found == transcript.Transcript('[0:01] From the feed.', 'feed', 0.0, 0.0)
+                and asked == [('https://feed.example/rss', True), ('https://t.example/7.vtt', (5, 20))],
+                "the feed's last copy names the item's transcript, read with the tap's short timeout")
+        _assert(transcript.from_episode_feed(Requester(), dict(episode, feed_url=None)) is None,
+                "a channel that is gone: no feed, no transcript")
+        from lib.requests import requesterModule
+        real_requester, requesterModule.Requester = requesterModule.Requester, lambda **kwargs: Requester()
+        try:
+            ai.remember_episode('f7', LINK, 9, 'Seven', 'Show', database=db)
+            found = module._feed_transcript(ai.episode('f7', db))
+            _assert(found.source == 'feed' and ai.transcript('f7', db)['text'] == '[0:01] From the feed.',
+                    "a tap caches the feed's transcript: free for the next tap and for a summary")
+            rss.get_rss_root_with_status = lambda *a, **k: (_ for _ in ()).throw(TimeoutError('slow host'))
+            _assert(module._feed_transcript(ai.episode('f7', db)) is None, "a feed that times out: none, no error")
+        finally:
+            requesterModule.Requester = real_requester
+    finally:
+        rss.get_rss_root_with_status, ai.db_path = saved
+
+
+class SimpleResponse:
+    def __init__(self, status, text, content_type):
+        self.status_code, self.text, self.headers = status, text, {'Content-Type': content_type}
+
+
+def test_transcript_requests(db, ai_watcher):
+    """A transcript request: no model call, the file replies to the audio, the status line goes; charged
+    what Whisper measured, nothing for a transcript made before or the feed's. A summary after a
+    transcript the chat paid for costs no more hours."""
+    files, edits, deleted = [], [], []
+
+    def whisper(episode, session, progress=None):
+        progress('download')
+        progress('transcribe', 1, 1)
+        return transcript.Transcript('[0:00] spoken words', 'whisper', 0.03, 1830.4)
+
+    def no_model(*args, **kwargs):
+        raise AssertionError('a transcript request never calls the model')
+
+    saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path)
+    ai_watcher.summary.summarize = no_model
+    ai_watcher.episode_transcript = whisper
+    ai.db_path = usage.db_path = db
+    send_file = lambda chat_id, episode, text, source, lang, reply_to: files.append(  # noqa: E731
+        (chat_id, episode['ref'], text, source, lang, reply_to)) or True
+    edit = lambda chat_id, message, message_id: edits.append((message_id, message['text']))  # noqa: E731
+    delete = lambda chat_id, message_id: deleted.append(message_id)  # noqa: E731
+    try:
+        ai.remember_episode('t1', 'https://cdn.example/show/t1.mp3', 9, 'Tee', 'Show', 1800, database=db)
+        request_id, _ = ai.enqueue(520, 't1', '', 1800, db, reply_to=61, status_message=62, kind=ai.TRANSCRIPT)
+        request = {'id': request_id, 'chat_id': 520, 'ref': 't1', 'lang': '', 'seconds': 1800, 'kind': ai.TRANSCRIPT,
+                   'reply_to': 61, 'status_message': 62, 'ui_lang': 'en'}
+        charged = ai_watcher.process(request, None, edit=edit, send_file=send_file, delete=delete)
+        ai.finish(request_id, 'done', seconds=charged, database=db)
+        _assert(charged == 1830, "a new transcript is charged what Whisper measured")
+        _assert(files == [(520, 't1', '[0:00] spoken words', 'whisper', 'en', 61)],
+                "the file replies to the audio, in the user's language")
+        _assert([text for _, text in edits] == ['📥 Transcript: downloading the episode…',
+                                                '📥 Transcript: transcribing, part 1 of 1…'] and deleted == [62],
+                "its status line says it is a transcript, and goes when the file comes")
+        _assert(abs(usage.per_user(0, database=db)[520]['ai_usd'] - 0.03) < 1e-9
+                and usage.count_since(520, 'transcript', 0, db) == 1 and usage.count_since(520, 'ai', 0, db) == 0,
+                "Whisper's cost is in the AI spend, the file is a transcript in the ledger, not a summary")
+
+        # the same chat's summary of it: the transcript is cached and paid for, only the model call
+        ai.save_transcript('t1', '[0:00] spoken words', 'whisper', 0.03, 1830.4, database=db)
+        ai_watcher.summary.summarize = lambda *a, **k: ('Gist.', 0.002)
+        ai_watcher.episode_transcript = lambda episode, session, progress=None: transcript.Transcript(
+            '[0:00] spoken words', 'whisper', 0.0, 1830.4)
+        mine, _ = ai.enqueue(520, 't1', 'original', 0, db)
+        theirs, _ = ai.enqueue(521, 't1', 'original', 1800, db)
+        sent = []
+        send = lambda chat_id, structures: sent.append(chat_id)  # noqa: E731
+        _assert(ai_watcher.process({'id': mine, 'chat_id': 520, 'ref': 't1', 'lang': 'original', 'seconds': 0},
+                                   None, send=send) == 0,
+                "a summary after the chat's own transcript costs no more hours")
+        c = sqlite3.connect(db)  # the summary just made would serve the next chat: it must be new
+        c.execute("DELETE FROM ai_summaries WHERE ref='t1'")
+        c.commit()
+        c.close()
+        _assert(ai_watcher.process({'id': theirs, 'chat_id': 521, 'ref': 't1', 'lang': 'original', 'seconds': 1800},
+                                   None, send=send) == 1830,
+                "another chat's summary of it is charged the audio, as before")
+
+        # a transcript made before, or the feed's: free
+        ai_watcher.summary.summarize = no_model
+        files.clear()
+        cached = ai_watcher.process({'id': 0, 'chat_id': 522, 'ref': 't1', 'lang': '', 'seconds': 1800,
+                                     'kind': ai.TRANSCRIPT}, None, edit=edit, send_file=send_file, delete=delete)
+        ai_watcher.episode_transcript = lambda episode, session, progress=None: transcript.Transcript(
+            'the feed text', 'feed', 0.0, 0.0)
+        ai.remember_episode('t2', 'https://cdn.example/show/t2.mp3', 9, 'Two', 'Show', 1800, database=db)
+        feed = ai_watcher.process({'id': 0, 'chat_id': 522, 'ref': 't2', 'lang': '', 'seconds': 1800,
+                                   'kind': ai.TRANSCRIPT}, None, edit=edit, send_file=send_file, delete=delete)
+        _assert((cached, feed) == (0, 0) and [f[3] for f in files] == ['whisper', 'feed'],
+                "made before, or the feed's: the file, nothing charged")
+        _assert(ai_watcher.FAILED[ai.TRANSCRIPT] == 'transcriptFailed', "a failed transcript says so, not 'summary'")
+    finally:
+        ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path = saved
+
+
+def test_transcript_button(db, module):
+    """Transcript under the audio and under a summary: the file at once when it is made or the feed has it;
+    else only the transcript is queued, charged like a summary; without the hours, the offer."""
     from types import SimpleNamespace
     import agent.bot_telebot as telebot_agent
+    from app.i18n.messages import get_message
     from lib.telegram.telebot.types import ApiTelegramException
-    documents, toasts = [], []
+    documents, toasts, screens, statuses, deleted, feeds = [], [], [], [], [], []
+    plans = {}
 
     def send_document(chat_id, document, **kwargs):
         documents.append(dict(kwargs, chat_id=chat_id, body=document.read().decode('utf-8')))
 
-    saved = (telebot_agent.bot, module.notify, ai.db_path)
+    def check(chat_id, needed):
+        level = plans.get(chat_id, 0)
+        limit = 30 * 3600 if level else 0
+        return quota.Quota(limit > 0 and needed <= limit, limit, 0, needed, level)
+
+    def feed_transcript(episode):
+        feeds.append(episode['ref'])
+        if episode['ref'] != 'feedy':
+            return None
+        ai.save_transcript('feedy', 'Words from the feed.', 'feed', 0.0, database=db)
+        return transcript.Transcript('Words from the feed.', 'feed', 0.0, 0.0)
+
+    def status_line(chat_id, text, reply_to=None):
+        statuses.append((chat_id, text, reply_to))
+        return 700 + len(statuses)
+
+    saved = (telebot_agent.bot, module.notify, module.render_messages, module.status_line, module.message_deleter,
+             module._feed_transcript, module.ai_quota.check, summary.enabled, ai.db_path, usage.db_path,
+             module.offer_message)
+    module.offer_message = lambda language_code, q, transcript=False: {  # its text: test_worker
+        'type': 'text', 'text': 'offer transcript=%s limit=%s' % (transcript, q.limit)}
     telebot_agent.bot = SimpleNamespace(send_document=send_document)
     module.notify = lambda call, message, text, alert=False: toasts.append((text, alert))
-    ai.db_path = db
+    module.render_messages = lambda chat_id, messages, **kwargs: screens.append((chat_id, messages[0]))
+    module.status_line = status_line
+    module.message_deleter = lambda chat_id, message_id: deleted.append(message_id)
+    module._feed_transcript = feed_transcript
+    module.ai_quota.check = check
+    summary.enabled = lambda: True
+    ai.db_path = usage.db_path = db
     try:
         ai.remember_episode('ep9', 'https://cdn.example/show/ep9.mp3', 9, 'Q&amp;A: <b>why</b>/how?', 'Show',
                             database=db)
         ai.save_transcript('ep9', '[0:00] Hello there. [0:31] Second part. [1:02:15] Late.', 'whisper', 0.01,
                            database=db)
         tap = {'chat_id': 501, 'language_code': 'en', 'message': Tap({}, 55)}
-        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9', 'm': 4})))
+        module.request_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9', 'm': 4})))
         document = documents[-1]
         _assert(toasts[-1] == ('', False) and document['chat_id'] == 501 and document['reply_to_message_id'] == 4
                 and document['allow_sending_without_reply'] is True,
-                "the file replies to the audio (sent anyway if the audio is gone)")
+                "under a summary: the file replies to the audio it names (sent anyway if the audio is gone)")
         _assert(document['visible_file_name'] == 'Q&A why how.txt',
                 "the file is named after the episode, without characters a file name cannot hold")
         _assert(document['body'] == 'Show\nQ&A: why/how?\nhttps://cdn.example/show/ep9.mp3\n\n'
@@ -706,34 +887,75 @@ def test_transcript_download(db, module):
         _assert(document['caption'] == '📄 <b>Show – Q&amp;A: why/how?</b>\nTranscribed automatically: it may have '
                 'mistakes.' and document['parse_mode'] == 'HTML',
                 "the caption names the episode (escaped) and says Whisper's text may have mistakes")
-        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep7'})))
-        _assert('mistakes' not in documents[-1]['caption'] and documents[-1]['reply_to_message_id'] is None
-                and documents[-1]['body'].endswith('\n\nwords\n'),
-                "the feed's own transcript makes no such claim; no audio known: a plain message")
-        name, body = module.transcript_file({'show': 'S', 'title': 'T', 'link': 'L'}, {
-            'text': ' '.join(['Sentence number %d is here.' % i for i in range(100)])})
+        _assert(feeds == [] and statuses == [] and usage.count_since(501, 'transcript', 0, db) == 1,
+                "made before: free, the feed is not read, nothing queued; the file is in the ledger")
+        module.request_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9'})))
+        _assert(documents[-1]['reply_to_message_id'] == 55,
+                "under the audio: the button is on the audio, the file replies to it")
+
+        ai.remember_episode('feedy', 'https://cdn.example/show/feedy.mp3', 9, 'Feedy', 'Show', 1800, database=db)
+        module.request_transcript(dict(tap, chat_id=502, callback=Tap({'tp': 'trn', 'r': 'feedy'})))
+        _assert(feeds == ['feedy'] and documents[-1]['chat_id'] == 502 and 'mistakes' not in documents[-1]['caption']
+                and documents[-1]['body'].endswith('\n\nWords from the feed.\n') and statuses == [] and screens == [],
+                "the feed publishes it: the file at once, even without a plan, and no Whisper claim")
+        _assert(ai.transcript('feedy', db)['source'] == 'feed', "and it is cached for the next tap and for summaries")
+
+        ai.remember_episode('long', 'https://cdn.example/show/long.mp3', 9, 'Long', 'Show', 2700, database=db)
+        module.request_transcript(dict(tap, chat_id=503, callback=Tap({'tp': 'trn', 'r': 'long'})))
+        _assert(statuses == [] and screens[-1] == (503, {'type': 'text', 'text': 'offer transcript=True limit=0'}),
+                "no plan, nothing to read for free: the plans, said for transcripts; nothing queued")
+        plans[504] = 3
+        count = len(documents)
+        module.request_transcript(dict(tap, chat_id=504, callback=Tap({'tp': 'trn', 'r': 'long'})))
+        module.request_transcript(dict(tap, chat_id=504, callback=Tap({'tp': 'trn', 'r': 'long'})))
+        c = sqlite3.connect(db)
+        rows = c.execute("SELECT kind, seconds, reply_to, status_message, lang FROM ai_requests "
+                         "WHERE chat_id=504").fetchall()
+        c.close()
+        _assert(len(documents) == count and rows == [('transcript', 2700, 55, 701, '')],
+                "a plan with hours: only the transcript is queued, charged the episode's length, with its status line")
+        _assert(statuses[0] == (504, get_message('transcriptStatusQueued', 'en'), 55) and deleted == [702],
+                "the status line answers the audio; a second tap is the same request, its line goes")
+
+        plans[505] = 1
+        done, _ = ai.enqueue(505, 'long', 'original', 2700, db)
+        ai.finish(done, 'done', database=db)
+        module.request_transcript(dict(tap, chat_id=505, callback=Tap({'tp': 'trn', 'r': 'long'})))
+        c = sqlite3.connect(db)
+        charged = c.execute("SELECT seconds FROM ai_requests WHERE chat_id=505 AND kind='transcript'").fetchone()
+        c.close()
+        _assert(charged == (0,), "the chat paid for this audio with a summary: its transcript costs no more hours")
+
+        count = len(documents)
+        module.request_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'gone'})))
+        _assert(len(documents) == count and toasts[-1][0] == get_message('screenOutdated', 'en'),
+                "an unknown episode: an outdated screen")
+        summary.enabled = lambda: False
+        module.request_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9'})))
+        _assert(len(documents) == count and toasts[-1][0] == get_message('summaryUnavailable', 'en'),
+                "AI off: a toast, nothing sent")
+        summary.enabled = lambda: True
+
+        name, body = module.transcript_file({'show': 'S', 'title': 'T', 'link': 'L'},
+                                            ' '.join(['Sentence number %d is here.' % i for i in range(100)]))
         paragraphs = body.decode('utf-8').split('\n\n')[1:]
         _assert(name == 'T.txt' and len(paragraphs) > 3 and all(p.rstrip().endswith('.') for p in paragraphs)
                 and all(len(p) < 2 * module.PARAGRAPH_CHARS for p in paragraphs),
                 "a transcript without time marks comes in paragraphs broken after a sentence, not one long line")
-        count = len(documents)
-        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'nots', 'm': 4})))
-        _assert(len(documents) == count and toasts[-1][1] is True and 'Tap "Summary"' in toasts[-1][0],
-                "no transcript (pruned): an alert that the Summary button makes it again, no file")
-        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'gone'})))
-        from app.i18n.messages import get_message
-        _assert(len(documents) == count and toasts[-1][0] == get_message('screenOutdated', 'en'),
-                "an unknown episode: an outdated screen")
 
         def flood(chat_id, document, **kwargs):
             raise ApiTelegramException('sendDocument', SimpleNamespace(status_code=429, reason='', text=''), {
                 'error_code': 429, 'description': 'Too Many Requests: retry after 7'})
         telebot_agent.bot = SimpleNamespace(send_document=flood)
-        module.send_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9', 'm': 4})))  # does not raise
+        before = usage.count_since(501, 'transcript', 0, db)
+        module.request_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'ep9', 'm': 4})))  # does not raise
+        _assert(usage.count_since(501, 'transcript', 0, db) == before, "a file Telegram did not take is not counted")
         _assert(len(json.dumps(summary.transcript_button_data('0123456789abcdef', 2 ** 31), separators=(',', ':')))
                 <= 64, "the button's data fits Telegram's 64 bytes")
     finally:
-        telebot_agent.bot, module.notify, ai.db_path = saved
+        (telebot_agent.bot, module.notify, module.render_messages, module.status_line, module.message_deleter,
+         module._feed_transcript, module.ai_quota.check, summary.enabled, ai.db_path, usage.db_path,
+         module.offer_message) = saved
 
 
 def main():

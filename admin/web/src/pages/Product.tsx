@@ -230,7 +230,7 @@ export default function Product() {
             </Card>
             <Card className="min-w-0">
               <h2 className="mb-4 font-semibold">Пересказы и вопросы</h2>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Metric
                   label="Пересказы"
                   value={data.ai.summary_taps + data.ai.summary_auto}
@@ -240,6 +240,11 @@ export default function Product() {
                   label="Вопросы"
                   value={data.ai.questions}
                   hint={`Людей: ${data.ai.question_chats}.`}
+                />
+                <Metric
+                  label="Расшифровки"
+                  value={data.ai.transcripts}
+                  hint={`Файлов отправлено; распознано заново ${data.ai.transcripts_made}. Людей: ${data.ai.transcript_chats}.`}
                 />
                 <Metric
                   label="Автопересказ"

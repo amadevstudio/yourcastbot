@@ -385,9 +385,9 @@ def _check_episode_text_formats():
     _assert([(a[0], k.get('descr')) for a, k in world.remembered] == [(sender._episode_ref, long_text)]
             and sender._episode_ref, "brief: the episode is remembered with its description, for the button")
     keyboard = sender.episode_buttons('en', chat_id=1)
-    _assert([json.loads(data)['tp'] for _, data in keyboard] == ['sum', 'desc']
-            and json.loads(keyboard[1][1])['r'] == sender._episode_ref,
-            "brief: Summary, then Show notes naming the episode")
+    _assert(_actions(keyboard) == [['sum', 'trn'], ['desc']]
+            and json.loads(keyboard[1][0][1])['r'] == sender._episode_ref,
+            "brief: Summary and Transcript side by side, then Show notes naming the episode")
     _assert([t for _, t in world.notices if hint in t] == [] and world.hints_remembered == [],
             "brief: no rich note")
     _assert(sender.episode_buttons('en', chat_id=-1001) == [],
@@ -395,13 +395,25 @@ def _check_episode_text_formats():
     world = World(size_mb=12, formats={1: (None, False)})
     quiet = world.sender(chats=(1,), descr='   ')
     quiet.send_record()
-    _assert([json.loads(data)['tp'] for _, data in quiet.episode_buttons('en', chat_id=1)] == [],
+    _assert(_actions(quiet.episode_buttons('en', chat_id=1)) == [],
             "brief: no Show notes for an episode without text (and no Summary with AI off)")
     world = World(size_mb=12, formats={1: ('rich', True)})
     rich = world.sender(chats=(1,), descr=long_text)
     rich.send_record()
-    _assert('desc' not in [json.loads(data)['tp'] for _, data in rich.episode_buttons('en', chat_id=1)],
+    _assert('desc' not in sum(_actions(rich.episode_buttons('en', chat_id=1)), []),
             "rich (chosen): the text is in the message, no Show notes button")
+    for fmt, notes in (('meta', True), ('separate', False), ('caption', False)):
+        world = World(size_mb=12, formats={1: (fmt, True)})
+        other = world.sender(chats=(1,), descr=long_text)
+        other.send_record()
+        _assert(('desc' in sum(_actions(other.episode_buttons('en', chat_id=1)), [])) == notes,
+                "%s: Show notes %s" % (fmt, 'under the title-only audio' if notes else 'not: the text is sent'))
+    clicked = World(size_mb=12, formats={1: (None, False)}).sender(chats=(1,), descr=long_text)
+    clicked.podcast_info['with_next_ep_button'] = True
+    clicked.send_record()
+    clicked._summary_ref = 'ref1'
+    _assert(_actions(clicked.episode_buttons('en', chat_id=1)) == [['nrec'], ['sum', 'trn'], ['desc']],
+            "a click: Next episode on a row of its own, above them")
 
     # Chat 1: default (rich), first time. Chat 2: rich, hint shown before. Chat 3: not a
     # user row (a channel), the caption as before.
@@ -495,20 +507,27 @@ def _check_episode_text_formats():
             "rich: a refused URL is a refused file (upload, then file_id), never the old caption")
 
 
+def _actions(rows):
+    """The action of each button, row by row."""
+    return [[json.loads(data)['tp'] for _, data in row] for row in rows]
+
+
 def _check_summary_button():
-    """With AI summaries on: the episode is remembered, user chats get Summary, channels do not."""
+    """With AI summaries on: the episode is remembered, user chats get Summary and Transcript,
+    channels do not."""
     class Keyboard:
         def __init__(self):
             self.rows = []
 
-        def add(self, button):
-            self.rows.append(button)
+        def row(self, *buttons):
+            self.rows.append(list(buttons))
 
     remembered = []
     saved = (srh.InlineKeyboardMarkup, srh.InlineKeyboardButton, srh.ai_summary, srh.ai)
     srh.InlineKeyboardMarkup = Keyboard
     srh.InlineKeyboardButton = lambda text, callback_data: (text, json.loads(callback_data))
-    srh.ai_summary = _ns(enabled=lambda: True, button_data=saved[2].button_data)
+    srh.ai_summary = _ns(enabled=lambda: True, button_data=saved[2].button_data,
+                         transcript_button_data=saved[2].transcript_button_data)
     try:
         sender = World(size_mb=12).sender()
         srh.ai = _ns(remember_episode=lambda *a, **k: remembered.append(a))  # after World(), which sets its own
@@ -516,13 +535,24 @@ def _check_summary_button():
         sender._remember_for_summary()
         _assert(len(remembered) == 1 and remembered[0][1] == sender.link, "the episode is remembered by its link")
         _assert(remembered[0][5] == 3600, "with its length from the feed: the summary quota is hours of audio")
+        ref = remembered[0][0]
         keyboard = sender.get_next_ep_button('en', chat_id=1)
-        _assert([data for _, data in keyboard.rows] == [{'tp': 'sum', 'r': remembered[0][0]}],
-                "a user chat gets the Summary button with the episode's ref")
+        _assert([[data for _, data in row] for row in keyboard.rows]
+                == [[{'tp': 'sum', 'r': ref}, {'tp': 'trn', 'r': ref}]],
+                "a user chat gets Summary and Transcript in one row, with the episode's ref")
         _assert(sender.get_next_ep_button('en', chat_id=-1001) is None, "a channel gets no Summary button")
         agent_buttons = sender._agent_message(1, 'caption')['buttons']
-        _assert([json.loads(data) for _, data in agent_buttons] == [{'tp': 'sum', 'r': remembered[0][0]}],
-                "an agent upload (over 50 MB) gets the same Summary button")
+        _assert([[json.loads(data) for _, data in row] for row in agent_buttons]
+                == [[{'tp': 'sum', 'r': ref}, {'tp': 'trn', 'r': ref}]],
+                "an agent upload (over 50 MB) gets the same row")
+        import agent.bot_telethon as agent_module  # the module itself: World fakes srh.bot_telethon
+        real_button, agent_module.Button = agent_module.Button, _ns(inline=lambda text, data: data)
+        try:
+            agent_keyboard = agent_module.episode_keyboard({'buttons': agent_buttons})
+        finally:
+            agent_module.Button = real_button
+        _assert(agent_keyboard == [[data for _, data in agent_buttons[0]]],
+                "the agent keeps the row: two buttons side by side")
         srh.ai_summary = _ns(enabled=lambda: False, button_data=saved[2].button_data)
         off_world = World(size_mb=12)
         off = off_world.sender()

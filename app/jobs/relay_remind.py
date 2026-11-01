@@ -92,7 +92,8 @@ def recap_counts(telegram_id, database=None, now=None) -> dict:
                 "SELECT COUNT(*) FROM usage_events WHERE user_id = ? AND kind IN ('rec', 'circle') AND at >= ?",
                 (int(telegram_id), since)).fetchone()[0])
         summaries = connection.execute(
-            "SELECT COUNT(*) FROM ai_requests WHERE chat_id = ? AND status = 'done' AND created_at >= ?",
+            "SELECT COUNT(*) FROM ai_requests WHERE chat_id = ? AND kind = 'summary' AND status = 'done' "
+            "AND created_at >= ?",
             (int(telegram_id), since)).fetchone()[0]
         shows = connection.execute(
             "SELECT COUNT(*) FROM user_channel_cs WHERE user_telegram_id = ? AND notify = 1",

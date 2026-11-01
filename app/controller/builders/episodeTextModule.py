@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-""""Show notes" under a brief episode (text_format.BRIEF): the feed's description on a tap.
+""""Show notes" under a brief or title-only episode (text_format.BRIEF, META): the feed's
+description on a tap.
 
-The brief format sends the audio with its header only; the description the
+Both formats send the audio with its header only; the description the
 sender kept with the episode (db/ai.py, by the button's ref) comes as a
 collapsible quote replying to the audio, as the separate format sends it.
 State independent: the button stays usable on any old episode in the chat.

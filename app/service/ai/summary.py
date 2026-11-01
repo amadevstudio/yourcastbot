@@ -17,7 +17,7 @@ from config import ai_summary_model, ai_transcribe_model
 ACTION = 'sum'
 ASK_ACTION = 'ask'  # the route of questions about an episode
 ASK_DONE_ACTION = 'askDone'  # "Done": leaves it
-TRANSCRIPT_ACTION = 'trn'  # the transcript as a text file, under a summary
+TRANSCRIPT_ACTION = 'trn'  # the transcript as a text file, under the audio and under a summary
 ASK_IDLE_SECONDS = 30 * 60  # a text after this long without a question is a search again
 MAX_TOKENS = 2000
 # a detailed answer in Russian ran 1745 characters in 800 tokens: room for one, cut at a sentence if longer
@@ -81,7 +81,8 @@ def ask_button_data(ref, audio_message_id=None) -> dict:
 
 
 def transcript_button_data(ref, audio_message_id=None) -> dict:
-    """The Transcript button under a summary: the episode's ref and the audio message the file answers."""
+    """The Transcript button: the episode's ref and, under a summary, the audio message the file answers
+    (under the audio the button is on it)."""
     data = {'tp': TRANSCRIPT_ACTION, 'r': ref}
     if audio_message_id:
         data['m'] = int(audio_message_id)

@@ -47,8 +47,11 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
 
 - **brief** (default since 2026-10-22, NULL in the column; the owner's call:
   the text under an episode is the summary, the feed's text on request, at no
-  new AI cost): the audio with its header only, and under it "Summary" (AI
-  on) and "Show notes" (`DESCRIPTION_ACTION` `desc`, the episode's ref). The
+  new AI cost): the audio with its header only, and under it "Summary" and
+  "Transcript" side by side (AI on, every format) and "Show notes"
+  (`DESCRIPTION_ACTION` `desc`, the episode's ref; Russian "Описание выпуска").
+  Under a click "Next episode" comes first, a row of its own
+  (`Sender.episode_buttons`: rows, the Bot API and the agent alike). The
   sender keeps every delivered episode with its description
   (`ai_episodes.descr`, `ai.remember_episode`, AI on or off);
   `episodeTextModule.show_description` sends it as a collapsible quote
@@ -69,7 +72,8 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
   caption, then the description in `<blockquote expandable>` (one message,
   under 4096, no link preview: a link in it is not a card under the episode).
 - **caption** (Settings): the old way, the description cut to the caption.
-- **meta** (Settings): the header only, no description, as in channels.
+- **meta** (Settings): the header only, no description in the message, as in
+  channels; "Show notes" under it as under brief (2026-11-01: the owner's call).
 - Channels and chats with `description_mode` none are not users here: no
   format lookup, the caption as before. `/settings` is a list of sections (Episode text;
   Reminders, without a plan only), each a page of its own (`settsText`,
@@ -770,7 +774,8 @@ it "Listen", "Show notes" and "Summary" were all `recs`. What the bot does on it
 convert), `plan_reminder_sent {level, days_left, paid_before, offer, shows}`
 (D-3), `winback_sent {stage, offer}`, `payment {method, amount_cents,
 charged_cents, offer, ...}` (Stars, CryptoBot),
-`summary_ready {cached, seconds}`, `episode_delivered {mode, format}` (one per
+`summary_ready {cached, seconds}`, `transcript_ready {source, made, seconds}`
+(a transcript file sent; `made`: Whisper made it now), `episode_delivered {mode, format}` (one per
 user chat that got the audio, from the sender: most listeners never tap, so
 without it Amplitude counted them as gone). These carry the running plan's
 level as the user property `plan` (0: none). A digest's Listen button carries
@@ -795,7 +800,11 @@ Lock: `python app/service/test_analytics_events.py` (CD gate),
 `usage_events` (`db/usage.py`) is one row per chat per delivered episode
 (`rec`: a click, `circle`: automatic, by the outbox action), with the MB we
 downloaded for it (shared by the chats it served, 0 when Telegram fetched
-the URL), and one row per AI summary with what the APIs charged. The
+the URL), one row per AI summary with what the APIs charged, and one row
+per transcript file sent (`transcript`, what making it cost, 0 when it was
+made before or the feed publishes it; the page "Product" counts them apart
+from summaries, and `ai_requests.kind` 'transcript' is no summary anywhere:
+not in the funnel, the D-3 recap or the summary hint). The
 sender writes it after the delivery (`Sender._record_usage`); it never fails
 a send. The free weekly limit and the admin page "Economics"
 (`app/admin_web/economics.py`, `GET /api/economics?days=`) read it.
@@ -970,14 +979,25 @@ button; `quota.py` who may ask. The plan level is
   makes a time in a reply to the media play it from there. Transcripts made
   before have no marks, and their summaries no times. A transcript past
   `MAX_TRANSCRIPT_CHARS` (~100k tokens, 8+ hours of speech) is cut.
-- "Transcript" under a summary, next to Ask (action `trn`,
-  `summaryModule.send_transcript`): the transcript the summary was made from
-  as a `.txt` file (the show, the title, the audio's link, then a line per
-  time mark, or paragraphs after a sentence when it has none), a reply to the
-  audio. Nothing is made for it: free to whoever has the summary, as the
-  summary is. Whisper's text says it may have mistakes; a transcript pruned
-  with its summary (`KEEP_DAYS`) is an alert that "Summary" makes it again.
-  A file Telegram does not take is a WARN.
+- "Transcript" (action `trn`, `summaryModule.request_transcript`) under the
+  audio next to Summary, and under a summary next to Ask: the episode's
+  transcript as a `.txt` file (the show, the title, the audio's link, then a
+  line per time mark, or paragraphs after a sentence when it has none), a
+  reply to the audio. One made before is free to anyone, as a summary is;
+  so is the one the feed publishes (`<podcast:transcript>`, ~1 show in 10 in
+  Oct 2026), read at the tap from the feed's last copy (`feed_cache`, a short
+  timeout: it runs in the incoming worker) and cached, plan or not. Else only
+  the transcript is queued (`ai_requests.kind` 'transcript': no model call,
+  someone who wants the text does not pay for a summary), through the same
+  quota, status line ("Transcript: ..."), offers (said for transcripts) and
+  worker; the file comes and the status line goes. Hours pay for the audio
+  once per chat (`ai.audio_paid`): a summary after the chat's own transcript,
+  or a transcript after its summary, costs no more hours (the model call is a
+  tenth of a cent; another chat's summary of a cached transcript is charged as
+  before). An episode whose channel is not in the database (a click from
+  search, ~7%) has no feed to read: Whisper only. Whisper's text says it may
+  have mistakes. A file Telegram does not take is a WARN and is not counted.
+  The note after the first episode names it next to Summary.
 - "Ask" under a summary opens the route `ask`: the user's next texts are
   questions, answered from the cached transcript in the incoming worker
   (one call, `ANSWER_TIMEOUT`, the transcript a prompt-cache block), as a

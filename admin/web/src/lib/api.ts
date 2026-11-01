@@ -124,6 +124,9 @@ export type Product = {
     questions: number;
     question_chats: number;
     auto_on: number;
+    transcripts: number;
+    transcript_chats: number;
+    transcripts_made: number;
     ai_usd: number;
   };
   activity: { clickers: number; clicks: number; automatic: number; listeners: number };

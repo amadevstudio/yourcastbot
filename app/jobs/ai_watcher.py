@@ -13,19 +13,25 @@ edited as the work goes (downloading, transcribing part n of m, writing) and
 at the end into the summary itself, or into "could not". Editing it keeps it
 a reply to the audio, so the times still play the episode. A status line that
 cannot be edited (deleted) leaves the summary to a new message, as before.
+
+A transcript request (ai.TRANSCRIPT, the Transcript button) stops after the
+transcript: no model call; the file goes as a reply to the audio and the
+status line is deleted. It is charged what Whisper measured, nothing when the
+transcript was made before or came from the feed. A summary whose transcript
+was made before is charged nothing when this chat paid for that audio already
+(ai.audio_paid): the hours pay for transcription, the model call is cents.
 """
 import time
 
 import requests
 
-from app.controller.builders.summaryModule import summary_message
+from app.controller.builders.summaryModule import send_transcript_file, summary_message
 from app.i18n.messages import get_message
 from app.service import analytics_events
 from app.service.ai import summary, transcript
-from app.service.podcast.rss import get_rss_root
 from db import ai, usage
 from lib.requests import requesterModule
-from lib.telegram.general.message_master import message_editor, outer_sender
+from lib.telegram.general.message_master import message_deleter, message_editor, outer_sender
 from lib.tools.logger import logger
 
 IDLE_SLEEP_SECONDS = 5
@@ -40,11 +46,10 @@ def episode_transcript(episode, session, progress=None) -> transcript.Transcript
     if cached is not None:
         return transcript.Transcript(cached['text'], cached['source'], 0.0, cached['seconds'])
     found = None
-    if episode['feed_url']:
-        try:
-            found = transcript.from_feed(requester, get_rss_root(episode['feed_url']), episode['link'])
-        except Exception as e:
-            logger.warn('ai_watcher/feed transcript:', e)
+    try:
+        found = transcript.from_episode_feed(requester, episode)
+    except Exception as e:
+        logger.warn('ai_watcher/feed transcript:', e)
     found = found or transcript.from_audio(requester, session, episode['link'], progress=progress)
     ai.save_transcript(episode['ref'], found.text, found.source, found.cost_usd, found.seconds)
     return found
@@ -52,18 +57,20 @@ def episode_transcript(episode, session, progress=None) -> transcript.Transcript
 
 STATUS = {'download': 'summaryStatusDownloading', 'transcribe': 'summaryStatusTranscribing',
           'write': 'summaryStatusWriting'}
+TRANSCRIPT_STATUS = {'download': 'transcriptStatusDownloading', 'transcribe': 'transcriptStatusTranscribing'}
 
 
 def status_updater(request, edit=message_editor):
     """progress(stage, done, total): the request's status line says what is being done.
     Bookkeeping: an edit that fails never fails the summary."""
     message_id = request.get('status_message')
+    texts = TRANSCRIPT_STATUS if request.get('kind') == ai.TRANSCRIPT else STATUS
 
     def progress(stage, done=0, total=0):
-        if not message_id or stage not in STATUS:
+        if not message_id or stage not in texts:
             return
         try:
-            edit(request['chat_id'], {'type': 'text', 'text': get_message(STATUS[stage], request.get('ui_lang')).format(
+            edit(request['chat_id'], {'type': 'text', 'text': get_message(texts[stage], request.get('ui_lang')).format(
                 done=done, total=total)}, message_id)
         except Exception as e:
             logger.warn('ai_watcher/status:', type(e).__name__, e)
@@ -81,8 +88,11 @@ def deliver(request, message, send=outer_sender, edit=message_editor):
     send(request['chat_id'], [message])
 
 
-def process(request, session, send=outer_sender, edit=message_editor) -> int:
-    """Send the summary; the seconds of quota the request is charged in the end."""
+def process(request, session, send=outer_sender, edit=message_editor, send_file=send_transcript_file,
+            delete=message_deleter) -> int:
+    """Send the summary (or the transcript); the seconds of quota the request is charged in the end."""
+    if request.get('kind') == ai.TRANSCRIPT:
+        return process_transcript(request, session, edit, send_file, delete)
     progress = status_updater(request, edit)
     episode = ai.episode(request['ref'])
     if episode is None:
@@ -91,8 +101,12 @@ def process(request, session, send=outer_sender, edit=message_editor) -> int:
     if cached is not None:
         text, cost, charged = cached['text'], 0.0, 0
     else:
+        made_before = ai.transcript(request['ref']) is not None
         found = episode_transcript(episode, session, progress)
-        charged = round(found.seconds) or request['seconds']
+        if made_before and ai.audio_paid(request['chat_id'], request['ref'], exclude=request.get('id'), done_only=True):
+            charged = 0  # this chat paid for the audio (its transcript): the model call is cents
+        else:
+            charged = round(found.seconds) or request['seconds']
         progress('write')
         try:
             text, summary_cost = summary.summarize(
@@ -109,6 +123,32 @@ def process(request, session, send=outer_sender, edit=message_editor) -> int:
             send, edit)
     analytics_events.track(request['chat_id'], 'summary_ready', {'cached': cached is not None, 'seconds': charged})
     return charged
+
+
+def process_transcript(request, session, edit=message_editor, send_file=send_transcript_file,
+                       delete=message_deleter) -> int:
+    """The transcript alone, as a file replying to the audio; the status line goes. Charged what
+    Whisper measured, nothing when the transcript was made before or came from the feed."""
+    episode = ai.episode(request['ref'])
+    if episode is None:
+        raise summary.SummaryUnavailable('episode is not known any more')
+    made_before = ai.transcript(request['ref']) is not None
+    found = episode_transcript(episode, session, status_updater(request, edit))
+    made = not made_before and found.source == 'whisper'
+    charged = (round(found.seconds) or request['seconds']) if made else 0
+    usage.record_transcript(request['chat_id'], request['ref'], found.cost_usd if made else 0.0)
+    send_file(request['chat_id'], episode, found.text, found.source, request.get('ui_lang'), request.get('reply_to'))
+    if request.get('status_message'):
+        try:
+            delete(request['chat_id'], request['status_message'])
+        except Exception as e:
+            logger.warn('ai_watcher/status delete:', type(e).__name__, e)
+    analytics_events.track(request['chat_id'], 'transcript_ready',
+                           {'source': found.source, 'made': made, 'seconds': charged})
+    return charged
+
+
+FAILED = {ai.SUMMARY: 'summaryFailed', ai.TRANSCRIPT: 'transcriptFailed'}
 
 
 def ai_watcher():
@@ -128,7 +168,8 @@ def ai_watcher():
                 # a summary nobody tapped for (a new episode) fails quietly
                 if ai.retry_or_fail(request) and not request.get('auto'):
                     try:
-                        deliver(request, {'type': 'text', 'text': get_message('summaryFailed', request['ui_lang'])})
+                        deliver(request, {'type': 'text', 'text': get_message(
+                            FAILED.get(request.get('kind'), 'summaryFailed'), request['ui_lang'])})
                     except Exception as notify_error:
                         logger.warn('ai_watcher/notify', notify_error)
         except Exception as e:

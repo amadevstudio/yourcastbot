@@ -7,6 +7,8 @@ the free weekly limit:
 - 'circle': an episode delivered automatically (a tariff, or a channel)
 - mb: what we downloaded for that delivery (0 when Telegram fetched the URL)
 - 'ai': an AI summary, cost_usd what the APIs charged for it
+- 'transcript': an episode's transcript sent as a file, cost_usd what making it
+  cost (0: it was made before, or the feed publishes it)
 
 Revenue is not here: payment_history has it. Rows older than a year go.
 """
@@ -92,6 +94,17 @@ def record_ask(chat_id, ref, cost_usd, database=None, at=None):
         with c:
             c.execute('INSERT INTO usage_events (at,user_id,kind,ref,cost_usd) VALUES (?,?,?,?,?)',
                       (time.time() if at is None else at, chat_key(chat_id), 'ask', ref, float(cost_usd)))
+    finally:
+        c.close()
+
+
+def record_transcript(chat_id, ref, cost_usd, database=None, at=None):
+    """A transcript sent as a file (kind 'transcript'), its cost in the AI spend."""
+    c = connect(database)
+    try:
+        with c:
+            c.execute('INSERT INTO usage_events (at,user_id,kind,ref,cost_usd) VALUES (?,?,?,?,?)',
+                      (time.time() if at is None else at, chat_key(chat_id), 'transcript', ref, float(cost_usd)))
     finally:
         c.close()
 

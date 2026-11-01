@@ -117,7 +117,7 @@ ROWS = {
         'es darum geht. Fragen heute übrig: {left}.',
         'כתבו שאלה על "{title}". אענה לפי התמליל ואגיד באיזו דקה מדברים על זה. שאלות שנותרו היום: {left}.'),
     'askDone': ('Готово', 'Done', 'Pronto', 'Listo', 'Fertig', 'סיום'),
-    # the transcript as a text file, under a summary (summaryModule.send_transcript)
+    # the transcript as a text file, under the audio and under a summary (summaryModule.request_transcript)
     'transcriptButton': (
         '📥 Расшифровка', '📥 Transcript', '📥 Transcrição', '📥 Transcripción', '📥 Transkript', '📥 תמליל'),
     'transcriptMachine': (
@@ -127,14 +127,67 @@ ROWS = {
         'Transcripción automática: puede tener errores.',
         'Automatisch transkribiert: Fehler sind möglich.',
         'תומלל אוטומטית: ייתכנו טעויות.'),
-    'transcriptGone': (
-        'Расшифровки этого выпуска уже нет. Нажмите "Пересказ" под выпуском, и она появится снова.',
-        'This episode\'s transcript is gone. Tap "Summary" under the episode to make it again.',
-        'A transcrição deste episódio não existe mais. Toque em "Resumo" abaixo do episódio para refazê-la.',
-        'La transcripción de este episodio ya no está. Toca "Resumen" debajo del episodio para rehacerla.',
-        'Das Transkript dieser Folge ist nicht mehr da. Tippe unter der Folge auf "Zusammenfassung", '
-        'um es neu zu erstellen.',
-        'התמליל של הפרק הזה כבר לא קיים. לחצו על "סיכום" מתחת לפרק כדי ליצור אותו שוב.'),
+    # Transcript when the transcript must be made: the same hours and offers as a summary (offer.py)
+    'transcriptQuota': (
+        'Расшифровки и пересказы считаются по длине выпусков: {limit} аудио за 30 дней. '
+        'Осталось {left}, а этот выпуск длится {needed}.',
+        'Transcripts and summaries count by episode length: {limit} of audio in 30 days. '
+        '{left} left, and this episode runs {needed}.',
+        'As transcrições e os resumos contam pela duração dos episódios: {limit} de áudio em 30 dias. '
+        'Restam {left}, e este episódio dura {needed}.',
+        'Las transcripciones y los resúmenes cuentan por la duración de los episodios: {limit} de audio '
+        'en 30 días. Quedan {left} y este episodio dura {needed}.',
+        'Transkripte und Zusammenfassungen zählen nach der Länge der Folgen: {limit} Audio in 30 Tagen. '
+        'Übrig: {left}, diese Folge dauert {needed}.',
+        'תמלילים וסיכומים נספרים לפי אורך הפרקים: {limit} אודיו ב-30 יום. '
+        'נשארו {left}, והפרק הזה נמשך {needed}.'),
+    'transcriptForPlans': (
+        'Расшифровки входят в тарифы вместе с пересказами и считаются по длине выпусков: Relay – {relay} ч '
+        'аудио в месяц, Серебро – {silver} ч, Бронза – {bronze} ч. Бесплатны расшифровка, которую уже кто-то '
+        'заказал, и текст, который публикует сам подкаст.',
+        'Transcripts come with a plan, together with summaries, and count by episode length: Relay {relay} h '
+        'of audio a month, Silver {silver} h, Bronze {bronze} h. A transcript someone already asked for, or one '
+        'the podcast publishes, is free.',
+        'As transcrições vêm com um plano, junto com os resumos, e contam pela duração dos episódios: Relay '
+        '{relay} h de áudio por mês, Prata {silver} h, Bronze {bronze} h. Uma transcrição que alguém já pediu, '
+        'ou que o próprio podcast publica, é grátis.',
+        'Las transcripciones vienen con un plan, junto con los resúmenes, y cuentan por la duración de los '
+        'episodios: Relay {relay} h de audio al mes, Plata {silver} h, Bronce {bronze} h. Una transcripción que '
+        'alguien ya pidió, o que publica el propio podcast, es gratis.',
+        'Transkripte gibt es mit einem Tarif, zusammen mit den Zusammenfassungen, gezählt nach der Länge der '
+        'Folgen: Relay {relay} Std. Audio im Monat, Silber {silver} Std., Bronze {bronze} Std. Ein Transkript, '
+        'das schon jemand angefragt hat oder das der Podcast selbst veröffentlicht, ist gratis.',
+        'תמלילים מגיעים עם מסלול, יחד עם הסיכומים, ונספרים לפי אורך הפרקים: Relay {relay} שעות אודיו בחודש, '
+        'כסף {silver} שעות, ארד {bronze} שעות. תמליל שמישהו כבר ביקש, או שהפודקאסט עצמו מפרסם, הוא בחינם.'),
+    'transcriptFailed': (
+        'Не получилось расшифровать этот выпуск.',
+        'Could not transcribe this episode.',
+        'Não foi possível transcrever este episódio.',
+        'No se pudo transcribir este episodio.',
+        'Diese Folge ließ sich nicht transkribieren.',
+        'לא הצלחנו לתמלל את הפרק הזה.'),
+    # its status line, deleted when the file comes
+    'transcriptStatusQueued': (
+        '📥 Расшифровка: в очереди…',
+        '📥 Transcript: queued…',
+        '📥 Transcrição: na fila…',
+        '📥 Transcripción: en cola…',
+        '📥 Transkript: in der Warteschlange…',
+        '📥 תמליל: בתור…'),
+    'transcriptStatusDownloading': (
+        '📥 Расшифровка: скачиваю выпуск…',
+        '📥 Transcript: downloading the episode…',
+        '📥 Transcrição: baixando o episódio…',
+        '📥 Transcripción: descargando el episodio…',
+        '📥 Transkript: lade die Folge herunter…',
+        '📥 תמליל: מוריד את הפרק…'),
+    'transcriptStatusTranscribing': (
+        '📥 Расшифровка: распознаю речь, часть {done} из {total}…',
+        '📥 Transcript: transcribing, part {done} of {total}…',
+        '📥 Transcrição: transcrevendo, parte {done} de {total}…',
+        '📥 Transcripción: transcribiendo, parte {done} de {total}…',
+        '📥 Transkript: transkribiere, Teil {done} von {total}…',
+        '📥 תמליל: מתמלל, חלק {done} מתוך {total}…'),
     # questions about a whole podcast (app/service/ai/show_ask.py)
     'showAskButton': (
         '💬 Спросить о подкасте', '💬 Ask about the podcast', '💬 Perguntar sobre o podcast',
@@ -220,17 +273,23 @@ ROWS = {
     # once, after the first episode with the Summary button (app/service/ai/hint.py)
     'summaryHint': (
         '📝 Под выпуском кнопка "Пересказ": ИИ расскажет, о чём он, по пунктам со временем. '
-        'Нажмите на время – запись перемотается туда. А потом можно задать вопросы по выпуску.',
+        'Нажмите на время – запись перемотается туда. А потом можно задать вопросы по выпуску. '
+        'Рядом "Расшифровка": весь текст выпуска файлом.',
         '📝 The "Summary" button under the episode: AI tells you what it is about, point by point with times. '
-        'Tap a time and the audio jumps there. Then you can ask questions about the episode.',
+        'Tap a time and the audio jumps there. Then you can ask questions about the episode. '
+        'Next to it, "Transcript": the whole episode as a text file.',
         '📝 O botão "Resumo" sob o episódio: a IA conta do que se trata, ponto a ponto, com os horários. '
-        'Toque em um horário e o áudio pula para lá. Depois dá para fazer perguntas sobre o episódio.',
+        'Toque em um horário e o áudio pula para lá. Depois dá para fazer perguntas sobre o episódio. '
+        'Ao lado, "Transcrição": o episódio inteiro em um arquivo de texto.',
         '📝 El botón "Resumen" bajo el episodio: la IA te cuenta de qué trata, punto por punto con los tiempos. '
-        'Toca un tiempo y el audio salta ahí. Después puedes hacer preguntas sobre el episodio.',
+        'Toca un tiempo y el audio salta ahí. Después puedes hacer preguntas sobre el episodio. '
+        'Al lado, "Transcripción": el episodio entero en un archivo de texto.',
         '📝 Der Button "Zusammenfassung" unter der Folge: Die KI sagt dir Punkt für Punkt mit Zeitangaben, '
-        'worum es geht. Tippe auf eine Zeit, und das Audio springt dorthin. Danach kannst du Fragen zur Folge stellen.',
+        'worum es geht. Tippe auf eine Zeit, und das Audio springt dorthin. Danach kannst du Fragen zur Folge stellen. '
+        'Daneben "Transkript": die ganze Folge als Textdatei.',
         '📝 הכפתור "סיכום" מתחת לפרק: ה-AI מספר על מה הפרק, נקודה אחר נקודה עם זמנים. '
-        'הקשה על זמן מעבירה את ההקלטה לשם. אחר כך אפשר לשאול שאלות על הפרק.'),
+        'הקשה על זמן מעבירה את ההקלטה לשם. אחר כך אפשר לשאול שאלות על הפרק. '
+        'לידו, "תמליל": כל הפרק כקובץ טקסט.'),
     # status lines while a summary is made or a question answered, edited into the result
     'summaryStatusQueued': (
         '📝 Пересказ: в очереди…',

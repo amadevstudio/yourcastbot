@@ -134,6 +134,35 @@ def test_summary_and_question(user):
     _assert('processor(ask)' not in again.handlers, "after Done a text is no question")
 
 
+def test_transcript_alone(user):
+    """Transcript under the audio, no summary first: a status line, then only the transcript as a file
+    (no summary made); Summary after it is made from that transcript."""
+    from db import ai
+    ai.remember_episode('simref0000000005', 'https://cdn.example.com/ep5.mp3', None, 'Episode Five', 'Sim Show',
+                        1800)
+    from tools.botsim.fake_telegram import Sent
+    audio = Sent(user.api.next_id(), USER, 'audio', 'Episode Five')  # the audio the buttons are on
+    step = user.tap_data(json.dumps({'tp': 'trn', 'r': 'simref0000000005'}), message=audio)
+    _assert(step.handlers == ['action_processor(recs, trn)'] and len(step.new) == 1
+            and step.new[0].text == '📥 Transcript: queued…' and step.new[0].reply_to == audio.message_id,
+            "Transcript: a status line at once, under the audio")
+    status = step.new[0]
+    made = user.run_ai()
+    files = [m for m in made.new if m.kind == 'document']
+    _assert(len(files) == 1 and 'Episode Five' in files[0].text and not made.errors,
+            "the jobs process sends the transcript as a file")
+    _assert(user.api.messages[(USER, status.message_id)].deleted and not any(
+        sim.FAKE_SUMMARY.splitlines()[0] in m.text for m in made.new + made.edited),
+            "its status line goes, and no summary is made")
+    _assert(ai.transcript('simref0000000005')['text'] == sim.FAKE_TRANSCRIPT, "the transcript is cached")
+    again = user.tap_data(json.dumps({'tp': 'trn', 'r': 'simref0000000005'}), message=audio)
+    _assert(len(again.new) == 1 and again.new[0].kind == 'document', "a second tap: the file at once")
+    summary = user.tap_data(json.dumps({'tp': 'sum', 'r': 'simref0000000005'}), message=audio)
+    made = user.run_ai()
+    _assert(summary.new and any(sim.FAKE_SUMMARY.splitlines()[0] in m.text for m in made.edited),
+            "Summary after it: made from that transcript")
+
+
 def test_done_opens_podcast(user):
     """Done after questions about an episode of a known podcast: that podcast's page, Back to the menu."""
     from db import ai
@@ -251,6 +280,7 @@ def main():
         test_storefront(user)
         test_opml_offline(user)
         test_summary_and_question(user)
+        test_transcript_alone(user)
         test_done_opens_podcast(user)
         test_show_question(user)
         test_show_notes(user)

@@ -17,9 +17,14 @@ goes and the episode's podcast page comes as a new message at the bottom
 plain `menu` tap would redraw the old question screen up the chat). A text after
 ASK_IDLE_SECONDS without a question is a search, as it was before Ask.
 
-Next to Ask, "Transcript" (summary.TRANSCRIPT_ACTION) sends the transcript the
-summary was made from as a .txt file replying to the audio: it is cached
-already, so it is free to anyone who has the summary, as the summary is.
+"Transcript" (summary.TRANSCRIPT_ACTION), under the audio next to Summary and
+under a summary next to Ask, sends the episode's transcript as a .txt file
+replying to the audio. One made before (for a summary or a transcript) is
+free to anyone, as a summary is; so is the one the feed publishes, read at
+the tap. Otherwise only the transcript is queued (ai.TRANSCRIPT: no model
+call), charged the episode's length like a summary, through the same quota
+and offers. A chat charged for an episode's audio once is not charged again
+for it (ai.audio_paid): a summary after its transcript, or the reverse.
 """
 import io
 import json
@@ -94,7 +99,7 @@ def request_summary(data):
         usage.record_ai(data['chat_id'], ref, 0.0)
         return
 
-    quota = ai_quota.check(data['chat_id'], ai_quota.seconds_needed(episode))
+    quota = ai_quota.check(data['chat_id'], _needed(data['chat_id'], episode))
     if not quota.allowed:
         notify(data['callback'], data['message'], '')
         render_messages(data['chat_id'], [offer_message(language_code, quota)])
@@ -108,6 +113,12 @@ def request_summary(data):
             message_deleter(data['chat_id'], status)
         except Exception:
             pass
+
+
+def _needed(chat_id, episode) -> int:
+    """The seconds a new summary or transcript takes from the quota: none when this chat's own
+    request for the episode was charged its audio already (the transcript is paid for)."""
+    return 0 if ai.audio_paid(chat_id, episode['ref']) else ai_quota.seconds_needed(episode)
 
 
 def status_line(chat_id, text, reply_to=None) -> int | None:
@@ -140,11 +151,11 @@ def _paragraphs(text) -> str:
     return '\n\n'.join(paragraphs + ([current] if current else []))
 
 
-def transcript_file(episode, found) -> tuple[str, bytes]:
+def transcript_file(episode, text) -> tuple[str, bytes]:
     """(file name, UTF-8 text) of an episode's transcript: the show, the title and the audio's link,
     then the text with a line for each time mark (paragraphs when it has none)."""
     title = telegram_html.plain_text(episode['title']).strip()
-    text = str(found['text']).strip()
+    text = str(text).strip()
     text = _MARK.sub('\n', text) if _MARK.search(text) else _paragraphs(text)
     lines = [telegram_html.plain_text(episode['show']).strip(), title, episode['link'], '', text, '']
     # what a file name cannot hold on some system goes; Telegram keeps any other letter
@@ -152,10 +163,44 @@ def transcript_file(episode, found) -> tuple[str, bytes]:
     return name + '.txt', '\n'.join(lines).encode('utf-8')
 
 
-def send_transcript(data):
-    """The Transcript button under a summary: the transcript the summary was made from, as a text
-    file replying to the audio. It is made already (the summary needed it): free, as the summary is."""
+def send_transcript_file(chat_id, episode, text, source, language_code, reply_to=None) -> bool:
+    """The transcript as a .txt file replying to the audio; True if Telegram took it."""
+    name, body = transcript_file(episode, text)
+    caption = '📄 <b>%s – %s</b>' % (telegram_html.escape(telegram_html.plain_text(episode['show'])[:200]),
+                                     telegram_html.escape(telegram_html.plain_text(episode['title'])[:300]))
+    if source == 'whisper':
+        caption += '\n' + get_message('transcriptMachine', language_code)
+    return send_document(chat_id, name, body, caption, reply_to)
+
+
+# the feed's transcript is read at the tap, in the incoming worker: it must not hang there
+FEED_TRANSCRIPT_TIMEOUT = (5, 20)
+
+
+def _feed_transcript(episode):
+    """The transcript the episode's feed publishes (the feed's last copy, feed_cache), cached for
+    everyone; None when it has none or it cannot be read now."""
+    from app.service.ai import transcript
+    from lib.requests import requesterModule
+    try:
+        found = transcript.from_episode_feed(requesterModule.Requester(attempts=0, total_attempts=0), episode,
+                                             cached=True, timeout=FEED_TRANSCRIPT_TIMEOUT)
+    except Exception as e:
+        logger.warn('transcript/feed:', episode['ref'], type(e).__name__, e)
+        return None
+    if found is not None:
+        ai.save_transcript(episode['ref'], found.text, found.source, found.cost_usd, found.seconds)
+    return found
+
+
+def request_transcript(data):
+    """Transcript, under the audio or under a summary: the file at once when it is made or the feed
+    has it (free); else the transcript alone is queued for the jobs process (ai_watcher), charged
+    the episode's length like a summary; without the hours, the same offer as a summary."""
     language_code = data['language_code']
+    if not summary.enabled():
+        notify(data['callback'], data['message'], get_message('summaryUnavailable', language_code))
+        return
     try:
         call = json.loads(data['callback'].data)
         ref, audio = str(call['r']), int(call.get('m') or 0) or None
@@ -165,32 +210,50 @@ def send_transcript(data):
     if episode is None:
         notify(data['callback'], data['message'], get_message('screenOutdated', language_code))
         return
-    found = ai.transcript(ref)
-    if found is None:  # pruned with its summary after KEEP_DAYS: the Summary button makes both again
-        notify(data['callback'], data['message'], get_message('transcriptGone', language_code), alert=True)
-        return
+    # under the audio the button is on the audio itself; under a summary it names it ('m')
+    audio = audio or getattr(data['message'], 'message_id', None)
     notify(data['callback'], data['message'], '')
-    name, body = transcript_file(episode, found)
-    caption = '📄 <b>%s – %s</b>' % (telegram_html.escape(telegram_html.plain_text(episode['show'])[:200]),
-                                     telegram_html.escape(telegram_html.plain_text(episode['title'])[:300]))
-    if found['source'] == 'whisper':
-        caption += '\n' + get_message('transcriptMachine', language_code)
-    send_document(data['chat_id'], name, body, caption, audio)
+    found = ai.transcript(ref)
+    if found is None:
+        found = _feed_transcript(episode)
+        found = dict(found._asdict()) if found is not None else None
+    if found is not None:
+        if send_transcript_file(data['chat_id'], episode, found['text'], found['source'], language_code, audio):
+            usage.record_transcript(data['chat_id'], ref, 0.0)
+            analytics_events.track(data['chat_id'], 'transcript_ready', {'source': found['source'], 'made': False})
+        return
+
+    quota = ai_quota.check(data['chat_id'], _needed(data['chat_id'], episode))
+    if not quota.allowed:
+        render_messages(data['chat_id'], [offer_message(language_code, quota, transcript=True)])
+        return
+    # the worker edits it as it goes (downloading, transcribing part n of m) and deletes it with the file
+    status = status_line(data['chat_id'], get_message('transcriptStatusQueued', language_code), audio)
+    _, new = ai.enqueue(data['chat_id'], ref, '', quota.needed, reply_to=audio, status_message=status,
+                        kind=ai.TRANSCRIPT)
+    if not new and status:  # a second tap: the first one's line is already there
+        try:
+            message_deleter(data['chat_id'], status)
+        except Exception:
+            pass
 
 
-def send_document(chat_id, name, body, caption, reply_to=None):
-    """A file to a chat; what Telegram does not take (blocked, a flood) is a WARN, as in outer_sender."""
+def send_document(chat_id, name, body, caption, reply_to=None) -> bool:
+    """A file to a chat; True if Telegram took it. What it does not take (blocked, a flood) is a WARN,
+    as in outer_sender."""
     from agent.bot_telebot import bot
     try:
         bot.send_document(chat_id, io.BytesIO(body), visible_file_name=name, caption=caption, parse_mode='HTML',
                           reply_to_message_id=reply_to, allow_sending_without_reply=True if reply_to else None)
+        return True
     except (ApiTelegramException, ApiException) as e:
         if get_timeout_from_error_bot(e) or bot_blocked_reaction(e, chat_id):
             logger.warn('transcript not sent:', e)
-            return
+            return False
         log_caught(logger, error=e)
     except Exception as e:
         log_caught(logger, error=e)
+    return False
 
 
 def ask_offer_message(language_code) -> dict:
