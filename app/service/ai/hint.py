@@ -32,7 +32,7 @@ def pending(chat_ids, database=None) -> set:
                 "SELECT u.telegramId FROM users u JOIN user_tariff_cs ut ON ut.uid = u.id "
                 "WHERE u.telegramId IN (%s) AND ut.tariff_id > 0 AND ut.time_left > 0 "
                 "AND json_extract(COALESCE(u.flags, '{}'), '$.%s') IS NULL "
-                "AND NOT EXISTS(SELECT 1 FROM ai_requests r WHERE r.chat_id = u.telegramId)"
+                "AND NOT EXISTS(SELECT 1 FROM ai_requests r WHERE r.chat_id = u.telegramId AND r.kind = 'summary')"
                 % (','.join('?' * len(part)), FLAG), part).fetchall()
             found.update(int(row[0]) for row in rows)
     finally:

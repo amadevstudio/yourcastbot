@@ -44,7 +44,7 @@ _OWN_SUB = ("EXISTS(SELECT 1 FROM user_channel_cs s WHERE s.user_telegram_id = u
             "AND s.channel_id != :welcome)")
 _GOT_EPISODE = ("EXISTS(SELECT 1 FROM usage_events e WHERE e.user_id = u.telegramId "
                 "AND e.kind IN ('rec', 'circle'))")
-_ASKED_SUMMARY = "EXISTS(SELECT 1 FROM ai_requests r WHERE r.chat_id = u.telegramId)"
+_ASKED_SUMMARY = "EXISTS(SELECT 1 FROM ai_requests r WHERE r.chat_id = u.telegramId AND r.kind = 'summary')"
 
 
 def _newcomers(conn, params) -> tuple[dict, list]:
@@ -158,13 +158,18 @@ def _ai(conn, since: float, until: float) -> dict:
     row = conn.execute(
         "SELECT COALESCE(SUM(auto = 0), 0) taps, COALESCE(SUM(auto = 1), 0) auto, "
         "COALESCE(SUM(status = 'done'), 0) done, COALESCE(SUM(status = 'failed'), 0) failed, "
-        "COUNT(DISTINCT chat_id) chats FROM ai_requests WHERE created_at >= ? AND created_at < ?",
-        (since, until)).fetchone()
+        "COUNT(DISTINCT chat_id) chats FROM ai_requests WHERE kind = 'summary' "
+        "AND created_at >= ? AND created_at < ?", (since, until)).fetchone()
     asked = conn.execute(
         "SELECT COUNT(*) questions, COUNT(DISTINCT user_id) chats, COALESCE(SUM(cost_usd), 0) usd "
         "FROM usage_events WHERE kind = 'ask' AND at >= ? AND at < ?", (since, until)).fetchone()
+    # a transcript file: made now (Whisper), before, or the feed's
+    transcripts = conn.execute(
+        "SELECT COUNT(*) files, COUNT(DISTINCT user_id) chats, COALESCE(SUM(cost_usd > 0), 0) made "
+        "FROM usage_events WHERE kind = 'transcript' AND at >= ? AND at < ?", (since, until)).fetchone()
     spend = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM usage_events "
-                         "WHERE kind IN ('ai', 'ask') AND at >= ? AND at < ?", (since, until)).fetchone()[0]
+                         "WHERE kind IN ('ai', 'ask', 'transcript') AND at >= ? AND at < ?",
+                         (since, until)).fetchone()[0]
     auto_on = conn.execute(
         "SELECT COUNT(*) FROM users WHERE deleted_at IS NULL "
         "AND json_extract(COALESCE(flags, '{}'), '$.auto_summary')").fetchone()[0]
@@ -172,6 +177,8 @@ def _ai(conn, since: float, until: float) -> dict:
             'summary_done': int(row['done']), 'summary_failed': int(row['failed']),
             'summary_chats': int(row['chats']), 'questions': int(asked['questions']),
             'question_chats': int(asked['chats']), 'auto_on': int(auto_on),
+            'transcripts': int(transcripts['files']), 'transcript_chats': int(transcripts['chats']),
+            'transcripts_made': int(transcripts['made']),
             'ai_usd': round(float(spend), 4)}
 
 

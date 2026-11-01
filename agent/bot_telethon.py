@@ -163,8 +163,8 @@ def send_uploaded(local_thonbot, data, file, retries=3):
 
 
 def episode_keyboard(argv):
-    """argv['buttons']: (text, callback data) pairs, one per row (Sender.episode_buttons)."""
-    return [[Button.inline(text, data)] for text, data in argv.get('buttons') or ()] or None
+    """argv['buttons']: rows of (text, callback data) pairs (Sender.episode_buttons)."""
+    return [[Button.inline(text, data) for text, data in row] for row in argv.get('buttons') or ()] or None
 
 # def get_or_create_event_loop():
 #     try:

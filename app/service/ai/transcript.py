@@ -132,15 +132,25 @@ def transcript_text(body: str, content_type: str = '') -> str:
     return timed(parts)
 
 
-def from_feed(requester, channel_root, link) -> Transcript | None:
+def from_feed(requester, channel_root, link, timeout=60) -> Transcript | None:
     url = transcript_url(channel_root, link)
     if url is None:
         return None
-    response = requester.get(url, timeout=60)
+    response = requester.get(url, timeout=timeout)
     if response is None or response.status_code != 200:
         return None
     text = transcript_text(response.text, response.headers.get('Content-Type', ''))
     return Transcript(text, 'feed', 0.0, 0.0) if text else None
+
+
+def from_episode_feed(requester, episode, cached=False, timeout=60) -> Transcript | None:
+    """The transcript the episode's feed publishes (episode: db/ai.episode), None when it has none.
+    `cached`: the feed's last copy (feed_cache), for a tap; the worker asks the host."""
+    if not episode.get('feed_url'):
+        return None
+    from app.service.podcast.rss import get_rss_root_with_status
+    root, _status, _validators = get_rss_root_with_status(episode['feed_url'], cached=cached)
+    return from_feed(requester, root, episode['link'], timeout) if root is not False else None
 
 
 def split_audio(path, out_dir) -> list[str]:

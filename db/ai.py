@@ -11,6 +11,10 @@ Quotas are hours of audio: a request carries the seconds it is charged
 someone else's summary served it), and a chat's use is the sum of its
 requests that are on their way or done.
 
+A request is a summary or, `kind` TRANSCRIPT, only the transcript (the
+Transcript button, sent as a file): the same queue, quota and status line,
+without the model call.
+
 Prod SQLite is 3.31: no RETURNING, claims use BEGIN IMMEDIATE.
 """
 import sqlite3
@@ -20,6 +24,7 @@ import time
 from config import db_path
 from db.connection import connect_sqlite
 
+SUMMARY, TRANSCRIPT = 'summary', 'transcript'  # ai_requests.kind
 LEASE_SECONDS = 30 * 60
 MAX_ATTEMPTS = 2
 KEEP_DAYS = 180
@@ -62,8 +67,10 @@ def connect(database=None):
             # reply_to: the audio message the summary answers (its times play the episode from there);
             # auto: queued for a new episode (app/service/ai/auto.py), after every tap
             # status_message: the line "downloading... transcribing..." a tap got, edited into the summary
+            # kind: SUMMARY, or TRANSCRIPT (the transcript alone, as a file)
             for column, sql in (('reply_to', 'reply_to INTEGER'), ('auto', 'auto INTEGER NOT NULL DEFAULT 0'),
-                                ('status_message', 'status_message INTEGER')):
+                                ('status_message', 'status_message INTEGER'),
+                                ('kind', "kind TEXT NOT NULL DEFAULT '%s'" % SUMMARY)):
                 if column in columns:
                     continue
                 try:
@@ -173,18 +180,18 @@ def gist(channel_id, title, database=None, limit=200):
 
 
 def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=False,
-            status_message=None) -> tuple[int, bool]:
+            status_message=None, kind=SUMMARY) -> tuple[int, bool]:
     """(request id, True if new), charged `seconds` of the quota. A tap on a summary
-    already on its way is not a new one. `reply_to`: the audio message the summary answers;
-    `auto`: not asked for (a new episode), it waits for every tap; `status_message`: the
-    status line the worker edits as it goes, and into the summary."""
+    (or a transcript) already on its way is not a new one. `reply_to`: the audio message the
+    summary answers; `auto`: not asked for (a new episode), it waits for every tap;
+    `status_message`: the status line the worker edits as it goes, and into the summary."""
     c = connect(database)
     try:
         c.isolation_level = None
         c.execute('BEGIN IMMEDIATE')
         try:
-            row = c.execute("SELECT id FROM ai_requests WHERE chat_id=? AND ref=? AND lang=? "
-                            "AND status IN ('pending','working')", (int(chat_id), ref, lang)).fetchone()
+            row = c.execute("SELECT id FROM ai_requests WHERE chat_id=? AND ref=? AND lang=? AND kind=? "
+                            "AND status IN ('pending','working')", (int(chat_id), ref, lang, kind)).fetchone()
             if row is not None:
                 if not auto:  # a tap on one queued automatically: it is wanted now
                     c.execute('UPDATE ai_requests SET auto=0, reply_to=COALESCE(reply_to, ?), '
@@ -194,10 +201,10 @@ def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=Fals
                 c.execute('COMMIT')
                 return int(row['id']), False
             cursor = c.execute("INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to,auto,"
-                               "status_message) VALUES (?,?,?,'pending',?,?,?,?,?)",
+                               "status_message,kind) VALUES (?,?,?,'pending',?,?,?,?,?,?)",
                                (int(chat_id), ref, lang, time.time(), int(seconds),
                                 int(reply_to) if reply_to else None, int(bool(auto)),
-                                int(status_message) if status_message else None))
+                                int(status_message) if status_message else None, kind))
             c.execute('COMMIT')
             return int(cursor.lastrowid), True
         except Exception:
@@ -213,6 +220,17 @@ def seconds_used(chat_id, since, database=None) -> int:
                          "AND created_at>=? AND status IN ('pending','working','done')",
                (int(chat_id), since))
     return int(row['s']) if row else 0
+
+
+def audio_paid(chat_id, ref, database=None, exclude=None, done_only=False) -> bool:
+    """Has this chat been charged this episode's audio already: a request of its own for the episode
+    charged seconds, on its way or done (`done_only`: done), `exclude` (a request id) left out? Then
+    its transcript is paid for, and a summary or a transcript of the same episode costs it no more hours."""
+    statuses = "('done')" if done_only else "('pending','working','done')"
+    row = _one(database, "SELECT 1 FROM ai_requests WHERE chat_id=? AND ref=? AND seconds>0 AND id!=? "
+                         "AND status IN %s LIMIT 1" % statuses,
+               (int(chat_id), ref, int(exclude or 0)))
+    return row is not None
 
 
 def claim(database=None, now=None):

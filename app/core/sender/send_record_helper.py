@@ -1321,31 +1321,34 @@ class Sender:
             show_updated_text=('show_updated_text' not in chat or chat['show_updated_text'] is True),
             bot_reference=('bot_reference' not in chat or chat['bot_reference'] is True))
 
-    def episode_buttons(self, lang_code='en', chat_id=None) -> list[tuple[str, str]]:
-        """(text, callback data) under the episode, one per row, for the Bot API and the
-        agent alike: Next episode (clicks), Summary (user chats, AI on)."""
-        buttons = []
+    def episode_buttons(self, lang_code='en', chat_id=None) -> list[list[tuple[str, str]]]:
+        """Rows of (text, callback data) under the episode, for the Bot API and the agent alike:
+        Next episode (clicks); Summary and Transcript side by side (user chats, AI on); Show notes
+        (user chats in the brief or title-only format: the description is not in the message)."""
+        rows = []
         if self.podcast_info['with_next_ep_button']:
-            buttons.append((get_message("loadNextRecord", lang_code), self.get_button_data()))
+            rows.append([(get_message("loadNextRecord", lang_code), self.get_button_data())])
         # channels have no one to answer: their readers are not the bot's users
-        if self._summary_ref is not None and str(chat_id).isdigit():
-            buttons.append((get_message("summaryButton", lang_code),
-                            json.dumps(ai_summary.button_data(self._summary_ref))))
-        # brief: the feed's text on a tap, under the summary
-        if (self._episode_ref is not None and str(chat_id).isdigit() and self._chat_format(chat_id) == BRIEF
+        user_chat = str(chat_id).isdigit()
+        if self._summary_ref is not None and user_chat:
+            rows.append([(get_message("summaryButton", lang_code), json.dumps(ai_summary.button_data(self._summary_ref))),
+                         (get_message("transcriptButton", lang_code),
+                          json.dumps(ai_summary.transcript_button_data(self._summary_ref)))])
+        # the feed's text on a tap, under the summary
+        if (self._episode_ref is not None and user_chat and self._chat_format(chat_id) in (BRIEF, META)
                 and str(self.podcast_info.get('descr') or '').strip()):
-            buttons.append((get_message("descriptionButton", lang_code),
-                            json.dumps({'tp': DESCRIPTION_ACTION, 'r': self._episode_ref})))
-        return buttons
+            rows.append([(get_message("descriptionButton", lang_code),
+                          json.dumps({'tp': DESCRIPTION_ACTION, 'r': self._episode_ref}))])
+        return rows
 
     def get_next_ep_button(self, lang_code='en', chat_id=None):
         """The episode buttons as a Bot API keyboard, None without buttons."""
-        buttons = self.episode_buttons(lang_code, chat_id)
-        if not buttons:
+        rows = self.episode_buttons(lang_code, chat_id)
+        if not rows:
             return None
         keyboard = InlineKeyboardMarkup()
-        for text, data in buttons:
-            keyboard.add(InlineKeyboardButton(text=text, callback_data=data))
+        for row in rows:
+            keyboard.row(*(InlineKeyboardButton(text=text, callback_data=data) for text, data in row))
         return keyboard
 
     def _remember_for_summary(self):
