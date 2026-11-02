@@ -946,8 +946,12 @@ OpenRouter's chat completions for the summary and its
 OpenRouter (key, errors, billed cost); `transcript.py` the feed's
 `<podcast:transcript>` (free) or Whisper on 10-minute ffmpeg pieces
 (downloaded through DiskBudget; ffmpeg streams, pydub would hold the
-episode in memory on a 2 GB server); `summary.py` the model call and the
-button; `quota.py` who may ask. The plan level is
+episode in memory on a 2 GB server). Whisper is told the language
+(`transcript.speech_language`): the feed's `<language>` when two of three
+30 s samples from the middle hear it, else the samples' when all three agree,
+else nothing. Its own guess from a piece's first 30 s turned a Turkish lesson
+into broken English, and a Persian show's feed says "en" (2026-11-02).
+`summary.py` the model call and the button; `quota.py` who may ask. The plan level is
 `db/tariff_rows.running_plan_level`, shared with the free episode limit.
 
 - The sender remembers the episode (`db/ai.py`, ref = `usage.episode_ref`

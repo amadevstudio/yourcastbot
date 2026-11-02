@@ -19,6 +19,15 @@ plays from there. An HTML transcript, or plain text without times, has no
 marks. A speaker the feed names (a VTT voice, "Speaker 2:" in front of a cue,
 JSON speaker) starts a turn: a mark and the label once, so the file reads as a
 dialog.
+
+Whisper guesses the language from the first 30 s of each piece, and a guess on
+an intro or music decodes the whole piece in the wrong language: it translates
+(a Turkish lesson came back as broken English with loops, 2026-11-02). So the
+language is given to it (`speech_language`): three 30 s samples from the middle
+of the episode are asked what language they are; the feed's <language> when
+two of them say it, else the samples' language when all three agree (a feed can
+name the wrong one: a Persian show says "en"), else nothing (Whisper guesses,
+as before). The samples cost a few hundredths of a cent.
 """
 import base64
 import glob
@@ -36,6 +45,7 @@ from config import ai_transcribe_model, work_dir
 from lib.markup import telegram_html
 from lib.requests.url import normalize_url
 from lib.system.disk_budget import BudgetedDownload, DiskBudget
+from lib.tools.logger import logger
 
 PODCAST_NS = '{https://podcastindex.org/namespace/1.0}'
 # readable first: plain text, then subtitles, then JSON and HTML
@@ -50,6 +60,9 @@ OVERLAP_SECONDS = 30
 SPEAKER_OPTIONS = {'xai': {'diarize': True}, 'elevenlabs': {'diarize': True}, 'deepgram': {'diarize': True},
                    'azure': {'diarization': {'enabled': True}}}
 _SENTENCE_END = ('.', '!', '?', '…', '。', '؟')
+LANGUAGE_SAMPLES = (0.3, 0.5, 0.7)  # where the language samples start, as parts of the episode
+SAMPLE_SECONDS = 30
+_LANGUAGE_CODE = re.compile(r'^[a-z]{2,3}$')
 WHISPER, SPEAKERS = 'whisper', 'speakers'  # Transcript.source of what we made (SPEAKERS: a paid model)
 
 _TIMING = re.compile(r'^\s*(\d+\s*$|[\d:.,]+\s*-->\s*[\d:.,]+.*$|WEBVTT.*$|NOTE\b.*$)')
@@ -191,14 +204,86 @@ def from_feed(requester, channel_root, link, timeout=60) -> Transcript | None:
     return Transcript(text, 'feed', 0.0, 0.0) if text else None
 
 
-def from_episode_feed(requester, episode, cached=False, timeout=60) -> Transcript | None:
-    """The transcript the episode's feed publishes (episode: db/ai.episode), None when it has none.
-    `cached`: the feed's last copy (feed_cache), for a tap; the worker asks the host."""
+def episode_feed(episode, cached=False):
+    """The channel element of the episode's feed (episode: db/ai.episode); None without a feed or when
+    it cannot be read. `cached`: the feed's last copy (feed_cache), for a tap; the worker asks the host."""
     if not episode.get('feed_url'):
         return None
     from app.service.podcast.rss import get_rss_root_with_status
     root, _status, _validators = get_rss_root_with_status(episode['feed_url'], cached=cached)
-    return from_feed(requester, root, episode['link'], timeout) if root is not False else None
+    return None if root is False else root
+
+
+def from_episode_feed(requester, episode, cached=False, timeout=60) -> Transcript | None:
+    """The transcript the episode's feed publishes, None when it has none."""
+    root = episode_feed(episode, cached)
+    return from_feed(requester, root, episode['link'], timeout) if root is not None else None
+
+
+def feed_language(channel_root) -> str:
+    """The feed's <language> as a code ('en-US' -> 'en'); '' when it names none."""
+    if channel_root is None or channel_root is False:
+        return ''
+    code = str(channel_root.findtext('language') or '').strip().lower().replace('_', '-').split('-')[0]
+    return code if _LANGUAGE_CODE.match(code) else ''
+
+
+def _duration(path) -> float:
+    probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path],
+                           check=True, capture_output=True, text=True, timeout=60)
+    return float(probe.stdout.strip())
+
+
+def detect_language(session, path) -> tuple[str, float]:
+    """(the language Whisper hears in a short sample, '' when it says none; USD)."""
+    with open(path, 'rb') as audio:
+        body = openrouter.post(
+            'audio/transcriptions', session, files={'file': (os.path.basename(path), audio, 'audio/mpeg')},
+            data={'model': ai_transcribe_model, 'response_format': 'verbose_json'})
+    code = str(body.get('language') or '').strip().lower()
+    return (code if _LANGUAGE_CODE.match(code) else ''), openrouter.cost(body)
+
+
+def choose_language(heard, feed='') -> str | None:
+    """What Whisper is told: the feed's language when two samples say it, else the samples' when they
+    all agree, else None (it guesses)."""
+    heard = [code for code in heard if code]
+    if feed and heard.count(feed) >= 2:
+        return feed
+    if len(heard) == len(LANGUAGE_SAMPLES) and len(set(heard)) == 1:
+        return heard[0]
+    return None
+
+
+def speech_language(session, path, out_dir, feed='') -> tuple[str | None, float]:
+    """(the language to give Whisper for this audio, or None; what asking cost). Never raises: a sample
+    that cannot be cut or asked counts as no answer."""
+    heard, cost = [], 0.0
+    try:
+        duration = _duration(path)
+    except (subprocess.SubprocessError, ValueError, OSError) as e:
+        logger.warn('transcript language: no duration:', type(e).__name__, e)
+        return None, 0.0
+    if duration < SAMPLE_SECONDS * 3:
+        return None, 0.0  # too short to sample (and a feed can be wrong): Whisper guesses
+    for number, part in enumerate(LANGUAGE_SAMPLES):
+        sample = os.path.join(out_dir, 'language%d.mp3' % number)
+        try:
+            subprocess.run(['nice', '-n', '10', 'ffmpeg', '-nostdin', '-loglevel', 'error', '-y',
+                            '-ss', '%.1f' % (duration * part), '-t', str(SAMPLE_SECONDS), '-i', path,
+                            '-vn', '-ac', '1', '-ar', '16000', '-b:a', '24k', sample], check=True, timeout=120)
+            code, sample_cost = detect_language(session, sample)
+            heard.append(code)
+            cost += sample_cost
+        except Exception as e:
+            logger.warn('transcript language: sample', number, type(e).__name__, e)
+            heard.append('')
+        finally:
+            if os.path.exists(sample):
+                os.remove(sample)
+    chosen = choose_language(heard, feed)
+    logger.log('transcript language: feed %r, heard %s, chosen %r' % (feed, heard, chosen))
+    return chosen, cost
 
 
 def split_audio(path, out_dir) -> list[str]:
@@ -212,14 +297,16 @@ def split_audio(path, out_dir) -> list[str]:
     return sorted(glob.glob(os.path.join(out_dir, 'piece*.mp3')))
 
 
-def transcribe_piece(session, path, offset=0.0) -> Transcript:
-    """One piece; `offset`: where it starts in the episode, for its time marks."""
+def transcribe_piece(session, path, offset=0.0, language=None) -> Transcript:
+    """One piece; `offset`: where it starts in the episode, for its time marks; `language`: what it is
+    spoken in (speech_language), else Whisper guesses."""
+    data = {'model': ai_transcribe_model, 'response_format': 'verbose_json', 'timestamp_granularities[]': 'segment'}
+    if language:
+        data['language'] = language
     with open(path, 'rb') as audio:
         body = openrouter.post(
             'audio/transcriptions', session,
-            files={'file': (os.path.basename(path), audio, 'audio/mpeg')},
-            data={'model': ai_transcribe_model, 'response_format': 'verbose_json',
-                  'timestamp_granularities[]': 'segment'})
+            files={'file': (os.path.basename(path), audio, 'audio/mpeg')}, data=data)
     seconds = float((body.get('usage') or {}).get('seconds') or body.get('duration') or 0)
     segments = [s for s in body.get('segments') or [] if isinstance(s, dict)]
     if segments:
@@ -338,9 +425,10 @@ def speaker_text(words) -> str:
 
 
 def from_audio(requester, session, link, budget: DiskBudget | None = None, progress=None,
-               speakers_model=None) -> Transcript:
-    """Whisper on the episode's audio, or with `speakers_model` (a model that labels speakers, the paid
-    one) the text with who speaks. The file and its pieces are deleted after.
+               speakers_model=None, feed_language='') -> Transcript:
+    """Whisper on the episode's audio, told its language (speech_language, `feed_language` the feed's
+    word for it), or with `speakers_model` (a model that labels speakers, the paid one) the text with who
+    speaks. The file and its pieces are deleted after.
     `progress(stage, done, total)`: 'download', then 'transcribe' before each piece."""
     progress = progress or (lambda *args: None)
     budget = budget or DiskBudget(os.path.join(work_dir, 'records'))
@@ -352,11 +440,12 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None, progr
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
             if speakers_model:
                 return _with_speakers(session, download.path, pieces_dir, speakers_model, progress)
+            language, language_cost = speech_language(session, download.path, pieces_dir, feed_language)
             pieces, offset = [], 0.0
             paths = split_audio(download.path, pieces_dir)
             for number, path in enumerate(paths, 1):
                 progress('transcribe', number, len(paths))
-                pieces.append(transcribe_piece(session, path, offset))
+                pieces.append(transcribe_piece(session, path, offset, language))
                 offset += pieces[-1].seconds or PIECE_SECONDS
                 os.remove(path)
     finally:
@@ -364,7 +453,7 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None, progr
     text = ' '.join(piece.text for piece in pieces if piece.text).strip()
     if not text:
         raise TranscriptUnavailable('empty transcript')
-    return Transcript(text, WHISPER, sum(piece.cost_usd for piece in pieces),
+    return Transcript(text, WHISPER, language_cost + sum(piece.cost_usd for piece in pieces),
                       sum(piece.seconds for piece in pieces))
 
 
