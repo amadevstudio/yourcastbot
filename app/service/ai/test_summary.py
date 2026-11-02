@@ -126,8 +126,13 @@ def test_openrouter():
     _assert(summary.summary_language(summary.MINE, 'pt-BR') == 'pt-br'
             and summary.summary_language(summary.MINE, None) == 'en', "the Telegram language when picked")
     _assert((text, cost) == ('Gist.\n• One', 0.0021), "the text and what OpenRouter billed")
-    _assert('[12:40]' in summary.SYSTEM and 'never invent a time' in summary.SYSTEM,
-            "the summary starts its points with the transcript's times, never made-up ones")
+    summary.summarize('[0:00] Hi. [0:31] More.', 'Seven', 'Show', summary.ORIGINAL, session=session)
+    marked, plain = session.calls[2][2]['messages'][1]['content'], session.calls[1][2]['messages'][1]['content']
+    _assert(summary.WITH_MARKS in marked and summary.WITHOUT_MARKS not in marked
+            and summary.WITHOUT_MARKS in plain and summary.WITH_MARKS not in plain
+            and 'never invent a time' in summary.WITH_MARKS and '12:40' not in summary.SYSTEM,
+            "the code says whether the transcript has times (the model once wrote it had none into a summary)")
+    _assert('never a word about the transcript' in summary.SYSTEM, "and the summary says nothing about its format")
     long_text = 'x' * (summary.MAX_TRANSCRIPT_CHARS + 10)
     _assert(len(summary.bounded(long_text)) < summary.MAX_TRANSCRIPT_CHARS + 50
             and summary.bounded('short') == 'short', "a transcript past ~100k tokens is cut, a usual one is whole")
@@ -265,6 +270,16 @@ def test_language(tmp):
 
 def test_speakers(tmp):
     """The paid model: who speaks, kept apart across pieces by the words their overlap shares."""
+    saved_overlap, transcript.OVERLAP_SECONDS = transcript.OVERLAP_SECONDS, 30  # the cases below overlap 30 s
+    try:
+        _speakers(tmp)
+    finally:
+        transcript.OVERLAP_SECONDS = saved_overlap
+    _assert(transcript.SPEAKER_PIECE_SECONDS >= 30 * 60 and transcript.OVERLAP_SECONDS >= 120,
+            "long pieces and a long overlap: few joins, and most speakers heard in each")
+
+
+def _speakers(tmp):
     piece = os.path.join(tmp, 'piece001.mp3')
     with open(piece, 'wb') as f:
         f.write(b'ID3')
@@ -293,6 +308,15 @@ def test_speakers(tmp):
                                                     (605.0, 'voice.', 2)],
             "a speaker keeps their number across pieces; one not heard in the overlap is new")
     _assert(sum(1 for w in merged if 570 <= w[0] < 600) == 5, "the overlap's words come once, from the piece before")
+    one = [(10.0, 'Hi', 1), (575.0, 'I', 0), (575.5, 'think', 0)]
+    two = [(575.1, 'I', 5), (575.6, 'think', 5), (610.0, 'Yes.', 7)]
+    merged = transcript.merge_speakers([(0.0, one), (570.0, two)])
+    _assert(merged[-1] == (610.0, 'Yes.', 0), "a piece's only unmatched speaker against the only known one it "
+            "did not match: that one, by elimination")
+    quiet = [(560.0, 'A', 0), (561.0, 'B', 1), (562.0, 'C', 2), (575.0, 'x', 0), (575.5, 'y', 0)]
+    again = [(575.1, 'x', 0), (575.6, 'y', 0), (601.0, 'D', 1), (602.0, 'E', 2)]
+    merged = transcript.merge_speakers([(0.0, quiet), (570.0, again)])
+    _assert({w[2] for w in merged if w[0] >= 600} == {3, 4}, "two unmatched against two: no guess, new speakers")
     text = transcript.speaker_text([(0.0, 'Hello', 0), (0.4, 'there.', 0), (31.0, 'Still', 0), (32.0, 'me.', 0),
                                     (40.0, 'Mid', 0), (61.0, 'sentence', 0), (62.0, 'here.', 0), (63.0, 'Hi.', 1)])
     _assert(text == '[0:00] Speaker 1: Hello there. [0:31] Still me. Mid sentence here. [1:03] Speaker 2: Hi.',

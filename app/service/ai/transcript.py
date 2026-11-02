@@ -53,9 +53,12 @@ TYPE_ORDER = ('text/plain', 'text/vtt', 'application/x-subrip', 'application/srt
               'application/json', 'text/html')
 PIECE_SECONDS = 10 * 60
 MARK_SECONDS = 30
-# with speakers each piece after the first starts this early: a model numbers the speakers of each piece
-# anew, and the words both pieces heard tell which is which
-OVERLAP_SECONDS = 30
+# with speakers the pieces are long (fewer joins: a model numbers the speakers of each piece anew) and still
+# well inside the provider's 60 s (Grok took 10-22 s for 30 minutes); each after the first starts
+# OVERLAP_SECONDS early, and the words both pieces heard tell which speaker is which: in 30 s only one or two
+# of four hosts spoke and the others became new speakers (19 in an 80-minute Acquired, 2026-11-02)
+SPEAKER_PIECE_SECONDS = 45 * 60
+OVERLAP_SECONDS = 3 * 60
 # diarization is each provider's own option; OpenRouter forwards only the serving provider's
 SPEAKER_OPTIONS = {'xai': {'diarize': True}, 'elevenlabs': {'diarize': True}, 'deepgram': {'diarize': True},
                    'azure': {'diarization': {'enabled': True}}}
@@ -317,8 +320,8 @@ def transcribe_piece(session, path, offset=0.0, language=None) -> Transcript:
 
 
 def split_overlapping(path, out_dir) -> list[tuple[str, float]]:
-    """[(piece, where it starts)]: mono 16 kHz 24 kbps mp3 pieces up to each PIECE_SECONDS mark, every one
-    after the first OVERLAP_SECONDS longer at its start."""
+    """[(piece, where it starts)]: mono 16 kHz 24 kbps mp3 pieces up to each SPEAKER_PIECE_SECONDS mark, every
+    one after the first OVERLAP_SECONDS longer at its start."""
     whole = os.path.join(out_dir, 'whole.mp3')
     subprocess.run(
         ['nice', '-n', '10', 'ffmpeg', '-nostdin', '-loglevel', 'error', '-y', '-i', path,
@@ -330,11 +333,12 @@ def split_overlapping(path, out_dir) -> list[tuple[str, float]]:
     except ValueError:
         raise TranscriptUnavailable('no duration: %r' % probe.stdout[:100])
     pieces, number = [], 0
-    while number * PIECE_SECONDS < duration:
-        start = max(0.0, number * PIECE_SECONDS - OVERLAP_SECONDS)
+    while number * SPEAKER_PIECE_SECONDS < duration:
+        start = max(0.0, number * SPEAKER_PIECE_SECONDS - OVERLAP_SECONDS)
         piece = os.path.join(out_dir, 'piece%03d.mp3' % number)
         subprocess.run(['nice', '-n', '10', 'ffmpeg', '-nostdin', '-loglevel', 'error', '-y', '-ss', '%.3f' % start,
-                        '-t', '%.3f' % ((number + 1) * PIECE_SECONDS - start), '-i', whole, '-c', 'copy', piece],
+                        '-t', '%.3f' % ((number + 1) * SPEAKER_PIECE_SECONDS - start), '-i', whole, '-c', 'copy',
+                        piece],
                        check=True, timeout=600)
         pieces.append((piece, start))
         number += 1
@@ -372,7 +376,10 @@ def _same_word(text) -> str:
 def merge_speakers(pieces) -> list[tuple[float, str, int | None]]:
     """[(start, word, speaker numbered for the whole episode)] from [(piece start, its words)] in order.
     A piece's speaker is the one of the piece before who said the same words in their overlap (two such
-    words at least); a speaker not heard there is a new one. The overlap's words come from the piece before."""
+    words at least). One speaker left over against one known speaker the piece did not match, with no more
+    speakers in the piece than are known, is that one (by elimination); any other speaker not heard in
+    the overlap is a new one: a guess between several would put words in the wrong mouth. The overlap's
+    words come from the piece before."""
     out, known = [], 0
     for index, (offset, words) in enumerate(pieces):
         mapping = {}
@@ -392,6 +399,11 @@ def merge_speakers(pieces) -> list[tuple[float, str, int | None]]:
             for (speaker, episode_speaker), count in votes.most_common():
                 if count >= 2 and speaker not in mapping and episode_speaker not in mapping.values():
                     mapping[speaker] = episode_speaker
+            speakers = {speaker for _, _, speaker in words if speaker is not None}
+            left = speakers - set(mapping)
+            unmatched = set(range(known)) - set(mapping.values())
+            if len(left) == 1 and len(unmatched) == 1 and len(speakers) <= known:
+                mapping[left.pop()] = unmatched.pop()
             words = [w for w in words if w[0] >= boundary]
         for start, text, speaker in words:
             if speaker is not None and speaker not in mapping:
@@ -439,7 +451,11 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None, progr
         download.fetch(requester, link)
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
             if speakers_model:
-                return _with_speakers(session, download.path, pieces_dir, speakers_model, progress)
+                try:
+                    return _with_speakers(session, download.path, os.path.join(pieces_dir, 'speakers'),
+                                          speakers_model, progress)
+                except Exception as e:  # a slow provider, a model gone: Whisper's text rather than none
+                    logger.warn('transcript: speakers failed, Whisper instead:', type(e).__name__, str(e)[:200])
             language, language_cost = speech_language(session, download.path, pieces_dir, feed_language)
             pieces, offset = [], 0.0
             paths = split_audio(download.path, pieces_dir)
@@ -458,6 +474,7 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None, progr
 
 
 def _with_speakers(session, path, pieces_dir, model, progress) -> Transcript:
+    os.makedirs(pieces_dir, exist_ok=True)
     pieces, cost, seconds = [], 0.0, 0.0
     split = split_overlapping(path, pieces_dir)
     for number, (piece, offset) in enumerate(split, 1):
