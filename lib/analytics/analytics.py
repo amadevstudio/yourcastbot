@@ -6,6 +6,7 @@ import requests
 import queue
 import threading
 import hashlib
+import time
 
 from app.routes.ptypes import ControllerParams, Inline, InlineControllerParams
 from app.routes.router_tools import is_command
@@ -71,6 +72,16 @@ class Analytics(metaclass=Singleton):
                 items[0](items[1])
             except Exception as e:
                 print("analytics:", type(e).__name__, e, flush=True)
+            finally:
+                self.queue.task_done()
+
+    def wait_idle(self, timeout=10.0) -> bool:
+        """Every queued event handled; for tests: this daemon thread writing to stdout while Python exits
+        aborts the process (exit code 134 after every check passed)."""
+        deadline = time.monotonic() + timeout
+        while self.queue.unfinished_tasks and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return not self.queue.unfinished_tasks
 
     def event(self, args):
 

@@ -852,7 +852,17 @@ def main():
 
     _check_episode_text_formats()
     _check_summary_button()
+    _wait_for_analytics()
     print("all record delivery checks passed")
+
+
+def _wait_for_analytics():
+    """The sender queues episode_delivered for the analytics thread; let it finish before Python exits."""
+    from lib.analytics.analytics import Analytics
+    from lib.python.singletonBase import Singleton
+    tracker = Singleton._instances.get(Analytics)
+    if tracker is not None:
+        tracker.wait_idle()
 
 
 if __name__ == "__main__":
