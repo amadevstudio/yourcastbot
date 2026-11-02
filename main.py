@@ -209,6 +209,12 @@ def run_jobs():
         t_ai_watcher.start()
         watched.append(t_ai_watcher)
 
+    # what a payment sets off once credited (db/payment_effects.py): better AI models on...
+    from app.jobs.payment_effects import effects_watcher
+    t_payment_effects = threading.Thread(target=effects_watcher, name="Payment effects", daemon=True)
+    t_payment_effects.start()
+    watched.append(t_payment_effects)
+
     from app.admin_web.mail_jobs import ensure_table as ensure_mail_table
     from app.admin_web.mailer import mailer_loop
     ensure_mail_table()

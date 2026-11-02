@@ -37,7 +37,7 @@ from app.i18n.messages import get_message
 from app.repository.storage import storage
 from app.routes.screen_state import state_lost
 from app.service import analytics_events
-from app.service.ai import quota as ai_quota, summary
+from app.service.ai import paid_models, quota as ai_quota, summary, transcript
 # the over-quota offer is shared with automatic summaries (app/service/ai/auto.py)
 from app.service.ai.offer import offer_message
 from config import db_path
@@ -163,13 +163,17 @@ def transcript_file(episode, text) -> tuple[str, bytes]:
     return name + '.txt', '\n'.join(lines).encode('utf-8')
 
 
-def send_transcript_file(chat_id, episode, text, source, language_code, reply_to=None) -> bool:
-    """The transcript as a .txt file replying to the audio; True if Telegram took it."""
+def send_transcript_file(chat_id, episode, text, source, language_code, reply_to=None, over_quota=False) -> bool:
+    """The transcript as a .txt file replying to the audio; True if Telegram took it. One we made says it
+    may have mistakes; under Whisper's, a chat without a paid plan reads what a paid one's would have."""
     name, body = transcript_file(episode, text)
     caption = '📄 <b>%s – %s</b>' % (telegram_html.escape(telegram_html.plain_text(episode['show'])[:200]),
                                      telegram_html.escape(telegram_html.plain_text(episode['title'])[:300]))
-    if source == 'whisper':
+    if source in (transcript.WHISPER, transcript.SPEAKERS):
         caption += '\n' + get_message('transcriptMachine', language_code)
+    note = paid_models.transcript_note(chat_id, source, language_code, over_quota=over_quota)
+    if note:
+        caption += '\n\n' + note
     return send_document(chat_id, name, body, caption, reply_to)
 
 
@@ -180,7 +184,6 @@ FEED_TRANSCRIPT_TIMEOUT = (5, 20)
 def _feed_transcript(episode):
     """The transcript the episode's feed publishes (the feed's last copy, feed_cache), cached for
     everyone; None when it has none or it cannot be read now."""
-    from app.service.ai import transcript
     from lib.requests import requesterModule
     try:
         found = transcript.from_episode_feed(requesterModule.Requester(attempts=0, total_attempts=0), episode,
@@ -217,13 +220,16 @@ def request_transcript(data):
     if found is None:
         found = _feed_transcript(episode)
         found = dict(found._asdict()) if found is not None else None
-    if found is not None:
-        if send_transcript_file(data['chat_id'], episode, found['text'], found['source'], language_code, audio):
+    # a paying chat with the better models gets Whisper's transcript made again, with speakers
+    upgrade = found is not None and found['source'] == transcript.WHISPER and paid_models.speakers(data['chat_id'])
+    quota = ai_quota.check(data['chat_id'], _needed(data['chat_id'], episode)) if found is None or upgrade else None
+    if found is not None and not (upgrade and quota.allowed):  # over its hours a payer gets Whisper's
+        if send_transcript_file(data['chat_id'], episode, found['text'], found['source'], language_code, audio,
+                                over_quota=upgrade):
             usage.record_transcript(data['chat_id'], ref, 0.0)
             analytics_events.track(data['chat_id'], 'transcript_ready', {'source': found['source'], 'made': False})
         return
 
-    quota = ai_quota.check(data['chat_id'], _needed(data['chat_id'], episode))
     if not quota.allowed:
         render_messages(data['chat_id'], [offer_message(language_code, quota, transcript=True)])
         return
@@ -342,7 +348,8 @@ def answer_question(data):
     # "Thinking...": a reply to the audio, edited into the answer (or into "could not")
     status = status_line(data['chat_id'], get_message('askThinking', language_code), state.get('audio'))
     try:
-        text, cost = summary.answer(found['text'], episode['title'], episode['show'], question)
+        text, cost = summary.answer(found['text'], episode['title'], episode['show'], question,
+                                    model=paid_models.summary_model(data['chat_id']))
     except Exception as e:
         logger.warn('ask: no answer', state['ref'], type(e).__name__, str(e)[:200])
         show_result(data['chat_id'], {'type': 'text', 'text': get_message('askFailed', language_code)}, status)

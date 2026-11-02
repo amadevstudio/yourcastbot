@@ -23,7 +23,7 @@ from app.service.record.caption import (
 from app.service.record.text_format import (
     BRIEF, CAPTION, DESCRIPTION_ACTION, EPISODE_FORMAT_HINT_ACTION, META, RICH, SEPARATE, user_format)
 from app.service.record.delivery import Upload, fetch_by_url_first, may_download, upload_order
-from app.service.ai import hint as summary_hint, summary as ai_summary
+from app.service.ai import hint as summary_hint, paid_models, summary as ai_summary
 from db import ai, usage
 from config import botName, creatorId, storageChatId, work_dir, maxPodcastDateCallDataHexLen, db_path, \
     trust_rss_podcasts
@@ -736,7 +736,11 @@ class Sender:
             self.logger.warn("summary hint:", e)
             return
         for chat_id in chats:
-            structure = {'type': 'text', 'text': get_message("summaryHint", self.lang_codes_by_utg.get(chat_id))}
+            lang = self.lang_codes_by_utg.get(chat_id)
+            text = get_message("summaryHint", lang)
+            # a trial reads what paying adds (better models); '' when none is configured
+            pitch = paid_models.pitch(chat_id, lang)
+            structure = {'type': 'text', 'text': text + ('\n\n' + pitch if pitch else '')}
             if self._audio_messages.get(chat_id):
                 structure['reply_to'] = self._audio_messages[chat_id]
             try:

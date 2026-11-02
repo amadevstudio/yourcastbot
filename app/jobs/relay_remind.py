@@ -4,14 +4,17 @@
 Runs from the existing hourly balance_watcher. Does not touch payment apply.
 Under the plan's text: the user's podcasts that stop coming as files on that
 day (plan_end.loss_text), what the plan brought (recap_text): what stops is
-easier to weigh when it is counted, and for a Relay trial the first month at
-the win-back discount (plan_end.trial_offer), its invoice above the usual rows.
+easier to weigh when it is counted; the better AI models (paid_models: a
+payer's stop with the plan, a trial reads what paying adds; none configured,
+no line); and for a Relay trial the first month at the win-back discount
+(plan_end.trial_offer), its invoice above the usual rows.
 """
 import sqlite3
 import time
 
 from app.i18n.messages import get_message
 from app.service import analytics_events
+from app.service.ai import paid_models
 from app.service.payment import plan_end
 from app.service.payment.referral import invite_row
 # relay_nudge_markup is imported from here by the digest and the balance watcher
@@ -150,9 +153,12 @@ def send_relay_d3_reminders(database=None):
         loss, shows = plan_end.loss_text(
             telegram_id, lang, ends_at=plan_end.ends_at(user["time_left"]), database=db_file)
         recap = recap_text(telegram_id, lang, database=db_file)
+        # better AI models: a payer's stop with the plan, a trial reads what paying adds
+        models = (paid_models.ending_line(telegram_id, lang, database=db_file)
+                  or paid_models.pitch(telegram_id, lang, database=db_file))
         offer, offer_row = plan_end.trial_offer(
             telegram_id, user["level"], user["price"], lang, analytics_events.REMINDER_SOURCE, database=db_file)
-        for part in (loss, recap, offer):
+        for part in (loss, recap, models, offer):
             if part:
                 text += "\n\n" + part
         # a friend's sign-up adds days: the cheapest way to keep the plan

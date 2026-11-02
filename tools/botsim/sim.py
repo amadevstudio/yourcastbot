@@ -303,11 +303,11 @@ class BotSim:
             from app.service.ai import transcript
             from db import ai
             if _state['ai'] == 'fake':
-                def fake_transcript(episode, session, progress=None):
+                def fake_transcript(episode, session, progress=None, speakers=False):
                     cached = ai.transcript(episode['ref'])
                     if cached is None:  # cached as the real one is: questions read it
                         ai.save_transcript(episode['ref'], FAKE_TRANSCRIPT, 'feed', 0.0, 600)
-                    return transcript.Transcript(FAKE_TRANSCRIPT, 'feed', 0.0, 600)
+                    return transcript.Transcript(FAKE_TRANSCRIPT, 'feed', 0.0, 600), False
                 ai_watcher.episode_transcript = fake_transcript
             session = requests.Session()
             while True:

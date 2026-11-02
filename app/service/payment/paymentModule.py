@@ -17,6 +17,7 @@ from app.controller.general.notify import notify
 from app.i18n.messages import get_message
 from app.routes.message_tools import go_back_inline_markup, go_back_inline_button
 from app.routes.ptypes import ControllerParams
+from app.service.ai import paid_models
 from app.service.payment.paymentSafeModule import \
     prepare_price, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
@@ -197,6 +198,10 @@ def get_tariffs_sub_message(language_code, tariff_id, balance, time_left, notify
 
         menu_keyboard.append(
             [{'text': tariff_texts['button_text'], 'callback_data': {"tp": "bs_trf_v", "v": tariff['id']}}])
+
+    if paid_models.available():  # any paid plan has the better AI models
+        message_text += get_message('paidModelsPlans', language_code).format(
+            what=paid_models.what(language_code)) + "\n\n"
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
     message_text += get_tariff_info_message(tariff_str, balance, tariff_price, time_left, notify_left, language_code)

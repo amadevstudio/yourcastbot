@@ -20,6 +20,7 @@ marks. A speaker the feed names (a VTT voice, "Speaker 2:" in front of a cue,
 JSON speaker) starts a turn: a mark and the label once, so the file reads as a
 dialog.
 """
+import base64
 import glob
 import json
 import os
@@ -27,6 +28,7 @@ import re
 import subprocess
 import tempfile
 import time
+from collections import Counter
 from typing import NamedTuple
 
 from app.service.ai import openrouter
@@ -41,6 +43,14 @@ TYPE_ORDER = ('text/plain', 'text/vtt', 'application/x-subrip', 'application/srt
               'application/json', 'text/html')
 PIECE_SECONDS = 10 * 60
 MARK_SECONDS = 30
+# with speakers each piece after the first starts this early: a model numbers the speakers of each piece
+# anew, and the words both pieces heard tell which is which
+OVERLAP_SECONDS = 30
+# diarization is each provider's own option; OpenRouter forwards only the serving provider's
+SPEAKER_OPTIONS = {'xai': {'diarize': True}, 'elevenlabs': {'diarize': True}, 'deepgram': {'diarize': True},
+                   'azure': {'diarization': {'enabled': True}}}
+_SENTENCE_END = ('.', '!', '?', '…', '。', '؟')
+WHISPER, SPEAKERS = 'whisper', 'speakers'  # Transcript.source of what we made (SPEAKERS: a paid model)
 
 _TIMING = re.compile(r'^\s*(\d+\s*$|[\d:.,]+\s*-->\s*[\d:.,]+.*$|WEBVTT.*$|NOTE\b.*$)')
 _VOICE = re.compile(r'<v\s+[^>]*>|</v>')
@@ -56,7 +66,7 @@ class TranscriptUnavailable(Exception):
 
 class Transcript(NamedTuple):
     text: str
-    source: str  # 'feed' or 'whisper'
+    source: str  # 'feed', WHISPER or SPEAKERS (made with who speaks)
     cost_usd: float  # what making it cost
     seconds: float  # the audio Whisper measured, 0 for the feed's
 
@@ -216,11 +226,121 @@ def transcribe_piece(session, path, offset=0.0) -> Transcript:
         text = timed((offset + float(s.get('start') or 0), s.get('text')) for s in segments)
     else:
         text = timed([(offset, body.get('text'))])
-    return Transcript(text, 'whisper', openrouter.cost(body), seconds)
+    return Transcript(text, WHISPER, openrouter.cost(body), seconds)
 
 
-def from_audio(requester, session, link, budget: DiskBudget | None = None, progress=None) -> Transcript:
-    """Whisper on the episode's audio. The file and its pieces are deleted after.
+def split_overlapping(path, out_dir) -> list[tuple[str, float]]:
+    """[(piece, where it starts)]: mono 16 kHz 24 kbps mp3 pieces up to each PIECE_SECONDS mark, every one
+    after the first OVERLAP_SECONDS longer at its start."""
+    whole = os.path.join(out_dir, 'whole.mp3')
+    subprocess.run(
+        ['nice', '-n', '10', 'ffmpeg', '-nostdin', '-loglevel', 'error', '-y', '-i', path,
+         '-vn', '-ac', '1', '-ar', '16000', '-b:a', '24k', whole], check=True, timeout=1800)
+    probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', whole],
+                           check=True, capture_output=True, text=True, timeout=60)
+    try:
+        duration = float(probe.stdout.strip())
+    except ValueError:
+        raise TranscriptUnavailable('no duration: %r' % probe.stdout[:100])
+    pieces, number = [], 0
+    while number * PIECE_SECONDS < duration:
+        start = max(0.0, number * PIECE_SECONDS - OVERLAP_SECONDS)
+        piece = os.path.join(out_dir, 'piece%03d.mp3' % number)
+        subprocess.run(['nice', '-n', '10', 'ffmpeg', '-nostdin', '-loglevel', 'error', '-y', '-ss', '%.3f' % start,
+                        '-t', '%.3f' % ((number + 1) * PIECE_SECONDS - start), '-i', whole, '-c', 'copy', piece],
+                       check=True, timeout=600)
+        pieces.append((piece, start))
+        number += 1
+    os.remove(whole)
+    return pieces
+
+
+def transcribe_speaker_piece(session, path, offset, model) -> tuple[list, float, float]:
+    """([(start in the episode, word, the piece's speaker number or None)], USD, seconds) of one piece."""
+    with open(path, 'rb') as audio:
+        data = base64.b64encode(audio.read()).decode()
+    body = openrouter.post('audio/transcriptions', session, json={
+        'model': model, 'response_format': 'verbose_json', 'timestamp_granularities': ['segment', 'word'],
+        'input_audio': {'data': data, 'format': 'mp3'}, 'provider': {'options': SPEAKER_OPTIONS}})
+    words = []
+    for word in body.get('words') or []:
+        if not isinstance(word, dict) or word.get('type') == 'spacing':
+            continue
+        try:
+            words.append((offset + float(word.get('start') or 0), str(word.get('word') or word.get('text') or ''),
+                          word.get('speaker')))
+        except (TypeError, ValueError):
+            continue
+    if not any(text.strip() for _, text, _ in words):  # no words: the segments, still timed
+        words = [(offset + float(s.get('start') or 0), str(s.get('text') or ''), s.get('speaker'))
+                 for s in body.get('segments') or [] if isinstance(s, dict)]
+    seconds = float((body.get('usage') or {}).get('seconds') or body.get('duration') or 0)
+    return [w for w in words if w[1].strip()], openrouter.cost(body), seconds
+
+
+def _same_word(text) -> str:
+    return re.sub(r'\W+', '', text.lower())
+
+
+def merge_speakers(pieces) -> list[tuple[float, str, int | None]]:
+    """[(start, word, speaker numbered for the whole episode)] from [(piece start, its words)] in order.
+    A piece's speaker is the one of the piece before who said the same words in their overlap (two such
+    words at least); a speaker not heard there is a new one. The overlap's words come from the piece before."""
+    out, known = [], 0
+    for index, (offset, words) in enumerate(pieces):
+        mapping = {}
+        if index:
+            boundary = offset + OVERLAP_SECONDS
+            heard = [(start, _same_word(text), speaker) for start, text, speaker in out
+                     if start >= offset - 1 and speaker is not None]
+            votes = Counter()
+            for start, text, speaker in words:
+                if start >= boundary:
+                    break
+                key = _same_word(text)
+                match = min((h for h in heard if h[1] == key and key and abs(h[0] - start) <= 1.0),
+                            key=lambda h: abs(h[0] - start), default=None)
+                if match is not None and speaker is not None:
+                    votes[(speaker, match[2])] += 1
+            for (speaker, episode_speaker), count in votes.most_common():
+                if count >= 2 and speaker not in mapping and episode_speaker not in mapping.values():
+                    mapping[speaker] = episode_speaker
+            words = [w for w in words if w[0] >= boundary]
+        for start, text, speaker in words:
+            if speaker is not None and speaker not in mapping:
+                mapping[speaker], known = known, known + 1
+            out.append((start, text, None if speaker is None else mapping[speaker]))
+    return out
+
+
+def _joined(words) -> str:
+    text = ''
+    for word in words:
+        if not text or word[:1].isspace() or text[-1:].isspace() or not re.match(r'\w', word):
+            text += word
+        else:
+            text += ' ' + word
+    return text
+
+
+def speaker_text(words) -> str:
+    """The text of merge_speakers' words: a turn for each change of speaker ("Speaker 2: ..."), marks at
+    the start of a sentence at most every MARK_SECONDS (a mark in mid-sentence reads badly)."""
+    parts, current, ended = [], None, True
+    for start, text, speaker in words:
+        label = 'Speaker %d' % (speaker + 1) if speaker is not None else ''
+        if current is None or label != current[2] or ended:
+            current = [start, [], label]
+            parts.append(current)
+        current[1].append(text)
+        ended = text.rstrip().endswith(_SENTENCE_END)
+    return timed((start, _joined(texts), label) for start, texts, label in parts)
+
+
+def from_audio(requester, session, link, budget: DiskBudget | None = None, progress=None,
+               speakers_model=None) -> Transcript:
+    """Whisper on the episode's audio, or with `speakers_model` (a model that labels speakers, the paid
+    one) the text with who speaks. The file and its pieces are deleted after.
     `progress(stage, done, total)`: 'download', then 'transcribe' before each piece."""
     progress = progress or (lambda *args: None)
     budget = budget or DiskBudget(os.path.join(work_dir, 'records'))
@@ -230,6 +350,8 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None, progr
         progress('download', 0, 0)
         download.fetch(requester, link)
         with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
+            if speakers_model:
+                return _with_speakers(session, download.path, pieces_dir, speakers_model, progress)
             pieces, offset = [], 0.0
             paths = split_audio(download.path, pieces_dir)
             for number, path in enumerate(paths, 1):
@@ -242,5 +364,22 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None, progr
     text = ' '.join(piece.text for piece in pieces if piece.text).strip()
     if not text:
         raise TranscriptUnavailable('empty transcript')
-    return Transcript(text, 'whisper', sum(piece.cost_usd for piece in pieces),
+    return Transcript(text, WHISPER, sum(piece.cost_usd for piece in pieces),
                       sum(piece.seconds for piece in pieces))
+
+
+def _with_speakers(session, path, pieces_dir, model, progress) -> Transcript:
+    pieces, cost, seconds = [], 0.0, 0.0
+    split = split_overlapping(path, pieces_dir)
+    for number, (piece, offset) in enumerate(split, 1):
+        progress('transcribe', number, len(split))
+        words, piece_cost, piece_seconds = transcribe_speaker_piece(session, piece, offset, model)
+        pieces.append((offset, words))
+        cost += piece_cost
+        # the audio is the episode's once: an overlap is billed, not counted against the plan's hours
+        seconds += max(0.0, piece_seconds - (OVERLAP_SECONDS if offset else 0.0))
+        os.remove(piece)
+    text = speaker_text(merge_speakers(pieces))
+    if not text:
+        raise TranscriptUnavailable('empty transcript')
+    return Transcript(text, SPEAKERS, cost, seconds)

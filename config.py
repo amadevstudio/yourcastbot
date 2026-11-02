@@ -30,6 +30,10 @@ openrouter_api_key = getattr(constants, 'openrouterApiKey', None) or ''
 ai_summary_model = getattr(constants, 'openrouterModel', None) or ''
 # the speech-to-text model (its OpenRouter id) for episodes whose feed has no transcript, same key
 ai_transcribe_model = getattr(constants, 'openrouterTranscribeModel', None) or ''
+# better models for chats that paid (app/service/ai/paid_models.py), each optional, unset: everyone gets the above.
+# The speech-to-text one must label speakers (e.g. x-ai/grok-stt-1.0); the other answers summaries and questions.
+ai_paid_transcribe_model = getattr(constants, 'openrouterPaidTranscribeModel', None) or ''
+ai_paid_summary_model = getattr(constants, 'openrouterPaidModel', None) or ''
 # hours of audio summarized per 30 days by plan level; a summary someone already made is free for everyone
 ai_summary_hours_per_month = {1: 5, 2: 15, 3: 30}
 # a plan nobody paid for yet (the welcome Relay, referral days): its hours, whatever its level

@@ -326,6 +326,145 @@ ROWS = {
         '🤔 Pensando…',
         '🤔 Ich denke nach…',
         '🤔 חושב…'),
+    # better models for chats that paid (app/service/ai/paid_models.py): what they give, as configured,
+    # a phrase that follows a colon in the lines below
+    'paidModelsWhatBoth': (
+        'расшифровки с разметкой, кто говорит, и более сильная модель для пересказов и ответов на вопросы',
+        'transcripts that show who is speaking, and a stronger model for summaries and answers to questions',
+        'transcrições que mostram quem está falando e um modelo mais forte para resumos e respostas às perguntas',
+        'transcripciones que muestran quién habla y un modelo más potente para resúmenes y respuestas a preguntas',
+        'Transkripte, die zeigen, wer spricht, und ein stärkeres Modell für Zusammenfassungen und Antworten '
+        'auf Fragen',
+        'תמלילים שמראים מי מדבר, ומודל חזק יותר לסיכומים ולתשובות על שאלות'),
+    'paidModelsWhatTranscript': (
+        'расшифровки с разметкой, кто говорит',
+        'transcripts that show who is speaking',
+        'transcrições que mostram quem está falando',
+        'transcripciones que muestran quién habla',
+        'Transkripte, die zeigen, wer spricht',
+        'תמלילים שמראים מי מדבר'),
+    'paidModelsWhatSummary': (
+        'более сильная модель для пересказов и ответов на вопросы',
+        'a stronger model for summaries and answers to questions',
+        'um modelo mais forte para resumos e respostas às perguntas',
+        'un modelo más potente para resúmenes y respuestas a preguntas',
+        'ein stärkeres Modell für Zusammenfassungen und Antworten auf Fragen',
+        'מודל חזק יותר לסיכומים ולתשובות על שאלות'),
+    # a plan nobody paid for (the trial): the summary note, D-3
+    'paidModelsTrial': (
+        '✨ После оплаты тарифа подключаются модели получше: {what}.',
+        '✨ Once your plan is paid, better models come on: {what}.',
+        '✨ Com o plano pago, entram modelos melhores: {what}.',
+        '✨ Con el plan pagado se activan modelos mejores: {what}.',
+        '✨ Mit einem bezahlten Tarif kommen bessere Modelle dazu: {what}.',
+        '✨ אחרי תשלום על המסלול נכנסים לפעולה מודלים טובים יותר: {what}.'),
+    # paid before, no plan running now: the plan-off notice
+    'paidModelsLapsed': (
+        '✨ Продлите тариф – и вернутся модели получше: {what}.',
+        '✨ Renew your plan and the better models come back: {what}.',
+        '✨ Renove o plano e os modelos melhores voltam: {what}.',
+        '✨ Renueva tu plan y vuelven los modelos mejores: {what}.',
+        '✨ Verlängere deinen Tarif, dann sind die besseren Modelle zurück: {what}.',
+        '✨ חדשו את המסלול והמודלים הטובים יותר יחזרו: {what}.'),
+    # never paid, no plan running (a trial that just ended): the plan-off notice
+    'paidModelsNoPlan': (
+        '✨ С оплаченным тарифом – модели получше: {what}.',
+        '✨ A paid plan brings better models: {what}.',
+        '✨ Um plano pago traz modelos melhores: {what}.',
+        '✨ Un plan de pago trae modelos mejores: {what}.',
+        '✨ Ein bezahlter Tarif bringt bessere Modelle: {what}.',
+        '✨ מסלול בתשלום מביא מודלים טובים יותר: {what}.'),
+    # D-3 of a chat that has them
+    'paidModelsEnding': (
+        '✨ Вместе с тарифом выключатся модели получше: {what}.',
+        '✨ The better models stop with the plan: {what}.',
+        '✨ Os modelos melhores param junto com o plano: {what}.',
+        '✨ Los modelos mejores se apagan junto con el plan: {what}.',
+        '✨ Mit dem Tarif enden auch die besseren Modelle: {what}.',
+        '✨ המודלים הטובים יותר ייכבו יחד עם המסלול: {what}.'),
+    # the change-plan page
+    'paidModelsPlans': (
+        '✨ С любым оплаченным тарифом – модели получше: {what}.',
+        '✨ Any paid plan comes with better models: {what}.',
+        '✨ Qualquer plano pago vem com modelos melhores: {what}.',
+        '✨ Cualquier plan de pago incluye modelos mejores: {what}.',
+        '✨ Jeder bezahlte Tarif hat bessere Modelle: {what}.',
+        '✨ כל מסלול בתשלום כולל מודלים טובים יותר: {what}.'),
+    # /settings, AI summaries: only a chat that paid and has a plan running sees it
+    'paidModelsSettingsHelp': (
+        '✨ Ваш оплаченный тариф даёт модели получше: {what}. Включить или выключить – кнопкой ниже.',
+        '✨ Your paid plan includes better models: {what}. Turn them on or off with the button below.',
+        '✨ Seu plano pago inclui modelos melhores: {what}. Ligue ou desligue no botão abaixo.',
+        '✨ Tu plan de pago incluye modelos mejores: {what}. Actívalos o desactívalos con el botón de abajo.',
+        '✨ Dein bezahlter Tarif enthält bessere Modelle: {what}. Ein- oder ausschalten mit dem Button unten.',
+        '✨ המסלול ששילמתם עליו כולל מודלים טובים יותר: {what}. אפשר להפעיל או לכבות בכפתור למטה.'),
+    'paidModelsFeedNote': (
+        'Если подкаст сам публикует расшифровку, приходит она, как есть.',
+        'When a podcast publishes its own transcript, you get that one as it is.',
+        'Quando o podcast publica a própria transcrição, você recebe essa, como está.',
+        'Cuando el podcast publica su propia transcripción, recibes esa, tal cual.',
+        'Veröffentlicht ein Podcast sein eigenes Transkript, bekommst du dieses, so wie es ist.',
+        'כשהפודקאסט מפרסם תמליל משלו, תקבלו אותו כמו שהוא.'),
+    'paidModelsCachedNote': (
+        'Пересказ, который уже кто-то заказал, приходит готовым, как был сделан.',
+        'A summary someone already asked for comes as it was made.',
+        'Um resumo que alguém já pediu vem como foi feito.',
+        'Un resumen que alguien ya pidió llega tal como se hizo.',
+        'Eine Zusammenfassung, die schon jemand angefordert hat, kommt so, wie sie gemacht wurde.',
+        'סיכום שמישהו כבר ביקש מגיע כמו שנעשה.'),
+    'paidModelsOn': (
+        '✨ Модели получше: вкл', '✨ Better models: on', '✨ Modelos melhores: sim', '✨ Modelos mejores: sí',
+        '✨ Bessere Modelle: an', '✨ מודלים טובים יותר: פעיל'),
+    'paidModelsOff': (
+        '✨ Модели получше: выкл', '✨ Better models: off', '✨ Modelos melhores: não', '✨ Modelos mejores: no',
+        '✨ Bessere Modelle: aus', '✨ מודלים טובים יותר: כבוי'),
+    # once, when a payment turns them on and the plan is running (app/jobs/payment_effects.py)
+    'paidModelsOnNotice': (
+        '✨ Тариф оплачен – подключили модели получше: {what}. Выключить можно в /settings, '
+        'раздел "ИИ-пересказы".',
+        '✨ Your plan is paid, so better models are on: {what}. You can turn them off in /settings, '
+        'under "AI summaries".',
+        '✨ Seu plano está pago, então os modelos melhores estão ligados: {what}. Dá para desligar em /settings, '
+        'em "Resumos com IA".',
+        '✨ Tu plan está pagado, así que los modelos mejores están activados: {what}. Puedes desactivarlos en '
+        '/settings, en "Resúmenes con IA".',
+        '✨ Dein Tarif ist bezahlt, die besseren Modelle sind an: {what}. Ausschalten kannst du sie in /settings '
+        'unter "KI-Zusammenfassungen".',
+        '✨ המסלול שולם, אז המודלים הטובים יותר פעילים: {what}. אפשר לכבות אותם ב-/settings, בקטע "סיכומי AI".'),
+    # under a transcript file Whisper made (paid_models.transcript_note)
+    'paidTranscriptTrial': (
+        '✨ После оплаты тарифа расшифровки, которые делает бот, показывают, кто говорит.',
+        '✨ Once your plan is paid, the transcripts the bot makes show who is speaking.',
+        '✨ Com o plano pago, as transcrições que o bot faz mostram quem está falando.',
+        '✨ Con el plan pagado, las transcripciones que hace el bot muestran quién habla.',
+        '✨ Mit einem bezahlten Tarif zeigen die Transkripte des Bots, wer spricht.',
+        '✨ אחרי תשלום על המסלול, התמלילים שהבוט מכין מראים מי מדבר.'),
+    'paidTranscriptLapsed': (
+        '✨ Продлите тариф – и расшифровки, которые делает бот, будут показывать, кто говорит.',
+        '✨ Renew your plan and the transcripts the bot makes will show who is speaking.',
+        '✨ Renove o plano e as transcrições que o bot faz vão mostrar quem está falando.',
+        '✨ Renueva tu plan y las transcripciones que hace el bot mostrarán quién habla.',
+        '✨ Verlängere deinen Tarif, dann zeigen die Transkripte des Bots, wer spricht.',
+        '✨ חדשו את המסלול והתמלילים שהבוט מכין יראו מי מדבר.'),
+    'paidTranscriptNoPlan': (
+        '✨ С оплаченным тарифом расшифровки, которые делает бот, показывают, кто говорит.',
+        '✨ With a paid plan, the transcripts the bot makes show who is speaking.',
+        '✨ Com um plano pago, as transcrições que o bot faz mostram quem está falando.',
+        '✨ Con un plan de pago, las transcripciones que hace el bot muestran quién habla.',
+        '✨ Mit einem bezahlten Tarif zeigen die Transkripte des Bots, wer spricht.',
+        '✨ עם מסלול בתשלום, התמלילים שהבוט מכין מראים מי מדבר.'),
+    # a chat with the better models over its hours: the transcript made before comes, without speakers
+    'paidTranscriptOverQuota': (
+        '✨ Расшифровка с разметкой, кто говорит, не уместилась в оставшиеся часы тарифа, поэтому пришла обычная.',
+        '✨ A transcript that shows who is speaking did not fit in the hours left on your plan, so here is the '
+        'regular one.',
+        '✨ Uma transcrição que mostra quem está falando não coube nas horas que restam no seu plano, então aqui '
+        'está a comum.',
+        '✨ Una transcripción que muestra quién habla no cabía en las horas que le quedan a tu plan, así que aquí '
+        'tienes la normal.',
+        '✨ Ein Transkript, das zeigt, wer spricht, passte nicht mehr in die restlichen Stunden deines Tarifs, '
+        'deshalb kommt das normale.',
+        '✨ תמליל שמראה מי מדבר לא נכנס בשעות שנשארו במסלול שלכם, אז הנה התמליל הרגיל.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

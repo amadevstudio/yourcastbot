@@ -69,6 +69,10 @@ special_paid_emails: list[str] = []
 openrouterApiKey = ''
 openrouterModel = ''
 openrouterTranscribeModel = ''
+# better models for chats that paid (app/service/ai/paid_models.py), each optional:
+# speech to text that labels speakers (e.g. 'x-ai/grok-stt-1.0'), and the summary/answer model
+openrouterPaidTranscribeModel = ''
+openrouterPaidModel = ''
 
 patreon_creator_access_token = ''
 

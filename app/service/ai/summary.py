@@ -111,10 +111,11 @@ def _language_instruction(language) -> str:
     return 'Write the summary in the language with the code "%s".' % language
 
 
-def summarize(transcript, title, show, language, session=None) -> tuple[str, float]:
-    """(summary text, USD as OpenRouter billed it) for one episode in `language` (summary_language)."""
+def summarize(transcript, title, show, language, session=None, model=None) -> tuple[str, float]:
+    """(summary text, USD as OpenRouter billed it) for one episode in `language` (summary_language).
+    `model`: the asker's (paid_models.summary_model), else the configured one."""
     body = openrouter.post('chat/completions', session, json={
-        'model': ai_summary_model,
+        'model': model or ai_summary_model,
         'max_tokens': MAX_TOKENS,
         'usage': {'include': True},
         'reasoning': REASONING,
@@ -143,14 +144,14 @@ def cut_to_sentence(text) -> str:
     return text.rstrip() + '…'
 
 
-def answer(transcript, title, show, question, session=None) -> tuple[str, float]:
+def answer(transcript, title, show, question, session=None, model=None) -> tuple[str, float]:
     """(answer, USD as OpenRouter billed it) to a question about one episode.
 
     The transcript is a block of its own marked for the provider's prompt cache:
     the next questions about the same episode within minutes read it at a tenth
     of the price (Anthropic models; others ignore the mark)."""
     body = openrouter.post('chat/completions', session, timeout=ANSWER_TIMEOUT, json={
-        'model': ai_summary_model,
+        'model': model or ai_summary_model,
         'max_tokens': ANSWER_MAX_TOKENS,
         'usage': {'include': True},
         'reasoning': REASONING,
