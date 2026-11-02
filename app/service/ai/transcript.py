@@ -12,10 +12,13 @@
    what OpenRouter bills for each piece.
 
 The text carries time marks, "[12:40]", at most every MARK_SECONDS (Whisper's
-segments, a VTT/SRT cue, a JSON segment's startTime): the summary and the
-answers to questions point to the moment, and Telegram turns a time in a
-reply to the audio into a link that plays from there. A plain-text or HTML
-transcript has no times, and so no marks.
+segments, a VTT/SRT cue, a JSON segment's startTime or start, a time on a line
+of its own in plain text): the summary and the answers to questions point to
+the moment, and Telegram turns a time in a reply to the audio into a link that
+plays from there. An HTML transcript, or plain text without times, has no
+marks. A speaker the feed names (a VTT voice, "Speaker 2:" in front of a cue,
+JSON speaker) starts a turn: a mark and the label once, so the file reads as a
+dialog.
 """
 import glob
 import json
@@ -41,6 +44,10 @@ MARK_SECONDS = 30
 
 _TIMING = re.compile(r'^\s*(\d+\s*$|[\d:.,]+\s*-->\s*[\d:.,]+.*$|WEBVTT.*$|NOTE\b.*$)')
 _VOICE = re.compile(r'<v\s+[^>]*>|</v>')
+_VOICE_NAME = re.compile(r'\s*<v\s+([^>]+)>')
+_SPEAKER_LABEL = re.compile(r'\s*(speaker[ _]?\d+)\s*:\s*(.*)$', re.IGNORECASE)
+# a line that is only a time: "00:01:11" before its paragraph (omny's TextWithTimestamps)
+_STAMP_LINE = re.compile(r'^\s*\[?((?:\d{1,2}:)?\d{1,2}:\d{2}(?:[.,]\d+)?)\]?\s*$')
 
 
 class TranscriptUnavailable(Exception):
@@ -83,17 +90,36 @@ def clock(seconds) -> str:
 
 
 def timed(parts) -> str:
-    """[(start seconds or None, text)] -> one text with a [m:ss] mark at most every MARK_SECONDS."""
-    out, last = [], None
-    for start, text in parts:
+    """[(start seconds or None, text[, speaker])] -> one text with a [m:ss] mark at most every
+    MARK_SECONDS, and at every change of speaker: "[1:02] Speaker 2: ..." starts a turn, the same
+    speaker's next parts go on without the label (a file reads as a dialog, one line a turn)."""
+    out, last, speaker = [], None, None
+    for start, text, *who in parts:
         text = str(text or '').strip()
+        who = str(who[0] or '').strip() if who else ''
         if not text:
             continue
-        if start is not None and (last is None or start - last >= MARK_SECONDS):
+        turn = bool(who) and who != speaker
+        if start is not None and (last is None or start - last >= MARK_SECONDS or turn):
             out.append('[%s]' % clock(start))
             last = start
+        if turn:
+            out.append(who + ':')
+            speaker = who
         out.append(text)
     return re.sub(r'\s+', ' ', ' '.join(out)).strip()
+
+
+def _speaker(line) -> tuple[str, str]:
+    """(speaker, text) of a cue line: a VTT voice (<v Ann>) or "Speaker 2:" / "SPEAKER_01:" in
+    front; '' when it names none. Only these: "Note: ..." is text."""
+    voice = _VOICE_NAME.match(line)
+    if voice:
+        return voice.group(1).strip(), _VOICE.sub('', line[voice.end():])
+    label = _SPEAKER_LABEL.match(_VOICE.sub('', line))
+    if label:
+        return label.group(1), label.group(2)
+    return '', _VOICE.sub('', line)
 
 
 def _stamp_seconds(stamp) -> float:
@@ -107,12 +133,18 @@ def transcript_text(body: str, content_type: str = '') -> str:
     """Text of a transcript file with time marks: no cue numbers, timings or tags."""
     body = body.lstrip('﻿')
     stripped = body.lstrip()
-    if 'json' in content_type or stripped.startswith('{'):
+    if 'json' in content_type or stripped.startswith(('{', '[')):
         try:
             data = json.loads(body)
-            segments = data.get('segments') or []
-            return timed((s.get('startTime') if isinstance(s.get('startTime'), (int, float)) else None,
-                          s.get('body', '')) for s in segments if s.get('body'))
+            # the Podcast Index's {"segments": [{startTime, body, speaker}]}, or a bare list of
+            # {start, text} (podigee)
+            segments = data if isinstance(data, list) else data.get('segments') or []
+            parts = []
+            for s in segments:
+                start = s.get('startTime', s.get('start'))
+                parts.append((start if isinstance(start, (int, float)) else None,
+                              s.get('body', s.get('text', '')), s.get('speaker')))
+            return timed(parts)
         except (ValueError, AttributeError):
             pass
     if 'html' in content_type or stripped.startswith('<'):
@@ -125,10 +157,16 @@ def transcript_text(body: str, content_type: str = '') -> str:
             except ValueError:
                 start = None
             continue
+        stamp = _STAMP_LINE.match(line)
+        if stamp:
+            start = _stamp_seconds(stamp.group(1))
+            continue
         if _TIMING.match(line) or not line.strip():
             continue
-        parts.append((start, _VOICE.sub('', line)))
-        start = None  # the cue's later lines are its own
+        speaker, text = _speaker(line)
+        if text.strip():
+            parts.append((start, text, speaker))
+            start = None  # the cue's later lines are its own
     return timed(parts)
 
 

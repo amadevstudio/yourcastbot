@@ -971,8 +971,12 @@ button; `quota.py` who may ask. The plan level is
   answer cut there is shown up to its last sentence, and at most
   `ANSWER_MAX_CHARS` (one message).
 - Transcripts carry time marks, `[12:40]`, at most every 30 s (Whisper's
-  segments with each piece's offset, VTT/SRT cues, JSON `startTime`; plain
-  text and HTML have none). The summary starts its points with those times
+  segments with each piece's offset, VTT/SRT cues, JSON `startTime` or a bare
+  list's `start`, a time alone on a line of plain text as omny's
+  TextWithTimestamps has it: SYSK and iHeart's shows read as one block with no
+  times before 2026-11-02; HTML has none). A speaker the feed names (VTT
+  `<v>`, "Speaker 2:" in front of a cue, JSON `speaker`) starts a turn: a mark
+  and the label once, not before every cue (Aha!'s VTT repeated it per phrase). The summary starts its points with those times
   ("12:40 – ..."), never invented ones, and is a reply to the episode's
   audio (`ai_requests.reply_to`, the message the button was on;
   `message_master` `reply_to`, sent anyway if the audio is gone): Telegram
