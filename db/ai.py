@@ -68,9 +68,11 @@ def connect(database=None):
             # auto: queued for a new episode (app/service/ai/auto.py), after every tap
             # status_message: the line "downloading... transcribing..." a tap got, edited into the summary
             # kind: SUMMARY, or TRANSCRIPT (the transcript alone, as a file)
+            # paid_seconds: the audio this request had transcribed by the paid model (its hours per plan)
             for column, sql in (('reply_to', 'reply_to INTEGER'), ('auto', 'auto INTEGER NOT NULL DEFAULT 0'),
                                 ('status_message', 'status_message INTEGER'),
-                                ('kind', "kind TEXT NOT NULL DEFAULT '%s'" % SUMMARY)):
+                                ('kind', "kind TEXT NOT NULL DEFAULT '%s'" % SUMMARY),
+                                ('paid_seconds', 'paid_seconds INTEGER NOT NULL DEFAULT 0')):
                 if column in columns:
                     continue
                 try:
@@ -220,6 +222,18 @@ def seconds_used(chat_id, since, database=None) -> int:
                          "AND created_at>=? AND status IN ('pending','working','done')",
                (int(chat_id), since))
     return int(row['s']) if row else 0
+
+
+def paid_seconds_used(chat_id, since, database=None) -> int:
+    """The audio the paid model transcribed for this chat's requests since `since`."""
+    row = _one(database, "SELECT COALESCE(SUM(paid_seconds),0) s FROM ai_requests WHERE chat_id=? "
+                         "AND created_at>=? AND status IN ('pending','working','done')", (int(chat_id), since))
+    return int(row['s']) if row else 0
+
+
+def note_paid_seconds(request_id, seconds, database=None):
+    """This request had `seconds` of audio transcribed by the paid model."""
+    _write(database, 'UPDATE ai_requests SET paid_seconds=? WHERE id=?', (int(seconds), request_id))
 
 
 def audio_paid(chat_id, ref, database=None, exclude=None, done_only=False) -> bool:

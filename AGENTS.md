@@ -989,6 +989,24 @@ into broken English, and a Persian show's feed says "en" (2026-11-02).
   plan (a trial too) over quota: the Stars page and change-plan, never an
   invoice (it would only top the running plan up). The top plan, paid: only
   what is left.
+- No plan costs more in AI than it brings (the owner's rule, 2026-11-02). Each
+  plan's limits are set so its worst month (every hour new audio, the paid
+  model for its hours, a summary per hour, every question of every day) stays
+  under its budget: `config.ai_paid_transcribe_hours_per_month` (the paid
+  model's hours among the plan's, 2/4/15) and `config.ai_questions_per_day`
+  (5/10/20; a trial 5). Behind them a plan paid for has a budget
+  (`quota.budget`): its AI cost in the last 30 days (usage ledger) stays under
+  `config.ai_budget_share` of what its price brings (`payout_share`); a call
+  starts only if what it is reckoned to cost (`ai_transcribe_usd_hour`,
+  `ai_paid_transcribe_usd_hour`, `ai_call_usd`) fits, else `aiBudgetSpent`
+  (`offer.budget_message`). The paid model past its hours or the budget:
+  Whisper's file with the line why (`paid_models.speakers_fit`; the seconds it
+  made are `ai_requests.paid_seconds`). A trial has neither (its few hours and
+  questions). Each plan's description says its AI
+  (`paymentModule.ai_plan_text`: hours, questions, the paid model's hours) on
+  every page that lists plans. The admin page "Economics" shows each plan's
+  worst month, budget and price. Locks: `python app/service/ai/test_summary.py`,
+  `python3 app/admin_web/test_economics.py`.
 - The jobs process drains `ai_requests` one at a time (`app/jobs/ai_watcher.py`),
   a lease of 30 minutes, two attempts, then "could not". What a new summary
   cost goes to the usage ledger for the chat that asked.

@@ -242,12 +242,12 @@ ROWS = {
         'Für heute sind keine Fragen mehr übrig: {limit} am Tag. Bald geht es wieder.',
         'נגמרו השאלות להיום: {limit} ביום. בקרוב אפשר לשאול שוב.'),
     'askTrialMore': (
-        'С оплаченным тарифом – {limit} вопросов в сутки.',
-        'A paid plan gives {limit} questions a day.',
-        'Um plano pago dá {limit} perguntas por dia.',
-        'Un plan de pago da {limit} preguntas al día.',
-        'Ein bezahlter Tarif gibt {limit} Fragen am Tag.',
-        'מסלול בתשלום נותן {limit} שאלות ביום.'),
+        'С оплаченным тарифом – до {limit} вопросов в сутки.',
+        'A paid plan gives up to {limit} questions a day.',
+        'Um plano pago dá até {limit} perguntas por dia.',
+        'Un plan de pago da hasta {limit} preguntas al día.',
+        'Ein bezahlter Tarif gibt bis zu {limit} Fragen am Tag.',
+        'מסלול בתשלום נותן עד {limit} שאלות ביום.'),
     'askForPlans': (
         'Вопросы к выпускам доступны с подпиской: до {limit} в день.',
         'Questions about episodes come with a plan: up to {limit} a day.',
@@ -475,17 +475,47 @@ ROWS = {
         '✨ עם מסלול בתשלום, מודל מדויק יותר מזהה את הדיבור: פחות חורים וטעויות, ורואים מי מדבר.'),
     # a chat with the better models over its hours: the transcript made before comes, without speakers
     'paidTranscriptOverQuota': (
-        '✨ Более точная расшифровка с разметкой, кто говорит, не уместилась в оставшиеся часы тарифа, поэтому пришла '
-        'обычная.',
-        '✨ A more accurate transcript that shows who is speaking did not fit in the hours left on your plan, so here '
-        'is the regular one.',
-        '✨ Uma transcrição mais precisa, que mostra quem está falando, não coube nas horas que restam no seu plano, '
-        'então aqui está a comum.',
-        '✨ Una transcripción más precisa, que muestra quién habla, no cabía en las horas que le quedan a tu plan, '
-        'así que aquí tienes la normal.',
-        '✨ Ein genaueres Transkript, das zeigt, wer spricht, passte nicht mehr in die restlichen Stunden deines '
-        'Tarifs, deshalb kommt das normale.',
-        '✨ תמליל מדויק יותר שמראה מי מדבר לא נכנס בשעות שנשארו במסלול שלכם, אז הנה התמליל הרגיל.'),
+        '✨ Более точная расшифровка с разметкой, кто говорит, не уместилась в то, что осталось у тарифа на эти '
+        '30 дней, поэтому пришла обычная.',
+        '✨ A more accurate transcript that shows who is speaking did not fit in what your plan has left for these '
+        '30 days, so here is the regular one.',
+        '✨ Uma transcrição mais precisa, que mostra quem está falando, não coube no que resta ao seu plano nestes '
+        '30 dias, então aqui está a comum.',
+        '✨ Una transcripción más precisa, que muestra quién habla, no cabía en lo que le queda a tu plan en estos '
+        '30 días, así que aquí tienes la normal.',
+        '✨ Ein genaueres Transkript, das zeigt, wer spricht, passte nicht mehr in das, was deinem Tarif in diesen '
+        '30 Tagen bleibt, deshalb kommt das normale.',
+        '✨ תמליל מדויק יותר שמראה מי מדבר לא נכנס במה שנשאר למסלול שלכם ב-30 הימים האלה, אז הנה התמליל הרגיל.'),
+    # a plan's description (paymentModule.ai_plan_text): its AI in a line
+    'trf_descr_ai': (
+        'ИИ: пересказы и расшифровки – {hours} ч аудио за 30 дней, вопросы – до {questions} в день.',
+        'AI: summaries and transcripts – {hours} h of audio per 30 days, questions – up to {questions} a day.',
+        'IA: resumos e transcrições – {hours} h de áudio a cada 30 dias, perguntas – até {questions} por dia.',
+        'IA: resúmenes y transcripciones – {hours} h de audio cada 30 días, preguntas – hasta {questions} al día.',
+        'KI: Zusammenfassungen und Transkripte – {hours} Std. Audio pro 30 Tage, Fragen – bis zu {questions} am Tag.',
+        'AI: סיכומים ותמלילים – {hours} שעות אודיו ל-30 יום, שאלות – עד {questions} ביום.'),
+    'trf_descr_ai_paid': (
+        'Из них {paid} ч – точной моделью, с разметкой, кто говорит.',
+        '{paid} h of it with the precise model that shows who is speaking.',
+        '{paid} h delas com o modelo preciso, que mostra quem está falando.',
+        '{paid} h de ellas con el modelo preciso, que muestra quién habla.',
+        'Davon {paid} Std. mit dem genauen Modell, das zeigt, wer spricht.',
+        '{paid} שעות מהן במודל המדויק, שמראה מי מדבר.'),
+    # a plan paid for whose AI budget for 30 days is spent (quota.budget): no new summary, transcript or question
+    'aiBudgetSpent': (
+        'ИИ вашего тарифа на эти 30 дней закончился: новые пересказы, расшифровки и вопросы вернутся, когда ранние '
+        'запросы выйдут за 30 дней. Готовые пересказы и расшифровки по-прежнему бесплатны.',
+        'Your plan\'s AI for these 30 days is used up: new summaries, transcripts and questions come back as earlier '
+        'requests pass 30 days. Summaries and transcripts already made stay free.',
+        'A IA do seu plano para estes 30 dias acabou: novos resumos, transcrições e perguntas voltam quando os pedidos '
+        'anteriores passarem de 30 dias. Resumos e transcrições já feitos continuam gratuitos.',
+        'La IA de tu plan para estos 30 días se agotó: los nuevos resúmenes, transcripciones y preguntas vuelven cuando '
+        'las solicitudes anteriores pasen de 30 días. Los resúmenes y transcripciones ya hechos siguen gratis.',
+        'Die KI deines Tarifs für diese 30 Tage ist aufgebraucht: neue Zusammenfassungen, Transkripte und Fragen gehen '
+        'wieder, sobald frühere Anfragen älter als 30 Tage sind. Fertige Zusammenfassungen und Transkripte bleiben '
+        'kostenlos.',
+        'ה-AI של המסלול שלכם ל-30 הימים האלה נגמר: סיכומים, תמלילים ושאלות חדשים יחזרו כשבקשות קודמות יעברו 30 יום. '
+        'סיכומים ותמלילים שכבר נוצרו נשארים בחינם.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

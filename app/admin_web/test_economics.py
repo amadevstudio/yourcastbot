@@ -115,11 +115,17 @@ def _ai_plans(path, now):
     plans = {p['key']: p for p in report['plans']}
     relay = plans['3']
     hours = config.ai_summary_hours_per_month[3]
-    month_of_questions = quota.QUESTIONS_PER_DAY * quota.QUOTA_DAYS * 0.001
+    month_of_questions = config.ai_questions_per_day[3] * quota.QUOTA_DAYS * 0.001
+    paid_hours = config.ai_paid_transcribe_hours_per_month[3]
     _assert_close(relay['price_usd'], 5.0, "the plan's price")
-    _assert_close(relay['worst_whisper_usd'], hours * (0.015 + 0.003) + month_of_questions,
+    _assert_close(relay['worst_whisper_usd'], min(hours * (0.015 + 0.003) + month_of_questions, relay['cap_usd']),
                   'worst month: every hour new audio, a summary per hour, every question')
-    _assert_close(relay['worst_paid_usd'], hours * (0.10 + 0.003) + month_of_questions, 'the same with the paid model')
+    _assert_close(relay['worst_paid_usd'], min(paid_hours * 0.10 + (hours - paid_hours) * 0.015 + hours * 0.003
+                                               + month_of_questions, relay['cap_usd']),
+                  'the paid model for its hours, Whisper for the rest, never above the budget')
+    _assert_close(relay['cap_usd'], 5.0 * config.ai_budget_share, "the budget: a share of the plan's price")
+    _assert_eq(all(p['cap_usd'] <= p['net_usd'] for p in report['plans'] if p['cap_usd'] is not None), True,
+               'no plan may cost more in AI than it brings')
     # the AI quota's "paid for": the creator's own payment counts there (it is not revenue above)
     _assert_eq(relay['chats'], 2 if int(config.creatorId) else 1, 'chats with the plan running that paid for it')
     _assert_close(relay['hours_used'], 1.5, 'hours charged by requests done, not failed ones')

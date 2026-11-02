@@ -66,6 +66,12 @@ def episode_transcript(episode, session, progress=None, speakers=False) -> tuple
     return found, made
 
 
+def _note_paid(request, found, made):
+    """A transcript the paid model made now counts toward the chat's hours of it."""
+    if made and found.source == transcript.SPEAKERS and request.get('id'):
+        ai.note_paid_seconds(request['id'], round(found.seconds))
+
+
 STATUS = {'download': 'summaryStatusDownloading', 'transcribe': 'summaryStatusTranscribing',
           'write': 'summaryStatusWriting'}
 TRANSCRIPT_STATUS = {'download': 'transcriptStatusDownloading', 'transcribe': 'transcriptStatusTranscribing'}
@@ -113,7 +119,9 @@ def process(request, session, send=outer_sender, edit=message_editor, send_file=
     if cached is not None:
         text, cost, charged = cached['text'], 0.0, 0
     else:
-        found, made = episode_transcript(episode, session, progress, paid_models.speakers(request['chat_id']))
+        found, made = episode_transcript(episode, session, progress, paid_models.speakers_fit(
+            request['chat_id'], request['seconds'] or episode.get('seconds')))
+        _note_paid(request, found, made)
         if not made and ai.audio_paid(request['chat_id'], request['ref'], exclude=request.get('id'), done_only=True):
             charged = 0  # this chat paid for the audio (its transcript): the model call is cents
         else:
@@ -145,11 +153,14 @@ def process_transcript(request, session, edit=message_editor, send_file=send_tra
     episode = ai.episode(request['ref'])
     if episode is None:
         raise summary.SummaryUnavailable('episode is not known any more')
-    speakers = paid_models.speakers(request['chat_id'])
+    wants = paid_models.speakers(request['chat_id'])
+    speakers = wants and paid_models.speakers_fit(request['chat_id'], request['seconds'] or episode.get('seconds'))
     found, made = episode_transcript(episode, session, status_updater(request, edit), speakers)
+    _note_paid(request, found, made)
     charged = (round(found.seconds) or request['seconds']) if made else 0
     usage.record_transcript(request['chat_id'], request['ref'], found.cost_usd if made else 0.0)
-    send_file(request['chat_id'], episode, found.text, found.source, request.get('ui_lang'), request.get('reply_to'))
+    send_file(request['chat_id'], episode, found.text, found.source, request.get('ui_lang'), request.get('reply_to'),
+              over_quota=wants and not speakers)
     if request.get('status_message'):
         try:
             delete(request['chat_id'], request['status_message'])

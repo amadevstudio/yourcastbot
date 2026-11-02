@@ -219,6 +219,22 @@ def get_tariffs_sub_message(language_code, tariff_id, balance, time_left, notify
     return result
 
 
+def ai_plan_text(level, language_code) -> str:
+    """What the plan gives in AI, a line of its description ('' with AI off): hours of audio for summaries
+    and transcripts, questions a day, the paid model's hours among them (quota, config)."""
+    from app.service.ai import summary
+    from config import ai_paid_transcribe_hours_per_month, ai_questions_per_day, ai_summary_hours_per_month
+    hours = ai_summary_hours_per_month.get(level, 0)
+    if not hours or not summary.enabled():
+        return ''
+    text = "\n" + get_message('trf_descr_ai', language_code).format(
+        hours=hours, questions=ai_questions_per_day.get(level, 0))
+    paid = min(ai_paid_transcribe_hours_per_month.get(level, 0), hours)
+    if paid and paid_models.transcribe_model(True) != paid_models.transcribe_model(False):
+        text += ' ' + get_message('trf_descr_ai_paid', language_code).format(paid=paid)
+    return text
+
+
 def get_tariff_description_and_button_text(
         tariff, current_tariff, language_code, show_tariff_level_text=True):
     text = ""
@@ -237,6 +253,7 @@ def get_tariff_description_and_button_text(
                 (
                     ("<b>" + get_message("yes", language_code) + "</b>")
                     if tariff['channel_control'] else get_message("no", language_code)))
+    text += ai_plan_text(tariff['level'], language_code)
     button_text = (
             ("* " if current_tariff['id'] == tariff['id'] else "")
             + get_message("tariff_lvl" + str(tariff['level']), language_code))

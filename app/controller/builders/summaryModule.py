@@ -220,12 +220,14 @@ def request_transcript(data):
     if found is None:
         found = _feed_transcript(episode)
         found = dict(found._asdict()) if found is not None else None
-    # a paying chat with the better models gets Whisper's transcript made again, with speakers
-    upgrade = found is not None and found['source'] == transcript.WHISPER and paid_models.speakers(data['chat_id'])
+    # a paying chat with the better models gets Whisper's transcript made again, with speakers,
+    # if its hours and its plan's budget cover it
+    wants = found is not None and found['source'] == transcript.WHISPER and paid_models.speakers(data['chat_id'])
+    upgrade = wants and paid_models.speakers_fit(data['chat_id'], ai_quota.seconds_needed(episode))
     quota = ai_quota.check(data['chat_id'], _needed(data['chat_id'], episode)) if found is None or upgrade else None
     if found is not None and not (upgrade and quota.allowed):  # over its hours a payer gets Whisper's
         if send_transcript_file(data['chat_id'], episode, found['text'], found['source'], language_code, audio,
-                                over_quota=upgrade):
+                                over_quota=wants):
             usage.record_transcript(data['chat_id'], ref, 0.0)
             analytics_events.track(data['chat_id'], 'transcript_ready', {'source': found['source'], 'made': False})
         return
@@ -274,6 +276,9 @@ def ask_offer_message(language_code) -> dict:
 def limit_message(language_code, questions) -> dict:
     """The day's questions are used up; a trial hears what paying gives, with the Stars page
     and change-plan (a running plan: an invoice would only top it up, as for summaries)."""
+    if questions.budget:
+        from app.service.ai.offer import budget_message
+        return budget_message(language_code, questions.level)
     text = get_message('askLimit', language_code).format(limit=questions.limit)
     if not questions.trial:
         return {'type': 'text', 'text': text}

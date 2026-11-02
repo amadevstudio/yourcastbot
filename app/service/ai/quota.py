@@ -12,13 +12,21 @@ A plan nobody paid for yet (the welcome Relay, referral days) has
 config.ai_summary_trial_hours whatever its level: every new user gets
 two weeks of Relay. The first payment opens the plan's own hours; a
 Patreon pledge credited to the balance is a payment (tariff_rows.paid_for_days).
+
+A plan paid for also has a budget (`budget`): what its AI cost in the last
+30 days (the usage ledger) stays under config.ai_budget_share of what its price
+brings. A call starts only if what it is reckoned to cost fits what is left; the
+paid model is used only if the episode fits at its rate. Hours and questions are
+what users see; the budget is the owner's rule that no plan costs more than it
+brings, whatever the rates and transcripts' lengths.
 """
 import time
 from typing import NamedTuple
 
+import config
 from config import ai_summary_hours_per_month, ai_summary_trial_hours
 from db import ai
-from db.tariff_rows import paid_for_days, running_plan_level
+from db.tariff_rows import paid_for_days, running_plan_level, running_plan_price
 
 QUOTA_DAYS = 30
 # a feed without itunes:duration: charged an hour until Whisper measures the audio
@@ -33,6 +41,7 @@ class Quota(NamedTuple):
     needed: int
     level: int
     trial: bool = False
+    budget: bool = False  # refused by the plan's budget, not by its hours
 
     @property
     def left(self) -> int:
@@ -42,6 +51,49 @@ class Quota(NamedTuple):
     def top_plan(self) -> bool:
         """Nothing bigger to sell: the top plan, paid for."""
         return not self.trial and self.level >= max(ai_summary_hours_per_month, default=0)
+
+
+class Budget(NamedTuple):
+    """USD: the most this plan's AI may cost in 30 days, and what it cost in the last 30 days."""
+    limit: float
+    spent: float
+
+    def fits(self, cost: float) -> bool:
+        return self.spent + cost <= self.limit
+
+
+def budget(chat_id, now=None, database=None) -> Budget | None:
+    """The budget of a plan paid for; None for a trial (its own few hours and questions), no plan,
+    or a plan without a price."""
+    if running_plan_level(chat_id, database) <= 0 or not paid_for_days(chat_id, database):
+        return None
+    from db import usage
+    price = running_plan_price(chat_id, database) / 100.0
+    if price <= 0:
+        return None
+    share = config.payout_share.get('telegramStars', 1.0) * config.ai_budget_share
+    since = (time.time() if now is None else now) - QUOTA_DAYS * 86400
+    return Budget(price * share, usage.ai_spent_since(chat_id, since, database))
+
+
+def transcribe_cost(seconds, paid_model=False) -> float:
+    """What a new transcript of `seconds` and a model call on it are reckoned to cost."""
+    rate = config.ai_paid_transcribe_usd_hour if paid_model else config.ai_transcribe_usd_hour
+    return (seconds or UNKNOWN_SECONDS) / 3600.0 * rate + config.ai_call_usd
+
+
+def paid_transcribe_fits(chat_id, seconds, now=None, database=None) -> bool:
+    """Does making this episode's transcript with the paid model fit the plan's hours of it
+    (config.ai_paid_transcribe_hours_per_month) and the plan's budget?"""
+    level = running_plan_level(chat_id, database)
+    if level <= 0 or not paid_for_days(chat_id, database):  # a plan paid for only
+        return False
+    limit = config.ai_paid_transcribe_hours_per_month.get(level, 0) * 3600
+    since = (time.time() if now is None else now) - QUOTA_DAYS * 86400
+    if ai.paid_seconds_used(chat_id, since, database) + (seconds or UNKNOWN_SECONDS) > limit:
+        return False
+    left = budget(chat_id, now, database)
+    return left is None or left.fits(transcribe_cost(seconds, paid_model=True))
 
 
 def seconds_needed(episode) -> int:
@@ -61,12 +113,19 @@ def check(chat_id, needed, level=None, trial=False, now=None, database=None) -> 
     limit = int(hours * 3600)
     since = (time.time() if now is None else now) - QUOTA_DAYS * 86400
     used = ai.seconds_used(chat_id, since, database)
-    return Quota(limit > 0 and used + needed <= limit, limit, used, int(needed), level, trial)
+    allowed = limit > 0 and used + needed <= limit
+    if allowed and not trial:
+        left = budget(chat_id, now, database)
+        cost = transcribe_cost(needed) if needed else config.ai_call_usd
+        if left is not None and not left.fits(cost):
+            return Quota(False, limit, used, int(needed), level, trial, budget=True)
+    return Quota(allowed, limit, used, int(needed), level, trial)
 
 
 # Questions about an episode (summaryModule.ask): one model call each, a few
-# tenths of a cent with the transcript cached, so a count per day is enough
-QUESTIONS_PER_DAY = 20
+# tenths of a cent with the transcript cached, so a count per day (config.ai_questions_per_day by
+# plan level) and the budget are enough. QUESTIONS_PER_DAY: the most a plan gives ("up to")
+QUESTIONS_PER_DAY = max(config.ai_questions_per_day.values(), default=0)
 TRIAL_QUESTIONS_PER_DAY = 5
 
 
@@ -75,6 +134,8 @@ class Questions(NamedTuple):
     limit: int  # 0: no plan
     left: int
     trial: bool = False
+    budget: bool = False  # refused by the plan's budget, not by the day's count
+    level: int = 0
 
 
 def questions(chat_id, now=None, database=None) -> Questions:
@@ -84,7 +145,11 @@ def questions(chat_id, now=None, database=None) -> Questions:
     if level <= 0:
         return Questions(False, 0, 0)
     trial = not paid_for_days(chat_id, database)
-    limit = TRIAL_QUESTIONS_PER_DAY if trial else QUESTIONS_PER_DAY
+    limit = TRIAL_QUESTIONS_PER_DAY if trial else config.ai_questions_per_day.get(level, QUESTIONS_PER_DAY)
     since = (time.time() if now is None else now) - 86400
     left = max(limit - usage.count_since(chat_id, 'ask', since, database), 0)
-    return Questions(left > 0, limit, left, trial)
+    if left > 0 and not trial:
+        spend = budget(chat_id, now, database)
+        if spend is not None and not spend.fits(config.ai_call_usd):
+            return Questions(False, limit, left, trial, budget=True, level=level)
+    return Questions(left > 0, limit, left, trial, level=level)

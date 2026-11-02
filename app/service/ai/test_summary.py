@@ -20,6 +20,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+import config  # noqa: E402
+from app.i18n.messages import get_message  # noqa: E402
 from app.service.ai import openrouter, quota, summary, transcript  # noqa: E402
 from db import ai, usage  # noqa: E402
 from db.tariff_rows import running_plan_level  # noqa: E402
@@ -424,15 +426,64 @@ def test_queue_and_quota(db):
     _assert(sqlite3.connect(old_db).execute('SELECT reply_to, kind FROM ai_requests').fetchone() == (5, 'summary'),
             "a database from before gets the reply_to and kind columns, its requests summaries")
 
-    _assert(quota.questions(501, database=db) == (True, quota.QUESTIONS_PER_DAY, quota.QUESTIONS_PER_DAY, False),
-            "a paid plan asks its questions a day")
+    bronze = config.ai_questions_per_day[1]
+    _assert(quota.questions(501, database=db)[:4] == (True, bronze, bronze, False),
+            "a paid plan asks its plan's questions a day")
+    _assert(quota.QUESTIONS_PER_DAY == max(config.ai_questions_per_day.values()), "'up to': the most a plan gives")
     _assert(quota.questions(502, database=db)[:3] == (False, 0, 0), "no plan: no questions")
     for _ in range(quota.TRIAL_QUESTIONS_PER_DAY):
         usage.record_ask(504, 'ep', 0.001, db)
     usage.record_ask(504, 'ep', 0.001, db, at=now - 2 * 86400)
-    _assert(quota.questions(504, database=db) == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0, True),
+    _assert(quota.questions(504, database=db)[:4] == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0, True),
             "a trial has fewer, counted over the last 24 hours")
     _assert(abs(usage.per_user(0, database=db)[504]['ai_usd'] - 0.006) < 1e-9, "questions are in the AI spend")
+
+
+def test_budget(db):
+    """The owner's rule: no plan costs more in AI than it brings. A plan paid for stops at its budget
+    (a share of its price at what reaches us); the paid model has its hours per plan; a trial has neither."""
+    c = sqlite3.connect(db)
+    c.executescript("""
+        CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT);
+        CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER, price INTEGER);
+        CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, time_left INTEGER);
+        CREATE TABLE payment_history (user_id INTEGER, status TEXT);
+        INSERT INTO users VALUES (1, 601, 'en'), (3, 603, 'en'), (4, 604, 'en');
+        INSERT INTO tariffs VALUES (1, 1, 100), (3, 3, 500);
+        INSERT INTO user_tariff_cs VALUES (1, 1, 1, 100), (3, 3, 3, 100), (4, 4, 3, 100);
+        INSERT INTO payment_history VALUES (1, 'paid'), (3, 'paid');
+    """)
+    c.commit()
+    c.close()
+    share = config.payout_share.get('telegramStars', 1.0) * config.ai_budget_share
+    _assert(share <= 1, "a plan's AI budget is never more than what the plan brings")
+    bronze = quota.budget(601, database=db)
+    _assert(abs(bronze.limit - 1.0 * share) < 1e-9 and bronze.spent == 0, "Bronze's budget: its price at the share")
+    _assert(quota.budget(604, database=db) is None, "a trial has its own few hours, no budget")
+    _assert(quota.check(601, 1800, database=db).allowed and quota.questions(601, database=db).allowed,
+            "within the budget: as before")
+
+    usage.record_ai(601, 'ep', bronze.limit - 0.005, db)
+    over = quota.check(601, 1800, database=db)
+    _assert(not over.allowed and over.budget and over.used == 0,
+            "a summary that would pass the budget is refused, though the hours are there")
+    asked = quota.questions(601, database=db)
+    _assert(not asked.allowed and asked.budget and asked.left > 0, "so is a question")
+    _assert(not quota.paid_transcribe_fits(601, 600, database=db), "and the paid model")
+    from app.service.ai.offer import budget_message
+    _assert(budget_message('en', 3)['text'] == get_message('aiBudgetSpent', 'en'),
+            "the top plan hears that its AI for the 30 days is spent, nothing to sell")
+    usage.record_ai(604, 'ep', 5.0, db)
+    _assert(quota.check(604, 1800, database=db).allowed, "a trial is not stopped by money spent")
+
+    relay_paid = config.ai_paid_transcribe_hours_per_month[3] * 3600
+    _assert(quota.paid_transcribe_fits(603, 3600, database=db), "Relay: the paid model within its hours")
+    request_id, _ = ai.enqueue(603, 'long', 'en', 3600, db)
+    ai.note_paid_seconds(request_id, relay_paid - 1800, db)
+    _assert(ai.paid_seconds_used(603, 0, db) == relay_paid - 1800, "the paid model's seconds are counted")
+    _assert(not quota.paid_transcribe_fits(603, 3600, database=db) and quota.paid_transcribe_fits(603, 1200, database=db),
+            "past the plan's hours of the paid model: Whisper")
+    _assert(not quota.paid_transcribe_fits(604, 60, database=db), "a trial has no hours of the paid model")
 
 
 def test_auto(db):
@@ -682,6 +733,7 @@ def test_worker(db):
             and [b['callback_data']['tp'] for row in over['reply_markup'] for b in row] == ['bs_stars', 'bs_trfs'],
             "over the hours: the same storefront rules as a summary, the text names transcripts")
     test_ask(db, summaryModule)
+    test_plan_text()
     test_feed_transcript(db, summaryModule)
     test_transcript_button(db, summaryModule)
 
@@ -690,6 +742,30 @@ class Tap:
     def __init__(self, data, message_id=10):
         self.data = json.dumps(data)
         self.message_id = message_id
+
+
+def test_plan_text():
+    """A plan's description says its AI: hours, questions a day, the paid model's hours among them."""
+    from app.service.ai import paid_models
+    from app.service.payment import paymentModule
+    saved = (summary.enabled, paid_models.transcribe_model)
+    summary.enabled = lambda: True
+    paid_models.transcribe_model = lambda with_speakers: 'paid/stt' if with_speakers else 'whisper'
+    try:
+        text = paymentModule.ai_plan_text(2, 'en')
+        _assert(text == '\n' + get_message('trf_descr_ai', 'en').format(
+            hours=config.ai_summary_hours_per_month[2], questions=config.ai_questions_per_day[2]) + ' '
+                + get_message('trf_descr_ai_paid', 'en').format(paid=config.ai_paid_transcribe_hours_per_month[2]),
+                "Silver: its hours, its questions, its hours of the paid model")
+        paid_models.transcribe_model = lambda with_speakers: 'whisper'
+        _assert(get_message('trf_descr_ai_paid', 'en').format(paid=config.ai_paid_transcribe_hours_per_month[3])
+                not in paymentModule.ai_plan_text(3, 'en'),
+                "no paid model configured: no promise of it")
+        _assert(paymentModule.ai_plan_text(0, 'en') == '', "no plan, no line")
+        summary.enabled = lambda: False
+        _assert(paymentModule.ai_plan_text(3, 'en') == '', "AI off: no line")
+    finally:
+        summary.enabled, paid_models.transcribe_model = saved
 
 
 def test_ask(db, module):
@@ -745,7 +821,7 @@ def test_ask(db, module):
                 "over the day's limit: no model call; a paid plan has nothing bigger to buy here")
         left[0] = quota.Questions(False, 5, 0, True)
         module.ask(dict(tap, callback=Tap({'tp': 'ask', 'r': 'ep7', 'm': 4})))
-        _assert('A paid plan gives 20 questions a day' in sent[-1]['text']
+        _assert('A paid plan gives up to 20 questions a day' in sent[-1]['text']
                 and [b['callback_data']['tp'] for row in sent[-1]['reply_markup'] for b in row] == ['bs_stars', 'bs_trfs'],
                 "a trial at its limit hears what paying gives, with the Stars page and change-plan")
         left[0] = quota.Questions(False, 5, 0)
@@ -893,7 +969,7 @@ def test_transcript_requests(db, ai_watcher):
     ai_watcher.summary.summarize = no_model
     ai_watcher.episode_transcript = whisper
     ai.db_path = usage.db_path = db
-    send_file = lambda chat_id, episode, text, source, lang, reply_to: files.append(  # noqa: E731
+    send_file = lambda chat_id, episode, text, source, lang, reply_to, over_quota=False: files.append(  # noqa: E731
         (chat_id, episode['ref'], text, source, lang, reply_to)) or True
     edit = lambda chat_id, message, message_id: edits.append((message_id, message['text']))  # noqa: E731
     delete = lambda chat_id, message_id: deleted.append(message_id)  # noqa: E731
@@ -984,12 +1060,13 @@ def test_transcript_requests(db, ai_watcher):
 
     models = []
     saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai_watcher.paid_models.summary_model,
-             ai_watcher.paid_models.speakers, ai.db_path, usage.db_path)
+             ai_watcher.paid_models.speakers, ai_watcher.paid_models.speakers_fit, ai.db_path, usage.db_path)
     ai_watcher.summary.summarize = lambda *a, **k: models.append(k.get('model')) or ('Gist.', 0.01)
     ai_watcher.episode_transcript = lambda episode, session, progress=None, speakers=False: (
         models.append(('speakers', speakers)) or transcript.Transcript('t', 'feed', 0.0, 0.0), False)
     ai_watcher.paid_models.summary_model = lambda chat_id, database=None: 'paid/strong' if chat_id == 530 else 'base'
     ai_watcher.paid_models.speakers = lambda chat_id, database=None: chat_id == 530
+    ai_watcher.paid_models.speakers_fit = lambda chat_id, seconds, database=None: chat_id == 530
     ai.db_path = usage.db_path = db
     try:
         ai.remember_episode('u2', 'https://cdn.example/show/u2.mp3', 9, 'U2', 'Show', 600, database=db)
@@ -1001,9 +1078,16 @@ def test_transcript_requests(db, ai_watcher):
         ai_watcher.process({'chat_id': 531, 'ref': 'u2', 'lang': 'xx', 'seconds': 600}, None, send=lambda *a: None)
         _assert(models == [('speakers', True), 'paid/strong', ('speakers', False), 'base'],
                 "a paying chat with them: transcript with speakers, summary by the paid model; others as before")
+        request_id, _ = ai.enqueue(530, 'u3', 'xx', 600, db)
+        made_now = transcript.Transcript('t', transcript.SPEAKERS, 0.02, 590.0)
+        ai_watcher._note_paid({'id': request_id}, made_now, False)
+        ai_watcher._note_paid({'id': request_id}, transcript.Transcript('t', 'whisper', 0.0, 590.0), True)
+        _assert(ai.paid_seconds_used(530, 0, db) == 0, "only what the paid model made now counts")
+        ai_watcher._note_paid({'id': request_id}, made_now, True)
+        _assert(ai.paid_seconds_used(530, 0, db) == 590, "toward the chat's hours of the paid model")
     finally:
         (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai_watcher.paid_models.summary_model,
-         ai_watcher.paid_models.speakers, ai.db_path, usage.db_path) = saved
+         ai_watcher.paid_models.speakers, ai_watcher.paid_models.speakers_fit, ai.db_path, usage.db_path) = saved
 
 
 def test_transcript_button(db, module):
@@ -1108,8 +1192,10 @@ def test_transcript_button(db, module):
         _assert(charged == (0,), "the chat paid for this audio with a summary: its transcript costs no more hours")
 
         # the better models: a paying chat gets Whisper's transcript made again, with speakers, within its hours
-        saved_paid = (module.paid_models.speakers, module.paid_models.transcript_note)
-        module.paid_models.speakers = lambda chat_id, database=None: chat_id in (506, 507)
+        saved_paid = (module.paid_models.speakers, module.paid_models.speakers_fit, module.paid_models.transcript_note)
+        module.paid_models.speakers = lambda chat_id, database=None: chat_id in (506, 507, 508)
+        # 508: past its hours of the paid model or its plan's budget
+        module.paid_models.speakers_fit = lambda chat_id, seconds, database=None: chat_id in (506, 507)
         module.paid_models.transcript_note = lambda chat_id, source, lang, database=None, over_quota=False: (
             'OVER' if over_quota else '')
         try:
@@ -1126,11 +1212,15 @@ def test_transcript_button(db, module):
             _assert(len(documents) == count + 1 and documents[-1]['chat_id'] == 507
                     and documents[-1]['caption'].endswith('\n\nOVER'),
                     "over its hours: Whisper's file, saying why")
+            plans[508] = 3
+            module.request_transcript(dict(tap, chat_id=508, callback=Tap({'tp': 'trn', 'r': 'ep9'})))
+            _assert(documents[-1]['chat_id'] == 508 and documents[-1]['caption'].endswith('\n\nOVER'),
+                    "past the paid model's hours or the budget: Whisper's file, saying why, nothing queued")
             module.request_transcript(dict(tap, chat_id=506, callback=Tap({'tp': 'trn', 'r': 'feedy'})))
             _assert(documents[-1]['chat_id'] == 506 and documents[-1]['body'].endswith('Words from the feed.\n'),
                     "the feed's transcript is the publisher's: a paying chat gets it as everyone does")
         finally:
-            module.paid_models.speakers, module.paid_models.transcript_note = saved_paid
+            module.paid_models.speakers, module.paid_models.speakers_fit, module.paid_models.transcript_note = saved_paid
 
         count = len(documents)
         module.request_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'gone'})))
@@ -1173,6 +1263,7 @@ def main():
         test_language(tmp)
         db = os.path.join(tmp, 'test.sqlite')
         test_queue_and_quota(db)
+        test_budget(os.path.join(tmp, 'budget.sqlite'))
         test_auto(os.path.join(tmp, 'auto.sqlite'))
         test_hint(os.path.join(tmp, 'hint.sqlite'))
         test_worker(os.path.join(tmp, 'worker.sqlite'))

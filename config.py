@@ -38,6 +38,21 @@ ai_paid_summary_model = getattr(constants, 'openrouterPaidModel', None) or ''
 ai_summary_hours_per_month = {1: 5, 2: 15, 3: 30}
 # a plan nobody paid for yet (the welcome Relay, referral days): its hours, whatever its level
 ai_summary_trial_hours = 5
+# of those hours, what the paid model (openrouterPaidTranscribeModel) may transcribe in 30 days, by plan
+# level; past it, Whisper. With questions a day by level, a plan's worst month fits its budget (below)
+ai_paid_transcribe_hours_per_month = {1: 2, 2: 4, 3: 15}
+# questions a day about an episode or a show, by plan level (a trial: quota.TRIAL_QUESTIONS_PER_DAY)
+ai_questions_per_day = {1: 5, 2: 10, 3: 20}
+# the most a paid plan's AI may cost in any 30 days, as a share of what its price brings (the price at
+# payout_share's Stars share): new summaries, transcripts, questions and the paid model stop there
+# (quota.budget). The owner's rule (2026-11-02): no plan may cost more in AI than it brings.
+ai_budget_share = 0.7
+# what is reckoned before a call is made, USD (made on 2026-11-02: Whisper turbo 0.015 and Grok 0.106 per
+# hour of audio, a summary's model call 0.002, a question 0.002, up to 0.009 on a long transcript):
+# one starts only if it fits what the budget has left
+ai_transcribe_usd_hour = 0.02
+ai_paid_transcribe_usd_hour = 0.12
+ai_call_usd = 0.01
 # agentId = creatorId
 botId = constants.botId
 donate_link = constants.donate_link
