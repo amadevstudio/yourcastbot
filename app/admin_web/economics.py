@@ -14,7 +14,8 @@ share of it that reaches us (config.payout_share: Stars come through Fragment in
 AI by plan (`ai_plans`): what the APIs charged per hour of audio, per summary and
 per question, read from what was made; the month a plan's AI could cost at most
 at those rates (every hour of its quota new audio, a summary per hour, every
-question of every day), next to its price and to what its chats used.
+question of every day; the paid model for its hours only), capped by the plan's AI budget (quota.budget: a share of
+what its price brings), next to its price and to what its chats used.
 """
 from __future__ import annotations
 
@@ -109,12 +110,15 @@ def _rates(conn) -> dict[str, dict]:
     return rates
 
 
-def _worst(hours: float, transcribe: dict, rates: dict, questions_per_day: int) -> Optional[float]:
-    """The most a month of the plan's AI could cost: every hour new audio, a summary per hour,
-    every question of every day. None while a rate it needs is unknown."""
-    if transcribe['usd'] is None:
+def _worst(hours: float, rates: dict, questions_per_day: int, paid_hours: float = 0.0) -> Optional[float]:
+    """The most a month of the plan's AI could cost: every hour new audio (`paid_hours` of it by the
+    paid model, the rest Whisper), a summary per hour, every question of every day. None while a rate
+    it needs is unknown."""
+    if rates['whisper']['usd'] is None or (paid_hours and rates['speakers']['usd'] is None):
         return None
-    return (hours * (transcribe['usd'] + (rates['summary']['usd'] or 0.0))
+    paid_hours = min(paid_hours, hours)
+    return (paid_hours * (rates['speakers']['usd'] or 0.0) + (hours - paid_hours) * rates['whisper']['usd']
+            + hours * (rates['summary']['usd'] or 0.0)
             + questions_per_day * quota.QUOTA_DAYS * (rates['question']['usd'] or 0.0))
 
 
@@ -147,20 +151,27 @@ def ai_plans(conn, database, since: float, until: float, spent: dict) -> dict[st
     hours_used = _hours_used(conn, since, until)
     running = _running(conn, database)
 
-    def plan(key, level, price, hours, questions, paid):
+    def capped(value, cap):
+        return value if value is None or cap is None else min(value, cap)
+
+    def plan(key, level, price, hours, questions, paid, paid_hours=0.0):
+        net = price * config.payout_share.get(STARS, 1.0)
+        cap = net * config.ai_budget_share if paid else None
         chats = [tg for tg, (paid_for, lvl) in running.items() if paid_for == paid and (not paid or lvl == level)]
         used = [hours_used.get(tg, 0.0) for tg in chats]
-        return {'key': key, 'level': level, 'price_usd': price,
-                'net_usd': price * config.payout_share.get(STARS, 1.0), 'hours': hours,
-                'questions_per_day': questions,
-                'worst_whisper_usd': _worst(hours, rates['whisper'], rates, questions),
-                'worst_paid_usd': _worst(hours, rates['speakers'], rates, questions) if paid and paid_model else None,
+        return {'key': key, 'level': level, 'price_usd': price, 'net_usd': net, 'cap_usd': cap, 'hours': hours,
+                'questions_per_day': questions, 'paid_hours': paid_hours if paid and paid_model else 0.0,
+                'worst_whisper_usd': capped(_worst(hours, rates, questions), cap),
+                'worst_paid_usd': capped(_worst(hours, rates, questions, paid_hours), cap)
+                if paid and paid_model else None,
                 'chats': len(chats), 'ai_chats': sum(1 for h in used if h > 0),
                 'hours_used': sum(used), 'max_hours': max(used, default=0.0),
                 'ai_usd': sum(spent.get(tg, 0.0) for tg in chats)}
 
     plans = [plan(str(level), level, price, float(config.ai_summary_hours_per_month.get(level, 0)),
-                  quota.QUESTIONS_PER_DAY, True) for level, price in sorted(prices.items())]
+                  config.ai_questions_per_day.get(level, 0), True,
+                  float(config.ai_paid_transcribe_hours_per_month.get(level, 0)))
+             for level, price in sorted(prices.items())]
     plans.append(plan('trial', None, 0.0, float(config.ai_summary_trial_hours), quota.TRIAL_QUESTIONS_PER_DAY, False))
     return {'rates': rates, 'paid_model': paid_model, 'plans': [_rounded(p) for p in plans]}
 

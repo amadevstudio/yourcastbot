@@ -76,6 +76,19 @@ def speakers(chat_id, database=None) -> bool:
     return bool(ai_paid_transcribe_model) and _on(chat_id, database)
 
 
+def speakers_fit(chat_id, seconds, database=None) -> bool:
+    """speakers(), and making `seconds` of audio with the paid model fits the plan's AI budget
+    (quota.budget): past it, Whisper."""
+    if not speakers(chat_id, database):
+        return False
+    from app.service.ai import quota
+    try:
+        return quota.paid_transcribe_fits(chat_id, seconds, database=database)
+    except Exception as e:  # a model choice never fails a request: the usual model then
+        logger.warn('paid models budget:', chat_id, type(e).__name__, e)
+        return False
+
+
 def transcribe_model(with_speakers) -> str:
     return ai_paid_transcribe_model if with_speakers and ai_paid_transcribe_model else ai_transcribe_model
 

@@ -118,6 +118,17 @@ def count_since(chat_id, kind, since, database=None) -> int:
         c.close()
 
 
+def ai_spent_since(chat_id, since, database=None) -> float:
+    """What this chat's AI cost since `since` (epoch): summaries, transcripts, questions."""
+    c = connect(database)
+    try:
+        return float(c.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM usage_events WHERE user_id=? "
+                               "AND kind IN ('ai', 'transcript', 'ask') AND at>=?",
+                               (chat_key(chat_id), since)).fetchone()[0])
+    finally:
+        c.close()
+
+
 def episodes_since(chat_id, kind, since, database=None) -> set:
     """Distinct episodes of `kind` delivered to the chat since `since` (epoch)."""
     c = connect(database)

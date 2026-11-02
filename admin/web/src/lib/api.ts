@@ -92,8 +92,10 @@ export type AiPlan = {
   level: number | null;
   price_usd: number;
   net_usd: number;
+  cap_usd: number | null;
   hours: number;
   questions_per_day: number;
+  paid_hours: number;
   worst_whisper_usd: number | null;
   worst_paid_usd: number | null;
   chats: number;

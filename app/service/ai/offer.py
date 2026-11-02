@@ -2,7 +2,8 @@
 """What a user hears when a new summary does not fit: the plans, or what is left.
 
 Shared by the Summary button (summaryModule) and summaries of new episodes
-(auto.py): one offer, one set of storefront rules.
+(auto.py): one offer, one set of storefront rules. A plan whose AI budget for
+the 30 days is spent (quota.budget) hears that, whatever was asked.
 """
 from app.i18n.messages import get_message
 from app.service.ai.quota import Quota
@@ -18,12 +19,25 @@ def length_text(seconds, language_code) -> str:
     return ' '.join(parts)
 
 
+def budget_message(language_code, level) -> dict:
+    """The plan's AI for these 30 days is spent; below the top plan a bigger one gives more
+    (the Stars page and change-plan: an invoice would only top the running plan up)."""
+    text = get_message('aiBudgetSpent', language_code)
+    if level >= max(ai_summary_hours_per_month, default=0):
+        return {'type': 'text', 'text': text, 'disable_web_page_preview': True}
+    from app.service.payment.storefront import relay_nudge_markup
+    return {'type': 'text', 'text': text + ' ' + get_message('summaryBiggerPlan', language_code),
+            'reply_markup': relay_nudge_markup(language_code), 'disable_web_page_preview': True}
+
+
 def offer_message(language_code, quota: Quota, transcript=False) -> dict:
     """No plan: every plan with its Stars invoice, as at the free episode limit. A running plan:
     an invoice would only top it up (storefront rules), so the Stars page and change-plan.
     The top plan: only what is left. `transcript`: asked for the transcript, not a summary."""
     from app.service.payment.storefront import relay_nudge_markup
     from app.service.record.free_limit import plans_offer
+    if quota.budget:
+        return budget_message(language_code, quota.level)
     if not quota.limit:
         text = get_message('transcriptForPlans' if transcript else 'summaryForPlans', language_code).format(
             relay=ai_summary_hours_per_month.get(3, 0), silver=ai_summary_hours_per_month.get(2, 0),

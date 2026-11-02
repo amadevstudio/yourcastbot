@@ -57,9 +57,10 @@ function AiPlans({ plans, days }: { plans: AiPlan[]; days: number }) {
           <tr>
             <th className="py-2 pr-3">Тариф</th>
             <th className="py-2 pr-3 text-right">Цена (нам)</th>
-            <th className="py-2 pr-3 text-right">Часов / вопросов в день</th>
+            <th className="py-2 pr-3 text-right">Часов (точной) / вопросов в день</th>
+            <th className="py-2 pr-3 text-right">Потолок ИИ</th>
             <th className="py-2 pr-3 text-right">Худший месяц: Whisper</th>
-            <th className="py-2 pr-3 text-right">Худший месяц: платная модель</th>
+            <th className="py-2 pr-3 text-right">Худший месяц: с точной моделью</th>
             <th className="py-2 pr-3 text-right">Чатов (с ИИ)</th>
             <th className="py-2 pr-3 text-right">Часов за {days} дн. (макс. на чат)</th>
             <th className="py-2 text-right">ИИ за {days} дн.</th>
@@ -79,7 +80,11 @@ function AiPlans({ plans, days }: { plans: AiPlan[]; days: number }) {
                 )}
               </td>
               <td className="py-2 pr-3 text-right">
-                {p.hours} / {p.questions_per_day}
+                {p.hours}
+                {p.paid_hours > 0 ? ` (${p.paid_hours})` : ""} / {p.questions_per_day}
+              </td>
+              <td className="py-2 pr-3 text-right">
+                {p.cap_usd === null ? "–" : usd(p.cap_usd)}
               </td>
               <td className="py-2 pr-3 text-right">{worst(p.worst_whisper_usd, p.net_usd)}</td>
               <td className="py-2 pr-3 text-right">{worst(p.worst_paid_usd, p.net_usd)}</td>
@@ -235,7 +240,10 @@ export default function Economics() {
         <h2 className="mb-1 font-semibold">ИИ по тарифам</h2>
         <Hint className="mb-4">
           Худший месяц – если чат потратит все часы тарифа на новые выпуски (по
-          пересказу на час) и задаст все вопросы каждого дня. Процент – доля от
+          пересказу на час) и задаст все вопросы каждого дня, но не выше потолка:
+          за 30 дней ИИ платного тарифа не тратит больше этой доли того, что
+          приносит тариф (config.ai_budget_share), дальше новые запросы
+          ждут. Процент – доля от
           того, что доходит до нас с цены, красным – дороже этого. Stars
           продаются по курсу вывода, но выплата идёт через Fragment в TON:
           доходит {Math.round((data?.payout_share.telegramStars ?? 1) * 100)}%

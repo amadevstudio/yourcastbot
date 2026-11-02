@@ -61,6 +61,25 @@ def running_plan_level(chat_id, database=None) -> int:
         connection.close()
 
 
+def running_plan_price(chat_id, database=None) -> int:
+    """The price in cents of the plan this Telegram chat has time left on, 0 without one (or a tariffs
+    table without prices: tests' databases)."""
+    if database is None:
+        from config import db_path as database
+    connection = connect_sqlite(database)
+    try:
+        row = connection.execute(
+            "SELECT t.price FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
+            "JOIN tariffs t ON t.id = ut.tariff_id "
+            "WHERE u.telegramId = ? AND ut.tariff_id > 0 AND ut.time_left > 0",
+            (int(chat_id),)).fetchone()
+        return int(row[0] or 0) if row else 0
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        connection.close()
+
+
 def paid_for_days(chat_id, database=None) -> bool:
     """Money of this chat ever reached its balance: a payment, or a Patreon
     replenishment (those write no payment_history). Days without it (the
