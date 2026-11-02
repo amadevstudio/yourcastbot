@@ -46,8 +46,20 @@ def test_transcripts():
             "the item with this enclosure, the most readable transcript type")
     _assert(transcript.transcript_url(channel, 'https://cdn.example/none.mp3') is None, "no item, no transcript")
     vtt = "WEBVTT\n\n1\n00:00:01.000 --> 00:00:04.000\n<v Ann>Hello there.</v>\n\n00:00:05.000 --> 00:00:07.000\nBye."
-    _assert(transcript.transcript_text(vtt, 'text/vtt') == '[0:01] Hello there. Bye.',
-            "VTT: voices and cue timings go, a time mark stays (the next cue is within 30 s)")
+    _assert(transcript.transcript_text(vtt, 'text/vtt') == '[0:01] Ann: Hello there. Bye.',
+            "VTT: a voice names the turn, cue timings go, a time mark stays (the next cue is within 30 s)")
+    vtt = ("WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<v Speaker 1>Hi,\n\n00:00:03.000 --> 00:00:05.000\n"
+           "<v Speaker 1>Ann.\n\n00:00:05.500 --> 00:00:06.000\n<v Speaker 2>Hey.")
+    _assert(transcript.transcript_text(vtt, 'text/vtt') == '[0:01] Speaker 1: Hi, Ann. [0:05] Speaker 2: Hey.',
+            "a change of speaker is a mark and a label, even within 30 s; the same speaker goes on unlabelled")
+    srt = ("1\n00:00:01,000 --> 00:00:02,000\nSpeaker 0: \n\n2\n00:00:03,000 --> 00:00:04,000\nSpeaker 0: One.\n\n"
+           "3\n00:00:04,000 --> 00:00:05,000\nSpeaker 0: Two.\n\n4\n00:00:06,000 --> 00:00:07,000\nNote: three.")
+    _assert(transcript.transcript_text(srt) == '[0:03] Speaker 0: One. Two. Note: three.',
+            "SRT with 'Speaker 0:' per cue: one label a turn; an empty cue goes; 'Note:' is text, not a speaker")
+    plain = "00:00:01\nSpeaker 1: Happy Samhain.\n\n00:01:11\nSpeaker 2: Welcome.\n\n00:01:21\nSpeaker 1: Hey."
+    _assert(transcript.transcript_text(plain, 'text/plain')
+            == '[0:01] Speaker 1: Happy Samhain. [1:11] Speaker 2: Welcome. [1:21] Speaker 1: Hey.',
+            "plain text with a time on a line of its own (omny's TextWithTimestamps): marks, not text")
     srt = "1\n00:00:01,000 --> 00:00:04,000\nHello.\n\n2\n00:00:45,000 --> 00:00:47,000\nBye."
     _assert(transcript.transcript_text(srt) == '[0:01] Hello. [0:45] Bye.', "SRT: cue numbers go, marks 30 s apart")
     js = json.dumps({'segments': [{'body': 'Hello.'}, {'body': ' Bye. '}]})
@@ -55,6 +67,14 @@ def test_transcripts():
     js = json.dumps({'segments': [{'startTime': 3725.5, 'body': 'Late.'}, {'startTime': 3730, 'body': 'Still.'}]})
     _assert(transcript.transcript_text(js, 'application/json') == '[1:02:05] Late. Still.',
             "JSON startTime: hours when past one")
+    js = json.dumps({'segments': [{'startTime': 1, 'speaker': 'Ann', 'body': 'Hi.'},
+                                  {'startTime': 2, 'speaker': 'Bob', 'body': 'Yo.'}]})
+    _assert(transcript.transcript_text(js, 'application/json') == '[0:01] Ann: Hi. [0:02] Bob: Yo.',
+            "JSON speaker: turns")
+    js = json.dumps([{'start': 3.5, 'end': 3.8, 'text': ''}, {'start': 11.8, 'text': 'Push me'},
+                     {'start': 45, 'text': 'Later.'}])
+    _assert(transcript.transcript_text(js, 'application/json') == '[0:11] Push me [0:45] Later.',
+            "a bare JSON list of {start, text} (podigee)")
     _assert(transcript.transcript_text('<p>Hello <b>there</b></p>', 'text/html') == 'Hello there',
             "HTML: no times, no marks")
     _assert(transcript.clock(65) == '1:05' and transcript.clock(3600) == '1:00:00', "times read as players show them")
