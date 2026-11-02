@@ -834,7 +834,13 @@ a send. The free weekly limit and the admin page "Economics"
 Revenue comes from `payment_history`, what a payment charged (`charged`,
 else `amount`: a bundle or an offer credits more), the creator's own test
 payments left out; the server bill (`config.server_usd_month`) is spread over
-chats by load. A channel's deliveries count for the user who added it.
+chats by load. A channel's deliveries count for the user who added it. Its
+"AI by plan" (`economics.ai_plans`) shows each plan's worst month of AI next to
+its price: every hour of the quota new audio, a summary per hour, every
+question of every day, at the rates read from what was made (Whisper and the
+paid model per hour, a summary's model call, a question), with Whisper and with
+the paid model; and what the plan's chats used. Paid or not is the quota's
+`paid_for_days`. Stars are sold at the withdraw rate, so the price arrives whole.
 Locks: `python db/test_usage.py`, `python app/admin_web/test_economics.py`
 (CD gate), `python app/core/sender/test_record_delivery.py`.
 

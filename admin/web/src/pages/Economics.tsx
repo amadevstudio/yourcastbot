@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { api, type EconomicsRow } from "@/lib/api";
+import { api, type AiPlan, type AiRate, type EconomicsRow } from "@/lib/api";
 import { Badge, Card, Hint, Skeleton } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 
@@ -19,12 +19,75 @@ const segmentTones: Record<string, "ok" | "default" | "mute"> = {
   free: "mute",
 };
 
+const planLabels: Record<string, string> = {
+  "1": "Bronze",
+  "2": "Silver",
+  "3": "Relay",
+  trial: "Пробный",
+};
+
 type SortKey = "margin_asc" | "margin_desc" | "load";
 
 function usd(value: number) {
   const sign = value < 0 ? "−" : "";
   const abs = Math.abs(value);
   return `${sign}$${abs < 1 && abs > 0 ? abs.toFixed(3) : abs.toFixed(2)}`;
+}
+
+function rate(r: AiRate, unit: string) {
+  return r.usd === null ? "нет данных" : `${usd(r.usd)}${unit} (${r.n})`;
+}
+
+function worst(value: number | null, price: number) {
+  if (value === null) return <span className="text-zinc-500">–</span>;
+  const share = price > 0 ? ` · ${Math.round((value / price) * 100)}%` : "";
+  return (
+    <span className={price > 0 && value > price ? "font-medium text-red-400" : undefined}>
+      {usd(value)}
+      <span className="text-zinc-500">{share}</span>
+    </span>
+  );
+}
+
+function AiPlans({ plans, days }: { plans: AiPlan[]; days: number }) {
+  return (
+    <div className="min-w-0 overflow-x-auto">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+          <tr>
+            <th className="py-2 pr-3">Тариф</th>
+            <th className="py-2 pr-3 text-right">Цена</th>
+            <th className="py-2 pr-3 text-right">Часов / вопросов в день</th>
+            <th className="py-2 pr-3 text-right">Худший месяц: Whisper</th>
+            <th className="py-2 pr-3 text-right">Худший месяц: платная модель</th>
+            <th className="py-2 pr-3 text-right">Чатов (с ИИ)</th>
+            <th className="py-2 pr-3 text-right">Часов за {days} дн. (макс. на чат)</th>
+            <th className="py-2 text-right">ИИ за {days} дн.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {plans.map((p) => (
+            <tr key={p.key} className="border-t border-line">
+              <td className="py-2 pr-3">{planLabels[p.key] ?? `Уровень ${p.level}`}</td>
+              <td className="py-2 pr-3 text-right">{p.price_usd > 0 ? usd(p.price_usd) : "–"}</td>
+              <td className="py-2 pr-3 text-right">
+                {p.hours} / {p.questions_per_day}
+              </td>
+              <td className="py-2 pr-3 text-right">{worst(p.worst_whisper_usd, p.price_usd)}</td>
+              <td className="py-2 pr-3 text-right">{worst(p.worst_paid_usd, p.price_usd)}</td>
+              <td className="py-2 pr-3 text-right">
+                {p.chats} ({p.ai_chats})
+              </td>
+              <td className="py-2 pr-3 text-right">
+                {p.hours_used.toFixed(1)} ({p.max_hours.toFixed(1)})
+              </td>
+              <td className="py-2 text-right">{usd(p.ai_usd)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function load(row: EconomicsRow, mbPerUnit: number) {
@@ -153,6 +216,34 @@ export default function Economics() {
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
+
+      <Card className="min-w-0">
+        <h2 className="mb-1 font-semibold">ИИ по тарифам</h2>
+        <Hint className="mb-4">
+          Худший месяц – если чат потратит все часы тарифа на новые выпуски (по
+          пересказу на час) и задаст все вопросы каждого дня. Процент – доля от
+          цены, красным – дороже цены. Stars продаются по курсу вывода, так что
+          цена приходит целиком. Выпуск, который уже кто-то расшифровал, часов
+          не тратит и ничего не стоит.
+          {data && (
+            <>
+              {" "}
+              Ставки по факту (сколько сделано): Whisper{" "}
+              {rate(data.ai.rates.whisper, "/ч")}, платная модель{" "}
+              {rate(data.ai.rates.speakers, "/ч")}, пересказ{" "}
+              {rate(data.ai.rates.summary, "")}, вопрос {rate(data.ai.rates.question, "")}.
+              {data.ai.paid_model
+                ? ` Платная модель: ${data.ai.paid_model}, только у тех, кто платил.`
+                : " Платная модель не включена."}
+            </>
+          )}
+        </Hint>
+        {isLoading || !data ? (
+          <Skeleton className="h-32 w-full" />
+        ) : (
+          <AiPlans plans={data.ai.plans} days={data.days} />
         )}
       </Card>
 
