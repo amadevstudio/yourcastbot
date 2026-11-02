@@ -8,7 +8,8 @@ one delivery is one unit, LOAD_MB_PER_UNIT downloaded MB another.
 
 Revenue is what a payment charged (db/payments.py: a discounted Stars bundle
 or offer credits more than it charged; rows from before the column read as
-the balance they credited), the creator's own test payments left out.
+the balance they credited), the creator's own test payments left out, times the
+share of it that reaches us (config.payout_share: Stars come through Fragment in TON).
 
 AI by plan (`ai_plans`): what the APIs charged per hour of audio, per summary and
 per question, read from what was made; the month a plan's AI could cost at most
@@ -27,6 +28,8 @@ from app.service.ai import quota
 from db import payments, tariff_rows, usage
 
 LOAD_MB_PER_UNIT = 50
+# plans are sold by Stars first: a plan's price reaches us at their share
+STARS = 'telegramStars'
 SEGMENTS = ('paid', 'trial', 'free')
 TOP_USERS = 500
 
@@ -62,8 +65,11 @@ def _revenue(conn, since: float, until: float) -> dict[int, float]:
     fmt = '%Y-%m-%d %H:%M:%S'
     start = datetime.datetime.fromtimestamp(since).strftime(fmt)
     end = datetime.datetime.fromtimestamp(until).strftime(fmt)
+    share = ' '.join("WHEN '%s' THEN %r" % (service, float(part)) for service, part in config.payout_share.items())
+    reaching = "(%s) * CASE p.service_type %s ELSE 1.0 END" % (payments.revenue_sql(conn), share) if share \
+        else payments.revenue_sql(conn)
     rows = conn.execute(
-        "SELECT u.telegramId tg, SUM(%s) cents FROM payment_history p " % payments.revenue_sql(conn) +
+        "SELECT u.telegramId tg, SUM(%s) cents FROM payment_history p " % reaching +
         "JOIN users u ON u.id = p.user_id "
         "WHERE p.status = 'paid' AND p.datetime >= ? AND p.datetime < ? AND u.telegramId != ? "
         "GROUP BY u.telegramId", (start, end, int(config.creatorId))).fetchall()
@@ -144,7 +150,8 @@ def ai_plans(conn, database, since: float, until: float, spent: dict) -> dict[st
     def plan(key, level, price, hours, questions, paid):
         chats = [tg for tg, (paid_for, lvl) in running.items() if paid_for == paid and (not paid or lvl == level)]
         used = [hours_used.get(tg, 0.0) for tg in chats]
-        return {'key': key, 'level': level, 'price_usd': price, 'hours': hours,
+        return {'key': key, 'level': level, 'price_usd': price,
+                'net_usd': price * config.payout_share.get(STARS, 1.0), 'hours': hours,
                 'questions_per_day': questions,
                 'worst_whisper_usd': _worst(hours, rates['whisper'], rates, questions),
                 'worst_paid_usd': _worst(hours, rates['speakers'], rates, questions) if paid and paid_model else None,
@@ -227,6 +234,7 @@ def economics(days: int = 30, database: Optional[str] = None, now: Optional[floa
     return {
         'days': days,
         'server_usd_month': float(server),
+        'payout_share': {service: float(part) for service, part in config.payout_share.items()},
         'load_mb_per_unit': LOAD_MB_PER_UNIT,
         'totals': _rounded(totals),
         'segments': [{'segment': name, **_rounded(by_segment[name])} for name in SEGMENTS],

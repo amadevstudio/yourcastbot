@@ -91,6 +91,7 @@ export type AiPlan = {
   key: string;
   level: number | null;
   price_usd: number;
+  net_usd: number;
   hours: number;
   questions_per_day: number;
   worst_whisper_usd: number | null;
@@ -105,6 +106,7 @@ export type AiPlan = {
 export type Economics = {
   days: number;
   server_usd_month: number;
+  payout_share: Record<string, number>;
   load_mb_per_unit: number;
   totals: EconomicsRow & { users: number };
   segments: (EconomicsRow & { segment: string; users: number })[];

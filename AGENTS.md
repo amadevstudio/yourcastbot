@@ -840,7 +840,9 @@ its price: every hour of the quota new audio, a summary per hour, every
 question of every day, at the rates read from what was made (Whisper and the
 paid model per hour, a summary's model call, a question), with Whisper and with
 the paid model; and what the plan's chats used. Paid or not is the quota's
-`paid_for_days`. Stars are sold at the withdraw rate, so the price arrives whole.
+`paid_for_days`. Stars are sold at Telegram's withdraw rate, but the rewards come
+through Fragment in TON: revenue and a plan's price count at `config.payout_share`
+(an estimate, 95% for Stars; other methods whole).
 Locks: `python db/test_usage.py`, `python app/admin_web/test_economics.py`
 (CD gate), `python app/core/sender/test_record_delivery.py`.
 
