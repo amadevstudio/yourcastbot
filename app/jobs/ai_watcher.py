@@ -50,15 +50,18 @@ def episode_transcript(episode, session, progress=None, speakers=False) -> tuple
     cached = ai.transcript(episode['ref'])
     if cached is not None and not (speakers and cached['source'] == transcript.WHISPER):
         return transcript.Transcript(cached['text'], cached['source'], 0.0, cached['seconds']), False
-    found = None
+    found, root = None, None
     try:
-        found = transcript.from_episode_feed(requester, episode)
+        root = transcript.episode_feed(episode)
+        found = transcript.from_feed(requester, root, episode['link']) if root is not None else None
     except Exception as e:
         logger.warn('ai_watcher/feed transcript:', e)
     made = found is None
+    # the feed's <language> helps tell Whisper what it hears (transcript.speech_language)
     found = found or transcript.from_audio(
         requester, session, episode['link'], progress=progress,
-        speakers_model=paid_models.transcribe_model(True) if speakers else None)
+        speakers_model=paid_models.transcribe_model(True) if speakers else None,
+        feed_language=transcript.feed_language(root))
     ai.save_transcript(episode['ref'], found.text, found.source, found.cost_usd, found.seconds)
     return found, made
 

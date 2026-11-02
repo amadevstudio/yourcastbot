@@ -217,6 +217,52 @@ def test_transcription(tmp):
             "a piece is under the 25 MB upload cap and short enough for a 60 s provider timeout")
 
 
+def test_language(tmp):
+    """Whisper is told the language: the feed's when two samples hear it, else the samples' when all three
+    agree, else nothing."""
+    channel = ET.fromstring('<rss><channel><language>en-US</language></channel></rss>').find('channel')
+    _assert(transcript.feed_language(channel) == 'en' and transcript.feed_language(None) == ''
+            and transcript.feed_language(ET.fromstring('<channel><language>English</language></channel>')) == '',
+            "the feed's language as a code; a name or none is no language")
+    choose = transcript.choose_language
+    _assert(choose(['tr', 'az', 'tr'], 'tr') == 'tr', "two samples say the feed's language (a Turkish lesson)")
+    _assert(choose(['fa', 'fa', 'fa'], 'en') == 'fa', "the feed is wrong, the samples all agree: the samples")
+    _assert(choose(['en', 'fr', 'en'], 'fr') is None and choose(['en', 'fr', 'en']) is None,
+            "the samples disagree and do not confirm the feed: Whisper guesses, as before")
+    _assert(choose(['de', 'de', ''], 'de') == 'de' and choose(['de', 'de', '']) is None,
+            "a sample that could not be asked counts as no answer")
+    piece = os.path.join(tmp, 'piece000.mp3')
+    with open(piece, 'wb') as f:
+        f.write(b'ID3')
+    session = FakeSession(FakeResponse(200, {'text': 'Merhaba.', 'usage': {'seconds': 600, 'cost': 0.002}}))
+    transcript.transcribe_piece(session, piece, language='tr')
+    _assert(session.calls[0][2][1]['language'] == 'tr', "the language goes with the piece")
+    transcript.transcribe_piece(session, piece)
+    _assert('language' not in session.calls[1][2][1], "none: Whisper guesses")
+    detect = FakeSession(FakeResponse(200, {'text': 'x', 'language': 'TR', 'usage': {'cost': 0.0001}}))
+    _assert(transcript.detect_language(detect, piece) == ('tr', 0.0001), "a sample's language, as a code")
+
+    saved = (transcript._duration, transcript.subprocess.run, transcript.detect_language)
+    answers = iter([('tr', 0.0001), ('az', 0.0001), ('tr', 0.0001)])
+    transcript._duration = lambda path: 540.0
+    transcript.subprocess.run = lambda *a, **k: None
+    transcript.detect_language = lambda session, path: next(answers)
+    try:
+        language, cost = transcript.speech_language(None, piece, tmp, 'tr')
+        _assert(language == 'tr' and abs(cost - 0.0003) < 1e-9, "three samples asked, their cost counted")
+
+        def broken(session, path):
+            raise openrouter.OpenRouterError('down')
+        transcript.detect_language = broken
+        _assert(transcript.speech_language(None, piece, tmp, 'tr') == (None, 0.0),
+                "samples that cannot be asked: no language, the transcript goes on")
+        transcript._duration = lambda path: 60.0
+        _assert(transcript.speech_language(None, piece, tmp, 'en') == (None, 0.0),
+                "too short to sample: Whisper guesses (the feed's word alone can be wrong)")
+    finally:
+        transcript._duration, transcript.subprocess.run, transcript.detect_language = saved
+
+
 def test_speakers(tmp):
     """The paid model: who speaks, kept apart across pieces by the words their overlap shares."""
     piece = os.path.join(tmp, 'piece001.mp3')
@@ -884,13 +930,13 @@ def test_transcript_requests(db, ai_watcher):
     # speakers is not; the summary goes to the paid model
     made = []
 
-    def from_audio(requester, session, link, progress=None, speakers_model=None):
+    def from_audio(requester, session, link, progress=None, speakers_model=None, feed_language=''):
         made.append(speakers_model)
         return transcript.Transcript('[0:00] Speaker 1: Hi.', 'speakers' if speakers_model else 'whisper', 0.02, 600.0)
-    saved = (ai_watcher.transcript.from_audio, ai_watcher.transcript.from_episode_feed, ai.db_path,
+    saved = (ai_watcher.transcript.from_audio, ai_watcher.transcript.episode_feed, ai.db_path,
              ai_watcher.paid_models.transcribe_model)
     ai_watcher.transcript.from_audio = from_audio
-    ai_watcher.transcript.from_episode_feed = lambda requester, episode: None
+    ai_watcher.transcript.episode_feed = lambda episode: None
     ai_watcher.paid_models.transcribe_model = lambda with_speakers: 'x-ai/grok-stt-1.0' if with_speakers else 'w'
     ai.db_path = db
     try:
@@ -909,7 +955,7 @@ def test_transcript_requests(db, ai_watcher):
         _assert(ai_watcher.episode_transcript(episode, None, speakers=True)[0].source == 'feed' and len(made) == 1,
                 "nor the feed's")
     finally:
-        (ai_watcher.transcript.from_audio, ai_watcher.transcript.from_episode_feed, ai.db_path,
+        (ai_watcher.transcript.from_audio, ai_watcher.transcript.episode_feed, ai.db_path,
          ai_watcher.paid_models.transcribe_model) = saved
 
     models = []
@@ -1100,6 +1146,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         test_transcription(tmp)
         test_speakers(tmp)
+        test_language(tmp)
         db = os.path.join(tmp, 'test.sqlite')
         test_queue_and_quota(db)
         test_auto(os.path.join(tmp, 'auto.sqlite'))
