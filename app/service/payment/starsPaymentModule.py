@@ -23,14 +23,14 @@ from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_description_and_button_text)
 from app.service.payment.paymentSafeModule import (
     award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg,
-    is_subscription_active, prepare_price)
+    is_subscription_active, money_text)
 from app.service.payment import stars_subscription
 from app.service.payment.referral import invite_row
 from app.service.payment.offers import (
     WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open,
     prepaid_months_sold, relay_terms_open)
 from app.service.payment.storefront import (
-    SHOWCASE_TARIFF_LEVEL, plan_name, showcase_tariff, tariffs_for_storefront)
+    CHANGE_PLAN_CALLBACK, SHOWCASE_TARIFF_LEVEL, plan_name, showcase_tariff, tariffs_for_storefront)
 from config import db_path, prepay_bundles
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import InlineButtonData, outer_sender, render_messages
@@ -135,7 +135,7 @@ def balance_for_stars(stars_amount: int, rate_x1000: int) -> int:
 
 
 def pretty_stars_usd_rate(rate_x1000: int) -> str:
-    return str(prepare_price(rate_x1000))
+    return money_text(rate_x1000)
 
 
 def stars_to_charge(balance_amount: int, rate_x1000: int, discount: int = 0) -> int:
@@ -253,8 +253,15 @@ def get_sub_message(
         language_code, tariff_id, tariff_lvl, tariff_price,
         balance, time_left, notify_left, rate_x1000):
     message_text = "<b>" + get_message("bot_sub_page_header", language_code) + "</b>\n\n"
-    message_text += get_message("bot_sub_stars_page_body", language_code).format(
-        rate=pretty_stars_usd_rate(rate_x1000)) + "\n\n"
+    # A payment with a plan running tops that plan up (the change-plan page switches): said, not left
+    # to "the usual balance rules"
+    running = tariff_id > 0 and time_left is not None and time_left > 0
+    message_text += (
+        get_message("bot_sub_stars_page_running", language_code).format(
+            plan=decode_tariff(tariff_lvl, language_code), rate=pretty_stars_usd_rate(rate_x1000))
+        if running else
+        get_message("bot_sub_stars_page_body", language_code).format(rate=pretty_stars_usd_rate(rate_x1000))
+    ) + "\n\n"
 
     menu_keyboard: list[list[InlineButtonData]] = []
 
@@ -283,6 +290,9 @@ def get_sub_message(
     message_text += get_tariff_info_message(
         tariff_str, balance, tariff_price, time_left, notify_left, language_code)
 
+    if running:
+        menu_keyboard.append([{'text': get_message('tariffs', language_code),
+                               'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}])
     menu_keyboard.append([go_back_inline_button(language_code)])
 
     return {
@@ -357,7 +367,7 @@ def send_invoice(data: ControllerParams):
     description = get_message(
         "telegram_stars_bundle_description" if discount else "telegram_stars_invoice_description",
         data['language_code']).format(
-        balance=str(prepare_price(amount_balance)),
+        balance=money_text(amount_balance),
         stars=str(amount_stars),
         rate=pretty_stars_usd_rate(rate_x1000),
         months=months, discount=discount)

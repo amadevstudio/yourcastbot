@@ -133,13 +133,6 @@ EXTRA_TRANSLATIONS = {
         "he": "נדרש מינוי לבוט כדי לשנות את קצב הסיביות. מידע נוסף: /subscription",
     },
     "youAlreadySubscribedOnTariff": {"es": "Ya está suscrito a este plan"},
-    "tariffActivatedNotEnoughMoney": {
-        "es": "Ya se suscribió a este plan, pero aún no está activado. \nPara activarlo, debe añadir %s a su saldo💲(dólares).",
-    },
-    "notEnoughMoneyToActivate": {
-        "es": "Fondos insuficientes para activar el plan.\nPara activarlo por completo, debe añadir %s a su saldo💲(dólares).",
-        "he": "אין מספיק כספים להפעלת המסלול.\nכדי להפעיל אותו במלואו יש להוסיף %s ליתרה שלך💲(דולרים).",
-    },
     "tariffSuccessChanged": {"es": "¡El plan se aplicó correctamente!"},
     "tariffNotActive": {"es": "¡El plan no está activado! Para activarlo, recargue su saldo"},
     "bot_subscription": {"es": "💳 Suscripción"},

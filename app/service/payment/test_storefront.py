@@ -97,8 +97,11 @@ def main():
             "change-plan copy mentions older SKUs")
     _assert("Relay" in change, "change-plan copy still recommends Relay")
     stars_body = get_message("bot_sub_stars_page_body", "en")
-    _assert("button" in stars_body.lower() or "top" in stars_body.lower(),
-            "Stars page is a top-up chooser")
+    _assert("balance" in stars_body.lower() and "30 days" in stars_body,
+            "Stars page says the plan renews from the balance")
+    running = get_message("bot_sub_stars_page_running", "en")
+    _assert("{plan}" in running and "Change plan" in running,
+            "with a plan running it says the payment renews that plan and where another is switched on")
     title = get_message("telegram_stars_invoice_title", "en")
     _assert("Relay" not in title, "Bronze Stars invoice is not labeled Relay")
 

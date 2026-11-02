@@ -50,5 +50,6 @@ AvailableActions = Literal[
     'episodeFormatBrief', 'episodeFormatRich', 'episodeFormatSeparate', 'episodeFormatCaption', 'episodeFormatMeta',
     'episodeFormatHint',
     'bs_patrupd',
+    'bs_trf_ok',
     'myTgChDel', 'changeTgChActive', 'myTgChDel', 'myTgChSubChActive'
 ]

@@ -38,6 +38,7 @@ def main():
         "telegram_stars_invoice_title",
         "telegram_stars_invoice_description",
         "bot_sub_stars_page_body",
+        "bot_sub_stars_page_running",
         "tariff_lvl3",
         "bot_sub_page_header",
         "bot_sub_trfs_page",

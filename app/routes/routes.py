@@ -180,7 +180,12 @@ class RouteMap:
         },
         'bs_trf_v': {
             'method': paymentModule.choose_bot_subscription_tariff,
-            'available_from': ['call']
+            'available_from': ['call'],
+            'actions': {
+                paymentModule.CONFIRM_TARIFF_ACTION: {
+                    'method': paymentModule.confirm_bot_subscription_tariff
+                }
+            }
         },
         'bs_patr': {
             'method': patreonPaymentModule.open_subscription_page,

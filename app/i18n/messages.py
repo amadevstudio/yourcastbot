@@ -2530,55 +2530,6 @@ messages = {
             "ro_msg": "Você já está inscrito neste plano."
         }
     },
-    "tariffActivatedNotEnoughMoney": {
-        "ru": {
-            "ro_msg": "Вы уже подписаны на данный тариф, но он не активирован.\n"
-                      "Чтобы активировать его, вам надо положить на баланс ещё %s" + \
-                      emojiCodes.get('dollar') + "(доллары)."
-        },
-        "en": {
-            "ro_msg": "You have already subscribed to this tariff, but it has not"
-                      " been activated. \nTo activate it, you need to add %s to your balance" + \
-                      emojiCodes.get('dollar') + "(dollars)."
-        },
-        "pt-BR": {
-            "ro_msg": "Você já se inscreveu neste plano, mas ele não"
-                      " foi ativado. \nPara ativá-lo, você precisa adicionar %s ao seu saldo" + \
-                      emojiCodes.get('dollar') + "(dólares)."
-        },
-        "de": {
-            "ro_msg": "Du bist bereits in dieser Preisklasse, sie wurde aber noch nicht"
-                      " aktiviert. \nUm sie zu aktivieren musst Du Deinen Kontostand um %s "
-                      "erhöhen" + emojiCodes.get('dollar') + "(in Dollar)."
-        },
-        "he": {
-            "ro_msg": "נרשמת כבר למסלול זה, אבל המסלול עדיין לא"
-                      " הופעל. \nעליך להוסיף %s דולר ליתרה שלך כבר להפעיל אותו " + \
-                      emojiCodes.get('dollar') + "(dollars)."
-        }
-    },
-    "notEnoughMoneyToActivate": {
-        "ru": {
-            "ro_msg": "Недостаточно средств чтобы активировать тариф.\n"
-                      "Чтобы активировать его до конца текущего срока, вам надо положить на "
-                      "баланс ещё %s" + emojiCodes.get('dollar') + "(доллары)."
-        },
-        "en": {
-            "ro_msg": "Insufficient funds to activate the tariff.\n"
-                      "To fully activate it, you need to add %s to your balance" + \
-                      emojiCodes.get('dollar') + "(dollars)."
-        },
-        "pt-BR": {
-            "ro_msg": "Fundos insuficientes para ativar o plano.\n"
-                      "Para ativá-lo, você precisa adicionar %s ao seu saldo" + \
-                      emojiCodes.get('dollar') + "(dólares)."
-        },
-        "de": {
-            "ro_msg": "Deine Mittel sind unzureichend, um diese Preisklasse "
-                      "freizuschalten.\nUm sie vollständig zu aktivieren musst Du Deinen "
-                      "Kontostand um %s erhöhen" + emojiCodes.get('dollar') + "(in Dollar)."
-        }
-    },
     "tariffSuccessChanged": {
         "ru": {
             "ro_msg": "Тариф успешно применён!"
@@ -2764,28 +2715,22 @@ messages = {
     },
     "relay_sub_page_footnote": {
         "ru": {
-            "ro_msg": "Пополнение баланса оформляется как поддержка проекта (пожертвование). "
-                      "Доступ Relay включается по правилам баланса."
+            "ro_msg": "Пополнение баланса оформляется как поддержка проекта (пожертвование)."
         },
         "en": {
-            "ro_msg": "Top-ups are processed as project support (donation). "
-                      "Relay access follows the balance rules."
+            "ro_msg": "Top-ups are processed as project support (donation)."
         },
         "pt-BR": {
-            "ro_msg": "Recargas são processadas como apoio ao projeto (doação). "
-                      "O acesso ao Relay segue as regras do saldo."
+            "ro_msg": "Recargas são processadas como apoio ao projeto (doação)."
         },
         "es": {
-            "ro_msg": "Las recargas se procesan como apoyo al proyecto (donación). "
-                      "El acceso a Relay sigue las reglas del saldo."
+            "ro_msg": "Las recargas se procesan como apoyo al proyecto (donación)."
         },
         "de": {
-            "ro_msg": "Aufladungen gelten als Projektunterstützung (Spende). "
-                      "Relay folgt den Kontostand-Regeln."
+            "ro_msg": "Aufladungen gelten als Projektunterstützung (Spende)."
         },
         "he": {
-            "ro_msg": "הטענות מטופלות כתמיכה בפרויקט (תרומה). "
-                      "הגישה ל-Relay לפי כללי היתרה."
+            "ro_msg": "הטענות מטופלות כתמיכה בפרויקט (תרומה)."
         }
     },
     "relayEnableButton": {
@@ -2875,44 +2820,6 @@ messages = {
         },
         "he": {
             "ro_msg": "⭐ לשלם על Relay ב-Telegram Stars"
-        }
-    },
-    "bot_sub_stars_page_body": {
-        "ru": {
-            "ro_msg": "Выберите сумму пополнения баланса через Telegram Stars.\n"
-                      "Кнопки ниже пополняют USD-баланс на стоимость соответствующего тарифа. "
-                      "Текущий тариф затем активируется или продлевается по обычным правилам баланса.\n"
-                      "Курс Telegram: 1000 ⭐ ≈ {rate}$."
-        },
-        "en": {
-            "ro_msg": "Choose a balance top-up amount via Telegram Stars.\n"
-                      "The buttons below top up the USD balance by the corresponding tariff price. "
-                      "Your current tariff is then activated or renewed by the usual balance rules.\n"
-                      "Telegram rate: 1000 ⭐ ≈ ${rate}."
-        },
-        "pt-BR": {
-            "ro_msg": "Escolha um valor de recarga do saldo via Telegram Stars.\n"
-                      "Os botões abaixo recarregam o saldo USD pelo preço do plano correspondente. "
-                      "Seu plano atual é ativado ou renovado pelas regras normais do saldo.\n"
-                      "Taxa do Telegram: 1000 ⭐ ≈ US${rate}."
-        },
-        "es": {
-            "ro_msg": "Elige un importe de recarga del saldo con Telegram Stars.\n"
-                      "Los botones recargan el saldo USD al precio del plan correspondiente. "
-                      "Tu plan actual se activa o renueva con las reglas habituales del saldo.\n"
-                      "Tipo de Telegram: 1000 ⭐ ≈ ${rate}."
-        },
-        "de": {
-            "ro_msg": "Wähle einen Aufladebetrag über Telegram Stars.\n"
-                      "Die Buttons laden den USD-Saldo um den Preis des jeweiligen Tarifs auf. "
-                      "Dein aktueller Tarif wird dann nach den üblichen Saldo-Regeln aktiviert oder verlängert.\n"
-                      "Telegram-Kurs: 1000 ⭐ ≈ ${rate}."
-        },
-        "he": {
-            "ro_msg": "בחרו סכום להטענת היתרה דרך Telegram Stars.\n"
-                      "הכפתורים למטה מטעינים את יתרת ה-USD במחיר המסלול המתאים. "
-                      "המסלול הנוכחי יופעל או יחודש לפי כללי היתרה.\n"
-                      "שער טלגרם: 1000 ⭐ ≈ ${rate}."
         }
     },
     "telegram_stars_invoice_title": {
