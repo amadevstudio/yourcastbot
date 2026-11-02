@@ -329,20 +329,30 @@ ROWS = {
     # better models for chats that paid (app/service/ai/paid_models.py): what they give, as configured,
     # a phrase that follows a colon in the lines below
     'paidModelsWhatBoth': (
-        'расшифровки с разметкой, кто говорит, и более сильная модель для пересказов и ответов на вопросы',
-        'transcripts that show who is speaking, and a stronger model for summaries and answers to questions',
-        'transcrições que mostram quem está falando e um modelo mais forte para resumos e respostas às perguntas',
-        'transcripciones que muestran quién habla y un modelo más potente para resúmenes y respuestas a preguntas',
-        'Transkripte, die zeigen, wer spricht, und ein stärkeres Modell für Zusammenfassungen und Antworten '
-        'auf Fragen',
-        'תמלילים שמראים מי מדבר, ומודל חזק יותר לסיכומים ולתשובות על שאלות'),
+        'более точное распознавание речи (меньше пропусков и ошибок), расшифровки с разметкой, кто говорит, и более '
+        'сильная модель для пересказов и ответов на вопросы',
+        'more accurate speech recognition (fewer gaps and mistakes), transcripts that show who is speaking, and a '
+        'stronger model for summaries and answers to questions',
+        'reconhecimento de fala mais preciso (menos lacunas e erros), transcrições que mostram quem está falando e '
+        'um modelo mais forte para resumos e respostas às perguntas',
+        'reconocimiento de voz más preciso (menos huecos y errores), transcripciones que muestran quién habla y un '
+        'modelo más potente para resúmenes y respuestas a preguntas',
+        'genauere Spracherkennung (weniger Lücken und Fehler), Transkripte, die zeigen, wer spricht, und ein '
+        'stärkeres Modell für Zusammenfassungen und Antworten auf Fragen',
+        'זיהוי דיבור מדויק יותר (פחות חורים וטעויות), תמלילים שמראים מי מדבר, ומודל חזק יותר לסיכומים ולתשובות על '
+        'שאלות'),
     'paidModelsWhatTranscript': (
-        'расшифровки с разметкой, кто говорит',
-        'transcripts that show who is speaking',
-        'transcrições que mostram quem está falando',
-        'transcripciones que muestran quién habla',
-        'Transkripte, die zeigen, wer spricht',
-        'תמלילים שמראים מי מדבר'),
+        'более точное распознавание речи – меньше пропусков и ошибок в расшифровках, пересказах и ответах, а в '
+        'расшифровке видно, кто говорит',
+        'more accurate speech recognition – fewer gaps and mistakes in transcripts, summaries and answers, and the '
+        'transcript shows who is speaking',
+        'reconhecimento de fala mais preciso – menos lacunas e erros nas transcrições, resumos e respostas, e a '
+        'transcrição mostra quem está falando',
+        'reconocimiento de voz más preciso – menos huecos y errores en transcripciones, resúmenes y respuestas, y la '
+        'transcripción muestra quién habla',
+        'genauere Spracherkennung – weniger Lücken und Fehler in Transkripten, Zusammenfassungen und Antworten, und '
+        'das Transkript zeigt, wer spricht',
+        'זיהוי דיבור מדויק יותר – פחות חורים וטעויות בתמלילים, בסיכומים ובתשובות, והתמליל מראה מי מדבר'),
     'paidModelsWhatSummary': (
         'более сильная модель для пересказов и ответов на вопросы',
         'a stronger model for summaries and answers to questions',
@@ -433,38 +443,49 @@ ROWS = {
         '✨ המסלול שולם, אז המודלים הטובים יותר פעילים: {what}. אפשר לכבות אותם ב-/settings, בקטע "סיכומי AI".'),
     # under a transcript file Whisper made (paid_models.transcript_note)
     'paidTranscriptTrial': (
-        '✨ После оплаты тарифа расшифровки, которые делает бот, показывают, кто говорит.',
-        '✨ Once your plan is paid, the transcripts the bot makes show who is speaking.',
-        '✨ Com o plano pago, as transcrições que o bot faz mostram quem está falando.',
-        '✨ Con el plan pagado, las transcripciones que hace el bot muestran quién habla.',
-        '✨ Mit einem bezahlten Tarif zeigen die Transkripte des Bots, wer spricht.',
-        '✨ אחרי תשלום על המסלול, התמלילים שהבוט מכין מראים מי מדבר.'),
+        '✨ После оплаты тарифа речь распознаёт более точная модель: меньше пропусков и ошибок, и видно, кто говорит.',
+        '✨ Once your plan is paid, a more accurate model recognizes the speech: fewer gaps and mistakes, and you see '
+        'who is speaking.',
+        '✨ Com o plano pago, um modelo mais preciso reconhece a fala: menos lacunas e erros, e dá para ver quem está '
+        'falando.',
+        '✨ Con el plan pagado, un modelo más preciso reconoce la voz: menos huecos y errores, y se ve quién habla.',
+        '✨ Mit einem bezahlten Tarif erkennt ein genaueres Modell die Sprache: weniger Lücken und Fehler, und du '
+        'siehst, wer spricht.',
+        '✨ אחרי תשלום על המסלול, מודל מדויק יותר מזהה את הדיבור: פחות חורים וטעויות, ורואים מי מדבר.'),
     'paidTranscriptLapsed': (
-        '✨ Продлите тариф – и расшифровки, которые делает бот, будут показывать, кто говорит.',
-        '✨ Renew your plan and the transcripts the bot makes will show who is speaking.',
-        '✨ Renove o plano e as transcrições que o bot faz vão mostrar quem está falando.',
-        '✨ Renueva tu plan y las transcripciones que hace el bot mostrarán quién habla.',
-        '✨ Verlängere deinen Tarif, dann zeigen die Transkripte des Bots, wer spricht.',
-        '✨ חדשו את המסלול והתמלילים שהבוט מכין יראו מי מדבר.'),
+        '✨ Продлите тариф – и речь будет распознавать более точная модель: меньше пропусков и ошибок, и видно, кто '
+        'говорит.',
+        '✨ Renew your plan and a more accurate model will recognize the speech: fewer gaps and mistakes, and you see '
+        'who is speaking.',
+        '✨ Renove o plano e um modelo mais preciso vai reconhecer a fala: menos lacunas e erros, e dá para ver quem '
+        'está falando.',
+        '✨ Renueva tu plan y un modelo más preciso reconocerá la voz: menos huecos y errores, y se ve quién habla.',
+        '✨ Verlängere deinen Tarif, dann erkennt ein genaueres Modell die Sprache: weniger Lücken und Fehler, und du '
+        'siehst, wer spricht.',
+        '✨ חדשו את המסלול ומודל מדויק יותר יזהה את הדיבור: פחות חורים וטעויות, ורואים מי מדבר.'),
     'paidTranscriptNoPlan': (
-        '✨ С оплаченным тарифом расшифровки, которые делает бот, показывают, кто говорит.',
-        '✨ With a paid plan, the transcripts the bot makes show who is speaking.',
-        '✨ Com um plano pago, as transcrições que o bot faz mostram quem está falando.',
-        '✨ Con un plan de pago, las transcripciones que hace el bot muestran quién habla.',
-        '✨ Mit einem bezahlten Tarif zeigen die Transkripte des Bots, wer spricht.',
-        '✨ עם מסלול בתשלום, התמלילים שהבוט מכין מראים מי מדבר.'),
+        '✨ С оплаченным тарифом речь распознаёт более точная модель: меньше пропусков и ошибок, и видно, кто говорит.',
+        '✨ With a paid plan, a more accurate model recognizes the speech: fewer gaps and mistakes, and you see who '
+        'is speaking.',
+        '✨ Com um plano pago, um modelo mais preciso reconhece a fala: menos lacunas e erros, e dá para ver quem '
+        'está falando.',
+        '✨ Con un plan de pago, un modelo más preciso reconoce la voz: menos huecos y errores, y se ve quién habla.',
+        '✨ Mit einem bezahlten Tarif erkennt ein genaueres Modell die Sprache: weniger Lücken und Fehler, und du '
+        'siehst, wer spricht.',
+        '✨ עם מסלול בתשלום, מודל מדויק יותר מזהה את הדיבור: פחות חורים וטעויות, ורואים מי מדבר.'),
     # a chat with the better models over its hours: the transcript made before comes, without speakers
     'paidTranscriptOverQuota': (
-        '✨ Расшифровка с разметкой, кто говорит, не уместилась в оставшиеся часы тарифа, поэтому пришла обычная.',
-        '✨ A transcript that shows who is speaking did not fit in the hours left on your plan, so here is the '
-        'regular one.',
-        '✨ Uma transcrição que mostra quem está falando não coube nas horas que restam no seu plano, então aqui '
-        'está a comum.',
-        '✨ Una transcripción que muestra quién habla no cabía en las horas que le quedan a tu plan, así que aquí '
-        'tienes la normal.',
-        '✨ Ein Transkript, das zeigt, wer spricht, passte nicht mehr in die restlichen Stunden deines Tarifs, '
-        'deshalb kommt das normale.',
-        '✨ תמליל שמראה מי מדבר לא נכנס בשעות שנשארו במסלול שלכם, אז הנה התמליל הרגיל.'),
+        '✨ Более точная расшифровка с разметкой, кто говорит, не уместилась в оставшиеся часы тарифа, поэтому пришла '
+        'обычная.',
+        '✨ A more accurate transcript that shows who is speaking did not fit in the hours left on your plan, so here '
+        'is the regular one.',
+        '✨ Uma transcrição mais precisa, que mostra quem está falando, não coube nas horas que restam no seu plano, '
+        'então aqui está a comum.',
+        '✨ Una transcripción más precisa, que muestra quién habla, no cabía en las horas que le quedan a tu plan, '
+        'así que aquí tienes la normal.',
+        '✨ Ein genaueres Transkript, das zeigt, wer spricht, passte nicht mehr in die restlichen Stunden deines '
+        'Tarifs, deshalb kommt das normale.',
+        '✨ תמליל מדויק יותר שמראה מי מדבר לא נכנס בשעות שנשארו במסלול שלכם, אז הנה התמליל הרגיל.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

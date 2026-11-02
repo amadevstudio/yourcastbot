@@ -1076,7 +1076,13 @@ button; `quota.py` who may ask. The plan level is
   constants.py: `openrouterPaidTranscribeModel` (speech to text that labels
   speakers; `x-ai/grok-stt-1.0`, ~$0.10/h against Whisper turbo's ~$0.012/h)
   and `openrouterPaidModel` (summaries and answers, the episode's and the
-  show's). With neither, nothing shows or changes. A chat gets them when it
+  show's; not set on 2026-11-02, the owner's call: adding the line turns it
+  on). With neither, nothing shows or changes. The copy sells the quality of
+  the speech recognition first, speakers second: on the same files
+  (2026-11-02) Whisper turbo had 88-96% of Grok's words, lost a paragraph or
+  a question in 3 of 6 episodes, and turned a Turkish episode into broken
+  English with loops; Grok missed an opening greeting once and sometimes
+  counts more speakers than there are. A chat gets them when it
   paid (`tariff_rows.paid_for_days`), has a plan running and the flag is on
   (a payment's effect, above); /settings (AI summaries) shows such a chat a
   switch and what they do not change, nobody else sees it. A plan that ends
