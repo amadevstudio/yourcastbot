@@ -92,6 +92,10 @@ winback_after_days = (7, 30)
 winback_offer_discount = 30
 # the server's monthly bill, USD: the fixed cost the admin economics page spreads over users by load
 server_usd_month = 10
+# the share of a payment that reaches us, by payment_history.service_type (others: all of it), for the
+# admin economics page. Stars are sold at Telegram's withdraw rate, but the rewards come through Fragment
+# in TON: an estimate of what conversion and fees take (2-5% by unofficial accounts, no official figure)
+payout_share = {'telegramStars': 0.95}
 
 # максимальное число подписок и количества в обновлении
 max_subscriptions_without_tariff = 15

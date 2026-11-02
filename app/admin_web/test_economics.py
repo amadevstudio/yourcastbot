@@ -134,7 +134,33 @@ def _ai_plans(path, now):
                'no paid model configured: no worst month with it')
 
 
+def _payout_share(path, now):
+    """What reaches us: a Stars payment at its share, other methods whole; a plan's price too."""
+    original = config.payout_share
+    try:
+        config.payout_share = {'telegramStars': 0.9}
+        report = economics.economics(days=30, database=path, now=now, server_usd_month=10)
+    finally:
+        config.payout_share = original
+    users = {row['tg']: row for row in report['users']}
+    _assert_close(users[PAYER]['revenue_usd'], (5.0 + 3.5) * 0.9, 'Stars revenue at the share that reaches us')
+    _assert_close({p['key']: p for p in report['ai']['plans']}['3']['net_usd'], 4.5, "a plan's price at the Stars share")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO payment_history VALUES (1, 'cryptoBot', 'cb', '', 'paid', 100, ?, NULL)",
+                 (datetime.datetime.fromtimestamp(now - 60).strftime('%Y-%m-%d %H:%M:%S.%f'),))
+    conn.commit()
+    conn.close()
+    try:
+        config.payout_share = {'telegramStars': 0.9}
+        users = {row['tg']: row for row in economics.economics(
+            days=30, database=path, now=now, server_usd_month=10)['users']}
+    finally:
+        config.payout_share = original
+    _assert_close(users[PAYER]['revenue_usd'], (5.0 + 3.5) * 0.9 + 1.0, 'another method counts whole')
+
+
 def main():
+    config.payout_share = {}  # the figures below are what was charged
     now = time.time()
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, 'test.sqlite')
@@ -188,6 +214,7 @@ def main():
                       "an offer's revenue is what it charged; rows before the column are their amount")
 
         _ai_plans(path, now)
+        _payout_share(path, now)
 
         quiet = economics.economics(days=7, database=path, now=now + 30 * 86400, server_usd_month=10)
         _assert_eq(quiet['users'], [], 'a period without events lists nobody')

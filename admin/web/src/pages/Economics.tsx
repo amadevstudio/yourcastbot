@@ -56,7 +56,7 @@ function AiPlans({ plans, days }: { plans: AiPlan[]; days: number }) {
         <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
           <tr>
             <th className="py-2 pr-3">Тариф</th>
-            <th className="py-2 pr-3 text-right">Цена</th>
+            <th className="py-2 pr-3 text-right">Цена (нам)</th>
             <th className="py-2 pr-3 text-right">Часов / вопросов в день</th>
             <th className="py-2 pr-3 text-right">Худший месяц: Whisper</th>
             <th className="py-2 pr-3 text-right">Худший месяц: платная модель</th>
@@ -69,12 +69,20 @@ function AiPlans({ plans, days }: { plans: AiPlan[]; days: number }) {
           {plans.map((p) => (
             <tr key={p.key} className="border-t border-line">
               <td className="py-2 pr-3">{planLabels[p.key] ?? `Уровень ${p.level}`}</td>
-              <td className="py-2 pr-3 text-right">{p.price_usd > 0 ? usd(p.price_usd) : "–"}</td>
+              <td className="py-2 pr-3 text-right">
+                {p.price_usd > 0 ? (
+                  <>
+                    {usd(p.price_usd)} <span className="text-zinc-500">({usd(p.net_usd)})</span>
+                  </>
+                ) : (
+                  "–"
+                )}
+              </td>
               <td className="py-2 pr-3 text-right">
                 {p.hours} / {p.questions_per_day}
               </td>
-              <td className="py-2 pr-3 text-right">{worst(p.worst_whisper_usd, p.price_usd)}</td>
-              <td className="py-2 pr-3 text-right">{worst(p.worst_paid_usd, p.price_usd)}</td>
+              <td className="py-2 pr-3 text-right">{worst(p.worst_whisper_usd, p.net_usd)}</td>
+              <td className="py-2 pr-3 text-right">{worst(p.worst_paid_usd, p.net_usd)}</td>
               <td className="py-2 pr-3 text-right">
                 {p.chats} ({p.ai_chats})
               </td>
@@ -113,7 +121,11 @@ export default function Economics() {
 
   const cards = data
     ? [
-        { label: "Выручка", value: usd(data.totals.revenue_usd), hint: "Оплаты за период, без ваших тестовых." },
+        {
+          label: "Выручка",
+          value: usd(data.totals.revenue_usd),
+          hint: "Оплаты за период, без ваших тестовых; Stars – за вычетом вывода через Fragment.",
+        },
         { label: "ИИ", value: usd(data.totals.ai_usd), hint: "Сколько взяли API за пересказы." },
         {
           label: "Сервер",
@@ -224,9 +236,11 @@ export default function Economics() {
         <Hint className="mb-4">
           Худший месяц – если чат потратит все часы тарифа на новые выпуски (по
           пересказу на час) и задаст все вопросы каждого дня. Процент – доля от
-          цены, красным – дороже цены. Stars продаются по курсу вывода, так что
-          цена приходит целиком. Выпуск, который уже кто-то расшифровал, часов
-          не тратит и ничего не стоит.
+          того, что доходит до нас с цены, красным – дороже этого. Stars
+          продаются по курсу вывода, но выплата идёт через Fragment в TON:
+          доходит {Math.round((data?.payout_share.telegramStars ?? 1) * 100)}%
+          (оценка, config.payout_share). Выпуск, который уже кто-то
+          расшифровал, часов не тратит и ничего не стоит.
           {data && (
             <>
               {" "}
