@@ -991,6 +991,9 @@ into broken English, and a Persian show's feed says "en" (2026-11-02).
   "could not" (`ai_watcher.status_updater` / `deliver`). A question gets
   "Thinking…", edited into the answer. A line that cannot be edited: a new
   message, as before. message_master's results carry the sent id as `id`.
+- Whether a transcript has time marks is said by the code (`summary.line_starts`), not left to the
+  model: Haiku twice wrote "the transcript has no time marks, so using bullets" into a summary of one
+  full of them (2026-10-25, 2026-11-02). The prompt forbids any word about the transcript's format.
 - Thinking is off in every model call (`summary.REASONING`): on 2026-10-22
   Haiku's provider started thinking by default, all 800 tokens of an answer
   went to it ("could not answer") and a summary was cut mid-sentence and
@@ -1091,11 +1094,15 @@ into broken English, and a Persian show's feed says "en" (2026-11-02).
   (a payment's effect, above); /settings (AI summaries) shows such a chat a
   switch and what they do not change, nobody else sees it. A plan that ends
   keeps the flag. With speakers (`transcript.from_audio(speakers_model=)`):
-  pieces cut at each 10-minute mark, each after the first 30 s earlier
-  (`split_overlapping`); the model numbers speakers per piece, so the words
-  both pieces heard (two at least) map a piece's speaker to the episode's,
-  one not heard there is new (`merge_speakers`); the overlap's words come
-  from the piece before and its seconds are not charged twice. A turn per
+  pieces cut at each 45-minute mark (Grok took ~20 s for one, the provider
+  allows 60), each after the first 3 minutes earlier (`split_overlapping`);
+  the model numbers speakers per piece, so the words both pieces heard (two
+  at least) map a piece's speaker to the episode's, a single leftover against
+  a single unmatched known speaker is that one, any other is new
+  (`merge_speakers`; 10-minute pieces and 30 s overlaps gave an 80-minute
+  Acquired with four people 19 speakers, now 4). The overlap's words come
+  from the piece before and its seconds are not charged twice. A failure
+  there falls back to Whisper on the same download. A turn per
   speaker ("Speaker 2: ..."), marks where a sentence starts, at most every
   30 s; `ai_transcripts.source` `speakers`. Diarization is each provider's
   own option (`SPEAKER_OPTIONS`, OpenRouter forwards the serving one's);
