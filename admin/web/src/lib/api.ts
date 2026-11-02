@@ -85,6 +85,23 @@ export type EconomicsRow = {
   margin_usd: number;
 };
 
+export type AiRate = { usd: number | null; n: number };
+
+export type AiPlan = {
+  key: string;
+  level: number | null;
+  price_usd: number;
+  hours: number;
+  questions_per_day: number;
+  worst_whisper_usd: number | null;
+  worst_paid_usd: number | null;
+  chats: number;
+  ai_chats: number;
+  hours_used: number;
+  max_hours: number;
+  ai_usd: number;
+};
+
 export type Economics = {
   days: number;
   server_usd_month: number;
@@ -92,6 +109,11 @@ export type Economics = {
   totals: EconomicsRow & { users: number };
   segments: (EconomicsRow & { segment: string; users: number })[];
   users: (EconomicsRow & { tg: number; segment: string; level: number })[];
+  ai: {
+    rates: Record<"whisper" | "speakers" | "summary" | "question", AiRate>;
+    paid_model: string | null;
+    plans: AiPlan[];
+  };
 };
 
 export type ProductFunnel = {

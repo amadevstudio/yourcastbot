@@ -9,6 +9,11 @@ one delivery is one unit, LOAD_MB_PER_UNIT downloaded MB another.
 Revenue is what a payment charged (db/payments.py: a discounted Stars bundle
 or offer credits more than it charged; rows from before the column read as
 the balance they credited), the creator's own test payments left out.
+
+AI by plan (`ai_plans`): what the APIs charged per hour of audio, per summary and
+per question, read from what was made; the month a plan's AI could cost at most
+at those rates (every hour of its quota new audio, a summary per hour, every
+question of every day), next to its price and to what its chats used.
 """
 from __future__ import annotations
 
@@ -18,7 +23,8 @@ from typing import Any, Optional
 
 import config
 from app.admin_web.dbutil import connect
-from db import payments, usage
+from app.service.ai import quota
+from db import payments, tariff_rows, usage
 
 LOAD_MB_PER_UNIT = 50
 SEGMENTS = ('paid', 'trial', 'free')
@@ -62,6 +68,94 @@ def _revenue(conn, since: float, until: float) -> dict[int, float]:
         "WHERE p.status = 'paid' AND p.datetime >= ? AND p.datetime < ? AND u.telegramId != ? "
         "GROUP BY u.telegramId", (start, end, int(config.creatorId))).fetchall()
     return {int(r['tg']): (r['cents'] or 0) / 100.0 for r in rows}
+
+
+def _has_table(conn, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
+def _rate(row) -> dict[str, Any]:
+    return {'usd': None if row[0] is None else round(row[0], 5), 'n': int(row[1] or 0)}
+
+
+def _rates(conn) -> dict[str, dict]:
+    """What the APIs charged, from everything made: per hour of audio by transcript source,
+    per summary (the model call alone), per question. {'usd': None, 'n': 0} where nothing was."""
+    none = {'usd': None, 'n': 0}
+    rates = {'whisper': dict(none), 'speakers': dict(none), 'summary': dict(none), 'question': dict(none)}
+    if _has_table(conn, 'ai_transcripts'):
+        for row in conn.execute("SELECT source, SUM(cost_usd) / (SUM(seconds) / 3600.0), COUNT(*) "
+                                "FROM ai_transcripts WHERE cost_usd > 0 AND seconds > 0 GROUP BY source"):
+            if row[0] in rates:
+                rates[row[0]] = _rate((row[1], row[2]))
+    if _has_table(conn, 'ai_summaries') and _has_table(conn, 'ai_transcripts'):
+        # a summary's cost includes the transcript made for it (within the same request): take that off;
+        # a transcript made after the summary (made again with speakers) leaves the summary unknown
+        rates['summary'] = _rate(conn.execute(
+            "SELECT AVG(cost), COUNT(*) FROM (SELECT CASE "
+            "WHEN t.cost_usd = 0 OR s.created_at - t.created_at > 120 THEN s.cost_usd "
+            "WHEN s.created_at >= t.created_at THEN s.cost_usd - t.cost_usd END cost "
+            "FROM ai_summaries s JOIN ai_transcripts t ON t.ref = s.ref WHERE s.cost_usd > 0) "
+            "WHERE cost > 0").fetchone())
+    if _has_table(conn, 'usage_events'):
+        rates['question'] = _rate(conn.execute(
+            "SELECT AVG(cost_usd), COUNT(*) FROM usage_events WHERE kind = 'ask' AND cost_usd > 0").fetchone())
+    return rates
+
+
+def _worst(hours: float, transcribe: dict, rates: dict, questions_per_day: int) -> Optional[float]:
+    """The most a month of the plan's AI could cost: every hour new audio, a summary per hour,
+    every question of every day. None while a rate it needs is unknown."""
+    if transcribe['usd'] is None:
+        return None
+    return (hours * (transcribe['usd'] + (rates['summary']['usd'] or 0.0))
+            + questions_per_day * quota.QUOTA_DAYS * (rates['question']['usd'] or 0.0))
+
+
+def _hours_used(conn, since: float, until: float) -> dict[int, float]:
+    """{chat id: hours of audio charged to its quota} for requests done in [since, until)."""
+    if not _has_table(conn, 'ai_requests'):
+        return {}
+    return {int(r[0]): (r[1] or 0) / 3600.0 for r in conn.execute(
+        "SELECT chat_id, SUM(seconds) FROM ai_requests WHERE status = 'done' AND created_at >= ? "
+        "AND created_at < ? GROUP BY chat_id", (since, until))}
+
+
+def _running(conn, database) -> dict[int, tuple[bool, int]]:
+    """{telegram id: (paid for, plan level)} for chats with a plan running, paid for as the AI quota
+    reads it (tariff_rows.paid_for_days: a Patreon credit too, the creator's own payments too)."""
+    rows = conn.execute(
+        "SELECT DISTINCT u.telegramId, t.level FROM users u JOIN user_tariff_cs ut ON ut.uid = u.id "
+        "JOIN tariffs t ON t.id = ut.tariff_id WHERE ut.tariff_id > 0 AND ut.time_left > 0").fetchall()
+    return {int(tg): (tariff_rows.paid_for_days(tg, database), int(level)) for tg, level in rows if tg}
+
+
+def ai_plans(conn, database, since: float, until: float, spent: dict) -> dict[str, Any]:
+    """Per plan level (paid for) and for plans nobody paid for: price, hours of AI a month, the worst
+    month with Whisper and with the paid model, and what its chats did in the period (`spent`: AI
+    dollars by telegram id)."""
+    rates = _rates(conn)
+    paid_model = config.ai_paid_transcribe_model or None
+    prices = {int(r[0]): (r[1] or 0) / 100.0 for r in conn.execute(
+        "SELECT level, MIN(price) FROM tariffs WHERE level > 0 GROUP BY level")}
+    hours_used = _hours_used(conn, since, until)
+    running = _running(conn, database)
+
+    def plan(key, level, price, hours, questions, paid):
+        chats = [tg for tg, (paid_for, lvl) in running.items() if paid_for == paid and (not paid or lvl == level)]
+        used = [hours_used.get(tg, 0.0) for tg in chats]
+        return {'key': key, 'level': level, 'price_usd': price, 'hours': hours,
+                'questions_per_day': questions,
+                'worst_whisper_usd': _worst(hours, rates['whisper'], rates, questions),
+                'worst_paid_usd': _worst(hours, rates['speakers'], rates, questions) if paid and paid_model else None,
+                'chats': len(chats), 'ai_chats': sum(1 for h in used if h > 0),
+                'hours_used': sum(used), 'max_hours': max(used, default=0.0),
+                'ai_usd': sum(spent.get(tg, 0.0) for tg in chats)}
+
+    plans = [plan(str(level), level, price, float(config.ai_summary_hours_per_month.get(level, 0)),
+                  quota.QUESTIONS_PER_DAY, True) for level, price in sorted(prices.items())]
+    plans.append(plan('trial', None, 0.0, float(config.ai_summary_trial_hours), quota.TRIAL_QUESTIONS_PER_DAY, False))
+    return {'rates': rates, 'paid_model': paid_model, 'plans': [_rounded(p) for p in plans]}
 
 
 def _empty() -> dict[str, Any]:
@@ -125,6 +219,11 @@ def economics(days: int = 30, database: Optional[str] = None, now: Optional[floa
     totals['margin_usd'] -= unallocated
 
     users.sort(key=lambda row: (row['margin_usd'], -_load(row)))
+    conn = connect(database)
+    try:
+        ai = ai_plans(conn, database, since, until, {row['tg']: row['ai_usd'] for row in users})
+    finally:
+        conn.close()
     return {
         'days': days,
         'server_usd_month': float(server),
@@ -132,4 +231,5 @@ def economics(days: int = 30, database: Optional[str] = None, now: Optional[floa
         'totals': _rounded(totals),
         'segments': [{'segment': name, **_rounded(by_segment[name])} for name in SEGMENTS],
         'users': [_rounded(row) for row in users[:TOP_USERS]],
+        'ai': ai,
     }

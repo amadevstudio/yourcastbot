@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Admin economics: segments, revenue without the creator's tests (what a payment
 charged, not the full price a bundle or an offer credits), the server bill
-spread by load, a channel's deliveries counted for its owner.
+spread by load, a channel's deliveries counted for its owner; AI by plan: the
+rates read from what was made, the worst month of each plan, what its chats used.
 
 Temporary file DB only. Run from the repo root:
 python app/admin_web/test_economics.py
@@ -19,7 +20,8 @@ if _ROOT not in sys.path:
 
 import config  # noqa: E402
 from app.admin_web import economics  # noqa: E402
-from db import usage  # noqa: E402
+from app.service.ai import quota  # noqa: E402
+from db import ai, usage  # noqa: E402
 
 PAYER, TRIAL, FREE, CHANNEL = 1001, 1002, 1003, -100500
 
@@ -71,6 +73,65 @@ def _setup(path, now):
     usage.record_deliveries([FREE], 'rec', 'https://a/big.mp3', downloaded_mb=100, database=path, at=at)
     usage.record_deliveries([CHANNEL], 'circle', 'https://a/c.mp3', database=path, at=at)
     usage.record_ai(TRIAL, 'ep', 0.25, database=path, at=at)
+
+
+def _ai_plans(path, now):
+    empty = economics.economics(days=30, database=path, now=now, server_usd_month=10)['ai']
+    _assert_eq(empty['rates']['whisper'], {'usd': None, 'n': 0}, 'no transcript made: no rate')
+    _assert_eq([p['key'] for p in empty['plans']], ['1', '3', 'trial'], 'a row per plan level, then trials')
+    _assert_eq(empty['plans'][0]['worst_whisper_usd'], None, 'no rate, no worst month')
+
+    # an hour of Whisper for $0.015 and its summary ($0.017 with it: the model call $0.002);
+    # 2 h of the paid model for $0.20; a summary of a transcript made long before ($0.004); a question
+    ai.save_transcript('w', 'text', 'whisper', 0.015, 3600, database=path)
+    ai.save_summary('w', 'en', 'sum', 0.017, database=path)
+    ai.save_transcript('g', 'text', 'speakers', 0.20, 7200, database=path)
+    ai.save_transcript('feed', 'text', 'feed', 0.0, 0, database=path)
+    ai.save_summary('feed', 'en', 'sum', 0.004, database=path)
+    usage.record_ask(PAYER, 'w', 0.001, database=path, at=now - 60)
+    conn = ai.connect(path)
+    conn.execute("UPDATE ai_transcripts SET created_at = created_at - 30")
+    conn.execute("INSERT INTO ai_requests (chat_id, ref, lang, status, created_at, seconds) VALUES "
+                 "(?, 'w', 'en', 'done', ?, 5400), (?, 'g', 'en', 'failed', ?, 7200), (?, 'x', 'en', 'done', ?, 1800)",
+                 (PAYER, now - 60, PAYER, now - 60, TRIAL, now - 60))
+    conn.commit()
+    conn.close()
+
+    original = config.ai_paid_transcribe_model
+    try:
+        config.ai_paid_transcribe_model = 'some/stt'
+        report = economics.economics(days=30, database=path, now=now, server_usd_month=10)['ai']
+        config.ai_paid_transcribe_model = ''
+        off = economics.economics(days=30, database=path, now=now, server_usd_month=10)['ai']
+    finally:
+        config.ai_paid_transcribe_model = original
+    rates = report['rates']
+    _assert_close(rates['whisper']['usd'], 0.015, 'Whisper: what it charged per hour')
+    _assert_close(rates['speakers']['usd'], 0.10, 'the paid model per hour')
+    _assert_close(rates['summary']['usd'], 0.003, "a summary is the model call: its transcript's cost taken off")
+    _assert_eq(rates['summary']['n'], 2, 'a summary of a free transcript counts as it is')
+    _assert_close(rates['question']['usd'], 0.001, 'a question')
+
+    plans = {p['key']: p for p in report['plans']}
+    relay = plans['3']
+    hours = config.ai_summary_hours_per_month[3]
+    month_of_questions = quota.QUESTIONS_PER_DAY * quota.QUOTA_DAYS * 0.001
+    _assert_close(relay['price_usd'], 5.0, "the plan's price")
+    _assert_close(relay['worst_whisper_usd'], hours * (0.015 + 0.003) + month_of_questions,
+                  'worst month: every hour new audio, a summary per hour, every question')
+    _assert_close(relay['worst_paid_usd'], hours * (0.10 + 0.003) + month_of_questions, 'the same with the paid model')
+    # the AI quota's "paid for": the creator's own payment counts there (it is not revenue above)
+    _assert_eq(relay['chats'], 2 if int(config.creatorId) else 1, 'chats with the plan running that paid for it')
+    _assert_close(relay['hours_used'], 1.5, 'hours charged by requests done, not failed ones')
+    _assert_close(relay['max_hours'], 1.5, 'the most one chat used')
+    trial = plans['trial']
+    _assert_eq(trial['worst_paid_usd'], None, 'a trial never gets the paid model')
+    _assert_close(trial['worst_whisper_usd'], config.ai_summary_trial_hours * 0.018
+                  + quota.TRIAL_QUESTIONS_PER_DAY * quota.QUOTA_DAYS * 0.001, "a trial's hours and questions")
+    _assert_close(trial['hours_used'], 0.5, "a trial's hours")
+    _assert_close(trial['ai_usd'], 0.25, "a trial's AI spend in the period")
+    _assert_eq({p['key']: p['worst_paid_usd'] for p in off['plans']}['3'], None,
+               'no paid model configured: no worst month with it')
 
 
 def main():
@@ -125,6 +186,8 @@ def main():
             days=30, database=path, now=now, server_usd_month=10)['users']}
         _assert_close(charged[PAYER]['revenue_usd'], 5.0 + 3.5,
                       "an offer's revenue is what it charged; rows before the column are their amount")
+
+        _ai_plans(path, now)
 
         quiet = economics.economics(days=7, database=path, now=now + 30 * 86400, server_usd_month=10)
         _assert_eq(quiet['users'], [], 'a period without events lists nobody')
