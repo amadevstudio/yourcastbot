@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 
+from db import payment_effects
 from db.connection import connect_sqlite
 
 SERVICE = 'patreon'
@@ -30,14 +31,16 @@ def credit_month(user_id, month: str, credit_cents: int, paid_cents: int, day: s
         from config import db_path as database
     connection = connect_sqlite(database)
     connection.isolation_level = None
+    payment_effects.ensure_table(connection)
     try:
         connection.execute("BEGIN IMMEDIATE")
-        written = connection.execute(
+        inserted = connection.execute(
             "INSERT OR IGNORE INTO payment_history "
             "(user_id, service_type, invoice_id, invoice_hash, status, amount, datetime) "
             "VALUES (?, ?, ?, NULL, ?, ?, ?)",
             (int(user_id), SERVICE, month, 'paid' if paid_cents > 0 else 'credited',
-             int(paid_cents), str(datetime.datetime.now()))).rowcount
+             int(paid_cents), str(datetime.datetime.now())))
+        written = inserted.rowcount
         if not written:
             connection.execute("ROLLBACK")
             return False
@@ -51,6 +54,8 @@ def credit_month(user_id, month: str, credit_cents: int, paid_cents: int, day: s
         connection.execute(
             "UPDATE payment_service_user_data SET last_replenishment = ? "
             "WHERE user_id = ? AND service_type = ?", (day, int(user_id), SERVICE))
+        if paid_cents > 0:  # a pledge of nothing is not money: it sets nothing off
+            payment_effects.queue(connection.execute, user_id, payment_effects.payment_key(inserted.lastrowid))
         connection.execute("COMMIT")
         return True
     except Exception:

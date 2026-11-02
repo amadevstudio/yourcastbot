@@ -19,7 +19,7 @@ from app.repository.storage import storage
 from app.routes.message_tools import go_back_inline_button, go_back_inline_markup
 from app.routes.screen_state import state_lost
 from app.service import analytics_events
-from app.service.ai import quota as ai_quota, show_ask, summary
+from app.service.ai import paid_models, quota as ai_quota, show_ask, summary
 from db import ai, usage
 from lib.markup import telegram_html
 from lib.telegram.general.message_master import render_messages
@@ -88,7 +88,8 @@ def answer_question(data):
         context = _context(podcast)
         if not context.episodes:
             raise summary.SummaryUnavailable('no episodes in the feed')
-        text, cost = show_ask.answer(context, telegram_html.plain_text(podcast['title']), question)
+        text, cost = show_ask.answer(context, telegram_html.plain_text(podcast['title']), question,
+                                     model=paid_models.summary_model(data['chat_id']))
     except Exception as e:
         logger.warn('show ask: no answer', podcast.get('id'), type(e).__name__, str(e)[:200])
         summaryModule.show_result(data['chat_id'], _with_back(

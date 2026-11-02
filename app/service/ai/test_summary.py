@@ -217,6 +217,42 @@ def test_transcription(tmp):
             "a piece is under the 25 MB upload cap and short enough for a 60 s provider timeout")
 
 
+def test_speakers(tmp):
+    """The paid model: who speaks, kept apart across pieces by the words their overlap shares."""
+    piece = os.path.join(tmp, 'piece001.mp3')
+    with open(piece, 'wb') as f:
+        f.write(b'ID3')
+    session = FakeSession(FakeResponse(200, {'usage': {'seconds': 630, 'cost': 0.0175}, 'words': [
+        {'word': 'Hi,', 'start': 1.0, 'speaker': 0}, {'word': ' ', 'start': 1.2, 'type': 'spacing'},
+        {'word': 'you.', 'start': 1.4, 'speaker': 0}, {'word': 'Yes.', 'start': 2.0, 'speaker': 1}]}))
+    words, cost, seconds = transcript.transcribe_speaker_piece(session, piece, 570.0, 'x-ai/grok-stt-1.0')
+    _assert(words == [(571.0, 'Hi,', 0), (571.4, 'you.', 0), (572.0, 'Yes.', 1)] and (cost, seconds) == (0.0175, 630),
+            "the words with their speakers, from the episode's start; spacing goes")
+    url, headers, body = session.calls[0]
+    _assert(body['model'] == 'x-ai/grok-stt-1.0' and body['input_audio']['format'] == 'mp3'
+            and body['timestamp_granularities'] == ['segment', 'word']
+            and body['provider']['options']['xai'] == {'diarize': True},
+            "JSON with the audio inline, words, and the provider's own diarization switch")
+    plain = FakeSession(FakeResponse(200, {'segments': [{'start': 3, 'text': 'No words.'}]}))
+    _assert(transcript.transcribe_speaker_piece(plain, piece, 0.0, 'm')[0] == [(3.0, 'No words.', None)],
+            "no words: the segments, still timed")
+
+    # piece 2 numbers the speakers the other way round; the overlap (570-600 s) says who is who
+    first = [(560.0, 'So', 0), (561.0, 'what', 0), (575.0, 'I', 1), (575.5, 'think', 1), (576.0, 'so', 1),
+             (590.0, 'Right', 0), (590.5, 'then', 0)]
+    second = [(575.1, 'I', 0), (575.6, 'think', 0), (576.1, 'so', 0), (590.1, 'Right', 1), (590.4, 'then', 1),
+              (601.0, 'Next.', 1), (603.0, 'Okay.', 0), (604.0, 'New', 2), (605.0, 'voice.', 2)]
+    merged = transcript.merge_speakers([(0.0, first), (570.0, second)])
+    _assert([w for w in merged if w[0] >= 600] == [(601.0, 'Next.', 0), (603.0, 'Okay.', 1), (604.0, 'New', 2),
+                                                    (605.0, 'voice.', 2)],
+            "a speaker keeps their number across pieces; one not heard in the overlap is new")
+    _assert(sum(1 for w in merged if 570 <= w[0] < 600) == 5, "the overlap's words come once, from the piece before")
+    text = transcript.speaker_text([(0.0, 'Hello', 0), (0.4, 'there.', 0), (31.0, 'Still', 0), (32.0, 'me.', 0),
+                                    (40.0, 'Mid', 0), (61.0, 'sentence', 0), (62.0, 'here.', 0), (63.0, 'Hi.', 1)])
+    _assert(text == '[0:00] Speaker 1: Hello there. [0:31] Still me. Mid sentence here. [1:03] Speaker 2: Hi.',
+            "a turn for each speaker, marks only where a sentence starts, at most every 30 s")
+
+
 def test_queue_and_quota(db):
     c = sqlite3.connect(db)
     c.executescript("""
@@ -446,7 +482,7 @@ def test_worker(db):
     _assert(ai.episode('ep7', db)['seconds'] == 2700, "a later delivery without a length keeps the known one")
     sent, asked = [], []
 
-    def summarize(text, title, show, language, session=None):
+    def summarize(text, title, show, language, session=None, model=None):
         asked.append(language)
         return 'Gist.', 0.002
 
@@ -474,8 +510,8 @@ def test_worker(db):
 
     saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path)
     ai_watcher.summary.summarize = down
-    ai_watcher.episode_transcript = lambda episode, session, progress=None: transcript.Transcript(
-        'words', 'whisper', 0.02, 3600.0)
+    ai_watcher.episode_transcript = lambda episode, session, progress=None, speakers=False: (transcript.Transcript(
+        'words', 'whisper', 0.02, 3600.0), True)
     ai.db_path = usage.db_path = db
     try:
         ai_watcher.process({'chat_id': 503, 'ref': 'ep8', 'lang': 'en', 'seconds': 3600}, None, send=send)
@@ -495,11 +531,11 @@ def test_worker(db):
             raise RuntimeError('Bad Request: message to edit not found')
         edits.append((chat_id, message_id, message['text']))
 
-    def whisper(episode, session, progress=None):
+    def whisper(episode, session, progress=None, speakers=False):
         progress('download')
         progress('transcribe', 1, 2)
         progress('transcribe', 2, 2)
-        return transcript.Transcript('[0:00] words', 'whisper', 0.0, 600.0)
+        return transcript.Transcript('[0:00] words', 'whisper', 0.0, 600.0), True
     saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path)
     ai_watcher.summary.summarize = lambda *a, **k: ('Gist.\n0:00 – a point', 0.001)
     ai_watcher.episode_transcript = whisper
@@ -593,7 +629,7 @@ def test_ask(db, module):
         set_user_state_data=lambda chat, route, data: states.__setitem__((chat, route), data),
         get_user_state_data=lambda chat, route: states.get((chat, route)))
 
-    def answer(text, title, show, question, session=None):
+    def answer(text, title, show, question, session=None, model=None):
         answered.append((text, question))
         return 'At 0:00 they say so.', 0.0009
 
@@ -775,10 +811,10 @@ def test_transcript_requests(db, ai_watcher):
     transcript the chat paid for costs no more hours."""
     files, edits, deleted = [], [], []
 
-    def whisper(episode, session, progress=None):
+    def whisper(episode, session, progress=None, speakers=False):
         progress('download')
         progress('transcribe', 1, 1)
-        return transcript.Transcript('[0:00] spoken words', 'whisper', 0.03, 1830.4)
+        return transcript.Transcript('[0:00] spoken words', 'whisper', 0.03, 1830.4), True
 
     def no_model(*args, **kwargs):
         raise AssertionError('a transcript request never calls the model')
@@ -811,8 +847,8 @@ def test_transcript_requests(db, ai_watcher):
         # the same chat's summary of it: the transcript is cached and paid for, only the model call
         ai.save_transcript('t1', '[0:00] spoken words', 'whisper', 0.03, 1830.4, database=db)
         ai_watcher.summary.summarize = lambda *a, **k: ('Gist.', 0.002)
-        ai_watcher.episode_transcript = lambda episode, session, progress=None: transcript.Transcript(
-            '[0:00] spoken words', 'whisper', 0.0, 1830.4)
+        ai_watcher.episode_transcript = lambda episode, session, progress=None, speakers=False: (
+            transcript.Transcript('[0:00] spoken words', 'whisper', 0.0, 1830.4), False)
         mine, _ = ai.enqueue(520, 't1', 'original', 0, db)
         theirs, _ = ai.enqueue(521, 't1', 'original', 1800, db)
         sent = []
@@ -833,8 +869,8 @@ def test_transcript_requests(db, ai_watcher):
         files.clear()
         cached = ai_watcher.process({'id': 0, 'chat_id': 522, 'ref': 't1', 'lang': '', 'seconds': 1800,
                                      'kind': ai.TRANSCRIPT}, None, edit=edit, send_file=send_file, delete=delete)
-        ai_watcher.episode_transcript = lambda episode, session, progress=None: transcript.Transcript(
-            'the feed text', 'feed', 0.0, 0.0)
+        ai_watcher.episode_transcript = lambda episode, session, progress=None, speakers=False: (
+            transcript.Transcript('the feed text', 'feed', 0.0, 0.0), False)
         ai.remember_episode('t2', 'https://cdn.example/show/t2.mp3', 9, 'Two', 'Show', 1800, database=db)
         feed = ai_watcher.process({'id': 0, 'chat_id': 522, 'ref': 't2', 'lang': '', 'seconds': 1800,
                                    'kind': ai.TRANSCRIPT}, None, edit=edit, send_file=send_file, delete=delete)
@@ -843,6 +879,61 @@ def test_transcript_requests(db, ai_watcher):
         _assert(ai_watcher.FAILED[ai.TRANSCRIPT] == 'transcriptFailed', "a failed transcript says so, not 'summary'")
     finally:
         ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai.db_path, usage.db_path = saved
+
+    # the better models: Whisper's cached transcript is made again with speakers; the feed's or one with
+    # speakers is not; the summary goes to the paid model
+    made = []
+
+    def from_audio(requester, session, link, progress=None, speakers_model=None):
+        made.append(speakers_model)
+        return transcript.Transcript('[0:00] Speaker 1: Hi.', 'speakers' if speakers_model else 'whisper', 0.02, 600.0)
+    saved = (ai_watcher.transcript.from_audio, ai_watcher.transcript.from_episode_feed, ai.db_path,
+             ai_watcher.paid_models.transcribe_model)
+    ai_watcher.transcript.from_audio = from_audio
+    ai_watcher.transcript.from_episode_feed = lambda requester, episode: None
+    ai_watcher.paid_models.transcribe_model = lambda with_speakers: 'x-ai/grok-stt-1.0' if with_speakers else 'w'
+    ai.db_path = db
+    try:
+        ai.remember_episode('u1', 'https://cdn.example/show/u1.mp3', 9, 'U', 'Show', 600, database=db)
+        ai.save_transcript('u1', '[0:00] Hi.', 'whisper', 0.003, 600.0, database=db)
+        episode = ai.episode('u1', db)
+        found, was_made = ai_watcher.episode_transcript(episode, None)
+        _assert((found.source, was_made, made) == ('whisper', False, []), "without them the cache serves")
+        found, was_made = ai_watcher.episode_transcript(episode, None, speakers=True)
+        _assert((found.source, was_made, made) == ('speakers', True, ['x-ai/grok-stt-1.0'])
+                and ai.transcript('u1', db)['source'] == 'speakers',
+                "with them Whisper's is made again with speakers, and cached for everyone")
+        found, was_made = ai_watcher.episode_transcript(episode, None, speakers=True)
+        _assert((found.source, was_made, len(made)) == ('speakers', False, 1), "one with speakers is not made again")
+        ai.save_transcript('u1', 'From the feed.', 'feed', 0.0, database=db)
+        _assert(ai_watcher.episode_transcript(episode, None, speakers=True)[0].source == 'feed' and len(made) == 1,
+                "nor the feed's")
+    finally:
+        (ai_watcher.transcript.from_audio, ai_watcher.transcript.from_episode_feed, ai.db_path,
+         ai_watcher.paid_models.transcribe_model) = saved
+
+    models = []
+    saved = (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai_watcher.paid_models.summary_model,
+             ai_watcher.paid_models.speakers, ai.db_path, usage.db_path)
+    ai_watcher.summary.summarize = lambda *a, **k: models.append(k.get('model')) or ('Gist.', 0.01)
+    ai_watcher.episode_transcript = lambda episode, session, progress=None, speakers=False: (
+        models.append(('speakers', speakers)) or transcript.Transcript('t', 'feed', 0.0, 0.0), False)
+    ai_watcher.paid_models.summary_model = lambda chat_id, database=None: 'paid/strong' if chat_id == 530 else 'base'
+    ai_watcher.paid_models.speakers = lambda chat_id, database=None: chat_id == 530
+    ai.db_path = usage.db_path = db
+    try:
+        ai.remember_episode('u2', 'https://cdn.example/show/u2.mp3', 9, 'U2', 'Show', 600, database=db)
+        ai_watcher.process({'chat_id': 530, 'ref': 'u2', 'lang': 'xx', 'seconds': 600}, None, send=lambda *a: None)
+        c = sqlite3.connect(db)
+        c.execute("DELETE FROM ai_summaries WHERE ref='u2'")
+        c.commit()
+        c.close()
+        ai_watcher.process({'chat_id': 531, 'ref': 'u2', 'lang': 'xx', 'seconds': 600}, None, send=lambda *a: None)
+        _assert(models == [('speakers', True), 'paid/strong', ('speakers', False), 'base'],
+                "a paying chat with them: transcript with speakers, summary by the paid model; others as before")
+    finally:
+        (ai_watcher.summary.summarize, ai_watcher.episode_transcript, ai_watcher.paid_models.summary_model,
+         ai_watcher.paid_models.speakers, ai.db_path, usage.db_path) = saved
 
 
 def test_transcript_button(db, module):
@@ -946,6 +1037,31 @@ def test_transcript_button(db, module):
         c.close()
         _assert(charged == (0,), "the chat paid for this audio with a summary: its transcript costs no more hours")
 
+        # the better models: a paying chat gets Whisper's transcript made again, with speakers, within its hours
+        saved_paid = (module.paid_models.speakers, module.paid_models.transcript_note)
+        module.paid_models.speakers = lambda chat_id, database=None: chat_id in (506, 507)
+        module.paid_models.transcript_note = lambda chat_id, source, lang, database=None, over_quota=False: (
+            'OVER' if over_quota else '')
+        try:
+            plans[506] = 3
+            count = len(documents)
+            module.request_transcript(dict(tap, chat_id=506, callback=Tap({'tp': 'trn', 'r': 'ep9'})))
+            c = sqlite3.connect(db)
+            rows = c.execute("SELECT kind FROM ai_requests WHERE chat_id=506").fetchall()
+            c.close()
+            _assert(len(documents) == count and rows == [('transcript',)],
+                    "a paying chat with them: Whisper's transcript is queued to be made again, not sent")
+            plans[507] = 0
+            module.request_transcript(dict(tap, chat_id=507, callback=Tap({'tp': 'trn', 'r': 'ep9'})))
+            _assert(len(documents) == count + 1 and documents[-1]['chat_id'] == 507
+                    and documents[-1]['caption'].endswith('\n\nOVER'),
+                    "over its hours: Whisper's file, saying why")
+            module.request_transcript(dict(tap, chat_id=506, callback=Tap({'tp': 'trn', 'r': 'feedy'})))
+            _assert(documents[-1]['chat_id'] == 506 and documents[-1]['body'].endswith('Words from the feed.\n'),
+                    "the feed's transcript is the publisher's: a paying chat gets it as everyone does")
+        finally:
+            module.paid_models.speakers, module.paid_models.transcript_note = saved_paid
+
         count = len(documents)
         module.request_transcript(dict(tap, callback=Tap({'tp': 'trn', 'r': 'gone'})))
         _assert(len(documents) == count and toasts[-1][0] == get_message('screenOutdated', 'en'),
@@ -983,6 +1099,7 @@ def main():
     test_openrouter()
     with tempfile.TemporaryDirectory() as tmp:
         test_transcription(tmp)
+        test_speakers(tmp)
         db = os.path.join(tmp, 'test.sqlite')
         test_queue_and_quota(db)
         test_auto(os.path.join(tmp, 'auto.sqlite'))

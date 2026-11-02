@@ -190,6 +190,58 @@ def test_auto_summary_toggle(settings):
         settings.SQLighter, settings.notify, settings._redraw, tariff_rows.running_plan_level = saved
 
 
+def test_paid_models_switch(settings):
+    """Better models: only a chat that paid and has a plan running sees the switch (on or off); the trial,
+    no plan and a lapsed plan do not. A switch left on an old screen redraws it without the button."""
+    from app.service.ai import paid_models
+    flags, toasts = {}, []
+
+    class DB:
+        def __init__(self, *_):
+            pass
+
+        def set_user_flag(self, chat_id, name, value=1):
+            flags[name] = value
+
+        def close(self):
+            pass
+
+    standing = {'now': paid_models.ON}
+    saved = (settings.paid_models.standing, settings.SQLighter, settings.notify, settings._redraw,
+             settings._read_user, settings.paid_models.what)
+    settings.paid_models.standing = lambda chat_id, database=None: standing['now']
+    settings.paid_models.what = lambda language_code: 'WHAT'
+    settings.SQLighter, settings._redraw = DB, lambda data, screen: None
+    settings.notify = lambda call, message, text, alert=False: toasts.append(text)
+    settings._read_user = lambda chat_id: ({'episode_format': None, 'flags': None}, False)
+    data = {'chat_id': 5, 'callback': None, 'message': None, 'language_code': 'en'}
+    try:
+        page = settings.construct_summary_message('en', 5)
+        _assert(_tps(page) == ['sumLangOrig', 'sumLangMine', 'sumAuto', paid_models.TOGGLE_ACTION, 'bck']
+                and get_message('paidModelsOn', 'en') in _texts(page) and 'WHAT' in page[0]['text'],
+                "a paying chat with them: the switch says on, the screen says what they give")
+        standing['now'] = paid_models.TURNED_OFF
+        _assert(get_message('paidModelsOff', 'en') in _texts(settings.construct_summary_message('en', 5)),
+                "turned off: the switch says off")
+        settings.toggle_paid_models(data)
+        _assert(flags[paid_models.FLAG] == 1 and toasts[-1] == get_message('paidModelsOn', 'en'), "a tap turns them on")
+        standing['now'] = paid_models.ON
+        settings.toggle_paid_models(data)
+        _assert(flags[paid_models.FLAG] == 0 and toasts[-1] == get_message('paidModelsOff', 'en'), "and off")
+        for kind in (paid_models.TRIAL, paid_models.NO_PLAN, paid_models.LAPSED, None):
+            standing['now'] = kind
+            page = settings.construct_summary_message('en', 5)
+            _assert(paid_models.TOGGLE_ACTION not in _tps(page) and 'WHAT' not in page[0]['text'],
+                    "%s: no switch, no word of it" % kind)
+        flags.clear()
+        settings.toggle_paid_models(data)
+        _assert(flags == {} and toasts[-1] == get_message('screenOutdated', 'en'),
+                "a switch left from when the plan was paid: nothing changes, the screen is redrawn")
+    finally:
+        (settings.paid_models.standing, settings.SQLighter, settings.notify, settings._redraw,
+         settings._read_user, settings.paid_models.what) = saved
+
+
 def main():
     settings = import_builder('settingsModule')
     if settings is None:
@@ -201,6 +253,7 @@ def main():
     test_languages(settings)
     test_redraw(settings)
     test_auto_summary_toggle(settings)
+    test_paid_models_switch(settings)
     print("all settings screen checks passed")
 
 

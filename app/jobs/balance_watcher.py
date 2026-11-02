@@ -7,6 +7,7 @@ from app.jobs.relay_remind import (
     clear_relay_d3_sent, relay_nudge_markup, send_relay_d3_reminders)
 from app.jobs.tariff_tick import run_tariff_tick
 from app.service import analytics_events
+from app.service.ai import paid_models
 from app.service.payment import plan_end, stars_subscription
 from app.service.payment.paymentModule import get_tariff_description_and_button_text
 from app.service.payment.paymentSafeModule import decode_tariff, get_tariff_info_message
@@ -110,6 +111,10 @@ def plan_off_message(npu, tariff_row, database=None):
     loss, _shows = plan_end.loss_text(npu['telegramId'], lang, database=database)
     if loss:
         message += loss + "\n\n"
+    # better AI models: a payer's come back with a paid plan, an ended trial reads what one brings
+    models = paid_models.pitch(npu['telegramId'], lang, database=database)
+    if models:
+        message += models + "\n\n"
     # a Relay trial: the discount now, not with the win-back message a week later
     offer, offer_row = plan_end.trial_offer(
         npu['telegramId'], npu['tlevel'], npu['tprice'], lang, analytics_events.PLAN_OFF_SOURCE,

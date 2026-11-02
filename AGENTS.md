@@ -159,6 +159,28 @@ remove plan management or hide Bronze/Silver.
   network for 25 minutes on 2026-10-30). A blocked user is marked deleted and
   leaves both. Lock: `python app/jobs/test_relay_remind.py`.
 
+## Payment effects
+
+What a payment sets off once credited (`db/payment_effects.py`): one row per
+payment and effect (`UNIQUE(payment, effect)`), written in the transaction that
+credits it: `applyPaymentReplenishmentOnce` (Stars, CryptoBot, Robokassa; status
+`paid` only) and `patreon.credit_month` (a pledge of nothing sets nothing off).
+The jobs role runs them (`app/jobs/payment_effects.py`, every 30 s): a handler
+per effect, at least once, so idempotent; a failure retries after 10 min times
+its attempts, `MAX_ATTEMPTS` then `failed` and a `#problem #warning` to the
+creator. A lease that ran out is claimed again. Never inside the payment's
+transaction: a failing effect never fails or undoes a payment. A transactional
+outbox, not a full saga: effects are perks, what they need (a plan running) is
+checked where they are used. At start, chats that paid before an effect existed
+get its row once (`backfill:<users.id>`). The referral award and the offer flag
+stay where they were (one more place to move them, not a reason to).
+Lock: `python app/jobs/test_payment_effects.py` (CD gate).
+
+- `paid_models`: better AI models on (`users.flags` `paid_models` 1) unless
+  the user turned them off (0 stays). The first time, with a plan running, one
+  message says so and where to turn them off; a renewal, a top-up with no plan
+  running or a chat that chose off hears nothing.
+
 ## Referrals, paywall, prepaid months, win-back
 
 - A payment awards the inviter once per invitee, whatever the pay method
@@ -774,8 +796,9 @@ it "Listen", "Show notes" and "Summary" were all `recs`. What the bot does on it
 convert), `plan_reminder_sent {level, days_left, paid_before, offer, shows}`
 (D-3), `winback_sent {stage, offer}`, `payment {method, amount_cents,
 charged_cents, offer, ...}` (Stars, CryptoBot),
-`summary_ready {cached, seconds}`, `transcript_ready {source, made, seconds}`
-(a transcript file sent; `made`: Whisper made it now), `episode_delivered {mode, format}` (one per
+`summary_ready {cached, seconds, model}`, `transcript_ready {source, made, seconds, model}`
+(a transcript file sent; `made`: we made it now; `source` `speakers`: the paid model; `model`: the
+OpenRouter id when made now), `episode_delivered {mode, format}` (one per
 user chat that got the audio, from the sender: most listeners never tap, so
 without it Amplitude counted them as gone). These carry the running plan's
 level as the user property `plan` (0: none). A digest's Listen button carries
@@ -1048,6 +1071,37 @@ button; `quota.py` who may ask. The plan level is
   answers the delivered audio: the sender notes each chat's audio message
   (`_note_audio_message`, Bot API, rich and agent sends; bookkeeping that
   never fails a delivery).
+- Better models for chats that pay (`app/service/ai/paid_models.py`; the
+  owner's call, 2026-11-02: no higher cost without paying users). Optional in
+  constants.py: `openrouterPaidTranscribeModel` (speech to text that labels
+  speakers; `x-ai/grok-stt-1.0`, ~$0.10/h against Whisper turbo's ~$0.012/h)
+  and `openrouterPaidModel` (summaries and answers, the episode's and the
+  show's). With neither, nothing shows or changes. A chat gets them when it
+  paid (`tariff_rows.paid_for_days`), has a plan running and the flag is on
+  (a payment's effect, above); /settings (AI summaries) shows such a chat a
+  switch and what they do not change, nobody else sees it. A plan that ends
+  keeps the flag. With speakers (`transcript.from_audio(speakers_model=)`):
+  pieces cut at each 10-minute mark, each after the first 30 s earlier
+  (`split_overlapping`); the model numbers speakers per piece, so the words
+  both pieces heard (two at least) map a piece's speaker to the episode's,
+  one not heard there is new (`merge_speakers`); the overlap's words come
+  from the piece before and its seconds are not charged twice. A turn per
+  speaker ("Speaker 2: ..."), marks where a sentence starts, at most every
+  30 s; `ai_transcripts.source` `speakers`. Diarization is each provider's
+  own option (`SPEAKER_OPTIONS`, OpenRouter forwards the serving one's);
+  Voxtral through OpenRouter returned no speakers (2026-11-02). The cache
+  serves the better transcript and summary to everyone after. A paying chat
+  asking for an episode Whisper transcribed gets it made again with speakers,
+  charged as a new transcript; over its hours, Whisper's file with a line
+  why. The feed's transcript is used for everyone; a summary made before is
+  served as it is. Copy by `standing` (no plan, trial, paid and on, paid and
+  off, paid before and lapsed): under Whisper's file
+  (`transcript_note`), the summary note, D-3 (a payer's stop with the plan),
+  the plan-off notice, the change-plan page; nothing to a payer that has them
+  or turned them off, no promise under the feed's transcript.
+  Locks: `python app/jobs/test_payment_effects.py`,
+  `python app/service/ai/test_summary.py`,
+  `python app/controller/builders/test_settings_screens.py`.
 - Once per user (`app/service/ai/hint.py`, `users.flags` `summary_hint_sent`):
   after a delivered episode with the Summary button, a chat with a plan
   running (a trial too) that never asked for a summary gets a note on what

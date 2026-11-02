@@ -11,7 +11,7 @@ from config import (
 
 from db.connection import connect_sqlite
 from db.dbTypes import UserDBType
-from db import payments
+from db import payment_effects, payments
 from db.hot_indexes import ensure_hot_path_indexes
 
 from lib.tools.logger import logger
@@ -1737,6 +1737,7 @@ class SQLighter:
         revenue (db/payments.py)."""
         if chargedCents is not None:
             payments.ensure_charged_column(self.connection)
+        payment_effects.ensure_table(self.connection)
         try:
             self.cursor.execute("BEGIN IMMEDIATE")
             user_id = user['id']
@@ -1881,10 +1882,14 @@ class SQLighter:
                 (str(user_id), str(serviceType), str(invoiceId), invoiceHash,
                  status, int(amountCents) if amountCents is not None else amountCents,
                  str(paidAt),))
+            payment_rowid = self.cursor.lastrowid
             if chargedCents is not None:
                 self.cursor.execute(
                     "UPDATE payment_history SET charged = ? WHERE rowid = ?",
-                    (int(chargedCents), self.cursor.lastrowid))
+                    (int(chargedCents), payment_rowid))
+            if status == 'paid':
+                # what the payment sets off (better AI models...), run by the jobs role after this commit
+                payment_effects.queue(self.cursor.execute, user_id, payment_effects.payment_key(payment_rowid))
             if userFlag:
                 self.cursor.execute(
                     "UPDATE users SET flags = json_set(COALESCE(flags, '{}'), ?, 1) "

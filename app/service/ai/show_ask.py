@@ -138,11 +138,11 @@ def build(episodes, transcripts) -> Context:
     return Context('\n'.join(parts), kept, len(with_text), described, len(episodes))
 
 
-def answer(context, show, question, session=None) -> tuple[str, float]:
+def answer(context, show, question, session=None, model=None) -> tuple[str, float]:
     """(answer with [E..] labels, USD as OpenRouter billed it). The show's material is a block of its own
     marked for the provider's prompt cache: the next questions within minutes read it at a tenth of the price."""
     body = openrouter.post('chat/completions', session, timeout=summary.ANSWER_TIMEOUT, json={
-        'model': ai_summary_model,
+        'model': model or ai_summary_model,
         'max_tokens': ANSWER_MAX_TOKENS,
         'usage': {'include': True},
         'reasoning': summary.REASONING,

@@ -5,13 +5,14 @@ from app.i18n.messages import get_message, emojiCodes
 from app.jobs.nosub_digest import DIGEST_TOGGLE_ACTION, digest_enabled
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams
-from app.service.ai import auto as ai_auto, summary as ai_summary
+from app.service.ai import auto as ai_auto, paid_models, summary as ai_summary
 from app.service.record.text_format import (
     EPISODE_FORMAT_ACTIONS, SEPARATE, user_format)
 from config import db_path
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import (
     InlineButtonData, MessageStructuresInterface, message_editor, render_messages)
+from lib.tools.logger import logger
 
 
 def reminders_mark(enabled: bool) -> str:
@@ -178,7 +179,23 @@ def construct_summary_message(language_code, chat_id) -> list[MessageStructuresI
         'text': get_message('summaryAutoOn' if _stored_auto_summary(user) else 'summaryAutoOff', language_code),
         'callback_data': {'tp': ai_auto.TOGGLE_ACTION},
     }])
+    # better models: a chat that paid and has a plan running sees the switch, nobody else
+    kind = _paid_models_standing(chat_id)
+    if kind in (paid_models.ON, paid_models.TURNED_OFF):
+        text += '\n\n' + paid_models.settings_help(language_code)
+        keyboard.append([{
+            'text': get_message('paidModelsOn' if kind == paid_models.ON else 'paidModelsOff', language_code),
+            'callback_data': {'tp': paid_models.TOGGLE_ACTION},
+        }])
     return _screen(text, keyboard + go_back_inline_markup(language_code))
+
+
+def _paid_models_standing(chat_id):
+    try:
+        return paid_models.standing(chat_id)
+    except Exception as e:  # the settings screen never fails over it: no switch then
+        logger.warn('settings: paid models:', type(e).__name__, e)
+        return None
 
 
 def construct_reminders_message(language_code, chat_id) -> list[MessageStructuresInterface]:
@@ -287,6 +304,24 @@ def toggle_auto_summary(data: ControllerParams):
     notify(data['callback'], data['message'],
            get_message('summaryAutoNeedsPlan' if without_plan else 'summaryAutoOn' if enabled else 'summaryAutoOff',
                        data['language_code']), alert=without_plan)
+    _redraw(data, construct_summary_message(data['language_code'], data['chat_id']))
+
+
+def toggle_paid_models(data: ControllerParams):
+    """Better models on or off (app/service/ai/paid_models.py); a button left from when the chat paid and
+    had a plan: the screen is drawn again without it."""
+    kind = _paid_models_standing(data['chat_id'])
+    if kind not in (paid_models.ON, paid_models.TURNED_OFF):
+        notify(data['callback'], data['message'], get_message('screenOutdated', data['language_code']))
+    else:
+        enabled = kind != paid_models.ON
+        db_users = SQLighter(db_path)
+        try:
+            db_users.set_user_flag(data['chat_id'], paid_models.FLAG, 1 if enabled else 0)
+        finally:
+            db_users.close()
+        notify(data['callback'], data['message'],
+               get_message('paidModelsOn' if enabled else 'paidModelsOff', data['language_code']))
     _redraw(data, construct_summary_message(data['language_code'], data['chat_id']))
 
 
