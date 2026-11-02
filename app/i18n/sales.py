@@ -230,6 +230,122 @@ ROWS = {
         'Esta oferta ya no está disponible.',
         'Dieses Angebot ist nicht mehr verfügbar.',
         'ההצעה הזו כבר לא זמינה.'),
+    # The Stars page: what a payment does, without a plan running and with one (it tops that plan up)
+    'bot_sub_stars_page_body': (
+        'Оплата Stars – в два тапа, не выходя из Telegram. Выбранный план включится сразу и дальше будет '
+        'продлеваться с баланса каждые 30 дней, пока на нём хватает денег.\n1000 ⭐ ≈ ${rate}.',
+        'Pay with Stars in two taps without leaving Telegram. The plan you pick turns on at once and then renews '
+        'from your balance every 30 days while the balance covers it.\n1000 ⭐ ≈ ${rate}.',
+        'Pague com Stars em dois toques, sem sair do Telegram. O plano escolhido é ativado na hora e depois renova '
+        'pelo saldo a cada 30 dias, enquanto o saldo cobrir.\n1000 ⭐ ≈ US${rate}.',
+        'Paga con Stars en dos toques, sin salir de Telegram. El plan que elijas se activa al momento y luego se '
+        'renueva con el saldo cada 30 días mientras alcance.\n1000 ⭐ ≈ ${rate}.',
+        'Mit Stars in zwei Taps zahlen, ohne Telegram zu verlassen. Der gewählte Tarif startet sofort und verlängert '
+        'sich dann alle 30 Tage aus dem Guthaben, solange es reicht.\n1000 ⭐ ≈ ${rate}.',
+        'תשלום ב-Stars בשתי הקשות, בלי לצאת מטלגרם. המסלול שתבחרו יופעל מיד ויתחדש מהיתרה כל 30 יום, כל עוד '
+        'היא מספיקה.\n1000 ⭐ ≈ ${rate}.'),
+    'bot_sub_stars_page_running': (
+        'Оплата Stars – в два тапа, не выходя из Telegram. Деньги идут на баланс, с него {plan} продлевается '
+        'каждые 30 дней. Другой план включается кнопкой "Сменить план".\n1000 ⭐ ≈ ${rate}.',
+        'Pay with Stars in two taps without leaving Telegram. The money goes to your balance, and {plan} renews '
+        'from it every 30 days. Another plan is switched on with "Change plan".\n1000 ⭐ ≈ ${rate}.',
+        'Pague com Stars em dois toques, sem sair do Telegram. O dinheiro vai para o saldo, e o {plan} renova por '
+        'ele a cada 30 dias. Outro plano se ativa em "Mudar de plano".\n1000 ⭐ ≈ US${rate}.',
+        'Paga con Stars en dos toques, sin salir de Telegram. El dinero va al saldo y {plan} se renueva con él cada '
+        '30 días. Otro plan se activa con "Cambiar plan".\n1000 ⭐ ≈ ${rate}.',
+        'Mit Stars in zwei Taps zahlen, ohne Telegram zu verlassen. Das Geld geht aufs Guthaben, daraus verlängert '
+        'sich {plan} alle 30 Tage. Einen anderen Tarif startest du mit "Tarif wechseln".\n1000 ⭐ ≈ ${rate}.',
+        'תשלום ב-Stars בשתי הקשות, בלי לצאת מטלגרם. הכסף נכנס ליתרה, וממנה {plan} מתחדש כל 30 יום. מסלול אחר '
+        'מפעילים דרך "שנה מסלול".\n1000 ⭐ ≈ ${rate}.'),
+    # Under "not enough on the balance" (the change-plan page): to the Stars page
+    'topUpStarsButton': (
+        '⭐ Пополнить баланс – Telegram Stars',
+        '⭐ Top up with Telegram Stars',
+        '⭐ Recarregar com Telegram Stars',
+        '⭐ Recargar con Telegram Stars',
+        '⭐ Mit Telegram Stars aufladen',
+        '⭐ הטענה ב-Telegram Stars'),
+    # The change-plan page asks before a cheaper plan or off (paymentModule.downgrade_text)
+    'planDowngradeAsk': (
+        '<b>Сменить план: {current} → {plan}?</b>',
+        '<b>Change plan: {current} → {plan}?</b>',
+        '<b>Mudar de plano: {current} → {plan}?</b>',
+        '<b>¿Cambiar de plan: {current} → {plan}?</b>',
+        '<b>Tarif wechseln: {current} → {plan}?</b>',
+        '<b>לעבור מ-{current} ל-{plan}?</b>'),
+    'planDowngradeDays': (
+        'Осталось дней: {days}, они сохранятся на новом плане.',
+        'Days left: {days}, they stay on the new plan.',
+        'Dias restantes: {days}, eles ficam no novo plano.',
+        'Días restantes: {days}, se quedan en el nuevo plan.',
+        'Verbleibende Tage: {days}, sie bleiben im neuen Tarif.',
+        'ימים שנותרו: {days}, הם נשארים במסלול החדש.'),
+    'planOffAsk': (
+        '<b>Отключить план {current}?</b>',
+        '<b>Turn {current} off?</b>',
+        '<b>Desativar {current}?</b>',
+        '<b>¿Desactivar {current}?</b>',
+        '<b>{current} deaktivieren?</b>',
+        '<b>להשבית את {current}?</b>'),
+    'planOffWhat': (
+        'Новые выпуски перестанут приходить файлами сами: без плана – раз в неделю список новых.',
+        'New episodes stop arriving as files on their own: without a plan you get a weekly list of new ones.',
+        'Os episódios novos deixam de chegar como arquivo sozinhos: sem plano, uma lista semanal dos novos.',
+        'Los episodios nuevos dejan de llegar solos como archivo: sin plan, una lista semanal de los nuevos.',
+        'Neue Folgen kommen nicht mehr von selbst als Datei: ohne Tarif gibt es wöchentlich eine Liste der neuen.',
+        'פרקים חדשים יפסיקו להגיע לבד כקובץ: בלי מסלול תקבלו פעם בשבוע רשימה של החדשים.'),
+    'planDowngradeRefund': (
+        'На баланс вернётся ${refund} – половина разницы в цене за эти дни.',
+        '${refund} comes back to your balance: half of the price difference for these days.',
+        'US${refund} voltam para o saldo: metade da diferença de preço por esses dias.',
+        'Vuelven al saldo ${refund}: la mitad de la diferencia de precio por estos días.',
+        '${refund} gehen zurück aufs Guthaben: die Hälfte des Preisunterschieds für diese Tage.',
+        '‎${refund} יחזרו ליתרה: חצי מהפרש המחיר על הימים האלה.'),
+    'planDowngradeBack': (
+        'Вернуться на план {current} до конца срока будет стоить ${back}.',
+        'Going back to {current} before the period ends will cost ${back}.',
+        'Voltar para {current} antes do fim do período custará US${back}.',
+        'Volver a {current} antes de que acabe el periodo costará ${back}.',
+        'Zurück zu {current} vor Ende des Zeitraums kostet ${back}.',
+        'חזרה ל-{current} לפני סוף התקופה תעלה ‎${back}.'),
+    'planDowngradeStarsSub': (
+        'Подписка Stars на план {current} отменится.',
+        'Your Stars subscription to {current} will be canceled.',
+        'Sua assinatura em Stars do {current} será cancelada.',
+        'Tu suscripción con Stars a {current} se cancelará.',
+        'Dein Stars-Abo für {current} wird gekündigt.',
+        'המנוי ב-Stars ל-{current} יבוטל.'),
+    'planDowngradeYes': (
+        '✓ Да, сменить план',
+        '✓ Yes, change plan',
+        '✓ Sim, mudar de plano',
+        '✓ Sí, cambiar de plan',
+        '✓ Ja, Tarif wechseln',
+        '✓ כן, לשנות מסלול'),
+    'planOffYes': (
+        '✓ Отключить',
+        '✓ Turn off',
+        '✓ Desativar',
+        '✓ Desactivar',
+        '✓ Deaktivieren',
+        '✓ להשבית'),
+    # Not enough on the balance for the plan tapped on the change-plan page (a Stars button under it)
+    'notEnoughMoneyToActivate': (
+        'На балансе не хватает ${missing}, чтобы перейти на этот план до конца срока. Пополните баланс и нажмите '
+        'план ещё раз.',
+        'Your balance is ${missing} short of this plan for the rest of the period. Top up, then tap the plan again.',
+        'Faltam US${missing} no saldo para este plano até o fim do período. Recarregue e toque no plano de novo.',
+        'Faltan ${missing} en el saldo para este plan hasta el final del periodo. Recarga y vuelve a tocar el plan.',
+        'Dem Guthaben fehlen ${missing} für diesen Tarif bis zum Ende des Zeitraums. Lade auf und tippe den Tarif '
+        'noch einmal an.',
+        'חסרים ביתרה ‎${missing} למסלול הזה עד סוף התקופה. הטעינו ולחצו על המסלול שוב.'),
+    'tariffActivatedNotEnoughMoney': (
+        'Этот план выбран, но не включён: на балансе не хватает ${missing}. Пополните баланс – и план включится.',
+        'This plan is chosen but not on: your balance is ${missing} short. Top up and the plan turns on.',
+        'Este plano está escolhido, mas não ativo: faltam US${missing} no saldo. Recarregue e o plano será ativado.',
+        'Este plan está elegido, pero no activo: faltan ${missing} en el saldo. Recarga y el plan se activa.',
+        'Dieser Tarif ist gewählt, aber nicht aktiv: dem Guthaben fehlen ${missing}. Lade auf, dann startet er.',
+        'המסלול הזה נבחר אבל לא פעיל: חסרים ביתרה ‎${missing}. הטעינו והמסלול יופעל.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

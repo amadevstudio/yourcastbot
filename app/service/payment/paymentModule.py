@@ -18,8 +18,9 @@ from app.i18n.messages import get_message
 from app.routes.message_tools import go_back_inline_markup, go_back_inline_button
 from app.routes.ptypes import ControllerParams
 from app.service.ai import paid_models
+from app.service.payment import stars_subscription
 from app.service.payment.paymentSafeModule import \
-    prepare_price, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
+    days_left_text, money_text, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
 from app.service.payment.storefront import (
     RELAY_INVOICE_CALLBACK, once_pay_rows, tariffs_for_change_plan, subscription_pay_rows)
@@ -29,6 +30,7 @@ from config import db_path, tariff_period
 from db.sqliteAdapter import SQLighter
 from db.tariff_rows import paid_for_days
 from lib.telegram.general.message_master import render_messages, InlineButtonData
+from lib.tools.logger import logger
 
 
 def open_donate_page(data: ControllerParams):
@@ -244,7 +246,7 @@ def get_tariff_description_and_button_text(
 
     text += get_message("trf_descr_tmplt", language_code) \
             % (
-                str(prepare_price(tariff['price'])),
+                money_text(tariff['price']),
                 (
                     str(tariff['notify_count'])
                     if tariff['notify_count'] != -1
@@ -262,7 +264,48 @@ def get_tariff_description_and_button_text(
 
 
 # выбран тариф
-def choose_bot_subscription_tariff(data: ControllerParams):
+CONFIRM_TARIFF_ACTION = 'bs_trf_ok'
+
+
+def _stars_top_up_row(language_code) -> list[InlineButtonData]:
+    """To the Stars page from a "not enough on the balance" answer: it used to have Back only."""
+    return [{'text': get_message('topUpStarsButton', language_code), 'callback_data': {'tp': 'bs_stars'}}]
+
+
+def downgrade_text(chat_id, current_tariff, desire_tariff, time_left, language_code) -> str:
+    """The question before a move to a cheaper plan or off: the days, what comes back to the balance
+    (the chat ever paid: the same half as the move gives), what going back costs, a Stars subscription
+    that the move cancels."""
+    current = decode_tariff(current_tariff['level'], language_code)
+    difference = int(current_tariff['price']) - int(desire_tariff['price'])
+    if int(desire_tariff['id']) == 0:
+        lines = [get_message('planOffAsk', language_code).format(current=current),
+                 get_message('planOffWhat', language_code)]
+    else:
+        plan = decode_tariff(desire_tariff['level'], language_code)
+        lines = [get_message('planDowngradeAsk', language_code).format(current=current, plan=plan),
+                 get_message('planDowngradeDays', language_code).format(days=days_left_text(time_left), plan=plan)]
+    refund = int(((time_left - 1) / tariff_period) * difference / 2)
+    if refund > 0 and paid_for_days(chat_id):
+        lines.append(get_message('planDowngradeRefund', language_code).format(refund=money_text(refund)))
+    back = int((time_left / tariff_period) * difference)
+    if back > 0:
+        lines.append(get_message('planDowngradeBack', language_code).format(
+            current=current, back=money_text(back, 0.5)))
+    try:
+        if stars_subscription.active(chat_id):
+            lines.append(get_message('planDowngradeStarsSub', language_code).format(current=current))
+    except Exception as e:  # the question goes without the line, never fails
+        logger.warn("downgrade question: stars subscription:", chat_id, type(e).__name__, e)
+    return "\n\n".join(lines)
+
+
+def confirm_bot_subscription_tariff(data: ControllerParams):
+    """"Yes" under downgrade_text: the move, if the plan it was asked from still runs."""
+    return choose_bot_subscription_tariff(data, confirmed=True)
+
+
+def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
     db = SQLighter(db_path)
     # tariffs = db.getTariffs()
     current_subscription = db.getUserSubscriptionByTg(data['chat_id'])
@@ -300,14 +343,31 @@ def choose_bot_subscription_tariff(data: ControllerParams):
                 current_subscription = {'balance': 0}
             render_messages(data['chat_id'], [{
                 'type': 'text',
-                'text': get_message(
-                    'tariffActivatedNotEnoughMoney',
-                    data['language_code']) % str(desire_tariff['price'] - current_subscription['balance']),
-                'reply_markup': after_action_keyboard
+                'text': get_message('tariffActivatedNotEnoughMoney', data['language_code']).format(
+                    missing=money_text(desire_tariff['price'] - current_subscription['balance'], 0.5)),
+                'reply_markup': [_stars_top_up_row(data['language_code'])] + after_action_keyboard
             }])
             return
 
     else:
+        # A tap on a cheaper plan or off was a switch at once: a trial's curious tap on Bronze cost
+        # $1.86 to undo. Asked first, with what it changes; the yes names the plan it was asked from.
+        running = (int(current_tariff['id']) > 0 and current_subscription is not None
+                   and int(current_subscription['time_left'] or 0) > 0)
+        if running and int(desire_tariff['price']) < int(current_tariff['price']) and not (
+                confirmed and int(data['united_data'].get('c', -1)) == int(current_tariff['id'])):
+            yes = (get_message('planOffYes', data['language_code']) if int(desire_tariff['id']) == 0
+                   else get_message('planDowngradeYes', data['language_code']).format(
+                       plan=decode_tariff(desire_tariff['level'], data['language_code'])))
+            render_messages(data['chat_id'], [{
+                'type': 'text',
+                'text': downgrade_text(data['chat_id'], current_tariff, desire_tariff,
+                                       int(current_subscription['time_left']), data['language_code']),
+                'reply_markup': [[{'text': yes, 'callback_data': {
+                    'tp': CONFIRM_TARIFF_ACTION, 'v': desire_tariff['id'], 'c': current_tariff['id']}}]]
+                + after_action_keyboard}])
+            return
+
         # если сейчас есть подписка
         if current_subscription is not None and current_subscription['time_left'] is not None:
 
@@ -317,10 +377,11 @@ def choose_bot_subscription_tariff(data: ControllerParams):
                                  * (desire_tariff['price'] - current_tariff['price']))
                 # если не хватает баланса, чтобы подписаться
                 if price_diff > int(current_subscription['balance']):
-                    message_str = get_message("notEnoughMoneyToActivate", data['language_code']) \
-                                  % str(prepare_price(price_diff - int(current_subscription['balance']), 0.5))
+                    message_str = get_message("notEnoughMoneyToActivate", data['language_code']).format(
+                        missing=money_text(price_diff - int(current_subscription['balance']), 0.5))
                     render_messages(data['chat_id'], [{
-                        'type': 'text', 'text': message_str, 'reply_markup': after_action_keyboard}])
+                        'type': 'text', 'text': message_str,
+                        'reply_markup': [_stars_top_up_row(data['language_code'])] + after_action_keyboard}])
                     return
                 else:
                     new_balance = int(current_subscription['balance']) - price_diff

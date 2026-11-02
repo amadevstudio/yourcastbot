@@ -315,8 +315,15 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
 - Moving to a cheaper plan (the change-plan page) gives back half of the
   days left, only to a chat that ever paid (`tariff_rows.paid_for_days`: a
   payment, or a Patreon replenishment): the welcome trial's or referral days
-  never become balance. Lock: `python tools/botsim/test_botsim.py`,
-  `python db/test_tariff_rows.py`.
+  never become balance. A cheaper plan or "Disable" with a plan running is
+  asked first (`paymentModule.downgrade_text`: the days, that refund, what
+  going back costs, a Stars subscription it cancels; the yes, action
+  `bs_trf_ok`, names the plan it was asked from): a tap was a switch at once,
+  and a trial's curious tap on Bronze cost $1.86 to undo. "Not enough on the
+  balance" there carries the Stars page, not Back alone. The Stars page says
+  what a payment does: no plan running, the plan turns on; a plan running, it
+  renews that plan (another one: change-plan, a button on the page). Lock:
+  `python tools/botsim/test_botsim.py`, `python db/test_tariff_rows.py`.
 
 ## Tariff clock
 

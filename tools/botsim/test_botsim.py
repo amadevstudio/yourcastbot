@@ -246,19 +246,41 @@ def _plan_row(user_id):
                          "JOIN users u ON u.id = ut.uid WHERE u.telegramId = ?", (user_id,)).fetchone()
 
 
+def _callbacks(step):
+    return [json.loads(button['callback_data']) for message in step.new + step.edited
+            for row in message.buttons for button in row if button.get('callback_data')]
+
+
 def test_downgrade_refund():
-    """Moving to a cheaper plan gives back half of the days left, only when the
-    chat ever paid: the welcome trial's days must not become balance."""
+    """A cheaper plan or off is asked first (a trial's tap on Bronze was a switch at once and cost
+    $1.86 to undo, with Back the only button); the move gives back half of the days left, only
+    when the chat ever paid: the welcome trial's days must not become balance."""
     db = _db()
     bronze = db.execute("SELECT id FROM tariffs WHERE level = 1").fetchone()[0]
+    relay = db.execute("SELECT id FROM tariffs WHERE level = 3").fetchone()[0]
     db.close()
     trial = sim.BotSim(2001, 'en')
     trial.send('/start')
     before = _plan_row(2001)
-    trial.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
+    ask = trial.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
+    _assert(_plan_row(2001) == before and 'Change plan: ' in ask.texts[0] and 'Going back to' in ask.texts[0]
+            and 'comes back' not in ask.texts[0],
+            "a cheaper plan is asked first: nothing changes yet, going back's price is said, no refund to a trial")
+    _assert({'tp': 'bs_trf_ok', 'v': bronze, 'c': relay} in _callbacks(ask), "the yes names the plan it was asked from")
+    trial.tap_data(json.dumps({'tp': 'bs_trf_ok', 'v': bronze, 'c': bronze}))
+    _assert(_plan_row(2001) == before, "a yes asked from another plan asks again, it does not switch")
+    trial.tap('Yes, change plan')
     after = _plan_row(2001)
     _assert(before[1] == 0 and after[0] == bronze and after[1] == 0,
             "the welcome trial moved to Bronze: the plan changes, no money appears")
+    short = trial.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': relay}))
+    _assert(_plan_row(2001)[0] == bronze and {'tp': 'bs_stars'} in _callbacks(short),
+            "back to Relay without the money: the Stars page is a tap away, not a dead end")
+
+    off = sim.BotSim(2003, 'en')
+    off.send('/start')
+    ask = off.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': 0}))
+    _assert(_plan_row(2003)[0] == relay and 'off?' in ask.texts[0], "turning the plan off is asked first too")
 
     payer = sim.BotSim(2002, 'en')
     payer.send('/start')
@@ -267,7 +289,9 @@ def test_downgrade_refund():
                "SELECT id, 'stars', 'sim-1', 'paid', 500, datetime('now') FROM users WHERE telegramId = 2002")
     db.commit()
     db.close()
-    payer.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
+    ask = payer.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
+    _assert('comes back to your balance' in ask.texts[0], "a chat that paid is told what comes back")
+    payer.tap('Yes, change plan')
     _assert(_plan_row(2002)[1] > 0, "a chat that paid still gets half of the days left back")
 
 
