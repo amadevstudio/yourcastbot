@@ -1175,14 +1175,17 @@ class Sender:
             on_message=lambda message_id: self._note_audio_message(chat_id, {'message_id': message_id}))
 
     def _send_description_message(self, chat_id):
-        """The description after the audio, as a collapsible quote. The audio is already
-        delivered: a failure here is only logged."""
+        """The description after the audio, as a collapsible quote replying to it (sent
+        anyway if the audio's id is unknown or gone). The audio is already delivered: a
+        failure here is only logged."""
         text = record_description_message(self.podcast_info['descr'])
         if not text:
             return
+        reply_to = self._audio_messages.get(chat_id)
         try:
             # a link in the description must not turn into a preview card under the episode
-            self.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
+            self.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=True,
+                                  reply_to_message_id=reply_to, allow_sending_without_reply=True if reply_to else None)
         except Exception as e:
             self.logger.warn(e, "Fail to send the description after the audio")
 
