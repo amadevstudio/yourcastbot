@@ -121,6 +121,7 @@ class FakeBot:
         self.captions = {}  # chat_id -> caption of its audio
         self.messages = []  # (chat_id, text, parse_mode) of send_message
         self.previews_off = []  # disable_web_page_preview of each send_message
+        self.replies = []  # reply_to_message_id of each send_message
 
     def send_audio(self, chat_id, audio, **kwargs):
         self.captions[chat_id] = kwargs.get('caption')
@@ -142,11 +143,12 @@ class FakeBot:
             raise ApiTelegramException("Too Many Requests: retry after 5")
         if chat_id == self.refuse_chat:
             raise ApiTelegramException("Bad Request: not enough rights to send audio")
-        return _ns(audio=_ns(file_id='BOT_FID'))
+        return _ns(audio=_ns(file_id='BOT_FID'), message_id=200 + chat_id)
 
     def send_message(self, *args, **kwargs):
         self.messages.append((kwargs.get('chat_id'), kwargs.get('text'), kwargs.get('parse_mode')))
         self.previews_off.append(kwargs.get('disable_web_page_preview'))
+        self.replies.append(kwargs.get('reply_to_message_id'))
 
     def forward_message(self, chat_id, from_chat_id, message_id):
         return _ns(audio=_ns(file_id='AGENT_FID'), document=None, message_id=99)
@@ -448,6 +450,7 @@ def _check_episode_text_formats():
             and text.endswith('</blockquote>') and 'Opening sentence.' in text and len(text) < 4096,
             "separate: collapsible quote that fits one message")
     _assert(world.bot.previews_off == [True], "separate: a link in the description makes no preview card")
+    _assert(world.bot.replies == [101], "separate: the quote replies to the audio")
     _assert(world.hints_remembered == [], "separate: no rich note")
 
     # Caption: the old way, cut. Meta: the header only. Neither is a rich message or a quote.
@@ -493,6 +496,7 @@ def _check_episode_text_formats():
     _assert('Opening sentence' not in world.agent.captions[1], "agent: caption is the header only")
     _assert([m[0] for m in world.bot.messages] == [1] and 'THE END.' in world.bot.messages[0][1],
             "agent: the whole description follows as a quote")
+    _assert(world.bot.replies == [1], "agent: the quote replies to the uploaded audio")
     _assert([(c, k) for c, k, _ in world.rich.sent] == [(2, 'file_id')],
             "agent: the next chat reuses the file_id in a rich message")
 

@@ -70,7 +70,9 @@ emoji). The description used to be cut to ~1000. Now (`app/service/record/text_f
   text. Lock: `python lib/telegram/test_rich_message.py`.
 - **separate** (Settings, or the note's button): the audio with a header-only
   caption, then the description in `<blockquote expandable>` (one message,
-  under 4096, no link preview: a link in it is not a card under the episode).
+  under 4096, no link preview: a link in it is not a card under the episode),
+  a reply to the audio (sent anyway when its id is unknown or the audio is gone;
+  the agent's uploads over 50 MB too).
 - **caption** (Settings): the old way, the description cut to the caption.
 - **meta** (Settings): the header only, no description in the message, as in
   channels; "Show notes" under it as under brief (2026-11-01: the owner's call).
