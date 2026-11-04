@@ -683,7 +683,11 @@ arrived. The supervisor asks the Bot API's getMe every minute
 again after two failed probes or a role exit, the creator gets one line: since
 when, until when, how many times each role exited meanwhile. A line that cannot
 go is tried with the next probe that answers. `send_message_to_creator` answers
-whether Telegram took the message. Lock: `python app/core/test_telegram_link.py`.
+whether Telegram took the message. A server that is gone altogether cannot say
+so itself: with `heartbeatUrl` in constants.py (a dead man's switch,
+healthchecks.io) each probe that answers pings it, and the service alerts the
+creator when the pings stop. Unset: no ping; a failed ping is quiet.
+Lock: `python app/core/test_telegram_link.py`.
 
 ## Circle pace
 

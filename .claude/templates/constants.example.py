@@ -14,6 +14,7 @@ botId = 0
 storageChatId = 0
 trustRssPodcasts = True  # False: RSS-only podcasts go by URL only (never downloaded)
 diagToken = ''  # read-only /api/diag token; empty = off
+heartbeatUrl = ''  # dead man's switch ping (healthchecks.io), every minute; empty = off
 
 donate_link = 'https://example.invalid/donate'
 advertising_contact = '@example'
