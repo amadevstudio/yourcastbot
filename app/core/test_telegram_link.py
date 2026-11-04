@@ -26,12 +26,17 @@ def _assert(cond, label):
 class Run:
     """A watch driven by a list of probe answers, one per minute."""
 
-    def __init__(self, sends_ok=True):
+    def __init__(self, sends_ok=True, beat=None):
         self.answers = []
+        self.beats = 0
         self.clock = DAY
         self.sent = []
         self.sends_ok = sends_ok
-        self.watch = telegram_link.LinkWatch(probe=self._probe, send=self._send, now=lambda: self.clock)
+        self.watch = telegram_link.LinkWatch(probe=self._probe, send=self._send, now=lambda: self.clock,
+                                              beat=beat or self._beat)
+
+    def _beat(self):
+        self.beats += 1
 
     def _probe(self):
         return self.answers.pop(0)
@@ -90,6 +95,16 @@ def main():
     _assert(telegram_link.outage_text(DAY - 3600 * 15, DAY, {}).startswith(
         "Не было связи с Telegram с 29.10 23:00 до 14:00 (900 мин)."), "another day carries its date")
 
+    run = Run()
+    run.ticks(True, False, False, True, True)
+    _assert(run.beats == 3, "the heartbeat pings only while the Bot API answers")
+
+    def broken():
+        raise ValueError("bad url")
+    run = Run(beat=broken)
+    run.ticks(False, False, True)
+    _assert(len(run.sent) == 1, "a broken heartbeat never holds back the outage line")
+
     import requests
     saved = requests.get
     try:
@@ -100,6 +115,15 @@ def main():
         for status, answered in ((200, True), (401, True), (502, False)):
             requests.get = lambda url, timeout, status=status: type("Reply", (), {"status_code": status})()
             _assert(telegram_link.bot_api_answers(token="0:test") is answered, "getMe answered %d" % status)
+        pinged = []
+        requests.get = lambda url, timeout: pinged.append(url)
+        telegram_link.heartbeat(url="")
+        _assert(pinged == [], "no heartbeat URL: no ping")
+        telegram_link.heartbeat(url="https://hc.example/abc")
+        _assert(pinged == ["https://hc.example/abc"], "the heartbeat pings its URL")
+        requests.get = refuse
+        telegram_link.heartbeat(url="https://hc.example/abc")
+        _assert(True, "a ping that does not go is quiet")
     finally:
         requests.get = saved
     print("all telegram link checks passed")

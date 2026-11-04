@@ -11,6 +11,11 @@ blip (one failed probe, no role exit) says nothing. A line that cannot go
 stays and goes with the next probe that answers. In memory: a restart of the
 supervisor forgets an outage (start_notice says whether that stop was clean).
 On the server only, in a thread of its own: it never delays or fails a start.
+
+A server that is gone altogether (down, no network for hours) cannot say so
+itself. With `heartbeatUrl` in constants.py (a dead man's switch such as
+healthchecks.io) every probe that answers pings it: the service tells the
+creator when the pings stop. Unset: no ping.
 Lock: python app/core/test_telegram_link.py
 """
 import threading
@@ -36,6 +41,20 @@ def bot_api_answers(token=None) -> bool:
     return reply.status_code < 500
 
 
+def heartbeat(url=None):
+    """Ping the dead man's switch; quiet when it does not answer (it alerts on its own)."""
+    import requests
+    if url is None:
+        import config
+        url = config.heartbeat_url
+    if not url:
+        return
+    try:
+        requests.get(url, timeout=PROBE_TIMEOUT)
+    except requests.RequestException as e:
+        logger.warn("Heartbeat ping failed:", type(e).__name__)  # the URL is the check's secret: never logged
+
+
 def _clock(stamp, ref) -> str:
     """'14:21', or '29.10 23:50' when it is not ref's day."""
     moment, day = time.localtime(stamp), time.localtime(ref)
@@ -55,8 +74,9 @@ def outage_text(since, until, exits) -> str:
 
 
 class LinkWatch:
-    def __init__(self, probe=bot_api_answers, send=None, now=time.time):
+    def __init__(self, probe=bot_api_answers, send=None, now=time.time, beat=heartbeat):
         self.probe = probe
+        self.beat = beat
         self.send = send
         self.now = now
         self.down_since = None
@@ -85,6 +105,11 @@ class LinkWatch:
                     logger.warn("Telegram link: the Bot API does not answer")
                 self.failed += 1
                 return
+        try:
+            self.beat()
+        except Exception as e:  # a broken ping never holds back the outage line
+            logger.err("Heartbeat:", type(e).__name__)
+        with self._lock:
             if self.down_since is not None:
                 if self.failed >= MIN_FAILED or self.exits:
                     text = outage_text(self.down_since, now, self.exits)

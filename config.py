@@ -24,6 +24,9 @@ trust_rss_podcasts = bool(getattr(constants, 'trustRssPodcasts', True))
 # Read-only token for GET /api/diag/* (admin API). Unset or shorter than 32
 # chars: the endpoints answer 404. Never commit it: constants.py only.
 diag_token = getattr(constants, 'diagToken', None) or None
+# A dead man's switch URL (e.g. a healthchecks.io check): pinged every minute while the
+# Bot API answers (app/core/telegram_link.py). Unset: no ping. constants.py only.
+heartbeat_url = getattr(constants, 'heartbeatUrl', None) or ''
 # AI episode summaries (app/service/ai): off until the key and the model are set in constants.py.
 # The summary goes through OpenRouter; the model is its id there, e.g. "provider/model-name".
 openrouter_api_key = getattr(constants, 'openrouterApiKey', None) or ''
