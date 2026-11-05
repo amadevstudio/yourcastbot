@@ -21,14 +21,17 @@ the audio: most listeners never tap, they get episodes; without it Amplitude
 saw them as gone). Each carries the user's running plan level as the user
 property `plan` (0: none), so any chart can be split by plan.
 """
+import math
+
 from db.connection import connect_sqlite
 from lib.tools.logger import logger
 
 DIGEST_SOURCE = 'd'  # the `s` key of a digest's Listen button
 # the `s` key of the pay buttons under the end of a plan and the win-back messages
 REMINDER_SOURCE, PLAN_OFF_SOURCE, WINBACK_SOURCE = 'd3', 'po', 'wb'
+LIMIT_SOURCE = 'lim'  # the pay buttons under the free episode limit
 SOURCES = {DIGEST_SOURCE: 'digest', REMINDER_SOURCE: 'reminder', PLAN_OFF_SOURCE: 'plan_off',
-           WINBACK_SOURCE: 'winback'}
+           WINBACK_SOURCE: 'winback', LIMIT_SOURCE: 'free_limit'}
 
 
 def _analytics():
@@ -138,6 +141,14 @@ def plan_reminder_sent(telegram_id, level, days_left, offer, shows, database=Non
 def winback_sent(telegram_id, stage, offer, database=None) -> bool:
     """A win-back message went out (stage 0: a week after the plan stopped, 1: a month)."""
     return track(telegram_id, 'winback_sent', {'stage': int(stage), 'offer': bool(offer)}, database)
+
+
+def free_limit_hit(telegram_id, limit, quiet, wait_seconds, database=None) -> bool:
+    """A click was not queued: the free week's episodes (limit 'week') or a trial's day ('trial')
+    are used up. quiet: no message went (the newest episode after a subscription); hours: until
+    the next one."""
+    return track(telegram_id, 'free_limit_hit', {
+        'limit': limit, 'quiet': bool(quiet), 'hours': math.ceil(wait_seconds / 3600)}, database)
 
 
 def tap_properties(button_data) -> dict:

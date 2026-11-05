@@ -72,6 +72,10 @@ def test_plan_off(db):
         analytics_events.winback_sent(1001, 1, False, db)
         _assert(fake.queued[-1]['command'] == 'winback_sent'
                 and fake.queued[-1]['event_properties'] == {'stage': 1, 'offer': False}, "so is a win-back message")
+        analytics_events.free_limit_hit(1001, 'week', False, 30 * 3600 + 1, db)
+        _assert(fake.queued[-1]['command'] == 'free_limit_hit' and fake.queued[-1]['event_properties'] == {
+                    'limit': 'week', 'quiet': False, 'hours': 31},
+                "a click the free limit stopped is counted, with the hours until the next episode")
         sqlite3.connect(db).executescript(
             "INSERT INTO payment_history(user_id, status) VALUES (7, 'paid');")
         analytics_events.plan_off(1001, 3, db)
@@ -84,7 +88,7 @@ def test_plan_off(db):
 def test_tap_source():
     _assert(analytics_events.tap_properties({'tp': 'rec', 's': 'd'}) == {'source': 'digest'},
             "a digest's Listen tap carries its source")
-    for key, source in (('d3', 'reminder'), ('po', 'plan_off'), ('wb', 'winback')):
+    for key, source in (('d3', 'reminder'), ('po', 'plan_off'), ('wb', 'winback'), ('lim', 'free_limit')):
         _assert(analytics_events.tap_properties({'tp': 'bs_stars_pay', 's': key}) == {'source': source},
                 "a pay button under %s carries its source" % source)
     _assert(analytics_events.tap_properties({'tp': 'rec'}) == {} and analytics_events.tap_properties(None) == {},

@@ -19,6 +19,7 @@ from app.core.balancers import recordSender
 from app.core.message.navigationBuilder import determine_search_query_and_page, get_full_message_navigation, \
     FullMessageNavigation
 from app.core.sender import outbox, send_record_helper
+from app.service import analytics_events
 from app.service.record import free_limit
 from app.i18n.messages import get_message, standartSymbols, emojiCodes, get_message_rtd
 from app.repository.storage import storage
@@ -649,10 +650,11 @@ def send_record_direct(
     open_links = outbox.open_user_rec_links(chat_id)
     if quiet and len(open_links) >= LATEST_OPEN_LIMIT:
         return False  # several podcasts ticked at once: a few episodes, not a flood
-    limit_message = free_limit.click_limit(chat_id, link, open_links, lang_code)
-    if limit_message is not None:
+    hit = free_limit.limit_hit(chat_id, link, open_links)
+    if hit is not None:
         if not quiet:
-            render_messages(chat_id, [limit_message])
+            render_messages(chat_id, [free_limit.hit_message(hit, lang_code)])
+        analytics_events.free_limit_hit(chat_id, hit.limit, quiet, hit.wait)
         return False
 
     outbox.enqueue_user_rec(

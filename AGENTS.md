@@ -849,7 +849,8 @@ without it Amplitude counted them as gone). These carry the running plan's
 level as the user property `plan` (0: none). A digest's Listen button carries
 `"s": "d"` (compact JSON, within 64 bytes), so its tap has
 `source: digest`; the pay buttons of D-3, plan-off and win-back carry `d3`,
-`po`, `wb` (`source: reminder`, `plan_off`, `winback`). A link `t.me/<bot>?start=src_<name>` (a launch post:
+`po`, `wb` (`source: reminder`, `plan_off`, `winback`), those of the free
+episode limit `lim` (`source: free_limit`; the stop itself is `free_limit_hit`). A link `t.me/<bot>?start=src_<name>` (a launch post:
 `src_ph`, `src_x`) is a bare /start (the welcome screen), never an action; a
 user it signs up keeps it (`users.flags` `source`, the first link only), and
 `new_user` carries `link_source`, also as the user property (lock:
@@ -984,6 +985,10 @@ refresh, the episode list and the digest text are not limited; the
 digest's "Listen" is a click like any other. At the limit the click is
 not queued: the message lists every plan with its Stars price, Relay
 first, plus the page of plans (Storefront rules: no SKU hidden).
+Each stop is the Amplitude event `free_limit_hit {limit: week|trial, quiet,
+hours}` (quiet: the newest episode after a subscription, no message), sent
+after the answer; the limit's buttons carry `s: lim` (`source: free_limit`):
+on 2026-11-05 22 free users met the cap in two weeks and none paid, unseen.
 Lock: `python app/service/record/test_free_limit.py` (CD gate; the message
 part runs where the bot's requirements are installed).
 
