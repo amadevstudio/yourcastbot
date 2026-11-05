@@ -215,6 +215,12 @@ def run_jobs():
     t_payment_effects.start()
     watched.append(t_payment_effects)
 
+    # Stars payments taken back, a chargeback without a service message too: the bot's transactions, daily
+    from app.service.payment.stars_refund import refund_watcher
+    t_stars_refunds = threading.Thread(target=refund_watcher, name="Stars refunds", daemon=True)
+    t_stars_refunds.start()
+    watched.append(t_stars_refunds)
+
     from app.admin_web.mail_jobs import ensure_table as ensure_mail_table
     from app.admin_web.mailer import mailer_loop
     ensure_mail_table()

@@ -49,6 +49,7 @@ jobs:
           python3 app/jobs/test_relay_remind.py
           python3 app/jobs/test_winback.py
           python3 app/jobs/test_payment_effects.py
+          python3 app/service/payment/test_stars_refund.py
           python3 app/jobs/test_tariff_tick.py
           python3 app/service/record/test_caption.py
           python3 lib/telegram/test_rich_message.py

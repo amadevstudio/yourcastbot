@@ -22,7 +22,7 @@ from app.routes import router_tools
 from app.routes.routes_list import AvailableActions
 from app.routes.ptypes import Chat, User, ForwardedFrom, Message, Callback, HandleInThreadParams, Inline
 from app.routes.routes import AvailableRoutes, RouteMap
-from app.service.payment import starsPaymentModule
+from app.service.payment import starsPaymentModule, stars_refund
 from app.service.podcast import opml
 from lib.python import dict_tools
 
@@ -187,6 +187,22 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
                 getattr(action.charge, 'provider_charge_id', None),
                 recurring=recurring,
                 subscription_until=until.timestamp() if until else None))
+
+    @thonbot.on(events.Raw((tl_types.UpdateNewMessage, tl_types.UpdateNewChannelMessage)))
+    async def telegram_stars_refunded_payment(update):
+        message = getattr(update, 'message', None)
+        action = getattr(message, 'action', None)
+        if not isinstance(action, tl_types.MessageActionPaymentRefunded):
+            return
+        charge_id = getattr(getattr(action, 'charge', None), 'id', None)
+        if charge_id is None:
+            logger.err("Telegram Stars refund without charge id")
+            return
+        # the charge id names the payment and its user (db/stars_refund.py)
+        refund = await asyncio.get_running_loop().run_in_executor(
+            None, stars_refund.process_refund, charge_id, 'message')
+        if refund is None:
+            logger.warn("Telegram Stars refund of no paid payment", charge_id, get_payment_chat_id(message))
 
     # Outer middlewares
     # Catch all message when under maintenance
