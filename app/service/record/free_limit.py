@@ -14,11 +14,14 @@ are not limited.
 At the limit the click is not queued: the user gets every plan with its
 Stars price, Relay first, and the page of plans (other ways to pay) next to
 them (storefront rules: no SKU hidden). At the trial's limit: Relay's invoice
-(paying lifts the limit at once) and change-plan.
+(paying lifts the limit at once) and change-plan. Each stop is an Amplitude
+event (`free_limit_hit`) and the buttons carry `s: lim`, so the limit's
+funnel (stop, invoice, payment) can be read.
 Lock: python app/service/record/test_free_limit.py
 """
 import math
 import time
+from typing import NamedTuple, Optional
 
 from config import db_path, free_rec_per_week, trial_rec_per_day
 from db import usage
@@ -69,17 +72,36 @@ def trial_check(chat_id, link, open_links=(), now=None, database=None, limit=Non
     return False, max(wait, 60)
 
 
-def click_limit(chat_id, link, open_links, language_code, now=None, database=None):
-    """None when this click may be queued, else the message to send instead:
-    no plan, the free week's; a plan nobody paid for, the trial's day; a paid plan, none."""
+class Hit(NamedTuple):
+    """A click the limit stops: 'week' (no plan) or 'trial' (a plan nobody paid for)."""
+    limit: str
+    wait: float
+    level: int
+
+
+def limit_hit(chat_id, link, open_links, now=None, database=None) -> Optional[Hit]:
+    """None when this click may be queued: no plan, the free week's; a plan nobody paid
+    for, the trial's day; a paid plan, none."""
     level = running_plan_level(chat_id, database)
     if level <= 0:
         allowed, wait = check(chat_id, link, open_links, plan=False, now=now, database=database)
-        return None if allowed else limit_message(language_code, wait)
+        return None if allowed else Hit('week', wait, level)
     if paid_for_days(chat_id, database):
         return None
     allowed, wait = trial_check(chat_id, link, open_links, now=now, database=database)
-    return None if allowed else trial_limit_message(language_code, wait, level)
+    return None if allowed else Hit('trial', wait, level)
+
+
+def hit_message(hit: Hit, language_code) -> dict:
+    if hit.limit == 'week':
+        return limit_message(language_code, hit.wait)
+    return trial_limit_message(language_code, hit.wait, hit.level)
+
+
+def click_limit(chat_id, link, open_links, language_code, now=None, database=None):
+    """None when this click may be queued, else the message to send instead."""
+    hit = limit_hit(chat_id, link, open_links, now=now, database=database)
+    return None if hit is None else hit_message(hit, language_code)
 
 
 def wait_text(seconds, language_code) -> str:
@@ -90,9 +112,10 @@ def wait_text(seconds, language_code) -> str:
     return get_message("freeEpisodesNextDays", language_code).format(days=math.ceil(hours / 24))
 
 
-def plans_offer(language_code) -> tuple[str, list]:
+def plans_offer(language_code, source=None) -> tuple[str, list]:
     """(text, keyboard rows): every plan with its Stars price, Relay first, then the
-    page of plans for the other ways to pay. Shared by the limits that sell a plan."""
+    page of plans for the other ways to pay. Shared by the limits that sell a plan.
+    source: the message's key in analytics_events.SOURCES, on every button (`s`)."""
     from app.i18n.messages import get_message
     from app.service.payment.paymentModule import get_tariff_description_and_button_text
     from app.service.payment.starsPaymentModule import get_stars_withdraw_rate_x1000, stars_for_balance
@@ -105,6 +128,7 @@ def plans_offer(language_code) -> tuple[str, list]:
     finally:
         db_users.close()
     rate_x1000 = get_stars_withdraw_rate_x1000()
+    tag = {'s': source} if source else {}
 
     text = ""
     rows = []
@@ -113,19 +137,20 @@ def plans_offer(language_code) -> tuple[str, list]:
         text += texts['text'] + "\n\n"
         rows.append([{
             'text': "%s – %d ⭐" % (texts['button_text'], stars_for_balance(tariff['price'], rate_x1000)),
-            'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id']},
+            'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id'], **tag},
         }])
     rows.append([{'text': get_message("tariffs", language_code),
-                  'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}])
+                  'callback_data': {'tp': CHANGE_PLAN_CALLBACK, **tag}}])
     return text, rows
 
 
 def limit_message(language_code, wait_seconds, limit=None):
     """The limit as a message: every plan, Stars price on its button, Relay first."""
     from app.i18n.messages import get_message
+    from app.service.analytics_events import LIMIT_SOURCE
 
     limit = free_rec_per_week if limit is None else limit
-    plans_text, rows = plans_offer(language_code)
+    plans_text, rows = plans_offer(language_code, source=LIMIT_SOURCE)
     text = "<b>" + get_message("freeEpisodesUsed", language_code).format(limit=limit) + "</b>\n"
     text += wait_text(wait_seconds, language_code) + " "
     text += get_message("freeEpisodesAnyPlan", language_code) + "\n\n" + plans_text
@@ -138,11 +163,13 @@ def trial_limit_message(language_code, wait_seconds, level, limit=None):
     limit at once), else the Stars page (an invoice would only top up the running plan),
     and change-plan next to it."""
     from app.i18n.messages import get_message
+    from app.service.analytics_events import LIMIT_SOURCE
     from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL, relay_nudge_markup
 
     limit = trial_rec_per_day if limit is None else limit
     text = "<b>" + get_message("trialEpisodesUsed", language_code).format(limit=limit) + "</b>\n" \
         + get_message("trialEpisodesNext", language_code).format(hours=math.ceil(wait_seconds / 3600))
     return {'type': 'text', 'text': text,
-            'reply_markup': relay_nudge_markup(language_code, invoice=int(level) == SHOWCASE_TARIFF_LEVEL),
+            'reply_markup': relay_nudge_markup(language_code, invoice=int(level) == SHOWCASE_TARIFF_LEVEL,
+                                               source=LIMIT_SOURCE),
             'disable_web_page_preview': True}

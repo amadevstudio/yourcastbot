@@ -114,6 +114,12 @@ def _check_trial(db):
     rows = [row[0]['callback_data'] for row in message['reply_markup']]
     _assert(rows[0]['tp'] == 'bs_stars_pay' and rows[1]['tp'] == 'bs_trfs',
             "Relay's invoice (paying lifts the limit at once), change-plan next to it")
+    _assert(all(row.get('s') == 'lim' for row in rows), "their taps say they came from the limit")
+    hit = free_limit.limit_hit(TRIAL, 'https://cdn/next.mp3', (), now=now, database=db)
+    _assert(hit is not None and hit.limit == 'trial' and hit.level == 3 and hit.wait > 0,
+            "the stop names the trial's limit, for the event")
+    _assert(free_limit.limit_hit(PAYER, 'https://cdn/next.mp3', (), now=now, database=db) is None,
+            "a payer is never stopped")
     _assert(free_limit.click_limit(PAYER, 'https://cdn/next.mp3', (), 'en', now=now, database=db) is None,
             "a plan someone paid for has no limit")
     _assert(free_limit.click_limit(PAID, 'https://cdn/next.mp3', (), 'en', now=now, database=db) is not None,
@@ -121,7 +127,7 @@ def _check_trial(db):
     _assert(free_limit.click_limit(TRIAL, 'https://cdn/many1.mp3', (), 'en', now=now, database=db) is None,
             "an episode the trial already had today goes again")
     bronze = free_limit.trial_limit_message('en', 3600, 1)
-    _assert(bronze['reply_markup'][0][0]['callback_data'] == {'tp': 'bs_stars'},
+    _assert(bronze['reply_markup'][0][0]['callback_data'] == {'tp': 'bs_stars', 's': 'lim'},
             "a Bronze trial gets the Stars page, not an invoice that would only top Bronze up")
 
 
@@ -156,7 +162,8 @@ def _check_message():
     buttons = [row[0]['callback_data'] for row in message['reply_markup']]
     _assert([b.get('v') for b in buttons[:3]] == [3, 1, 2], "every plan is offered, Relay first")
     _assert(all(b['tp'] == 'bs_stars_pay' for b in buttons[:3]), "each plan opens its Stars invoice")
-    _assert(buttons[3] == {'tp': 'bs_trfs'}, "the page of plans (other ways to pay) stays")
+    _assert(buttons[3] == {'tp': 'bs_trfs', 's': 'lim'}, "the page of plans (other ways to pay) stays")
+    _assert(all(b.get('s') == 'lim' for b in buttons), "every button says it came from the limit")
     _assert('385 ⭐' in message['reply_markup'][0][0]['text'], "Relay shows its Stars price")
     _assert('10 of 10' in message['text'] and '30 h' in message['text'], "the limit and the wait are named")
 

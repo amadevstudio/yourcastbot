@@ -54,8 +54,11 @@ def test_behaviour(recs):
     recs.app.service.podcast.podcast.podcast_info_query = lambda *a, **k: (state['root'], {'itunesLink': None})
     recs.outbox.open_user_rec_links = lambda chat_id: state['open']
     recs.outbox.enqueue_user_rec = lambda job: queued.append(job)
-    recs.free_limit.click_limit = lambda chat_id, link, open_links, lang: (
-        None if state['allowed'] else {'type': 'text', 'text': 'limit'})
+    hits = []
+    recs.free_limit.limit_hit = lambda chat_id, link, open_links: (
+        None if state['allowed'] else recs.free_limit.Hit('week', 3600, 0))
+    recs.free_limit.hit_message = lambda hit, lang: {'type': 'text', 'text': 'limit'}
+    recs.analytics_events.free_limit_hit = lambda chat_id, limit, quiet, wait: hits.append((chat_id, limit, quiet))
     recs.render_messages = lambda chat_id, structures, *a, **k: renders.append(structures)
 
     _assert(recs.send_latest_episode(7, 1001, 'en') is True, "a subscription queues an episode")
@@ -67,6 +70,7 @@ def test_behaviour(recs):
     state['allowed'] = False
     _assert(recs.send_latest_episode(7, 1001, 'en') is False and not renders,
             "at the free limit: nothing, and no limit message for a gift nobody asked for")
+    _assert(hits == [(1001, 'week', True)], "the stop is counted, as a quiet one")
     state['allowed'], state['open'] = True, {'a', 'b', 'c'}
     _assert(recs.send_latest_episode(7, 1001, 'en') is False, "three clicks waiting: no more (several ticks at once)")
     state['open'], state['root'] = set(), False
