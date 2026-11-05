@@ -2,18 +2,20 @@ import json
 
 from app.controller.general.notify import notify
 import config
-from app.routes.message_tools import go_back_inline_button, go_back_inline_markup
+from app.routes.message_tools import go_back_inline_button
 from lib.telegram.general.message_master import render_messages, InlineButtonData
-from app.i18n.messages import get_message, emojiCodes
+from app.i18n.messages import get_message
 from app.repository.storage import storage
 from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_info_message, get_tariff_description_and_button_text,
-    get_tariff_params_by_tg, prepare_price, pretty_float_string)
+    get_tariff_params_by_tg, prepare_price)
+from app.service.payment.paymentSafeModule import money_text
 from config import crypto_bot_api_key, crypto_bot_api_key_test
 from config import db_path
 from db.sqliteAdapter import SQLighter
 from lib.api.payment.cryptoBotApi import CryptoBotApi
 from app.routes.ptypes import ControllerParams
+from lib.tools.logger import logger
 
 if config.server:
     cryptoBotApi = CryptoBotApi(crypto_bot_api_key)
@@ -21,58 +23,37 @@ else:
     cryptoBotApi = CryptoBotApi(crypto_bot_api_key_test, "testnet")
 
 
-# страница оплаты через криптобот с выбором валюты
+# A CryptoBot invoice is in dollars: the payer picks the coin in CryptoBot
+# (any it accepts), so the bot keeps no rates. Converting by getExchangeRates
+# failed for a coin without a USD rate (USDC, 2026-11-04: every amount was
+# "parsing error"). A plan's button carries the plan (`pl`): with no plan
+# running the payment turns it on, as a Stars invoice does
+# (applyPaymentReplenishmentOnce planId); a typed amount tops the balance up.
+FIAT = 'USD'
+
+
+# страница оплаты через криптобот: планы и своя сумма
 def open_subscription_page(data: ControllerParams):
     tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'])
-
-    sub_msg = get_sub_message(data['language_code'], tariff['level'], tariff['price'], balance, time_left, notify_left)
-
+    page = get_amount_input_message(
+        data['language_code'], tariff['id'], balance, time_left, notify_left)
     render_messages(data['chat_id'], [{
-        'type': 'text', 'text': sub_msg['message'], 'reply_markup': sub_msg['markup'],
+        'type': 'text', 'text': page['message'], 'reply_markup': page['markup'],
         'disable_web_page_preview': True}])
-
-
-def get_sub_message(language_code, tariff_lvl, tariff_price, balance, time_left, notify_left):
-    message_text = "<b>" + get_message("bot_sub_page_header", language_code) + "</b>\n\n"
-    message_text += get_message("bot_sub_cryptobot_page_body", language_code) + "\n\n"
-
-    tariff_str = decode_tariff(tariff_lvl, language_code)
-    message_text += get_tariff_info_message(
-        tariff_str, balance, tariff_price, time_left, notify_left, language_code)
-
-    menu_key_board: list[list[InlineButtonData]] = []
-
-    asset_row: list[InlineButtonData] = []
-    for asset in cryptoBotApi.AVAILABLE_ASSETS:
-        asset_row.append({'text': cryptoBotApi.ASSETS[asset],
-                          'callback_data': {'tp': 'bs_crbot_input', 'asset': asset}})
-        if len(asset_row) == 2:  # 2 coins per row
-            menu_key_board.append(asset_row)
-            asset_row = []
-    if len(asset_row) != 0:
-        menu_key_board.append(asset_row)
-
-    menu_key_board.append([go_back_inline_button(language_code)])
-
-    result = {
-        "message": message_text,
-        "markup": menu_key_board
-    }
-    return result
 
 
 def is_test_payment(payer_chat_id: int):
     return payer_chat_id == config.creatorId
 
 
-# страница пополнения баланса
+# страница пополнения баланса: своя сумма текстом или кнопка плана
 def open_amount_input_page(data: ControllerParams):
-    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'])
-
     storage.set_user_state_data(data['chat_id'], 'bs_crbot_input', data['united_data'])
 
+    plan_id = None
     if data['callback'] is not None:
         summa = data['united_data'].get('v', None)
+        plan_id = data['united_data'].get('pl', None)
         test_mode = False
 
     elif data['message'] is not None:
@@ -91,14 +72,11 @@ def open_amount_input_page(data: ControllerParams):
     else:
         return False
 
-    # First page open, show amounts
+    # "Another amount" (or a coin button of an old page): the amount is typed here
     if summa is None:
-        tariff_payment_message = get_amount_input_message(
-            data['language_code'], tariff['id'], balance, time_left, notify_left)
-
         render_messages(data['chat_id'], [{
-            'type': 'text', 'text': tariff_payment_message['message'],
-            'reply_markup': tariff_payment_message['markup']}])
+            'type': 'text', 'text': get_message("bot_sub_cryptobot_amount_input", data['language_code']),
+            'reply_markup': [[go_back_inline_button(data['language_code'])]]}])
 
         return
 
@@ -115,7 +93,7 @@ def open_amount_input_page(data: ControllerParams):
         return False
 
     generated_data = generate_subscription_link(
-        data['chat_id'], data['language_code'], summa_cents, data['united_data']['asset'], test_mode)
+        data['chat_id'], data['language_code'], summa_cents, test_mode, plan_id=plan_id)
 
     if "error" in generated_data:
         if generated_data["error"] == "AMOUNT_TOO_SMALL":
@@ -128,11 +106,12 @@ def open_amount_input_page(data: ControllerParams):
 
     render_messages(data['chat_id'], [{
         'type': 'text', 'text': generated_data['message'],
-        'reply_markup': go_back_inline_markup(data['language_code']), 'disable_web_page_preview': True}])
+        'reply_markup': generated_data['markup'], 'disable_web_page_preview': True}])
 
 
 def get_amount_input_message(language_code, tariff_id, balance, time_left, notify_left):
-    message_text = get_message("bot_sub_cryptobot_amount_input", language_code) + "\n\n"
+    """The plans with their prices as buttons (each its plan's invoice) and "Another amount" (typed, a top-up)."""
+    message_text = get_message("cryptobotPlans", language_code) + "\n\n"
 
     menu_keyboard: list[list[InlineButtonData]] = []
 
@@ -154,8 +133,9 @@ def get_amount_input_message(language_code, tariff_id, balance, time_left, notif
         message_text += tariff_texts["text"] + "\n\n"
 
         # кнопки
-        cbd = {"tp": "bs_crbot_input", "v": prepare_price(tariff['price'])}
-        button_text = str(prepare_price(tariff['price'])) + emojiCodes.get('dollar', '')
+        cbd = {"tp": "bs_crbot_input", "v": prepare_price(tariff['price']), "pl": tariff['id']}
+        button_text = get_message("tariff_lvl" + str(tariff['level']), language_code) \
+            + " – $" + money_text(tariff['price'])
         if tariff_id == tariff['id']:
             button_text += " (" + get_message("curr_tariff", language_code).lower() + ")"
         menu_keyboard.append([{'text': button_text, 'callback_data': cbd}])
@@ -163,6 +143,8 @@ def get_amount_input_message(language_code, tariff_id, balance, time_left, notif
     tariff_str = decode_tariff(tariff_lvl, language_code)
     message_text += get_tariff_info_message(tariff_str, balance, tariff_price, time_left, notify_left, language_code)
 
+    menu_keyboard.append([{'text': get_message('cryptobotOtherAmount', language_code),
+                           'callback_data': {'tp': 'bs_crbot_input'}}])
     menu_keyboard.append([go_back_inline_button(language_code)])
 
     result = {
@@ -172,43 +154,38 @@ def get_amount_input_message(language_code, tariff_id, balance, time_left, notif
     return result
 
 
-def generate_subscription_link(
-        chat_id, language_code, summa_cents, asset, test_mode=False):
-    exchange_rate = cryptoBotApi.getExchangeRate(asset)
-
-    if exchange_rate is None:
-        return {"error": ""}
-
-    summa = prepare_price(summa_cents)
-
-    exchange_rate_usd = float(exchange_rate['USD'])
-    asset_amount = summa / exchange_rate_usd
-
+def invoice_params(chat_id, summa_cents, plan_id=None, test_mode=False) -> dict:
+    """createInvoice's arguments: dollars, any coin, what the webhook credits in the payload."""
     payload = {"tgid": chat_id, "amount": summa_cents}
-    if not config.server or test_mode:
+    if plan_id:
+        payload["v"] = int(plan_id)
+    if test_mode:
         payload["net"] = "testnet"
-        local_crypto_bot_api = CryptoBotApi(crypto_bot_api_key_test, "testnet")
-    else:
-        local_crypto_bot_api = cryptoBotApi
+    return {"asset": None, "amount": "%.2f" % (summa_cents / 100), "currency_type": "fiat", "fiat": FIAT,
+            "payload": json.dumps(payload)}
+
+
+def generate_subscription_link(
+        chat_id, language_code, summa_cents, test_mode=False, plan_id=None):
+    test_mode = test_mode or not config.server
+    local_crypto_bot_api = CryptoBotApi(crypto_bot_api_key_test, "testnet") if test_mode else cryptoBotApi
 
     try:
         invoice_data = local_crypto_bot_api.createInvoice(
-            asset, asset_amount,
-            payload=json.dumps(payload))
+            **invoice_params(chat_id, summa_cents, plan_id, test_mode))
     except LookupError as e:
         try:
             error = json.loads(str(e))
             return {"error": error["api_error"]["name"]}
         except Exception:
             return {"error": ""}
+    except Exception as e:  # no network, a timeout, an answer that is not JSON
+        logger.warn("cryptobot invoice:", type(e).__name__, e)
+        return {"error": ""}
 
-    payment_link = invoice_data['pay_url']
-
-    asset_amount = pretty_float_string(asset_amount)
-
-    message = get_message(
-        "cryptobot_generated_link_page", language_code).format(
-        summa=summa, asset=asset, assetAmount=asset_amount,
-        exchangeRateUSD=exchange_rate_usd, paymentLink=payment_link)
-
-    return {"message": message}
+    message = get_message("cryptobotInvoice", language_code).format(summa=money_text(summa_cents))
+    # pay_url is the old name of bot_invoice_url (Crypto Pay API)
+    link = invoice_data.get('bot_invoice_url') or invoice_data['pay_url']
+    markup = [[{'text': get_message('pay', language_code), 'url': link}],
+              [go_back_inline_button(language_code)]]
+    return {"message": message, "markup": markup}

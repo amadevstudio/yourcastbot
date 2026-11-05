@@ -2873,23 +2873,6 @@ messages = {
             "ro_msg": "Não foi possível criar a fatura do Telegram Stars. Tente novamente mais tarde."
         }
     },
-    "bot_sub_cryptobot_page_body": {
-        "ru": {
-            "ro_msg": "Выберите криптовалюту, которая есть "
-                      "на вашем счёте Crypto Bot\n\n"
-                      "Подробнее: @cryptobot"
-        },
-        "en": {
-            "ro_msg": "Select the cryptocurrency that you have "
-                      "on your Crypto Bot account\n\n"
-                      "More details: @cryptobot"
-        },
-        "pt_BR": {
-            "ro_msg": "Selecione a criptomoeda que você tem "
-                      "na sua conta do Crypto Bot\n\n"
-                      "Para maiores detalhes, acesse @cryptobot"
-        }
-    },
     "bot_sub_cryptobot_amount_input": {
         "ru": {
             "ro_msg": "Введите значение, на которое вы хотите пополнить ваш баланс "
@@ -2902,29 +2885,6 @@ messages = {
         "pt-BR": {
             "ro_msg": "Insira o valor que deseja recarregar o saldo do bot "
                       "em dólares " + emojiCodes.get('dollar') + "(dólares)"
-        }
-    },
-    "cryptobot_generated_link_page": {
-        "ru": {
-            "ro_msg": "Вы собираетесь пополнить баланс бота на {summa}"
-                      + emojiCodes.get('dollar') + "(долларов) с помощью "
-                                                   "{assetAmount} {asset}\n\n"
-                                                   "Обменный курс: 1 {asset} = {exchangeRateUSD}$ (долларов)\n\n"
-                                                   "Нажмите на ссылку, чтобы произвести оплату: {paymentLink}"
-        },
-        "en": {
-            "ro_msg": "You are going to top up the bot balance by {summa}"
-                      + emojiCodes.get('dollar') + "(dollars) using "
-                                                   "{assetAmount} {asset}\n\n"
-                                                   "Exchange rate: 1 {asset} = {exchangeRateUSD}$ (dollars)\n\n"
-                                                   "Click on the link to make payment: {paymentLink}"
-        },
-        "pt-BR": {
-            "ro_msg": "Você vai recarregar o saldo do bot em {summa}"
-                      + emojiCodes.get('dollar') + "(dólares) usando "
-                                                   "{assetAmount} {asset}\n\n"
-                                                   "Taxa de câmbio: 1 {asset} = {exchangeRateUSD}$ (dólares)\n\n"
-                                                   "Clique no link para efetuar o pagamento: {paymentLink}"
         }
     },
     "payViaPatreon": {

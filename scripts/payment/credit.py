@@ -14,15 +14,18 @@ import config
 from db.sqliteAdapter import SQLighter
 
 
-def credit_once(tg_id, service: str, invoice_id, cents: int, invoice_hash=None):
+def credit_once(tg_id, service: str, invoice_id, cents: int, invoice_hash=None, plan_id=None, plan_price=None):
     """(user, result): result['already_processed'] for an invoice credited before,
-    else result_mode, current_tariff and current_subscription for the message."""
+    else result_mode, current_tariff and current_subscription for the message.
+    plan_id / plan_price: a plan's invoice turns that plan on when none runs
+    (applyPaymentReplenishmentOnce planId / planPrice)."""
     db = SQLighter(config.db_path)
     try:
         user = db.get_user_by_tg(tg_id)
         result = db.applyPaymentReplenishmentOnce(
             user, service, invoice_id, datetime.datetime.now(), int(cents), config.tariff_period,
-            invoiceHash=invoice_hash, status="paid")
+            invoiceHash=invoice_hash, status="paid",
+            planId=int(plan_id) if plan_id else None, planPrice=plan_price if plan_id else None)
         return user, result
     finally:
         db.close()

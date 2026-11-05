@@ -156,21 +156,10 @@ EXTRA_TRANSLATIONS = {
         "de": "Die Telegram-Stars-Rechnung konnte nicht erstellt werden. Bitte versuche es später erneut.",
         "he": "לא ניתן היה ליצור חשבונית Telegram Stars. נסה שוב מאוחר יותר.",
     },
-    "bot_sub_cryptobot_page_body": {
-        "pt-BR": "Selecione a criptomoeda que você tem na sua conta do Crypto Bot\n\nMais detalhes: @cryptobot",
-        "es": "Seleccione la criptomoneda que tiene en su cuenta de Crypto Bot\n\nMás detalles: @cryptobot",
-        "de": "Wähle die Kryptowährung, die du auf deinem Crypto-Bot-Konto hast\n\nMehr Details: @cryptobot",
-        "he": "בחר את המטבע הדיגיטלי שיש לך בחשבון Crypto Bot\n\nפרטים נוספים: @cryptobot",
-    },
     "bot_sub_cryptobot_amount_input": {
         "es": "Introduzca el importe con el que desea recargar el saldo del bot en USD 💲(dólares)",
         "de": "Gib den Betrag ein, um den du dein Bot-Guthaben in USD aufladen möchtest 💲(Dollar)",
         "he": "הזן את הסכום שברצונך להטעין ליתרת הבוט ב-USD 💲(דולרים)",
-    },
-    "cryptobot_generated_link_page": {
-        "es": "Va a recargar el saldo del bot con {summa}💲(dólares) usando {assetAmount} {asset}\n\nTipo de cambio: 1 {asset} = {exchangeRateUSD}$ (dólares)\n\nPulse el enlace para realizar el pago: {paymentLink}",
-        "de": "Du lädst das Bot-Guthaben um {summa}💲(Dollar) mit {assetAmount} {asset} auf\n\nWechselkurs: 1 {asset} = {exchangeRateUSD}$ (Dollar)\n\nKlicke auf den Link, um zu bezahlen: {paymentLink}",
-        "he": "אתה עומד להטעין את יתרת הבוט ב-{summa}💲(דולרים) באמצעות {assetAmount} {asset}\n\nשער חליפין: 1 {asset} = {exchangeRateUSD}$ (דולרים)\n\nלחץ על הקישור כדי לשלם: {paymentLink}",
     },
     "payViaPatreon": {
         "pt-BR": "Assinar pelo Patreon",

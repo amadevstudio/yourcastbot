@@ -346,6 +346,22 @@ ROWS = {
         'Este plan está elegido, pero no activo: faltan ${missing} en el saldo. Recarga y el plan se activa.',
         'Dieser Tarif ist gewählt, aber nicht aktiv: dem Guthaben fehlen ${missing}. Lade auf, dann startet er.',
         'המסלול הזה נבחר אבל לא פעיל: חסרים ביתרה ‎${missing}. הטעינו והמסלול יופעל.'),
+    'cryptobotPlans': (
+        '<b>CryptoBot</b>\nОплата в любой монете, которую принимает CryptoBot: USDT, TON, BTC, USDC и другие. Если план сейчас не действует, оплаченный план включится сразу, иначе деньги лягут на баланс.',
+        '<b>CryptoBot</b>\nPay in any coin CryptoBot accepts: USDT, TON, BTC, USDC and more. With no plan running, the plan you pay for turns on at once; otherwise the money goes to your balance.',
+        '<b>CryptoBot</b>\nPague com qualquer moeda que o CryptoBot aceita: USDT, TON, BTC, USDC e outras. Sem plano ativo, o plano pago é ativado na hora; caso contrário, o dinheiro vai para o saldo.',
+        '<b>CryptoBot</b>\nPaga con cualquier moneda que acepte CryptoBot: USDT, TON, BTC, USDC y más. Sin un plan activo, el plan que pagas se activa al instante; si no, el dinero va a tu saldo.',
+        '<b>CryptoBot</b>\nZahle mit jeder Münze, die CryptoBot annimmt: USDT, TON, BTC, USDC und mehr. Läuft gerade kein Tarif, wird der bezahlte sofort aktiviert; sonst geht das Geld aufs Guthaben.',
+        '<b>CryptoBot</b>\nתשלום בכל מטבע ש-CryptoBot מקבל: USDT, TON, BTC, USDC ועוד. אם אין מסלול פעיל, המסלול ששולם יופעל מיד; אחרת הכסף יעבור ליתרה.'),
+    'cryptobotOtherAmount': (
+        'Другая сумма', 'Another amount', 'Outro valor', 'Otra cantidad', 'Anderer Betrag', 'סכום אחר'),
+    'cryptobotInvoice': (
+        'Счёт на ${summa}. Монету выберете в CryptoBot.',
+        'Invoice for ${summa}. You pick the coin in CryptoBot.',
+        'Fatura de US${summa}. Você escolhe a moeda no CryptoBot.',
+        'Factura por ${summa}. Eliges la moneda en CryptoBot.',
+        'Rechnung über ${summa}. Die Münze wählst du in CryptoBot.',
+        'חשבון על ‎${summa}. את המטבע בוחרים ב-CryptoBot.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}
