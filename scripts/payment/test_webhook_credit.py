@@ -92,6 +92,15 @@ def _balance(path, tg):
         conn.close()
 
 
+def _plan(path, tg):
+    conn = sqlite3.connect(path)
+    try:
+        return tuple(conn.execute("SELECT ut.tariff_id, ut.balance, ut.time_left FROM user_tariff_cs ut "
+                                  "JOIN users u ON u.id = ut.uid WHERE u.telegramId = ?", (tg,)).fetchone())
+    finally:
+        conn.close()
+
+
 def _invite(path, invitee, inviter):
     from db.sqliteAdapter import SQLighter
     db = SQLighter(path)
@@ -126,10 +135,13 @@ def _b64(text):
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
-def _crypto(invoice_id, tg, cents):
+def _crypto(invoice_id, tg, cents, plan=None):
+    payload = {"tgid": tg, "amount": cents}
+    if plan:
+        payload["v"] = plan
     body = json.dumps({"update_type": "invoice_paid", "payload": {
         "invoice_id": invoice_id, "hash": "h%d" % invoice_id, "paid_at": "2026-10-23T10:00:00Z",
-        "status": "paid", "payload": json.dumps({"tgid": tg, "amount": cents})}})
+        "status": "paid", "payload": json.dumps(payload)}})
     key = hashlib.sha256(b"crypto-key").digest()
     signature = hmac.new(key, body.encode("utf-8"), hashlib.sha256).hexdigest()
     _run("cryptoBot.py", [_ROOT, _b64(body), _b64(json.dumps({"Crypto-Pay-Api-Signature": signature}))])
@@ -168,11 +180,16 @@ def main():
         _assert(_balance(path, 6001) == (500, 1), "the same invoice delivered again credits nothing")
         _crypto(78, 6001, 300)
         _assert(_balance(path, 6001) == (800, 2), "another invoice is credited")
+        _crypto(80, 6008, 500, plan=3)
+        _assert(_plan(path, 6008) == (3, 0, 720),
+                "a plan's CryptoBot invoice turns that plan on when none runs (as Stars)")
+        _crypto(81, 6008, 500, plan=3)
+        _assert(_plan(path, 6008) == (3, 500, 720), "with the plan running it only tops the balance up")
 
         _robokassa(9001, 6002, "4.99")
-        _assert(_balance(path, 6002) == (499, 3), "a Robokassa invoice is credited, to the cent")
+        _assert(_balance(path, 6002) == (499, 5), "a Robokassa invoice is credited, to the cent")
         _robokassa(9001, 6002, "4.99")
-        _assert(_balance(path, 6002) == (499, 3), "the same signed notice again credits nothing")
+        _assert(_balance(path, 6002) == (499, 5), "the same signed notice again credits nothing")
 
         # A payer who blocked the bot: the notice fails, the inviter still gets the bonus
         # (before, Telethon's error skipped everything after the payer's notice).

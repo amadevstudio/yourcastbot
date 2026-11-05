@@ -146,9 +146,7 @@ FA_MESSAGES = {
     "telegram_stars_invoice_title": "شارژ موجودی",
     "telegram_stars_invoice_description": "شارژ موجودی به مبلغ ${balance} با {stars} ⭐. نرخ: 1000 ⭐ ≈ ${rate}.",
     "telegram_stars_invoice_error": "ساخت صورت‌حساب Telegram Stars ممکن نشد. لطفاً بعداً دوباره تلاش کنید.",
-    "bot_sub_cryptobot_page_body": "رمزارزی را که در حساب Crypto Bot دارید انتخاب کنید\n\nجزئیات بیشتر: @cryptobot",
     "bot_sub_cryptobot_amount_input": "مبلغی را که می‌خواهید موجودی ربات را با آن شارژ کنید به دلار آمریکا وارد کنید 💲(دلار)",
-    "cryptobot_generated_link_page": "می‌خواهید موجودی ربات را به مبلغ {summa}💲(دلار) با {assetAmount} {asset} شارژ کنید\n\nنرخ تبدیل: 1 {asset} = {exchangeRateUSD}$ (دلار)\n\nبرای پرداخت روی لینک بزنید: {paymentLink}",
     "payViaPatreon": "اشتراک از طریق Patreon",
     "thisMonthHasAlreadyBeenReplenished": "موجودی این ماه قبلاً شارژ شده است",
     "noDataUpdatePatreon": "دادهٔ جدیدی نیست، ایمیلتان را بررسی کنید و بعداً دوباره تلاش کنید",
@@ -379,6 +377,9 @@ FA_MESSAGES = {
     "starsSubNotForPlan": "اشتراک همان طرحی را تمدید می‌کند که برایش پرداخت می‌کنید. اول به آن طرح بروید.",
     "starsSubCanceledOnChange": "🔁 اشتراک Stars شما برای {plan} لغو شد: پرداخت‌هایش برای طرح قبلی بود. دورهٔ پرداخت‌شده و موجودی‌تان می‌مانند. با دکمهٔ زیر مشترک طرح جدید شوید.",
     "starsSubCancelFailed": "⚠️ اشتراک Stars شما برای طرح قبلی همچنان پرداخت برمی‌دارد. در تلگرام لغوش کنید: تنظیمات ← My Stars.",
+    "cryptobotPlans": "<b>CryptoBot</b>\nپرداخت با هر ارزی که CryptoBot می‌پذیرد: USDT، TON، BTC، USDC و بیشتر. اگر طرحی فعال نباشد، طرحی که پرداخت می‌کنید بلافاصله فعال می‌شود؛ وگرنه پول به موجودی می‌رود.",
+    "cryptobotOtherAmount": "مبلغ دیگر",
+    "cryptobotInvoice": "صورتحساب ‎${summa}. ارز را در CryptoBot انتخاب می‌کنید.",
 }
 
 # built from config values, as messages.py builds the other languages

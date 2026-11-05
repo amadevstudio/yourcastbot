@@ -57,7 +57,7 @@ class CryptoBotApi:
 			if params[paramName] is None:
 				del params[paramName]
 
-		answer = requests.get(url, headers=headers, params=params)
+		answer = requests.get(url, headers=headers, params=params, timeout=15)
 
 		data = answer.json()
 
@@ -109,13 +109,17 @@ class CryptoBotApi:
 	def createInvoice(
 		self, asset, amount,
 		description=None, paid_btn_name=None, paid_btn_url=None, payload=None,
-		allow_comments=None, allow_anonymous=None
+		allow_comments=None, allow_anonymous=None,
+		currency_type=None, fiat=None, accepted_assets=None
 	):
+		# currency_type "fiat": the amount is in `fiat` (USD) and the payer picks
+		# the coin in CryptoBot (accepted_assets, comma separated; default: all)
 		params = {
 			"asset": asset, "amount": amount,
 			"description": description, "paid_btn_name": paid_btn_name,
 			"paid_btn_url": paid_btn_url, "payload": payload,
-			"allow_comments": allow_comments, "allow_anonymous": allow_anonymous
+			"allow_comments": allow_comments, "allow_anonymous": allow_anonymous,
+			"currency_type": currency_type, "fiat": fiat, "accepted_assets": accepted_assets
 		}
 
 		return self.__makeRequest("createInvoice", params)

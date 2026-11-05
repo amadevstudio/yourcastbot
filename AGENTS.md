@@ -243,6 +243,16 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
   D-3, plan-off and the digest keep the Stars page of every plan.
   Locks: `python app/service/payment/test_paywall.py` (bot requirements),
   `python app/service/payment/test_storefront.py`.
+- CryptoBot (`cryptoBotPaymentModule`) bills dollars: `createInvoice` with
+  `currency_type=fiat`, `fiat=USD`, every coin CryptoBot accepts; the payer
+  picks the coin there. The bot keeps no rates: converting by
+  `getExchangeRates` failed for a coin without a USD rate (USDC, 2026-11-04:
+  every amount was "parsing error"). The page lists every plan with its price,
+  each button that plan's invoice (payload `v`: with no plan running the
+  webhook turns it on, as Stars, `credit_once(plan_id=, plan_price=)`), and
+  "Another amount" (typed, a top-up). The webhook credits the payload's cents,
+  never the coin. Locks: `python scripts/payment/test_webhook_credit.py`,
+  `python tools/botsim/test_botsim.py` (bot requirements).
 - Prepaid months and offers (`app/service/payment/offers.py`) credit the full
   price and charge the discounted one; the tick renews month by month from
   the balance, so nothing else knows about them. The Stars payload carries

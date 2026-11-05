@@ -84,6 +84,46 @@ def test_storefront(user):
     _assert(once[:2] == ['bs_stars', 'bs_cryptobot'], "one-time payment: Stars first, CryptoBot kept")
 
 
+def test_cryptobot(user):
+    """CryptoBot bills dollars, the coin is picked there: no rate (USDC had none and every amount failed)."""
+    from app.service.payment import cryptoBotPaymentModule as crypto
+    invoices = []
+
+    class Api:
+        def createInvoice(self, **params):
+            invoices.append(params)
+            return {'pay_url': 'https://t.me/CryptoBot?start=IV%d' % len(invoices)}
+    saved = crypto.cryptoBotApi, crypto.CryptoBotApi
+    crypto.cryptoBotApi = Api()
+    crypto.CryptoBotApi = lambda *args: Api()
+    try:
+        user.send('/subscription')
+        user.tap('💳')
+        page = user.tap('Crypto Bot')
+        data = [json.loads(button['callback_data']) for row in page.edited[0].buttons for button in row
+                if button.get('callback_data')]
+        plans = [d for d in data if d.get('tp') == 'bs_crbot_input' and d.get('pl')]
+        _assert(len(plans) >= 2 and not any('asset' in d for d in data) and 'USDC' in page.edited[0].text,
+                "CryptoBot: the plans at once, no coin to pick first (CryptoBot asks for it)")
+        _assert(any(text == 'Another amount' for text in page.edited[0].button_texts())
+                and data[-1].get('tp') == 'bck', "another amount, and Back")
+        relay = next(d for d in plans if d['pl'] == 3)
+        step = user.tap_data(json.dumps(relay))
+        invoice = invoices[-1]
+        _assert(invoice['currency_type'] == 'fiat' and invoice['fiat'] == 'USD' and invoice['amount'] == '5.00'
+                and json.loads(invoice['payload']) == {'tgid': USER, 'amount': 500, 'v': 3, 'net': 'testnet'},
+                "a plan's invoice: dollars, any coin, the plan in the payload")
+        sent = (step.edited or step.new)[0]
+        _assert('$5' in sent.text and sent.buttons[0][0].get('url', '').endswith('IV1') and not step.errors,
+                "the invoice comes as a Pay button")
+        user.tap_data(json.dumps({'tp': 'bs_crbot_input'}))
+        typed = user.send('3')
+        _assert(invoices[-1]['amount'] == '3.00' and 'v' not in json.loads(invoices[-1]['payload'])
+                and not typed.errors, "a typed amount is a top-up, no plan")
+    finally:
+        crypto.cryptoBotApi, crypto.CryptoBotApi = saved
+
+
 def test_opml_offline(user):
     opml = (b'<opml version="2.0"><body>'
             b'<outline type="rss" text="Offline Show" xmlUrl="https://feeds.example.com/offline.xml"/>'
@@ -302,6 +342,7 @@ def main():
         test_start(user)
         test_text_is_a_search(user)
         test_storefront(user)
+        test_cryptobot(user)
         test_opml_offline(user)
         test_summary_and_question(user)
         test_transcript_alone(user)

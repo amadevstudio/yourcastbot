@@ -157,7 +157,11 @@ def income_processing():
 			return
 
 		# the invoice is checked and written with the credit: a retried webhook credits nothing
-		user, credited = credit_once(chat_tg_id, "cryptoBot", invoice_id, amountCents, invoice_hash)
+		# a plan's invoice (`v`) turns that plan on when none runs, as a Stars invoice does
+		plan_id = customPayload.get("v")
+		user, credited = credit_once(
+			chat_tg_id, "cryptoBot", invoice_id, amountCents, invoice_hash,
+			plan_id=plan_id, plan_price=int(amountCents) if plan_id else None)
 		user_language = user['lang'] if user['lang'] is not None else 'en'
 		invoice_already_paid = credited['already_processed']
 		if not invoice_already_paid:
@@ -178,7 +182,7 @@ def income_processing():
 								"cryptoBot paid invoice=%s tgid=%s amount=%s\n"
 								% (invoice_id, chat_tg_id, amountCents))
 
-				analytics_events.track(user['telegramId'], 'payment', {'method': 'cryptoBot', 'amount_cents': int(amountCents)}, sync=True)
+				analytics_events.track(user['telegramId'], 'payment', {'method': 'cryptoBot', 'amount_cents': int(amountCents), 'plan': plan_id}, sync=True)
 				refer_id, message = award_referrer_for_payment(user['telegramId'])
 				if message is not None:
 					with bot:
