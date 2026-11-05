@@ -161,6 +161,28 @@ remove plan management or hide Bronze/Silver.
   network for 25 minutes on 2026-10-30). A blocked user is marked deleted and
   leaves both. Lock: `python app/jobs/test_relay_remind.py`.
 
+## Stars refunds
+
+A Stars payment can be taken back: by the bot (`refundStarPayment`) or by the
+buyer's chargeback at Apple, Google or a bank, which Telegram deducts from the
+bot's balance (Bot API, `StarTransaction`) without asking us. Before 2026-11-05
+the bot ignored both: the Stars went back and the plan stayed.
+`db/stars_refund.py` takes the payment back once (its row turns `refunded`,
+checked and changed in one transaction): what it credited leaves the balance;
+money the tick already turned into days gives back the hours it bought at the
+running plan's price; what those do not cover stays as a balance below zero,
+which the next payment pays first and the tick never renews from. A plan left
+with no hours is off at once (no tick plan-off notice: the refund notice says
+it). `refunded` is not `paid`, so revenue, payers, `ever_paid` and the paid AI
+models drop it. The inviter's referral days stay. Two ways in
+(`app/service/payment/stars_refund.py`): the service message
+(`MessageActionPaymentRefunded`, bot role) and, since the Bot API does not say
+a chargeback sends one, the bot's transactions once a day in the jobs role
+(`getStarTransactions`: an outgoing transaction whose id is a paid charge id).
+The chat hears what was taken, the creator gets an `#info`. A Stars
+subscription is left as it is.
+Lock: `python app/service/payment/test_stars_refund.py` (CD gate).
+
 ## Payment effects
 
 What a payment sets off once credited (`db/payment_effects.py`): one row per
