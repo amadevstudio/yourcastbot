@@ -52,6 +52,21 @@ def main():
     ok(user.send('/menu'))
     help_step = ok(user.tap('🎙 Voice messages'))
     assert '24 hours' in help_step.new[-1].text
+    menu_user = sim.BotSim(user_id=8105, lang='en')
+    ok(menu_user.send('/start'))
+    ok(menu_user.send('/menu'))
+    ok(menu_user.tap('🎙 Voice messages'))
+    ok(menu_user.tap('Voice summary language'))
+    ok(menu_user.tap('In my Telegram language'))
+    assert voice.preference(8105) == 'mine'
+    ok(menu_user.tap('Back'))
+    assert '24 hours' in menu_user.last().text
+    assert any('In my Telegram language' in text for text in menu_user.last().button_texts())
+    # The menu entry remains available after the first choice; settings use the same flag.
+    ok(menu_user.tap('Voice summary language'))
+    ok(menu_user.tap('In the recording’s language'))
+    assert voice.preference(8105) == 'original'
+    ok(menu_user.tap('Back'))
     ok(user.send('/settings'))
 
     events = []
