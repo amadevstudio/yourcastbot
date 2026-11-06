@@ -1252,7 +1252,10 @@ it to `pending`. The final request starts when every recording left `uploading` 
 recording that cannot be had or is over the limit fails its run, is not charged, and the chat is told. Audio
 that never comes is given up after an hour. The card shows the stage ("Downloading n of m", then "n of m
 done"; edits of one card are throttled). Bot downloads; jobs uses `transcript.from_file`, never the bot's
-Telethon session. The voice summary language is its own setting (`voice_summary_language`). Existing
+Telethon session. The voice summary language is its own setting (`voice_summary_language`): the card asks it until
+the first summary is started (then it is stored, and only /settings has it); the model is told to answer in the
+speaker's language (the English system prompt made Russian recordings come back in English). One recording has
+nothing to group: its Summary / Text button starts it at once, no each/together step. Existing
 manual-before-automatic FIFO, leases and retries remain.
 Full text and cached replay do not charge audio twice;
 questions use the existing daily quota. The personal-message prompt is separate from podcasts.
