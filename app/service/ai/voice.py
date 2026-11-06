@@ -167,22 +167,31 @@ def refresh(ref, chat_id, lang, gap=0.0):
         batches.set_message(ref, sent[0]['id'])
 
 
+def help_screen(chat_id, lang):
+    from app.i18n.messages import get_message as tr
+    choice = 'summaryLanguageMine' if preference(chat_id) == 'mine' else 'voiceLanguageOriginal'
+    language_button = button('voiceLanguage', lang, ':helpLang')
+    language_button['text'] += ' · ' + tr(choice, lang)
+    return {'type': 'text', 'text': tr('voiceHelp', lang), 'reply_markup': [[language_button]]}
+
+
 def help_message(data):
-    from app.i18n.messages import get_message
     from lib.telegram.general.message_master import outer_sender
-    outer_sender(data['chat_id'], [{'type': 'text', 'text': get_message('voiceHelp', data['language_code'])}])
+    outer_sender(data['chat_id'], [help_screen(data['chat_id'], data['language_code'])])
 
 
-def language_screen(chat_id, lang, ref=''):
+def language_screen(chat_id, lang, ref='', from_help=False):
     from app.i18n.messages import get_message as tr
     current = preference(chat_id)
     rows = []
     for choice, key in (('original', 'voiceLanguageOriginal'), ('mine', 'summaryLanguageMine')):
-        item = button(key, lang, ref + ':lang:' + choice)
+        item = button(key, lang, ref + (':helpLang:' if from_help else ':lang:') + choice)
         if (current or 'original') == choice:
             item['text'] = '✅ ' + item['text']
         rows.append([item])
-    if ref:
+    if from_help:
+        rows.append([button('voiceBack', lang, ':help')])
+    elif ref:
         rows.append([button('voiceBack', lang, ref + ':show')])
     else:
         rows.append([{'text': tr('voiceBack', lang), 'callback_data': {'tp': 'setts'}}])
@@ -226,7 +235,10 @@ def callback(data):
         notify(data['callback'], data['message'], tr('screenOutdated', lang))
         return
     notify(data['callback'], data['message'], '')
-    if action == 'lang':
+    if action == 'help' and not ref:
+        message_editor(chat, help_screen(chat, lang), data['message'].message_id)
+        return
+    if action in ('lang', 'helpLang'):
         if len(parts) == 3 and parts[2] in ('original', 'mine'):
             from config import db_path
             from db.sqliteAdapter import SQLighter
@@ -235,7 +247,7 @@ def callback(data):
                 db.set_user_flag(chat, LANGUAGE_FLAG, parts[2])
             finally:
                 db.close()
-        message_editor(chat, language_screen(chat, lang, ref), data['message'].message_id)
+        message_editor(chat, language_screen(chat, lang, ref, from_help=action == 'helpLang'), data['message'].message_id)
         return
     if not ref:
         return
