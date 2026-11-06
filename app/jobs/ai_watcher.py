@@ -48,8 +48,16 @@ def episode_transcript(episode, session, progress=None, speakers=False) -> tuple
     cached. `speakers`: the paid model, which also makes Whisper's cached one again.
     `progress(stage, done, total)` follows the transcription."""
     cached = ai.transcript(episode['ref'])
-    if cached is not None and not (speakers and cached['source'] == transcript.WHISPER):
+    upgrade = speakers and cached is not None and cached['source'] == transcript.WHISPER
+    if cached is not None and (episode.get('owner_chat') is not None or not upgrade):
         return transcript.Transcript(cached['text'], cached['source'], 0.0, cached['seconds']), False
+    if episode.get('owner_chat') is not None:
+        from app.service.ai import voice
+        found = transcript.from_file(session, voice.audio_path(episode['ref']), progress,
+                                     paid_models.transcribe_model(True) if speakers else None)
+        ai.save_transcript(episode['ref'], found.text, found.source, found.cost_usd, found.seconds)
+        voice.remove_audio(episode['ref'])
+        return found, True
     found, root = None, None
     try:
         root = transcript.episode_feed(episode)
@@ -99,19 +107,23 @@ def deliver(request, message, send=outer_sender, edit=message_editor):
     if request.get('status_message'):
         try:
             edit(request['chat_id'], message, request['status_message'])
-            return
+            return True
         except Exception as e:  # deleted by the user, too old: a message of its own
             logger.warn('ai_watcher/status result:', type(e).__name__, e)
-    send(request['chat_id'], [message])
+    return bool(send(request['chat_id'], [message]))
 
 
 def process(request, session, send=outer_sender, edit=message_editor, send_file=send_transcript_file,
             delete=message_deleter) -> int:
     """Send the summary (or the transcript); the seconds of quota the request is charged in the end."""
+    from db import voice as batches
+    if request.get('kind') in (*batches.FINAL_KINDS, batches.PART):
+        from app.service.ai import voice_worker
+        return voice_worker.process(request, session, send, edit, send_file)
     if request.get('kind') == ai.TRANSCRIPT:
         return process_transcript(request, session, edit, send_file, delete)
     progress = status_updater(request, edit)
-    episode = ai.episode(request['ref'])
+    episode = ai.accessible_episode(request['ref'], request['chat_id'])
     if episode is None:
         raise summary.SummaryUnavailable('episode is not known any more')
     cached = ai.summary(request['ref'], request['lang'])
@@ -130,7 +142,9 @@ def process(request, session, send=outer_sender, edit=message_editor, send_file=
         model = paid_models.summary_model(request['chat_id'])
         try:
             text, summary_cost = summary.summarize(
-                found.text, episode['title'], episode['show'], request['lang'], session=session, model=model)
+                found.text, episode['title'], episode['show'], request['lang'], session=session, model=model,
+                **({'voice': 'batch' if episode['ref'].startswith('b_') else True}
+                   if episode.get('owner_chat') is not None else {}))
         except Exception:
             # the transcript is cached and billed: a retry reads it for free, so book it now
             if found.cost_usd:
@@ -138,11 +152,17 @@ def process(request, session, send=outer_sender, edit=message_editor, send_file=
             raise
         cost = found.cost_usd + summary_cost
         ai.save_summary(request['ref'], request['lang'], text, cost)
+    if episode.get('owner_chat') is not None:
+        from app.service.ai.voice_worker import charged as voice_charge
+        charged = voice_charge(request)
     usage.record_ai(request['chat_id'], request['ref'], cost)
-    deliver(request, summary_message(episode, text, request['ref'], request.get('reply_to'), request.get('ui_lang')),
-            send, edit)
+    delivered = deliver(request, summary_message(episode, text, request['ref'], request.get('reply_to'), request.get('ui_lang')),
+                        send, edit)
+    if episode.get('owner_chat') is not None and not delivered:
+        raise summary.SummaryUnavailable('voice summary was not delivered')
     analytics_events.track(request['chat_id'], 'summary_ready',
-                           {'cached': cached is not None, 'seconds': charged, 'model': model})
+                           {'cached': cached is not None, 'seconds': charged, 'model': model,
+                            'source': 'voice' if episode.get('owner_chat') is not None else 'podcast'})
     return charged
 
 
@@ -150,7 +170,7 @@ def process_transcript(request, session, edit=message_editor, send_file=send_tra
                        delete=message_deleter) -> int:
     """The transcript alone, as a file replying to the audio; the status line goes. Charged the audio
     transcribed, nothing when the transcript was made before or came from the feed."""
-    episode = ai.episode(request['ref'])
+    episode = ai.accessible_episode(request['ref'], request['chat_id'])
     if episode is None:
         raise summary.SummaryUnavailable('episode is not known any more')
     wants = paid_models.speakers(request['chat_id'])
@@ -159,8 +179,13 @@ def process_transcript(request, session, edit=message_editor, send_file=send_tra
     _note_paid(request, found, made)
     charged = (round(found.seconds) or request['seconds']) if made else 0
     usage.record_transcript(request['chat_id'], request['ref'], found.cost_usd if made else 0.0)
-    send_file(request['chat_id'], episode, found.text, found.source, request.get('ui_lang'), request.get('reply_to'),
+    delivered = send_file(request['chat_id'], episode, found.text, found.source, request.get('ui_lang'), request.get('reply_to'),
               over_quota=wants and not speakers)
+    if episode.get('owner_chat') is not None:
+        from app.service.ai.voice_worker import charged as voice_charge
+        charged = voice_charge(request)
+        if not delivered:
+            raise summary.SummaryUnavailable('voice transcript was not delivered')
     if request.get('status_message'):
         try:
             delete(request['chat_id'], request['status_message'])
@@ -172,14 +197,36 @@ def process_transcript(request, session, edit=message_editor, send_file=send_tra
     return charged
 
 
+def _voice_member(ref):
+    return ai._one(None, 'SELECT 1 FROM voice_items WHERE ref=? LIMIT 1', (ref,)) is not None
+
+
+def _refresh_voice_batch(request):
+    from db import voice as batches
+    if request.get('kind') in batches.FINAL_KINDS:
+        from app.service.ai import voice
+        try:
+            voice.refresh(request['ref'], request['chat_id'], request.get('ui_lang'))
+        except Exception as error:
+            logger.warn('voice batch card:', type(error).__name__)
+
+
 FAILED = {ai.SUMMARY: 'summaryFailed', ai.TRANSCRIPT: 'transcriptFailed'}
 
 
 def ai_watcher():
     logger.log('AI watcher started')
     session = requests.Session()
+    cleaned_at = 0
     while True:
         try:
+            if time.time() - cleaned_at > 3600:
+                from app.service.ai import voice
+                try:
+                    voice.cleanup()
+                except Exception as error:
+                    logger.warn('voice cleanup:', type(error).__name__)
+                cleaned_at = time.time()
             request = ai.claim()
             if request is None:
                 time.sleep(IDLE_SLEEP_SECONDS)
@@ -187,10 +234,15 @@ def ai_watcher():
             try:
                 charged = process(request, session)
                 ai.finish(request['id'], 'done', seconds=charged)
+                _refresh_voice_batch(request)
             except Exception as e:
                 logger.warn('ai_watcher/request', request['id'], e)
                 # a summary nobody tapped for (a new episode) fails quietly
                 if ai.retry_or_fail(request) and not request.get('auto'):
+                    from app.service.ai import voice
+                    if not _voice_member(request['ref']):
+                        voice.remove_audio(request['ref'])
+                    _refresh_voice_batch(request)
                     try:
                         deliver(request, {'type': 'text', 'text': get_message(
                             FAILED.get(request.get('kind'), 'summaryFailed'), request['ui_lang'])})

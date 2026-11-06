@@ -145,6 +145,9 @@ def welcome_message(language_code, top_list, ticked=(), mark=0, note=None) -> li
     rows.append([{'text': get_message('goToSearch', language_code), 'callback_data': {'tp': 'search'}}])
     rows.append([{'text': get_message('skipWelcome', language_code), 'callback_data': {'tp': 'menu'}}])
     text = get_message('welcome', language_code)
+    from app.service.ai import summary
+    if summary.enabled():
+        text += '\n\n' + get_message('voiceWelcome', language_code)
     if top_list:
         text += '\n' + get_message('welcomePickHint', language_code)
     if note:

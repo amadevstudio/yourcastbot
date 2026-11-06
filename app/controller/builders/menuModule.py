@@ -93,6 +93,11 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
         {'text': get_message("channelConnect", language_code), 'callback_data': "{\"tp\": \"myTgChannels\"}"},
         {'text': get_message("add_by_rss", language_code), 'callback_data': "{\"tp\": \"addChByRss\"}"}])
 
+    from app.service.ai import summary
+    if summary.enabled():
+        menu_keyboard.append([{'text': get_message('voiceButton', language_code),
+                               'callback_data': {'tp': 'voiceHelp'}}])
+
     b1: InlineButtonData = {'text': get_message("bot_subscription", language_code),
                             'callback_data': "{\"tp\": \"botSub\"}"}
     b2: InlineButtonData = {'text': get_message("settings", language_code),

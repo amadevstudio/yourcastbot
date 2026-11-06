@@ -51,6 +51,26 @@ CREATE TABLE IF NOT EXISTS ai_requests (
 );
 CREATE INDEX IF NOT EXISTS ai_requests_chat ON ai_requests(chat_id, created_at);
 CREATE INDEX IF NOT EXISTS ai_requests_status ON ai_requests(status, id);
+
+CREATE TABLE IF NOT EXISTS voice_batches (
+    ref TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'collecting',
+    created_at REAL NOT NULL, expires_at REAL NOT NULL, revision INTEGER NOT NULL DEFAULT 0,
+    selected TEXT, message_id INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS voice_batch_open ON voice_batches(chat_id) WHERE state='collecting';
+CREATE TABLE IF NOT EXISTS voice_items (
+    id INTEGER PRIMARY KEY, batch TEXT NOT NULL, ref TEXT NOT NULL, message_id INTEGER NOT NULL,
+    seconds INTEGER NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'downloading',
+    UNIQUE(batch, message_id)
+);
+CREATE INDEX IF NOT EXISTS voice_items_batch ON voice_items(batch, message_id);
+CREATE TABLE IF NOT EXISTS voice_runs (
+    request_id INTEGER PRIMARY KEY, batch TEXT NOT NULL, output TEXT NOT NULL, mode TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS voice_run_items (
+    run INTEGER NOT NULL, item INTEGER NOT NULL, request_id INTEGER NOT NULL,
+    PRIMARY KEY(run, item)
+);
 '''
 
 
@@ -63,6 +83,8 @@ def connect(database=None):
             c.executescript(SCHEMA)
             # descr: the feed's description, shown by "Show notes" under a brief episode
             _add_column(c, 'ai_episodes', 'descr', 'descr TEXT')
+            _add_column(c, 'ai_episodes', 'owner_chat', 'owner_chat INTEGER')
+            _add_column(c, 'ai_episodes', 'expires_at', 'expires_at REAL')
             columns = {row[1] for row in c.execute('PRAGMA table_info(ai_requests)')}
             # reply_to: the audio message the summary answers (its times play the episode from there);
             # auto: queued for a new episode (app/service/ai/auto.py), after every tap
@@ -133,6 +155,34 @@ def episode(ref, database=None):
     `channel_found` (the channel's id while it is in the database)."""
     return _one(database, 'SELECT e.*, c.rss_link feed_url, c.id channel_found FROM ai_episodes e '
                           'LEFT JOIN channels c ON c.id = e.channel_id WHERE e.ref=?', (ref,))
+
+
+def accessible_episode(ref, chat_id, database=None):
+    """Private media are visible only to their owner, including every callback and worker."""
+    found = episode(ref, database)
+    if found and found.get('owner_chat') is not None:
+        if found['owner_chat'] != int(chat_id) or (found.get('expires_at') or 0) <= time.time():
+            return None
+    return found
+
+
+def remember_voice(ref, chat_id, title, seconds, database=None):
+    _write(database, 'INSERT OR IGNORE INTO ai_episodes '
+           '(ref,link,title,show,seen_at,seconds,owner_chat,expires_at) VALUES (?,?,?,?,?,?,?,?)',
+           (ref, '', title, '', time.time(), seconds, int(chat_id), time.time() + 7 * 86400))
+
+
+def prune_voices(database=None, now=None):
+    now = time.time() if now is None else now
+    c = connect(database)
+    try:
+        with c:
+            for table in ('ai_transcripts', 'ai_summaries'):
+                c.execute('DELETE FROM ' + table + ' WHERE ref IN '
+                          '(SELECT ref FROM ai_episodes WHERE owner_chat IS NOT NULL AND expires_at<=?)', (now,))
+            c.execute('DELETE FROM ai_episodes WHERE owner_chat IS NOT NULL AND expires_at<=?', (now,))
+    finally:
+        c.close()
 
 
 def transcript(ref, database=None):

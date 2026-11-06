@@ -22,7 +22,7 @@ def show_description(data):
         ref = str(json.loads(data['callback'].data)['r'])
     except (AttributeError, TypeError, ValueError, KeyError):
         ref = None
-    episode = ai.episode(ref) if ref else None
+    episode = ai.accessible_episode(ref, data['chat_id']) if ref else None
     if episode is None:
         notify(data['callback'], data['message'], get_message('screenOutdated', language_code))
         return

@@ -62,9 +62,9 @@ def summary_language_buttons(language_code, preference) -> list[list[InlineButto
     return rows
 
 
-def _stored_summary_language(user):
+def _stored_summary_language(user, flag=ai_summary.LANGUAGE_FLAG):
     try:
-        return json.loads(user['flags'] or '{}').get(ai_summary.LANGUAGE_FLAG)
+        return json.loads(user['flags'] or '{}').get(flag)
     except (KeyError, IndexError, TypeError, ValueError, AttributeError):
         return None
 
@@ -138,6 +138,13 @@ def construct_settings_message(language_code, chat_id) -> list[MessageStructures
             'text': get_message("settingsSummaryTitle", language_code) + " · "
                     + summary_language_label(language_code, _stored_summary_language(user)),
             'callback_data': {'tp': 'settsSum'},
+        }])
+    if ai_summary.enabled():
+        keyboard.append([{
+            'text': get_message('voiceLanguage', language_code) + ' · '
+                    + get_message('summaryLanguageMine' if _stored_summary_language(user, 'voice_summary_language') == 'mine'
+                                  else 'voiceLanguageOriginal', language_code),
+            'callback_data': {'tp': 'v', 'p': ':lang'},
         }])
     if show_digest_reminder_settings(has_bot_subscription):
         reminders_button: InlineButtonData = {

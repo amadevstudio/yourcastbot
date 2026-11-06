@@ -286,12 +286,20 @@ class FakeMessage:
         self.id, self.chat_id, self.text, self.raw_text = message_id, chat_id, text, text
         self.fwd_from, self.document, self.file, self._data = None, document, file, data
         self._sender_lang = sender_lang
+        self.voice = None
 
     async def get_sender(self):
         return _Sender(self._sender_lang)
 
-    async def download_media(self, file=None):
-        return self._data if file is bytes else None
+    async def download_media(self, file=None, progress_callback=None):
+        if file is bytes:
+            return self._data
+        if hasattr(file, 'write'):
+            file.write(self._data)
+            if progress_callback:
+                progress_callback(len(self._data), len(self._data))
+            return file
+        return None
 
 
 class FakeFile:

@@ -4920,6 +4920,9 @@ messages.update(_EPISODE_TEXT_TRANSLATIONS)
 from app.i18n.stars_subscription import TRANSLATIONS as _STARS_SUBSCRIPTION_TRANSLATIONS
 messages.update(_STARS_SUBSCRIPTION_TRANSLATIONS)
 
+from app.i18n.voice import TRANSLATIONS as _VOICE_TRANSLATIONS
+messages.update(_VOICE_TRANSLATIONS)
+
 # Persian last: every text of every table above (app/i18n/fa.py)
 from app.i18n.fa import FA_MESSAGES as _FA_MESSAGES, FA_ROUTED as _FA_ROUTED
 for _key, _text in _FA_MESSAGES.items():
