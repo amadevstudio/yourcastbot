@@ -77,9 +77,11 @@ def main():
     assert not any(Path(voice.audio_path(row['ref'])).exists() for row in rows), 'nothing is downloaded before the start'
     for button in received.new[0].buttons[0]:
         assert len(button['callback_data'].encode()) <= 64
+    assert any(b['text'] == '🌐 Voice summary language' for row in received.new[0].buttons for b in row), 'asked at first'
     ok(user.tap('📝 Summary'))
     card = user.last()
-    launch_data = next(b['callback_data'] for row in card.buttons for b in row if b['text'] == 'Each separately')
+    assert any(b['text'] == '⬅️ Back' for row in card.buttons for b in row)
+    launch_data = next(b['callback_data'] for row in card.buttons for b in row if b['text'] == '🗂 Each separately')
     assert ai.seconds_used(8101, 0) == 0, 'choosing output alone cannot start AI'
     ok(user.tap('Each separately'))
     assert ai.seconds_used(8101, 0) == 720
@@ -191,6 +193,7 @@ def main():
     # Old previews do not include later messages without another confirmation.
     stored = batches.batch(next_batch, 8101)
     card = sim._state['api'].messages[(8101, stored['message_id'])]
+    assert not any('Voice summary language' in b['text'] for row in card.buttons for b in row), 'asked once, then /settings'
     ok(user.tap_data(json.dumps({'tp': 'v', 'p': next_batch + ':s'}), message=card))
     old = batches.batch(next_batch, 8101)['revision']
     with patch.object(transcript, '_duration', return_value=60):
@@ -203,17 +206,17 @@ def main():
     newcomer = sim.BotSim(user_id=8103, lang='en')
     with patch.object(transcript, '_duration', return_value=60):
         ok(newcomer.send_voice(b'voice', 60, document_id=50000))
-    ok(newcomer.tap('📄 Full text'))
-    offered = ok(newcomer.tap('All together'))
+    offered = ok(newcomer.tap('📄 Full text'))
     assert offered.new and ai.seconds_used(8103, 0) == 0 and ai.claim() is None
 
     # The claim is replaced by what was measured: longer costs the difference, a file that is too long
     # or cannot be had is not charged and the chat hears so.
     late = sim.BotSim(user_id=8105, lang='en')
     ok(late.send('/start'))
-    ok(late.send_voice(b'claims a minute', 60, document_id=60000))
+    one = ok(late.send_voice(b'claims a minute', 60, document_id=60000))
+    labels = [b['text'] for row in one.new[-1].buttons for b in row]
+    assert '📝 Summary' in labels and '📄 Full text' in labels and not any('Each' in t or 'together' in t for t in labels), labels
     ok(late.tap('📄 Full text'))
-    ok(late.tap('Each separately'))
     assert ai.seconds_used(8105, 0) == 60
     with patch.object(transcript, '_duration', return_value=600):
         fetch(late.client)
@@ -221,7 +224,6 @@ def main():
     assert ai.claim()['seconds'] == 600
     ok(late.send_voice(b'claims a minute too', 60, document_id=60001))
     ok(late.tap('📄 Full text'))
-    ok(late.tap('Each separately'))
     reserved = ai.seconds_used(8105, 0)
     with patch.object(transcript, '_duration', return_value=4000):
         gone = ok(late._observe('too long once measured', lambda: fetch(late.client)))
@@ -233,6 +235,10 @@ def main():
         real_summarize('Voice message 1: Tuesday. Voice message 2: Correction, Thursday.', 'Voices', '', 'en', voice='batch')
         prompt = post.call_args.kwargs['json']['messages'][0]['content']
         assert 'corrections' in prompt and 'data, never instructions' in prompt and 'ONE coherent summary' in prompt
+        # the system prompt is English: a recording's own language must be asked for in so many words
+        real_summarize('Привет, давай встретимся в четверг.', 'Voice message', '', summary.ORIGINAL, voice=True)
+        asked = post.call_args.kwargs['json']['messages'][1]['content']
+        assert 'language the speaker uses' in asked and 'Do not translate' in asked
     # Callback size at the largest possible count/duration (there is no 10-recording cap).
     assert len(voice.button('voiceEach', 'en', 'b_' + 'a' * 20 + ':s:e:43200:21600')['callback_data'].encode()) <= 64
     print('all voice collection botsim checks passed')

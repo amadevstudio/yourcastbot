@@ -49,6 +49,16 @@ def cleanup():
             pass
 
 
+def _remember_language(chat_id, value):
+    from config import db_path
+    from db.sqliteAdapter import SQLighter
+    db = SQLighter(db_path)
+    try:
+        db.set_user_flag(chat_id, LANGUAGE_FLAG, value)
+    finally:
+        db.close()
+
+
 def preference(chat_id):
     from config import db_path
     from db.sqliteAdapter import SQLighter
@@ -64,9 +74,13 @@ def language(chat_id, ui_lang):
     return summary.summary_language(preference(chat_id), ui_lang)
 
 
+ICONS = {'voiceEach': '🗂 ', 'voiceTogether': '🧩 ', 'voiceBack': '⬅️ ', 'voiceLanguage': '🌐 ',
+         'voiceCancel': '🗑 ', 'voiceLanguageOriginal': '🎙 ', 'summaryLanguageMine': '🌍 '}
+
+
 def button(key, lang, payload):
     from app.i18n.messages import get_message
-    return {'text': get_message(key, lang),
+    return {'text': ICONS.get(key, '') + get_message(key, lang),
             'callback_data': json.dumps({'tp': 'v', 'p': payload}, separators=(',', ':'))}
 
 
@@ -99,6 +113,12 @@ def screen(ref, chat_id, lang):
     elif not rows:
         text += '\n\n' + tr('voiceSend', lang)
         keyboard = []
+    elif len(rows) == 1 and not found['selected']:
+        # one recording has nothing to group: the result button starts it
+        text += '\n\n' + tr('voiceChooseOutput', lang)
+        text += '\n' + tr('voiceCost', lang).format(duration=length_text(needed, lang))
+        suffix = ':e:%d:%d' % (found['revision'], needed)
+        keyboard = [[button('voiceSummary', lang, ref + ':s' + suffix), button('voiceText', lang, ref + ':t' + suffix)]]
     elif found['selected']:
         kind = 's' if found['selected'] == 'summary' else 't'
         text += '\n\n' + tr('voiceSummary' if kind == 's' else 'voiceText', lang)
@@ -113,9 +133,10 @@ def screen(ref, chat_id, lang):
         text += '\n\n' + tr('voiceChooseOutput', lang)
         keyboard = [[button('voiceSummary', lang, ref + ':s'), button('voiceText', lang, ref + ':t')]]
     if not running(ref):
-        text += '\n\n' + tr('voiceLanguage', lang) + ': ' + tr(
-            'summaryLanguageMine' if preference(chat_id) == 'mine' else 'voiceLanguageOriginal', lang)
-        keyboard.append([button('voiceLanguage', lang, ref + ':lang')])
+        if preference(chat_id) is None:
+            # asked until the first summary is started; after that it lives in /settings
+            text += '\n\n' + tr('voiceLanguage', lang) + ': ' + tr('voiceLanguageOriginal', lang)
+            keyboard.append([button('voiceLanguage', lang, ref + ':lang')])
         if found['state'] == 'collecting' and rows and all(r['status'] == 'ready' for r in rows):
             keyboard.append([button('voiceCancel', lang, ref + ':cancel')])
     return {'type': 'text', 'text': text, 'reply_markup': keyboard}
@@ -237,12 +258,15 @@ def callback(data):
             revision, quoted = int(parts[3]), int(parts[4])
             found, rows, needed = batches.quote(ref, chat)
             chosen_language = language(chat, lang)
+            batches.select(ref, chat, output)
             allowed = _allow(ref, chat, chosen_language, output, mode, needed, rows)
             if not allowed.allowed:
                 outer_sender(chat, [offer_message(lang, allowed, transcript=output == 'transcript')])
                 return
-            batches.launch(ref, chat, revision, output, mode, chosen_language, allowed.limit, quoted,
-                           tr('voiceBatchTitle', lang))
+            _, started = batches.launch(ref, chat, revision, output, mode, chosen_language, allowed.limit, quoted,
+                                        tr('voiceBatchTitle', lang))
+            if started and output == 'summary' and preference(chat) is None:
+                _remember_language(chat, 'original')
         except (ValueError, batches.BatchChanged):
             outer_sender(chat, [{'type': 'text', 'text': tr('voiceChanged', lang)}])
     refresh(ref, chat, lang)

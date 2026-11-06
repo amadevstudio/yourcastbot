@@ -123,7 +123,11 @@ def summary_language(preference, language_code) -> str:
     return code or 'en'
 
 
-def _language_instruction(language) -> str:
+def _language_instruction(language, voice=False) -> str:
+    if language == ORIGINAL and voice:
+        # the system prompt is English: without this a Russian message came back summarized in English
+        return ('Write the summary in the language the speaker uses in the transcript. '
+                'Do not translate it, and do not write in English unless the speaker does.')
     if language == ORIGINAL:
         return 'Write the summary in the language the episode is spoken in.'
     return 'Write the summary in the language with the code "%s".' % language
@@ -154,7 +158,7 @@ def summarize(transcript, title, show, language, session=None, model=None, voice
             {'role': 'system', 'content': VOICE_BATCH_SYSTEM if voice == 'batch' else VOICE_SYSTEM if voice else SYSTEM},
             {'role': 'user', 'content':
                 '<show>%s</show>\n<title>%s</title>\n<transcript>\n%s\n</transcript>\n\n%s %s' % (
-                    show, title, bounded(transcript), line_starts(transcript), _language_instruction(language))},
+                    show, title, bounded(transcript), line_starts(transcript), _language_instruction(language, bool(voice)))},
         ],
     })
     choice = (body.get('choices') or [{}])[0]
