@@ -243,7 +243,7 @@ def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=Fals
         c.execute('BEGIN IMMEDIATE')
         try:
             row = c.execute("SELECT id FROM ai_requests WHERE chat_id=? AND ref=? AND lang=? AND kind=? "
-                            "AND status IN ('pending','working')", (int(chat_id), ref, lang, kind)).fetchone()
+                            "AND status IN ('uploading','pending','working')", (int(chat_id), ref, lang, kind)).fetchone()
             if row is not None:
                 if not auto:  # a tap on one queued automatically: it is wanted now
                     c.execute('UPDATE ai_requests SET auto=0, reply_to=COALESCE(reply_to, ?), '
@@ -269,7 +269,7 @@ def enqueue(chat_id, ref, lang, seconds, database=None, reply_to=None, auto=Fals
 def seconds_used(chat_id, since, database=None) -> int:
     """The audio this chat's requests since `since` are charged: done and on their way, not failed."""
     row = _one(database, "SELECT COALESCE(SUM(seconds),0) s FROM ai_requests WHERE chat_id=? "
-                         "AND created_at>=? AND status IN ('pending','working','done')",
+                         "AND created_at>=? AND status IN ('uploading','pending','working','done')",
                (int(chat_id), since))
     return int(row['s']) if row else 0
 
@@ -277,7 +277,7 @@ def seconds_used(chat_id, since, database=None) -> int:
 def paid_seconds_used(chat_id, since, database=None) -> int:
     """The audio the paid model transcribed for this chat's requests since `since`."""
     row = _one(database, "SELECT COALESCE(SUM(paid_seconds),0) s FROM ai_requests WHERE chat_id=? "
-                         "AND created_at>=? AND status IN ('pending','working','done')", (int(chat_id), since))
+                         "AND created_at>=? AND status IN ('uploading','pending','working','done')", (int(chat_id), since))
     return int(row['s']) if row else 0
 
 
@@ -290,7 +290,7 @@ def audio_paid(chat_id, ref, database=None, exclude=None, done_only=False) -> bo
     """Has this chat been charged this episode's audio already: a request of its own for the episode
     charged seconds, on its way or done (`done_only`: done), `exclude` (a request id) left out? Then
     its transcript is paid for, and a summary or a transcript of the same episode costs it no more hours."""
-    statuses = "('done')" if done_only else "('pending','working','done')"
+    statuses = "('done')" if done_only else "('uploading','pending','working','done')"
     row = _one(database, "SELECT 1 FROM ai_requests WHERE chat_id=? AND ref=? AND seconds>0 AND id!=? "
                          "AND status IN %s LIMIT 1" % statuses,
                (int(chat_id), ref, int(exclude or 0)))

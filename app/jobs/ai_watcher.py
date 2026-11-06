@@ -203,10 +203,11 @@ def _voice_member(ref):
 
 def _refresh_voice_batch(request):
     from db import voice as batches
-    if request.get('kind') in batches.FINAL_KINDS:
+    batch = request['ref'] if request.get('kind') in batches.FINAL_KINDS else batches.batch_of_request(request['id'])
+    if batch:
         from app.service.ai import voice
         try:
-            voice.refresh(request['ref'], request['chat_id'], request.get('ui_lang'))
+            voice.refresh(batch, request['chat_id'], request.get('ui_lang'), voice.CARD_GAP)
         except Exception as error:
             logger.warn('voice batch card:', type(error).__name__)
 

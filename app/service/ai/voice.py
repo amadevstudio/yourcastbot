@@ -1,5 +1,6 @@
 """Private voice collections: download without AI; explicitly confirm output and grouping."""
 import asyncio
+import collections
 import hashlib
 import json
 import math
@@ -35,7 +36,7 @@ def cleanup():
     ai.prune_voices()
     c = ai.connect()
     try:
-        live = {row[0] for row in c.execute("SELECT ref FROM ai_requests WHERE status IN ('pending','working')")}
+        live = {row[0] for row in c.execute("SELECT ref FROM ai_requests WHERE status IN ('uploading','pending','working')")}
         live.update(row[0] for row in c.execute('SELECT i.ref FROM voice_items i JOIN voice_batches b ON b.ref=i.batch '
                                                 'WHERE b.expires_at>?', (time.time(),)))
     finally:
@@ -71,7 +72,18 @@ def button(key, lang, payload):
 
 def running(ref):
     return ai._one(None, "SELECT a.id FROM ai_requests a JOIN voice_runs r ON r.request_id=a.id "
-                        "WHERE r.batch=? AND a.status IN ('pending','working') LIMIT 1", (ref,)) is not None
+                        "WHERE r.batch=? AND a.status IN ('uploading','pending','working') LIMIT 1", (ref,)) is not None
+
+
+def progress_line(ref, lang):
+    from app.i18n.messages import get_message as tr
+    counts = batches.progress(ref)
+    total = sum(counts.values())
+    if not total:
+        return ''
+    if counts.get('uploading'):
+        return '\n' + tr('voiceDownloading', lang).format(done=total - counts['uploading'], total=total)
+    return '\n' + tr('voiceWorking', lang).format(done=counts.get('done', 0) + counts.get('failed', 0), total=total)
 
 
 def screen(ref, chat_id, lang):
@@ -80,7 +92,7 @@ def screen(ref, chat_id, lang):
     found, rows, needed = batches.quote(ref, chat_id)
     text = tr('voiceCollected', lang).format(count=len(rows), duration=length_text(sum(r['seconds'] for r in rows), lang))
     if running(ref):
-        return {'type': 'text', 'text': text + '\n\n' + tr('voiceProcessing', lang)}
+        return {'type': 'text', 'text': text + '\n\n' + tr('voiceProcessing', lang) + progress_line(ref, lang)}
     if any(r['status'] != 'ready' for r in rows):
         text += '\n\n' + tr('voiceReceiving', lang)
         keyboard = [[button('voiceCancel', lang, ref + ':cancel')]]
@@ -109,12 +121,19 @@ def screen(ref, chat_id, lang):
     return {'type': 'text', 'text': text, 'reply_markup': keyboard}
 
 
-def refresh(ref, chat_id, lang):
-    """Update the collection's single card; remember a replacement if Telegram lost it."""
+def refresh(ref, chat_id, lang, gap=0.0):
+    """Update the collection's single card; remember a replacement if Telegram lost it.
+    `gap`: wait until this long after the card's last edit (Telegram limits edits of one message)."""
     from lib.telegram.general.message_master import message_editor, outer_sender
     found = batches.batch(ref, chat_id)
     if found is None:
         return
+    wait = _edited.get(ref, 0) + gap - time.time()
+    if gap and 0 < wait <= gap:
+        time.sleep(wait)
+    _edited[ref] = time.time()
+    if len(_edited) > 2000:
+        _edited.clear()
     message = screen(ref, chat_id, lang)
     if found['message_id']:
         try:
@@ -229,12 +248,25 @@ def callback(data):
     refresh(ref, chat, lang)
 
 
+_messages = collections.OrderedDict()
+_edited = {}
+_downloading = {}
+POLL_SECONDS = 2
+CARD_GAP = 1.2
+
+
+def _remember_message(chat, message):
+    _messages[(chat, message.id)] = message
+    while len(_messages) > 1000:
+        _messages.popitem(last=False)
+
+
 async def receive(event):
-    """Serialize arrival before network awaits; persist membership before downloading media."""
+    """Register a recording at once, from what Telegram says about it. Nothing is downloaded or
+    measured here (see `download_pending`), so a long run of forwards is one quick card update."""
     from functools import partial
-    from app.controller.builders import summaryModule as ui
     from app.i18n.messages import get_message
-    from app.service.ai import summary, transcript
+    from app.service.ai import summary
     from lib.telegram.general.message_master import outer_sender
     from lib.tools.logger import logger
 
@@ -245,10 +277,6 @@ async def receive(event):
     _active[chat] = (lock, waiting + 1)
     acquired = False
     item = None
-    batch_ref = None
-    reservation = None
-    created_file = False
-    ref = None
     try:
         await lock.acquire()
         acquired = True
@@ -273,30 +301,11 @@ async def receive(event):
             return
         await run(ai.prune_voices)
         await run(ai.remember_voice, ref, chat, get_message('voiceTitle', lang), seconds)
-        await run(refresh, batch_ref, chat, lang)
-        found = await run(ai.transcript, ref)
-        path = Path(audio_path(ref))
-        if found is None and not path.is_file():
-            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            global _budget
-            if _budget is None:
-                _budget = DiskBudget(str(path.parent))
-            reservation = _budget.reserve(size * 3)
-            def progress(done, total):
-                if done > MAX_BYTES:
-                    raise batches.BatchLimit()
-                reservation.wrote(done)
-            created_file = True
-            with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as output:
-                await asyncio.wait_for(event.message.download_media(file=output, progress_callback=progress), 300)
-        measured = math.ceil(found['seconds']) if found and found['seconds'] else (
-            math.ceil(await run(transcript._duration, str(path))) if path.is_file() else seconds)
-        if not 0 < measured <= MAX_SECONDS:
-            raise batches.BatchLimit()
-        await run(ai._write, None, 'UPDATE ai_episodes SET seconds=? WHERE ref=? AND owner_chat=?', (measured, ref, chat))
-        await run(batches.ready, item, measured)
+        _remember_message(chat, event.message)
         item = None
-        await run(refresh, batch_ref, chat, lang)
+        # the last of a run of forwards redraws the card; the ones before it only when it is quiet
+        if _active[chat][1] <= 1 or time.time() - _edited.get(batch_ref, 0) > CARD_GAP:
+            await run(refresh, batch_ref, chat, lang)
     except Exception as error:
         logger.warn('voice intake:', type(error).__name__)
         await run(outer_sender, chat, [{'type': 'text', 'text': get_message(
@@ -304,11 +313,6 @@ async def receive(event):
     finally:
         if item:
             await run(batches.discard_item, item)
-            if created_file:
-                remove_audio(ref)
-            await run(refresh, batch_ref, chat, locals().get('lang'))
-        if reservation:
-            reservation.release()
         if acquired:
             lock.release()
         remaining = _active[chat][1] - 1
@@ -316,3 +320,111 @@ async def receive(event):
             _active[chat] = (lock, remaining)
         else:
             _active.pop(chat, None)
+
+
+class _Gone(Exception):
+    pass
+
+
+def _reconcile(request, measured):
+    """The audio was measured: what Telegram claimed is replaced by it. More than claimed needs
+    the plan's hours for the difference; less gives them back. A recording nobody is charged for
+    (its text is shared or already paid) stays free."""
+    from app.service.ai import quota
+    claimed = request['seconds']
+    if not claimed or measured == claimed:
+        return claimed
+    if measured > claimed and not quota.check(request['chat_id'], measured - claimed).allowed:
+        raise batches.BatchLimit()
+    return measured
+
+
+async def _fetch(client, row, run):
+    from functools import partial
+    from app.service.ai import transcript
+    global _budget
+    ref, chat, size = row['ref'], row['chat_id'], row['bytes']
+    path = Path(audio_path(ref))
+    if await run(ai.transcript, ref) is not None or path.is_file():
+        await run(batches.release, row['request_id'])
+        return
+    message = _messages.get((chat, row['message_id']))
+    if message is None:
+        message = await client.get_messages(chat, ids=row['message_id'])
+    if message is None or not getattr(message, 'voice', None):
+        raise _Gone()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if _budget is None:
+        _budget = DiskBudget(str(path.parent))
+    reservation = _budget.reserve(size * 3)
+    try:
+        def progress(done, total):
+            if done > MAX_BYTES:
+                raise batches.BatchLimit()
+            reservation.wrote(done)
+        with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as output:
+            await asyncio.wait_for(message.download_media(file=output, progress_callback=progress), 300)
+        measured = math.ceil(await run(transcript._duration, str(path)))
+        if not 0 < measured <= MAX_SECONDS:
+            raise batches.BatchLimit()
+        charged = await run(_reconcile, row, measured)
+        await run(batches.release, row['request_id'], measured, charged)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    finally:
+        reservation.release()
+
+
+async def _finish_runs(run):
+    from app.i18n.messages import get_message
+    from lib.telegram.general.message_master import outer_sender
+    for final in await run(batches.settle):
+        lang = final['ui_lang']
+        await run(refresh, final['batch'], final['chat_id'], lang, CARD_GAP)
+        if final['failed']:
+            await run(outer_sender, final['chat_id'], [{'type': 'text', 'text': get_message('voiceFetchFailed', lang)}])
+
+
+async def _download_chat(client, chat):
+    from functools import partial
+    from lib.tools.logger import logger
+    async def run(fn, *args, **kwargs):
+        return await asyncio.get_running_loop().run_in_executor(None, partial(fn, *args, **kwargs))
+    try:
+        while True:
+            rows = await run(batches.uploading, chat)
+            if not rows:
+                break
+            row = rows[0]
+            try:
+                await _fetch(client, row, run)
+            except Exception as error:
+                logger.warn('voice download:', type(error).__name__)
+                await run(batches.fail_child, row['request_id'])
+            await run(refresh, row['batch'], chat, row['ui_lang'], CARD_GAP)
+        await _finish_runs(run)
+    except Exception as error:
+        logger.warn('voice download loop:', type(error).__name__)
+    finally:
+        _downloading.pop(chat, None)
+
+
+async def download_pending(client):
+    """One pass: a task per chat with recordings that wait for their audio (one at a time per chat)."""
+    chats = await asyncio.get_running_loop().run_in_executor(None, batches.uploading_chats)
+    for chat in chats:
+        if chat not in _downloading:
+            _downloading[chat] = asyncio.ensure_future(_download_chat(client, chat))
+    return [_downloading[chat] for chat in chats if chat in _downloading]
+
+
+async def pump(client):
+    """Started with the bot: restart-safe, the queue is the database."""
+    from lib.tools.logger import logger
+    while True:
+        try:
+            await download_pending(client)
+        except Exception as error:
+            logger.warn('voice pump:', type(error).__name__)
+        await asyncio.sleep(POLL_SECONDS)
