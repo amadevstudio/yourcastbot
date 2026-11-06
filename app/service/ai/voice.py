@@ -106,7 +106,8 @@ def screen(ref, chat_id, lang):
     found, rows, needed = batches.quote(ref, chat_id)
     text = tr('voiceCollected', lang).format(count=len(rows), duration=length_text(sum(r['seconds'] for r in rows), lang))
     if running(ref):
-        return {'type': 'text', 'text': text + '\n\n' + tr('voiceProcessing', lang) + progress_line(ref, lang)}
+        return {'type': 'text', 'text': text + '\n\n' + tr('voiceProcessing', lang) + progress_line(ref, lang),
+                'reply_markup': [[button('voiceBack', lang, ref + ':help')]]}
     if any(r['status'] != 'ready' for r in rows):
         text += '\n\n' + tr('voiceReceiving', lang)
         keyboard = [[button('voiceCancel', lang, ref + ':cancel')]]
@@ -139,6 +140,8 @@ def screen(ref, chat_id, lang):
             keyboard.append([button('voiceLanguage', lang, ref + ':lang')])
         if found['state'] == 'collecting' and rows and all(r['status'] == 'ready' for r in rows):
             keyboard.append([button('voiceCancel', lang, ref + ':cancel')])
+    if not any(item['text'] == tr('voiceBack', lang) for row in keyboard for item in row):
+        keyboard.append([button('voiceBack', lang, ref + ':help')])
     return {'type': 'text', 'text': text, 'reply_markup': keyboard}
 
 
@@ -172,7 +175,7 @@ def help_screen(chat_id, lang):
     choice = 'summaryLanguageMine' if preference(chat_id) == 'mine' else 'voiceLanguageOriginal'
     language_button = button('voiceLanguage', lang, ':helpLang')
     language_button['text'] += ' · ' + tr(choice, lang)
-    return {'type': 'text', 'text': tr('voiceHelp', lang), 'reply_markup': [[language_button]]}
+    return {'type': 'text', 'text': tr('voiceHelp', lang), 'reply_markup': [[language_button], [button('voiceBack', lang, ':menu')]]}
 
 
 def help_message(data):
@@ -235,7 +238,16 @@ def callback(data):
         notify(data['callback'], data['message'], tr('screenOutdated', lang))
         return
     notify(data['callback'], data['message'], '')
-    if action == 'help' and not ref:
+    if action == 'menu' and not ref:
+        from app.controller.builders.menuModule import construct_menu_message
+        from app.repository.storage import storage
+        storage.clear_user_storage(chat)
+        storage.add_user_state(chat, 'menu')
+        message_editor(chat, construct_menu_message(lang, chat)[0], data['message'].message_id)
+        return
+    if action == 'help':
+        if ref:
+            batches.set_message(ref, None)
         message_editor(chat, help_screen(chat, lang), data['message'].message_id)
         return
     if action in ('lang', 'helpLang'):
@@ -255,7 +267,8 @@ def callback(data):
         ai._write(None, "UPDATE voice_batches SET state='cancelled',expires_at=? WHERE ref=? AND chat_id=? AND state='collecting'",
                   (time.time(), ref, chat))
         if batches.batch(ref, chat) is None:
-            message_editor(chat, {'type': 'text', 'text': tr('voiceCancelled', lang), 'reply_markup': []}, data['message'].message_id)
+            message_editor(chat, {'type': 'text', 'text': tr('voiceCancelled', lang),
+                                  'reply_markup': [[button('voiceBack', lang, ':help')]]}, data['message'].message_id)
         return
     if action in ('s', 't') and len(parts) == 2:
         batches.select(ref, chat, 'summary' if action == 's' else 'transcript')
