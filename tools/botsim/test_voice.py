@@ -52,6 +52,9 @@ def main():
     ok(user.send('/menu'))
     help_step = ok(user.tap('🎙 Voice messages'))
     assert '24 hours' in help_step.new[-1].text
+    ok(user.tap('Back'))
+    assert '🎙 Voice messages' in user.last().button_texts()
+    ok(user.tap('🎙 Voice messages'))
     menu_user = sim.BotSim(user_id=8105, lang='en')
     ok(menu_user.send('/start'))
     ok(menu_user.send('/menu'))
@@ -83,6 +86,7 @@ def main():
         received = ok(user._observe('twelve simultaneous forwards', lambda: asyncio.run(forward_all())))
     assert len(received.new) == 1, 'one collection card, updated for every recording'
     assert '12' in received.new[0].text
+    assert '⬅️ Back' in received.new[0].button_texts()
     assert ai.seconds_used(8101, 0) == 0 and ai.claim() is None
     c = ai.connect()
     batch = c.execute('SELECT ref FROM voice_batches WHERE chat_id=8101').fetchone()[0]

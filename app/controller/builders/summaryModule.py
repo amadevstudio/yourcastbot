@@ -63,6 +63,9 @@ def summary_message(episode, text, ref=None, reply_to=None, language_code=None) 
                                      'callback_data': summary.ask_button_data(ref, reply_to)},
                                     {'text': get_message('transcriptButton', language_code or 'en'),
                                      'callback_data': summary.transcript_button_data(ref, reply_to)}]]
+    if episode.get('owner_chat') is not None:
+        from app.service.ai.voice import button
+        message.setdefault('reply_markup', []).append([button('voiceBack', language_code, ':help')])
     if reply_to:
         message['reply_to'] = int(reply_to)
     return message
