@@ -1238,14 +1238,23 @@ incomplete without a test for the invariant you think you preserved.
 ## Private voice messages
 
 Private-chat voice messages are consumed before search/ask in every state (`app/service/ai/voice.py`).
-Bot downloads through DiskBudget; jobs uses `transcript.from_file`, never the bot's Telethon session.
-At most 60 minutes / 20 MB per voice; any number per batch (6 hours / 200 MB; downloads serialized per chat).
-Voices collect into a batch (`db/voice.py`, SQLite); nothing is transcribed or charged until the user picks
-summary or text, then each / together. Launch freezes the members and reserves all AI hours in one transaction
-(a double tap reserves once; a preview that is stale is refused). The voice summary language is its own setting
-(`voice_summary_language`). `ai_requests` reservations count against the same AI hours and cannot be
-claimed until the file is ready. Existing manual-before-automatic FIFO, leases and retries remain.
-The duration is probed before processing. Full text and cached replay do not charge audio twice;
+At most 60 minutes / 20 MB per voice; any number per batch (6 hours / 200 MB).
+Voices collect into a batch (`db/voice.py`, SQLite). Intake only registers a recording from what Telegram
+says (its size, and a duration that is the sender's claim): no download, no ffmpeg, one card update for a run
+of forwards (the last one, or one per `CARD_GAP`). Nothing is transcribed or charged until the user picks
+summary or text, then each / together. Launch freezes the members and reserves the claimed hours for all of
+them in one transaction (a double tap reserves once; a preview that is stale is refused); the requests start
+`uploading`, which counts against the hours but cannot be claimed. A background pump in the bot role
+(`voice.pump`, restart-safe, the queue is the database; one download at a time per chat, through DiskBudget)
+fetches each recording, measures it, and replaces the claim by the measure (longer needs the hours for the
+difference, else that recording fails; shorter gives them back; one that was free stays free), then releases
+it to `pending`. The final request starts when every recording left `uploading` (`db/voice.settle`); a
+recording that cannot be had or is over the limit fails its run, is not charged, and the chat is told. Audio
+that never comes is given up after an hour. The card shows the stage ("Downloading n of m", then "n of m
+done"; edits of one card are throttled). Bot downloads; jobs uses `transcript.from_file`, never the bot's
+Telethon session. The voice summary language is its own setting (`voice_summary_language`). Existing
+manual-before-automatic FIFO, leases and retries remain.
+Full text and cached replay do not charge audio twice;
 questions use the existing daily quota. The personal-message prompt is separate from podcasts.
 Private `ai_episodes.owner_chat` is checked on every callback, question and worker; no channel id or
 public audio URL. Text expires after 7 days, audio is deleted after transcription or terminal failure;

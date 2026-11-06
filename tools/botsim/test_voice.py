@@ -22,6 +22,15 @@ def ok(step):
     return step
 
 
+def fetch(client):
+    """The background download, once, in the bot's own loop."""
+    from app.service.ai import voice
+    async def go():
+        for task in await voice.download_pending(client):
+            await task
+    asyncio.run(go())
+
+
 def main():
     # Keep the actual model-call function for the prompt regression check; botsim replaces AI calls.
     from app.service.ai import summary
@@ -33,6 +42,7 @@ def main():
     from app.controller.builders import summaryModule
     from app.jobs import ai_watcher as worker
     from app.service.ai import transcript, voice
+    voice.CARD_GAP = 0  # the edit throttle is not what this test is about
     from db import ai, voice as batches
     from db.sqliteAdapter import SQLighter
     import config
@@ -64,8 +74,7 @@ def main():
     c.close()
     rows = batches.items(batch)
     assert [row['message_id'] for row in rows] == [event.message.id for event in events]
-    for row in rows:
-        assert Path(voice.audio_path(row['ref'])).stat().st_mode & 0o777 == 0o600
+    assert not any(Path(voice.audio_path(row['ref'])).exists() for row in rows), 'nothing is downloaded before the start'
     for button in received.new[0].buttons[0]:
         assert len(button['callback_data'].encode()) <= 64
     ok(user.tap('📝 Summary'))
@@ -76,6 +85,8 @@ def main():
     assert ai.seconds_used(8101, 0) == 720
     ok(user.tap_data(launch_data, message=card))
     assert ai.seconds_used(8101, 0) == 720, 'double tap cannot reserve twice'
+    assert ai.claim() is None, 'reserved, but nothing is claimable before the audio is here'
+    assert 'Downloading recordings: 0 of 12' in sim._state['api'].messages[(8101, batches.batch(batch, 8101)['message_id'])].text
 
     # New messages after Start form a new collection, independent of the frozen one.
     with patch.object(transcript, '_duration', return_value=60):
@@ -86,7 +97,7 @@ def main():
     assert next_batch != batch and len(batches.items(batch)) == 12
     assert ai.seconds_used(8101, 0) == 720
 
-    documents, calls, processed = [], [], []
+    documents, calls, processed, cards = [], [], [], []
     send_document = summaryModule.send_document
     def document(chat, name, body, caption, reply_to=None):
         documents.append((chat, body.decode(), reply_to))
@@ -99,6 +110,8 @@ def main():
         index = next((i + 1 for i, row in enumerate(rows) if row['ref'] == ref), 99)
         return transcript.Transcript('[0:00] Synthetic speech %d. [0:30] Detail %d.' % (index, index), 'whisper', .001, 60)
     def drain():
+        with patch.object(transcript, '_duration', return_value=60):
+            fetch(user.client)
         while True:
             request = ai.claim()
             if request is None:
@@ -107,10 +120,13 @@ def main():
             charged = worker.process(request, None)
             ai.finish(request['id'], 'done', seconds=charged)
             worker._refresh_voice_batch(request)
+            stored = batches.batch(batch, 8101)
+            cards.append(sim._state['api'].messages[(8101, stored['message_id'])].text)
     with patch.object(transcript, 'from_file', side_effect=from_file), \
             patch.object(summary, 'summarize', side_effect=summarize), \
             patch.object(summaryModule, 'send_document', side_effect=document):
         ok(user._observe('individual summaries', drain))
+        assert any('Voice to text and writing: 1 of 12 done' in text for text in cards), cards
         assert len(calls) == 12 and all(call[2] is True for call in calls)
         assert [r['reply_to'] for r in processed if r['kind'] == 'summary'] == [e.message.id for e in events]
         assert not any(Path(voice.audio_path(row['ref'])).exists() for row in rows)
@@ -190,6 +206,27 @@ def main():
     ok(newcomer.tap('📄 Full text'))
     offered = ok(newcomer.tap('All together'))
     assert offered.new and ai.seconds_used(8103, 0) == 0 and ai.claim() is None
+
+    # The claim is replaced by what was measured: longer costs the difference, a file that is too long
+    # or cannot be had is not charged and the chat hears so.
+    late = sim.BotSim(user_id=8105, lang='en')
+    ok(late.send('/start'))
+    ok(late.send_voice(b'claims a minute', 60, document_id=60000))
+    ok(late.tap('📄 Full text'))
+    ok(late.tap('Each separately'))
+    assert ai.seconds_used(8105, 0) == 60
+    with patch.object(transcript, '_duration', return_value=600):
+        fetch(late.client)
+    assert ai.seconds_used(8105, 0) == 600, 'charged what was measured'
+    assert ai.claim()['seconds'] == 600
+    ok(late.send_voice(b'claims a minute too', 60, document_id=60001))
+    ok(late.tap('📄 Full text'))
+    ok(late.tap('Each separately'))
+    reserved = ai.seconds_used(8105, 0)
+    with patch.object(transcript, '_duration', return_value=4000):
+        gone = ok(late._observe('too long once measured', lambda: fetch(late.client)))
+    assert ai.seconds_used(8105, 0) == reserved - 60 and any('could not be downloaded' in m.text for m in gone.new)
+    assert not batches.uploading_chats() and not batches.uploading(8105)
 
     # Actual prompt keeps later corrections and treats transcripts as data.
     with patch.object(summary.openrouter, 'post', return_value={'choices': [{'message': {'content': 'A summary.'}}]}) as post:

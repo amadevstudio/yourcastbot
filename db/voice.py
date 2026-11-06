@@ -39,7 +39,8 @@ def items(ref, database=None):
 
 
 def stage(chat_id, ref, message_id, seconds, size, database=None):
-    """Register arrival before downloading, so Start cannot silently omit an in-flight recording."""
+    """Register an arrival from what Telegram says (`seconds` is a claim, measured after the start):
+    it is a member at once, so Start cannot silently omit it, and nothing is downloaded."""
     c = ai.connect(database)
     try:
         with c:
@@ -60,7 +61,7 @@ def stage(chat_id, ref, message_id, seconds, size, database=None):
                               (batch_ref,)).fetchone()
             if total[0] + seconds > MAX_BATCH_SECONDS or total[1] + size > MAX_BATCH_BYTES:
                 raise BatchLimit()
-            item = c.execute('INSERT INTO voice_items (batch,ref,message_id,seconds,bytes) VALUES (?,?,?,?,?)',
+            item = c.execute("INSERT INTO voice_items (batch,ref,message_id,seconds,bytes,status) VALUES (?,?,?,?,?,'ready')",
                              (batch_ref, ref, message_id, seconds, size)).lastrowid
             c.execute('UPDATE voice_batches SET revision=revision+1 WHERE ref=?', (batch_ref,))
             return batch_ref, item, True
@@ -110,7 +111,7 @@ def _needed(c, chat_id, rows):
         ref = row['ref']
         cached = c.execute('SELECT 1 FROM ai_transcripts WHERE ref=?', (ref,)).fetchone()
         paid = c.execute("SELECT 1 FROM ai_requests WHERE ref=? AND chat_id=? AND seconds>0 "
-                         "AND status IN ('pending','working','done') LIMIT 1", (ref, int(chat_id))).fetchone()
+                         "AND status IN ('uploading','pending','working','done') LIMIT 1", (ref, int(chat_id))).fetchone()
         seconds = 0 if ref in seen or (cached and paid) else row['seconds']
         needed.append(seconds)
         seen.add(ref)
@@ -146,7 +147,7 @@ def launch(ref, chat_id, revision, output, mode, lang, limit, expected_seconds, 
             if b is None or b['revision'] != revision or b['selected'] != output:
                 raise BatchChanged()
             running = c.execute("SELECT r.request_id FROM voice_runs r JOIN ai_requests a ON a.id=r.request_id "
-                                "WHERE r.batch=? AND a.status IN ('pending','working')", (ref,)).fetchone()
+                                "WHERE r.batch=? AND a.status IN ('uploading','pending','working')", (ref,)).fetchone()
             if running:
                 return running[0], False
             rows = c.execute('SELECT * FROM voice_items WHERE batch=? ORDER BY message_id', (ref,)).fetchall()
@@ -154,7 +155,7 @@ def launch(ref, chat_id, revision, output, mode, lang, limit, expected_seconds, 
                 raise BatchChanged()
             needed = _needed(c, chat_id, rows)
             used = c.execute("SELECT COALESCE(SUM(seconds),0) FROM ai_requests WHERE chat_id=? AND created_at>=? "
-                             "AND status IN ('pending','working','done')", (int(chat_id), time.time() - 30 * 86400)).fetchone()[0]
+                             "AND status IN ('uploading','pending','working','done')", (int(chat_id), time.time() - 30 * 86400)).fetchone()[0]
             if sum(needed) > expected_seconds or used + sum(needed) > limit:
                 raise BatchChanged()
             # Keep each recording accessible for the lifetime of this frozen collection.
@@ -168,19 +169,116 @@ def launch(ref, chat_id, revision, output, mode, lang, limit, expected_seconds, 
                           (expires, row['ref'], int(chat_id)))
                 kind = output if mode == 'each' else PART
                 cursor = c.execute('INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to,kind) '
-                                   "VALUES (?,?,?,'pending',?,?,?,?)",
+                                   "VALUES (?,?,?,'uploading',?,?,?,?)",
                                    (int(chat_id), row['ref'], lang if output == 'summary' else '', time.time(), seconds,
                                     row['message_id'], kind))
                 children.append((row['id'], cursor.lastrowid))
             kind = FINISH if mode == 'each' else SUMMARY_ALL if output == 'summary' else TEXT_ALL
             request_id = c.execute('INSERT INTO ai_requests (chat_id,ref,lang,status,created_at,seconds,reply_to,kind) '
-                                   "VALUES (?,?,?,'pending',?,0,?,?)",
+                                   "VALUES (?,?,?,'uploading',?,0,?,?)",
                                    (int(chat_id), ref, lang, time.time(), b['message_id'], kind)).lastrowid
             c.execute('INSERT INTO voice_runs VALUES (?,?,?,?)', (request_id, ref, output, mode))
             c.executemany('INSERT INTO voice_run_items VALUES (?,?,?)', [(request_id, item, req) for item, req in children])
             return request_id, True
     finally:
         c.close()
+
+
+_WAITING = ("SELECT a.id request_id, a.chat_id, a.seconds, a.ref, i.message_id, i.bytes, i.batch, u.lang ui_lang "
+            "FROM ai_requests a JOIN voice_run_items r ON r.request_id=a.id JOIN voice_items i ON i.id=r.item "
+            "LEFT JOIN users u ON u.telegramId=a.chat_id WHERE a.status='uploading'")
+
+
+def uploading_chats(database=None):
+    """Chats with recordings that wait for their audio (reserved at the start, not yet downloaded)."""
+    c = ai.connect(database)
+    try:
+        return [row[0] for row in c.execute("SELECT DISTINCT a.chat_id FROM ai_requests a "
+                                            "JOIN voice_run_items r ON r.request_id=a.id WHERE a.status='uploading'")]
+    finally:
+        c.close()
+
+
+def uploading(chat_id, database=None):
+    c = ai.connect(database)
+    try:
+        return [dict(row) for row in c.execute(_WAITING + ' AND a.chat_id=? ORDER BY a.id', (int(chat_id),))]
+    finally:
+        c.close()
+
+
+def release(request_id, measured=None, charged=None, database=None):
+    """The audio is here: the request can be claimed. `measured`: its real length; `charged`: what
+    it takes from the plan's hours now (a request that was free stays free)."""
+    c = ai.connect(database)
+    try:
+        with c:
+            c.execute('BEGIN IMMEDIATE')
+            row = c.execute('SELECT a.ref, a.chat_id FROM ai_requests a WHERE a.id=? AND a.status=?',
+                            (request_id, 'uploading')).fetchone()
+            if row is None:
+                return
+            if measured is not None:
+                c.execute('UPDATE voice_items SET seconds=? WHERE id IN (SELECT item FROM voice_run_items WHERE request_id=?)',
+                          (measured, request_id))
+                c.execute('UPDATE ai_episodes SET seconds=? WHERE ref=? AND owner_chat=?',
+                          (measured, row['ref'], row['chat_id']))
+            c.execute("UPDATE ai_requests SET status='pending',seconds=COALESCE(?,seconds) WHERE id=?",
+                      (charged, request_id))
+    finally:
+        c.close()
+
+
+def fail_child(request_id, database=None):
+    ai._write(database, "UPDATE ai_requests SET status='failed',leased_until=NULL WHERE id=? AND status='uploading'", (request_id,))
+
+
+def settle(database=None, now=None):
+    """Runs whose recordings all left `uploading` start their final request, or end it when one failed.
+    Requests that waited over an hour for audio that never came fail too (their hours go back).
+    Returns [{final, batch, chat_id, ui_lang, failed}] for the runs settled."""
+    now = time.time() if now is None else now
+    c = ai.connect(database)
+    try:
+        with c:
+            c.execute('BEGIN IMMEDIATE')
+            c.execute("UPDATE ai_requests SET status='failed' WHERE status='uploading' AND created_at<?", (now - 3600,))
+            settled = []
+            for final in c.execute("SELECT r.request_id, r.batch, a.chat_id, u.lang FROM voice_runs r "
+                                   "JOIN ai_requests a ON a.id=r.request_id LEFT JOIN users u ON u.telegramId=a.chat_id "
+                                   "WHERE a.status='uploading'").fetchall():
+                states = [row[0] for row in c.execute(
+                    'SELECT a.status FROM voice_run_items r JOIN ai_requests a ON a.id=r.request_id WHERE r.run=?',
+                    (final['request_id'],))]
+                if 'uploading' in states:
+                    continue
+                failed = 'failed' in states
+                c.execute('UPDATE ai_requests SET status=? WHERE id=?', ('failed' if failed else 'pending', final['request_id']))
+                settled.append({'final': final['request_id'], 'batch': final['batch'], 'chat_id': final['chat_id'],
+                                'ui_lang': final['lang'], 'failed': failed})
+            return settled
+    finally:
+        c.close()
+
+
+def progress(ref, database=None):
+    """{status: n} of the recordings of the batch's latest run."""
+    c = ai.connect(database)
+    try:
+        run = c.execute('SELECT request_id FROM voice_runs WHERE batch=? ORDER BY request_id DESC LIMIT 1', (ref,)).fetchone()
+        if run is None:
+            return {}
+        return {row[0]: row[1] for row in c.execute(
+            'SELECT a.status, COUNT(*) FROM voice_run_items r JOIN ai_requests a ON a.id=r.request_id '
+            'WHERE r.run=? GROUP BY a.status', (run[0],))}
+    finally:
+        c.close()
+
+
+def batch_of_request(request_id, database=None):
+    row = ai._one(database, 'SELECT i.batch FROM voice_run_items r JOIN voice_items i ON i.id=r.item '
+                            'WHERE r.request_id=? LIMIT 1', (request_id,))
+    return row['batch'] if row else None
 
 
 def run_items(request_id, database=None):

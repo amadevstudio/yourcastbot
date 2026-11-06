@@ -234,6 +234,12 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
             await event.answer()
         raise events.StopPropagation
 
+    try:
+        # the recordings reserved at a start are downloaded in the background, restart-safe
+        thonbot.loop.create_task(voice.pump(thonbot))
+    except AttributeError:
+        pass  # botsim's client has no loop: it calls voice.download_pending itself
+
     thonbot.add_event_handler(voice_help, events.CallbackQuery(func=lambda call: get_tp(call.data) in ('voiceHelp', 'v')))
 
     # An OPML file (subscriptions from another app), in any state: before the routes,
