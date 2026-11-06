@@ -449,23 +449,29 @@ def from_audio(requester, session, link, budget: DiskBudget | None = None, progr
     try:
         progress('download', 0, 0)
         download.fetch(requester, link)
-        with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
-            if speakers_model:
-                try:
-                    return _with_speakers(session, download.path, os.path.join(pieces_dir, 'speakers'),
-                                          speakers_model, progress)
-                except Exception as e:  # a slow provider, a model gone: Whisper's text rather than none
-                    logger.warn('transcript: speakers failed, Whisper instead:', type(e).__name__, str(e)[:200])
-            language, language_cost = speech_language(session, download.path, pieces_dir, feed_language)
-            pieces, offset = [], 0.0
-            paths = split_audio(download.path, pieces_dir)
-            for number, path in enumerate(paths, 1):
-                progress('transcribe', number, len(paths))
-                pieces.append(transcribe_piece(session, path, offset, language))
-                offset += pieces[-1].seconds or PIECE_SECONDS
-                os.remove(path)
+        return from_file(session, download.path, progress, speakers_model, feed_language)
     finally:
         download.close()
+
+
+def from_file(session, path, progress=None, speakers_model=None, feed_language='') -> Transcript:
+    """Transcribe a local file; the caller owns the original, temporary pieces are always removed."""
+    progress = progress or (lambda *args: None)
+    with tempfile.TemporaryDirectory(dir=os.path.join(work_dir, 'records'), prefix='r_ai_') as pieces_dir:
+        if speakers_model:
+            try:
+                return _with_speakers(session, path, os.path.join(pieces_dir, 'speakers'),
+                                      speakers_model, progress)
+            except Exception as e:  # a slow provider, a model gone: Whisper's text rather than none
+                logger.warn('transcript: speakers failed, Whisper instead:', type(e).__name__, str(e)[:200])
+        language, language_cost = speech_language(session, path, pieces_dir, feed_language)
+        pieces, offset = [], 0.0
+        paths = split_audio(path, pieces_dir)
+        for number, path in enumerate(paths, 1):
+            progress('transcribe', number, len(paths))
+            pieces.append(transcribe_piece(session, path, offset, language))
+            offset += pieces[-1].seconds or PIECE_SECONDS
+            os.remove(path)
     text = ' '.join(piece.text for piece in pieces if piece.text).strip()
     if not text:
         raise TranscriptUnavailable('empty transcript')

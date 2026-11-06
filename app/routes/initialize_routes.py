@@ -217,6 +217,25 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
         thonbot.add_event_handler(maintenance_catcher, events.CallbackQuery())
         return
 
+    from app.service.ai import voice
+
+    async def voice_file(event):
+        await voice.receive(event)
+        raise events.StopPropagation
+
+    thonbot.add_event_handler(voice_file, events.NewMessage(
+        incoming=True, func=lambda event: event.is_private and bool(getattr(event.message, 'voice', None))))
+
+    async def voice_help(event):
+        callback, message = await get_call_and_message(event)
+        handle_event_in_thread({'action': voice.help_message if get_tp(event.data) == 'voiceHelp' else voice.callback,
+                                'data': construct_params(callback, message, None)})
+        if get_tp(event.data) == 'voiceHelp':
+            await event.answer()
+        raise events.StopPropagation
+
+    thonbot.add_event_handler(voice_help, events.CallbackQuery(func=lambda call: get_tp(call.data) in ('voiceHelp', 'v')))
+
     # An OPML file (subscriptions from another app), in any state: before the routes,
     # which would read a document as an empty text
     async def opml_file(event: telethon.events.NewMessage.Event):

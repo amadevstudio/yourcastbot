@@ -1233,3 +1233,23 @@ README: `tools/botsim/README.md`. Lock: `python tools/botsim/test_botsim.py`.
 Run the smallest existing suite that covers the change (for send jobs:
 `python db/test_send_outbox.py`). A refactor of claim/dispatch is
 incomplete without a test for the invariant you think you preserved.
+
+
+## Private voice messages
+
+Private-chat voice messages are consumed before search/ask in every state (`app/service/ai/voice.py`).
+Bot downloads through DiskBudget; jobs uses `transcript.from_file`, never the bot's Telethon session.
+At most 60 minutes / 20 MB per voice; any number per batch (6 hours / 200 MB; downloads serialized per chat).
+Voices collect into a batch (`db/voice.py`, SQLite); nothing is transcribed or charged until the user picks
+summary or text, then each / together. Launch freezes the members and reserves all AI hours in one transaction
+(a double tap reserves once; a preview that is stale is refused). The voice summary language is its own setting
+(`voice_summary_language`). `ai_requests` reservations count against the same AI hours and cannot be
+claimed until the file is ready. Existing manual-before-automatic FIFO, leases and retries remain.
+The duration is probed before processing. Full text and cached replay do not charge audio twice;
+questions use the existing daily quota. The personal-message prompt is separate from podcasts.
+Private `ai_episodes.owner_chat` is checked on every callback, question and worker; no channel id or
+public audio URL. Text expires after 7 days, audio is deleted after transcription or terminal failure;
+hourly cleanup also removes orphaned uploads. The usage ledger survives content deletion. Callback
+refs must fit 64 bytes with the action and an audio message id. No content goes to analytics.
+Locks: `python db/test_voice.py`, `python tools/botsim/test_voice.py` (bot requirements),
+`python app/service/ai/test_summary.py`.

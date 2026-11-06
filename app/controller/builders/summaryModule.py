@@ -56,6 +56,8 @@ def summary_message(episode, text, ref=None, reply_to=None, language_code=None) 
         + telegram_html.escape(telegram_html.plain_text(episode['title']))
     message = {'type': 'text', 'text': '📝 <b>%s</b>\n\n%s' % (header, telegram_html.escape(text)),
                'disable_web_page_preview': True}
+    if episode.get('owner_chat') is not None:
+        message['text'] = '📝 <b>%s</b>\n\n%s' % (get_message('voiceBatchTitle' if episode['ref'].startswith('b_') else 'voiceTitle', language_code), telegram_html.escape(text))
     if ref:
         message['reply_markup'] = [[{'text': get_message('askButton', language_code or 'en'),
                                      'callback_data': summary.ask_button_data(ref, reply_to)},
@@ -84,12 +86,16 @@ def request_summary(data):
         ref = str(json.loads(data['callback'].data)['r'])
     except (AttributeError, TypeError, ValueError, KeyError):
         ref = None
-    episode = ai.episode(ref) if ref else None
+    episode = ai.accessible_episode(ref, data['chat_id']) if ref else None
     if episode is None:
         notify(data['callback'], data['message'], get_message('screenOutdated', language_code))
         return
 
-    lang = _summary_language(data['chat_id'], language_code)
+    if episode.get('owner_chat') is not None:
+        from app.service.ai import voice
+        lang = voice.language(data['chat_id'], language_code)
+    else:
+        lang = _summary_language(data['chat_id'], language_code)
     audio = getattr(data['message'], 'message_id', None)  # the button is on the episode's audio
     cached = ai.summary(ref, lang)
     if cached is not None:
@@ -118,6 +124,8 @@ def request_summary(data):
 def _needed(chat_id, episode) -> int:
     """The seconds a new summary or transcript takes from the quota: none when this chat's own
     request for the episode was charged its audio already (the transcript is paid for)."""
+    if episode.get('owner_chat') is not None and ai.transcript(episode['ref']) is not None:
+        return 0
     return 0 if ai.audio_paid(chat_id, episode['ref']) else ai_quota.seconds_needed(episode)
 
 
@@ -169,7 +177,9 @@ def send_transcript_file(chat_id, episode, text, source, language_code, reply_to
     name, body = transcript_file(episode, text)
     caption = '📄 <b>%s – %s</b>' % (telegram_html.escape(telegram_html.plain_text(episode['show'])[:200]),
                                      telegram_html.escape(telegram_html.plain_text(episode['title'])[:300]))
-    if source in (transcript.WHISPER, transcript.SPEAKERS):
+    if episode.get('owner_chat') is not None:
+        caption = '📄 <b>%s</b>' % get_message('voiceBatchTitle' if episode['ref'].startswith('b_') else 'voiceTitle', language_code)
+    if source in (transcript.WHISPER, transcript.SPEAKERS, 'voice_batch'):
         caption += '\n' + get_message('transcriptMachine', language_code)
     note = paid_models.transcript_note(chat_id, source, language_code, over_quota=over_quota)
     if note:
@@ -184,6 +194,8 @@ FEED_TRANSCRIPT_TIMEOUT = (5, 20)
 def _feed_transcript(episode):
     """The transcript the episode's feed publishes (the feed's last copy, feed_cache), cached for
     everyone; None when it has none or it cannot be read now."""
+    if episode.get('owner_chat') is not None:
+        return None
     from lib.requests import requesterModule
     try:
         found = transcript.from_episode_feed(requesterModule.Requester(attempts=0, total_attempts=0), episode,
@@ -209,7 +221,7 @@ def request_transcript(data):
         ref, audio = str(call['r']), int(call.get('m') or 0) or None
     except (AttributeError, TypeError, ValueError, KeyError):
         ref, audio = None, None
-    episode = ai.episode(ref) if ref else None
+    episode = ai.accessible_episode(ref, data['chat_id']) if ref else None
     if episode is None:
         notify(data['callback'], data['message'], get_message('screenOutdated', language_code))
         return
@@ -222,7 +234,8 @@ def request_transcript(data):
         found = dict(found._asdict()) if found is not None else None
     # a paying chat with the better models gets Whisper's transcript made again, with speakers,
     # if its hours and its plan's budget cover it
-    wants = found is not None and found['source'] == transcript.WHISPER and paid_models.speakers(data['chat_id'])
+    wants = (episode.get('owner_chat') is None and found is not None
+             and found['source'] == transcript.WHISPER and paid_models.speakers(data['chat_id']))
     upgrade = wants and paid_models.speakers_fit(data['chat_id'], ai_quota.seconds_needed(episode))
     quota = ai_quota.check(data['chat_id'], _needed(data['chat_id'], episode)) if found is None or upgrade else None
     if found is not None and not (upgrade and quota.allowed):  # over its hours a payer gets Whisper's
@@ -304,7 +317,7 @@ def open_ask(data):
         ref, audio = str(call['r']), int(call.get('m') or 0) or None
     except (AttributeError, TypeError, ValueError, KeyError):
         ref, audio = None, None
-    episode = ai.episode(ref) if ref else None
+    episode = ai.accessible_episode(ref, data['chat_id']) if ref else None
     if episode is None:
         notify(data['callback'], data['message'], get_message('screenOutdated', language_code))
         return False
@@ -342,7 +355,8 @@ def answer_question(data):
     if not question:  # a voice message, a photo
         outer_sender(data['chat_id'], [{'type': 'text', 'text': get_message('askTextOnly', language_code)}])
         return
-    episode, found = ai.episode(state['ref']), ai.transcript(state['ref'])
+    episode = ai.accessible_episode(state['ref'], data['chat_id'])
+    found = ai.transcript(state['ref']) if episode else None
     if episode is None or found is None:
         return render_outdated_screen(data)
     questions = ai_quota.questions(data['chat_id'])
@@ -354,7 +368,8 @@ def answer_question(data):
     status = status_line(data['chat_id'], get_message('askThinking', language_code), state.get('audio'))
     try:
         text, cost = summary.answer(found['text'], episode['title'], episode['show'], question,
-                                    model=paid_models.summary_model(data['chat_id']))
+                                    model=paid_models.summary_model(data['chat_id']),
+                                    **({'voice': True} if episode.get('owner_chat') is not None else {}))
     except Exception as e:
         logger.warn('ask: no answer', state['ref'], type(e).__name__, str(e)[:200])
         show_result(data['chat_id'], {'type': 'text', 'text': get_message('askFailed', language_code)}, status)
@@ -412,7 +427,7 @@ def finish_ask(data):
 def _asked_channel(chat_id) -> int | None:
     """The channel of the episode the questions were about, while it is in the database."""
     state = storage.get_user_state_data(chat_id, 'ask')
-    episode = ai.episode(state['ref']) if state and state.get('ref') else None
+    episode = ai.accessible_episode(state['ref'], chat_id) if state and state.get('ref') else None
     return episode['channel_found'] if episode else None
 
 

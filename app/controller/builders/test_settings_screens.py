@@ -63,12 +63,19 @@ def test_sections(settings):
     settings.ai_summary.enabled = lambda: True
     try:
         ai_on = settings.construct_settings_message('en', 1)
-        _assert(_tps(ai_on) == ['settsText', 'settsSum', 'bck'], "AI on: the summaries section")
+        _assert(_tps(ai_on) == ['settsText', 'settsSum', 'v', 'bck'], "AI on: podcast summaries and independent voice language")
         _assert(_texts(ai_on)[1].endswith(get_message("summaryLanguageOriginal", "en")),
                 "it shows the default: the episode's language")
         user['flags'] = '{"summary_language": "mine"}'
         _assert(_texts(settings.construct_settings_message('en', 1))[1].endswith(
             get_message("summaryLanguageMine", "en")), "and the user's choice")
+        _assert(_texts(settings.construct_settings_message('en', 1))[2].endswith(
+            get_message('voiceLanguageOriginal', 'en')), 'podcast language does not change voice language')
+        user['flags'] = '{"summary_language": "original", "voice_summary_language": "mine"}'
+        both = settings.construct_settings_message('en', 1)
+        _assert(_texts(both)[1].endswith(get_message('summaryLanguageOriginal', 'en'))
+                and _texts(both)[2].endswith(get_message('summaryLanguageMine', 'en')),
+                'voice language does not change podcast language')
     finally:
         settings.ai_summary.enabled = lambda: False
 
@@ -108,7 +115,7 @@ def test_pages(settings):
 
 def test_every_button_leads_somewhere(settings):
     from app.routes.routes import RouteMap
-    known = {'bck'} | set(RouteMap.ROUTES)
+    known = {'bck', 'v'} | set(RouteMap.ROUTES)  # 'v': voice callbacks, an event handler of their own
     for route in RouteMap.ROUTES.values():
         known |= set((route or {}).get('actions', {}))
     settings._read_user = lambda chat_id: ({'episode_format': None, 'nosub_digest_enabled': 1}, False)

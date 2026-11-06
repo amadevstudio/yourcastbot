@@ -252,6 +252,14 @@ class BotSim:
         event = fake_telegram.NewMessageEvent(self.user_id, message, self.lang)
         return self._run('file %s (%d bytes)' % (name, len(data)), event)
 
+    def send_voice(self, data: bytes, duration: int, document_id: int = 12345) -> Step:
+        file = fake_telegram.FakeFile('voice.ogg', 'audio/ogg', len(data))
+        file.duration = duration
+        message = self._user_message('', document=types.SimpleNamespace(id=document_id), file=file, data=data)
+        message.voice = message.document
+        event = fake_telegram.NewMessageEvent(self.user_id, message, self.lang)
+        return self._run('voice (%d seconds)' % duration, event)
+
     def tap(self, button, message: Optional[Sent] = None) -> Step:
         """`button`: its text (or part of it), or (row, column). The message: the bot's latest
         one that has that button, unless given."""
