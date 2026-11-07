@@ -1,0 +1,134 @@
+# -*- coding: utf-8 -*-
+"""One question to the listeners nearest to paying: what stops you from taking a plan?
+
+On 2026-11-07 none of the 66 Relay trials that had ended was paid for, and the
+D-3, plan-off and win-back messages (154, with the 30% offer) brought one tap.
+Free users who meet the weekly cap do not pay either. Nobody knows why, so the
+bot asks them, once each:
+
+- `limit`: no plan running and `free_rec_per_week` episodes by click in the
+  last 14 days (they meet the cap or come close to it);
+- `ended`: their Relay ended (`winback`) at least `ENDED_AFTER_DAYS` ago, no plan
+  running now, and they used the bot themselves (a show of their own, a click,
+  a summary or a transcript), not only the welcome show's files.
+
+The message names four reasons and "I'll write it myself" (route `why`,
+`whySurveyModule`); a trial's end that has not spent the offer gets the first
+month at the discount under it. It goes until `why_survey_until` (config), so
+the trials that end meanwhile are asked too. `users.flags` `why_survey`:
+unsent, then sent (a crash in between never sends it twice). Never to a blocked
+chat, never fails the jobs role.
+Lock: python app/jobs/test_why_survey.py
+"""
+import time
+
+from app.service import analytics_events
+from app.service.payment.plan_end import WELCOME_CHANNEL_ID
+from config import db_path, free_rec_per_week, why_survey_until
+from db.connection import connect_sqlite
+from lib.tools.logger import logger
+
+SURVEY_FLAG = "why_survey"
+ACTION = "why"  # the route its buttons open
+ANSWERS = ("price", "pay", "free", "need", "own")
+LIMIT_DAYS = 14
+ENDED_AFTER_DAYS = 2
+CHECK_SECONDS = 3600
+
+
+def open_until(now=None) -> bool:
+    import datetime
+    now = time.time() if now is None else now
+    return datetime.datetime.fromtimestamp(now, datetime.timezone.utc).date().isoformat() <= why_survey_until
+
+
+def due(database=None, now=None) -> list:
+    """[(telegram id, lang, group)] not asked yet, here still, no plan running."""
+    from db.tariff_rows import running_plan_level
+    from config import creatorId
+    now = time.time() if now is None else now
+    database = db_path if database is None else database
+    connection = connect_sqlite(database)
+    unmarked = ("u.telegramId > 0 AND u.deleted_at IS NULL "
+                "AND json_extract(COALESCE(u.flags, '{}'), '$.%s') IS NULL" % SURVEY_FLAG)
+    try:
+        limit = connection.execute(
+            "SELECT u.telegramId, u.lang FROM users u JOIN usage_events e ON e.user_id = u.telegramId "
+            "WHERE %s AND e.kind = 'rec' AND e.at >= ? GROUP BY u.telegramId "
+            "HAVING COUNT(DISTINCT e.ref) >= ?" % unmarked,
+            (now - LIMIT_DAYS * 86400, free_rec_per_week)).fetchall()
+        ended = connection.execute(
+            "SELECT u.telegramId, u.lang FROM users u JOIN winback w ON w.user_telegram_id = u.telegramId "
+            "WHERE %s AND w.ended_at <= ? AND ("
+            "EXISTS (SELECT 1 FROM user_channel_cs s WHERE s.user_telegram_id = u.telegramId "
+            "AND s.channel_id != ?) "
+            "OR EXISTS (SELECT 1 FROM usage_events e WHERE e.user_id = u.telegramId "
+            "AND e.kind IN ('rec', 'ai', 'transcript', 'ask')))" % unmarked,
+            (now - ENDED_AFTER_DAYS * 86400, WELCOME_CHANNEL_ID)).fetchall()
+    finally:
+        connection.close()
+    found = {}
+    for group, rows in (("ended", ended), ("limit", limit)):
+        for telegram_id, lang in rows:
+            found.setdefault(telegram_id, (telegram_id, lang, group))
+    return [row for telegram_id, row in found.items()
+            if telegram_id != int(creatorId) and running_plan_level(telegram_id, database) <= 0]
+
+
+def survey_message(language_code, telegram_id, database=None) -> dict:
+    """The question, a button per reason, and a trial's offer when it is due."""
+    from app.i18n.messages import get_message
+    from app.service.payment import plan_end
+    from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
+    from db.sqliteAdapter import SQLighter
+    rows = [[{'text': get_message("whyAnswer_" + answer, language_code),
+              'callback_data': {'tp': ACTION, 'a': answer}}] for answer in ANSWERS]
+    db = SQLighter(db_path if database is None else database)
+    try:
+        price = next((int(t['price']) for t in db.getTariffs() if int(t['level']) == SHOWCASE_TARIFF_LEVEL), 500)
+    finally:
+        db.close()
+    line, offer_row = plan_end.trial_offer(telegram_id, SHOWCASE_TARIFF_LEVEL, price, language_code,
+                                           analytics_events.SURVEY_SOURCE, database=database)
+    text = get_message("whySurvey", language_code)
+    if offer_row:
+        text += "\n\n" + line
+        rows.append(offer_row)
+    return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}
+
+
+def _mark(telegram_id, value, database=None):
+    from db.sqliteAdapter import SQLighter
+    db = SQLighter(db_path if database is None else database)
+    try:
+        db.set_user_flag(telegram_id, SURVEY_FLAG, value)
+    finally:
+        db.close()
+
+
+def send_surveys(database=None, now=None, send=None) -> int:
+    """Ask the chats due while the survey is open; how many got it."""
+    if not open_until(now):
+        return 0
+    if send is None:
+        from lib.telegram.general.message_master import outer_sender as send
+    sent = 0
+    for telegram_id, lang, group in due(database, now):
+        try:
+            _mark(telegram_id, "unsent", database)  # first: a crash in between never sends it twice
+            if send(telegram_id, [survey_message(lang or "en", telegram_id, database)]):
+                _mark(telegram_id, "sent", database)
+                analytics_events.track(telegram_id, "survey_sent", {"group": group}, database=database)
+                sent += 1
+        except Exception as e:
+            logger.warn("why survey:", telegram_id, type(e).__name__, e)
+    return sent
+
+
+def survey_watcher():
+    while True:
+        try:
+            send_surveys()
+        except Exception as e:
+            logger.err("why survey batch:", e)
+        time.sleep(CHECK_SECONDS)

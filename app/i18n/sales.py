@@ -390,6 +390,57 @@ ROWS = {
         'Factura por ${summa}. Eliges la moneda en CryptoBot.',
         'Rechnung über ${summa}. Die Münze wählst du in CryptoBot.',
         'חשבון על ‎${summa}. את המטבע בוחרים ב-CryptoBot.'),
+    # "what stops you from taking a plan?" (app/jobs/why_survey.py)
+    'whySurvey': (
+        'Здравствуйте! Я разработчик Yourcast. Вы слушаете подкасты через бота, и мне важно понять одно: '
+        'что мешает оформить план? Одно нажатие очень поможет.',
+        "Hi! I'm the developer of Yourcast. You listen to podcasts through the bot, and I'd like to understand "
+        "one thing: what stops you from taking a plan? One tap helps a lot.",
+        'Olá! Sou o desenvolvedor do Yourcast. Você ouve podcasts pelo bot, e eu queria entender uma coisa: '
+        'o que impede você de assinar um plano? Um toque já ajuda muito.',
+        '¡Hola! Soy el desarrollador de Yourcast. Escuchas podcasts con el bot y quiero entender una cosa: '
+        '¿qué te impide contratar un plan? Un toque ayuda mucho.',
+        'Hallo! Ich entwickle Yourcast. Du hörst Podcasts über den Bot, und ich möchte eins verstehen: '
+        'Was hält dich von einem Plan ab? Ein Tippen hilft sehr.',
+        'שלום! אני המפתח של Yourcast. אתם מאזינים לפודקאסטים דרך הבוט, ואני רוצה להבין דבר אחד: '
+        'מה מונע מכם לבחור תוכנית? לחיצה אחת תעזור מאוד.'),
+    'whyAnswer_price': ('💸 Дорого', '💸 Too expensive', '💸 Caro demais', '💸 Demasiado caro', '💸 Zu teuer',
+                        '💸 יקר מדי'),
+    'whyAnswer_pay': ('💳 Неудобно платить', '💳 Paying is inconvenient', '💳 Pagar é complicado',
+                      '💳 Pagar es incómodo', '💳 Bezahlen ist umständlich', '💳 לא נוח לשלם'),
+    'whyAnswer_free': ('🆓 Мне хватает бесплатного', '🆓 The free version is enough', '🆓 A versão grátis basta',
+                       '🆓 Me basta la versión gratis', '🆓 Die Gratis-Version reicht mir',
+                       '🆓 הגרסה החינמית מספיקה לי'),
+    'whyAnswer_need': ('🤷 Бот мне не очень нужен', "🤷 I don't really need the bot", '🤷 Não preciso muito do bot',
+                       '🤷 No necesito mucho el bot', '🤷 Ich brauche den Bot kaum', '🤷 אני לא ממש צריך את הבוט'),
+    'whyAnswer_own': ('✍️ Напишу сам', "✍️ I'll write it myself", '✍️ Vou escrever', '✍️ Lo escribo yo',
+                      '✍️ Ich schreibe es selbst', '✍️ אכתוב בעצמי'),
+    'whyThanksToast': ('Спасибо!', 'Thank you!', 'Obrigado!', '¡Gracias!', 'Danke!', 'תודה!'),
+    'whyMore': (
+        'Спасибо! Если хотите, напишите одним сообщением чуть подробнее: какая цена была бы честной, '
+        'как вам удобно платить, чего не хватает. Я читаю всё сам.',
+        "Thank you! If you like, add a few words in one message: what price would be fair, how you'd like "
+        "to pay, what's missing. I read every reply myself.",
+        'Obrigado! Se quiser, escreva um pouco mais numa mensagem: que preço seria justo, como prefere pagar, '
+        'o que falta. Eu leio todas as respostas.',
+        '¡Gracias! Si quieres, cuéntame un poco más en un mensaje: qué precio sería justo, cómo prefieres '
+        'pagar, qué falta. Leo todas las respuestas yo mismo.',
+        'Danke! Wenn du magst, schreib mir in einer Nachricht etwas mehr: welcher Preis fair wäre, wie du '
+        'zahlen möchtest, was fehlt. Ich lese jede Antwort selbst.',
+        'תודה! אם תרצו, כתבו עוד כמה מילים בהודעה אחת: איזה מחיר יהיה הוגן, איך נוח לכם לשלם, מה חסר. '
+        'אני קורא כל תשובה בעצמי.'),
+    'whyWrite': (
+        'Напишите одним сообщением, я читаю всё сам.',
+        'Write it in one message, I read every reply myself.',
+        'Escreva numa mensagem, eu leio todas as respostas.',
+        'Escríbelo en un mensaje, leo todas las respuestas yo mismo.',
+        'Schreib es in einer Nachricht, ich lese jede Antwort selbst.',
+        'כתבו בהודעה אחת, אני קורא כל תשובה בעצמי.'),
+    'whyTextOnly': ('Напишите, пожалуйста, текстом.', 'Please write it as text.', 'Escreva em texto, por favor.',
+                    'Escríbelo en texto, por favor.', 'Bitte schreib es als Text.', 'כתבו בטקסט, בבקשה.'),
+    'whyGot': ('Получил, спасибо! Это очень помогает.', 'Got it, thank you! This helps a lot.',
+               'Recebi, obrigado! Isso ajuda muito.', '¡Recibido, gracias! Esto ayuda mucho.',
+               'Angekommen, danke! Das hilft sehr.', 'קיבלתי, תודה! זה עוזר מאוד.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

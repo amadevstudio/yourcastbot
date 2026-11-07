@@ -953,6 +953,27 @@ per chat: a send Telegram did not take is marked unsent, not retried.
 Lock: `python app/jobs/test_own_show_nudge.py` (CD gate),
 `python app/admin_web/test_product.py`.
 
+## Why nobody pays: the survey
+
+On 2026-11-07 none of 66 ended Relay trials was paid for and 154 plan-end
+messages with the 30% offer brought one tap. So the jobs role asks the chats
+nearest to paying, once each, until `why_survey_until` (config): "what stops
+you from taking a plan?" (`app/jobs/why_survey.py`, hourly). Due: no plan
+running and either `free_rec_per_week` episodes by click in the last 14 days
+(`limit`) or a Relay that ended 2+ days ago (`winback`) and a bot used by the
+chat itself: a show of its own, a click, a summary, a transcript (`ended`).
+Not the creator, not a blocked chat; `users.flags` `why_survey` unsent, then
+sent. Buttons: too expensive, paying is inconvenient, the free version is
+enough, no real need, "I'll write it myself" (route `why`,
+`whySurveyModule`), and the trial's first-month offer when due (`s: why`,
+`source: survey`). A tap keeps the answer (`users.flags` `why_answer`),
+counts it (`survey_answer`), tells the creator (`#survey`) and asks for a few
+words; the next text goes to the creator as it is (`survey_text`), then the
+menu. Half an hour later, or a link, a text is a search. Events:
+`survey_sent {group}`, `survey_answer {answer}`, `survey_text {answer, chars}`.
+Lock: `python app/jobs/test_why_survey.py` (CD gate; the message and answer
+parts run where the bot's requirements are installed).
+
 ## First episode after subscribing
 
 A subscription from the podcast page or the welcome screen queues the show's
