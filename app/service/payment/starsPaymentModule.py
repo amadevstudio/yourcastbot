@@ -31,7 +31,9 @@ from app.service.payment.offers import (
     prepaid_months_sold, relay_terms_open)
 from app.service.payment.storefront import (
     CHANGE_PLAN_CALLBACK, SHOWCASE_TARIFF_LEVEL, plan_name, showcase_tariff, tariffs_for_storefront)
+from app.service.plan import channels as channel_plan
 from config import db_path, prepay_bundles
+from db import plan_grants
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import InlineButtonData, outer_sender, render_messages
 from lib.tools.logger import Logger
@@ -237,7 +239,7 @@ def validate_payment_payload(
 
 
 def open_subscription_page(data: ControllerParams):
-    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'])
+    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
     rate_x1000 = get_stars_withdraw_rate_x1000()
 
     sub_msg = get_sub_message(
@@ -245,8 +247,8 @@ def open_subscription_page(data: ControllerParams):
         tariff['price'], balance, time_left, notify_left, rate_x1000)
 
     render_messages(data['chat_id'], [{
-        'type': 'text', 'text': sub_msg['message'], 'reply_markup': sub_msg['markup'],
-        'disable_web_page_preview': True}])
+        'type': 'text', 'text': sub_msg['message'] + channel_plan.pay_note(data['chat_id'], data['language_code']),
+        'reply_markup': sub_msg['markup'], 'disable_web_page_preview': True}])
 
 
 def get_sub_message(
@@ -320,6 +322,8 @@ def send_invoice(data: ControllerParams):
         subscription = db_users.getUserSubscriptionByTg(data['chat_id'])
     finally:
         db_users.close()
+    if subscription is not None and plan_grants.active_kind(data['chat_id']):
+        subscription = None  # a grant's plan is no plan to buy against: the invoice's plan replaces it
     plan_running = is_subscription_active(subscription)
     current_level = next((t['level'] for t in tariffs if subscription is not None
                           and t['id'] == subscription['tariff_id']), 0)
@@ -435,7 +439,7 @@ def open_recurring_page(data: ControllerParams):
     on the Stars page), and Patreon. A running Stars subscription shows its next
     charge instead of the plans: Telegram would charge two."""
     language_code = data['language_code']
-    tariff, _balance, _time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'])
+    tariff, _balance, _time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
     text = get_message('payRecurringBody', language_code)
     menu_keyboard: list[list[InlineButtonData]] = []
     until = stars_subscription.until(data['chat_id'])
@@ -478,6 +482,8 @@ def send_subscription_offer(data: ControllerParams):
         plan_id = int(data['united_data'].get('v') or 0)
     except (TypeError, ValueError):
         plan_id = 0
+    if subscription is not None and plan_grants.active_kind(data['chat_id']):
+        subscription = None  # a grant's plan is no plan to buy against (db/plan_grants.py): Relay unless named
     if not plan_id and subscription is not None:
         plan_id = int(subscription['tariff_id'] or 0)
     plan = next((_t for _t in tariffs if int(_t['id']) == plan_id), None) if plan_id else None

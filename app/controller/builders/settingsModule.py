@@ -307,10 +307,13 @@ def toggle_auto_summary(data: ControllerParams):
         db_users.set_user_flag(data['chat_id'], ai_auto.FLAG, 1 if enabled else 0)
     finally:
         db_users.close()
-    without_plan = enabled and not entitlements.of(data['chat_id']).ai
-    notify(data['callback'], data['message'],
-           get_message('summaryAutoNeedsPlan' if without_plan else 'summaryAutoOn' if enabled else 'summaryAutoOff',
-                       data['language_code']), alert=without_plan)
+    rights = entitlements.of(data['chat_id'])
+    without_plan = enabled and not rights.ai
+    text = get_message('summaryAutoNeedsPlan' if without_plan else 'summaryAutoOn' if enabled else 'summaryAutoOff',
+                       data['language_code'])
+    if without_plan and rights.grant:
+        text = get_message('aiGrantNoAi', data['language_code']) + ' ' + text
+    notify(data['callback'], data['message'], text, alert=without_plan)
     _redraw(data, construct_summary_message(data['language_code'], data['chat_id']))
 
 

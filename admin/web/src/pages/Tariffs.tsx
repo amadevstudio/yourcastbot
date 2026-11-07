@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, Hint, Input, Skeleton } from "@/components/ui/primitives";
 import { centsToUsd } from "@/lib/utils";
 import { useState } from "react";
+import ChannelPlanCard from "./ChannelPlan";
+import PlanProfilesCard from "./PlanProfiles";
 
 const columns: {
   key: "price" | "notify_count" | "compression" | "channel_control";
@@ -128,6 +130,8 @@ export default function Tariffs() {
           </table>
         )}
       </Card>
+      <PlanProfilesCard />
+      <ChannelPlanCard />
     </div>
   );
 }

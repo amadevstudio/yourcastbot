@@ -21,7 +21,7 @@ if _ROOT not in sys.path:
 
 import config  # noqa: E402
 from app.admin_web import product  # noqa: E402
-from db import ai, usage  # noqa: E402
+from db import ai, plan_grants, usage  # noqa: E402
 
 NEW_ACTIVE, NEW_IDLE, NEW_GONE, OLD_PAYER = 1001, 1002, 1003, 1004
 PAID_EARLY, PAID_LATE, NEVER_PAID = 1006, 1007, 1008
@@ -116,8 +116,16 @@ def main():
                    "newcomers: the welcome show is not their own, the creator's test is not a payment")
         _assert_eq(sum(week['new'] for week in report['weeks']), 4, 'every newcomer is in a week')
         _assert_eq(report['weeks'][0]['week'] >= report['weeks'][-1]['week'], True, 'the latest week first')
-        _assert_eq(report['plans'], {'paid': 2, 'trial': 2, 'trial_ending': 1},
+        _assert_eq(report['plans'], {'paid': 2, 'trial': 2, 'trial_ending': 1, 'granted': 0},
                    'plans now: a blocked user is not counted, a trial with the balance to renew is not ending')
+        conn = sqlite3.connect(path)
+        plan_grants.ensure_table(conn)
+        conn.execute("INSERT INTO plan_grants (user_id, kind, tariff_id, started_at, period_started_at) "
+                     "VALUES (2, 'channels', 3, 0, 0)")
+        conn.commit()
+        conn.close()
+        _assert_eq(product.product(days=30, database=path, now=later)['plans'],
+                   {'paid': 2, 'trial': 1, 'trial_ending': 1, 'granted': 1}, 'a grant is apart, not a trial')
         _assert_eq(report['payments'], {'payments': 2, 'payers': 2, 'first_time': 1, 'revenue_usd': 10.0},
                    "payments in the period, the creator's tests left out")
         got = report['ai']

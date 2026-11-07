@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -17,6 +18,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
 from app.admin_web import auth, diag, economics, mail_jobs, product, queries, webhooks
+from app.service.plan import channels as channel_plan, features as plan_features
+from db import plan_grants
 from lib.tools.logger import logger
 
 ADMIN_HOST = "127.0.0.1"
@@ -46,6 +49,16 @@ class TariffBody(BaseModel):
     notify_count: int
     compression: int = 0
     channel_control: int = 0
+
+
+class PlanProfileBody(BaseModel):
+    name: str  # features.NONE, TRIAL, level:<n>, grant:<kind>
+    features: dict  # {feature: value}; {} resets the profile to config's
+
+
+class ChannelPlanBody(BaseModel):
+    enabled: bool  # on only with a channel listed
+    channels: list[str]  # @name, t.me/name or the -100 id, as the admin typed them
 
 
 class _NoCacheHTML(BaseHTTPMiddleware):
@@ -249,6 +262,60 @@ def save_tariff(body: TariffBody, _admin: dict = Depends(current_admin)):
     if row is None:
         raise HTTPException(status_code=404, detail="tariff not found")
     return row
+
+
+def _plan_profiles() -> dict:
+    edits = plan_features.overrides(fresh=True)
+    return {'features': plan_features.FEATURES, 'defaults': plan_features.defaults(), 'edits': edits,
+            'profiles': plan_features.merged(edits), 'cache_seconds': plan_features.CACHE_SECONDS}
+
+
+@api.get("/plan/profiles")
+def plan_profiles(_admin: dict = Depends(current_admin)):
+    """What each kind of plan gives (app/service/plan/features.py): config's defaults and the admin's edits."""
+    return _plan_profiles()
+
+
+@api.post("/plan/profiles")
+def save_plan_profile(body: PlanProfileBody, _admin: dict = Depends(current_admin)):
+    try:
+        plan_features.save(body.name, body.features)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _plan_profiles()
+
+
+def _channel_plan(conf: dict) -> dict:
+    return {**conf, 'grace_hours': channel_plan.GRACE_HOURS,
+            'grants': plan_grants.counts(channel_plan.KIND, time.time() - 30 * 86400)}
+
+
+@api.get("/plan/channels")
+def channel_plan_settings(_admin: dict = Depends(current_admin)):
+    """Free Bronze for channels (app/service/plan/channels.py): on or off, the list, grants running and of 30 days."""
+    return _channel_plan(channel_plan.settings())
+
+
+@api.post("/plan/channels")
+def save_channel_plan(body: ChannelPlanBody, _admin: dict = Depends(current_admin)):
+    """Each channel resolved by the Bot API (the bot must be its admin); all or nothing. No channel: off.
+    Turning it off with the list as it is resolves nothing: a channel the bot lost must not keep it on."""
+    texts = list(dict.fromkeys(t.strip() for t in body.channels if t.strip()))
+    current = channel_plan.settings()
+    if not body.enabled and texts == [c.get('ref') or str(c['id']) for c in current['channels']]:
+        return _channel_plan(channel_plan.save_settings(False, current['channels']))
+    resolved, errors = [], []
+    for text in texts:
+        try:
+            channel = channel_plan.resolve(text)
+        except ValueError as e:
+            errors.append(str(e))
+            continue
+        if all(c['id'] != channel['id'] for c in resolved):
+            resolved.append(channel)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    return _channel_plan(channel_plan.save_settings(body.enabled and bool(resolved), resolved))
 
 
 @api.get("/mail")

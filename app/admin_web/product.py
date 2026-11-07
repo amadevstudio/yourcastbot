@@ -166,14 +166,19 @@ def _paid_first_days(conn, params) -> dict:
 
 
 def _plans(conn, params) -> dict:
+    """Plans running: paid, trial (nobody paid), trial ending; a grant's (db/plan_grants.py) apart, `granted`."""
+    held = "0"
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_grants'").fetchone():
+        held = "EXISTS(SELECT 1 FROM plan_grants g WHERE g.user_id = u.id AND g.ended_at IS NULL)"
     row = conn.execute(
-        "SELECT COALESCE(SUM(%s), 0) paid, COALESCE(SUM(NOT %s), 0) trial, "
-        "COALESCE(SUM(NOT %s AND utc.time_left <= :ending AND COALESCE(utc.balance, 0) < t.price), 0) "
-        "trial_ending FROM users u JOIN user_tariff_cs utc ON utc.uid = u.id "
+        "SELECT COALESCE(SUM(%(paid)s AND NOT %(held)s), 0) paid, COALESCE(SUM(NOT %(paid)s AND NOT %(held)s), 0) "
+        "trial, COALESCE(SUM(NOT %(paid)s AND NOT %(held)s AND utc.time_left <= :ending "
+        "AND COALESCE(utc.balance, 0) < t.price), 0) trial_ending, COALESCE(SUM(%(held)s), 0) granted "
+        "FROM users u JOIN user_tariff_cs utc ON utc.uid = u.id "
         "JOIN tariffs t ON t.id = utc.tariff_id "
         "WHERE utc.tariff_id > 0 AND utc.time_left > 0 AND u.deleted_at IS NULL"
-        % (_PAID, _PAID, _PAID), params).fetchone()
-    return {key: int(row[key]) for key in ('paid', 'trial', 'trial_ending')}
+        % {'paid': _PAID, 'held': held}, params).fetchone()
+    return {key: int(row[key]) for key in ('paid', 'trial', 'trial_ending', 'granted')}
 
 
 def _payments(conn, params) -> dict:

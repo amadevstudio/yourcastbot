@@ -71,6 +71,8 @@ class FakeBotApi:
         # parts of photo URLs Telegram will not fetch ("failed to get HTTP URL content", cdn.mave.digital);
         # an uploaded file always goes
         self.refused_urls: set = set()
+        # getChatMember: (channel id, user id) -> status; anyone else has left
+        self.members: dict = {}
 
     # --- the chat ---------------------------------------------------------
     def next_id(self) -> int:
@@ -241,6 +243,10 @@ class FakeBotApi:
 
     def _getMe(self, params, files):
         return dict(self.BOT)
+
+    def _getChatMember(self, params, files):
+        key = (int(params.get('chat_id')), int(params.get('user_id')))
+        return {'status': self.members.get(key, 'left'), 'user': {'id': key[1], 'is_bot': False}}
 
     def _getChat(self, params, files):
         chat_id = int(params.get('chat_id', 0) or 0)

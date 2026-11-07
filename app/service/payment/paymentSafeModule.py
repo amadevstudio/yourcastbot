@@ -8,6 +8,7 @@ from config import (
     tariff_ref_notifies, tariff_ref_sub_period, tariff_ref_invitee_period,
     tariff_new_user_period, tariff_secret_start_cmd_period,
     tariff_period)
+from db import plan_grants
 from db.sqliteAdapter import SQLighter
 
 
@@ -151,9 +152,13 @@ def apply_balance_replenishment(db: SQLighter, user, amount_cents: int) -> Payme
     }
 
 
-def get_tariff_params_by_tg(telegram_id: int) -> Tuple[TariffParams, int, int, int]:
+def get_tariff_params_by_tg(telegram_id: int, purchase=False) -> Tuple[TariffParams, int, int, int]:
+    """(tariff, balance, hours left, deliveries left). `purchase`: as the pages that sell a plan see it,
+    where a grant's plan (db/plan_grants.py) is no plan (what is bought replaces it): its balance only."""
     db = SQLighter(db_path)
     subscription = db.getUserSubscriptionByTg(telegram_id)
+    if subscription is not None and purchase and plan_grants.active_kind(telegram_id):
+        subscription = {"tariff_id": 0, 'balance': subscription['balance'], 'time_left': 0, 'notify_count': 0}
     if subscription is None:
         subscription = {
             "tariff_id": 0, 'balance': 0, 'time_left': 0, 'notify_count': 0}
@@ -233,10 +238,22 @@ def giveAward(refer_tg_id, refered_tg_id, mode, invited=False):
     message = ""
     language_code = user['lang'] if user['lang'] is not None else 'en'
 
+    # a grant's plan (db/plan_grants.py) is no plan to an award: it ends, the award's days count from none
+    # (its check would take days on top of it back)
+    granted = mode in ('reged', 'replenished') and db.end_plan_grant(user['id'], 'award')
+
     # приглашённый начал пользоваться
     if mode == 'reged':
         current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
-        if current_subscription is None:
+        if granted:
+            # +days of a free Bronze that runs with no end would end it in days: Relay for them instead
+            # (Check turns the free Bronze on again after)
+            extreme = db.getExtremeTariff('max')
+            db.subscribeUserToTariffByTg(
+                refer_tg_id, extreme['id'], current_subscription['balance'],
+                int(tariff_ref_period), extreme['notify_count'])
+            message += get_message("award_with_s_new_user", language_code)
+        elif current_subscription is None:
             extreme = db.getExtremeTariff('min')
             db.subscribeUserToTariffByTg(
                 refer_tg_id, extreme['id'], 0,

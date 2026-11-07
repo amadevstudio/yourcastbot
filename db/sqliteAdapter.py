@@ -11,7 +11,7 @@ from config import (
 
 from db.connection import connect_sqlite
 from db.dbTypes import UserDBType
-from db import payment_effects, payments
+from db import payment_effects, payments, plan_grants
 from db.hot_indexes import ensure_hot_path_indexes
 
 from lib.tools.logger import logger
@@ -1782,6 +1782,19 @@ class SQLighter:
                     'notify_count': 0, 'compression': 0
                 }
 
+            # a grant's plan (db/plan_grants.py) is no plan to a plan's invoice that pays for one: the
+            # invoice's plan turns on in its place. A top-up, or money short of the plan, leaves it running.
+            if planId and current_subscription is not None \
+                    and plan_grants.active(self.cursor.execute, user_id) is not None:
+                wanted = self.cursor.execute(
+                    'SELECT price FROM tariffs WHERE id = ? AND price > 0', (str(planId),)).fetchone()
+                if wanted is not None:
+                    price = int(wanted['price']) if planPrice is None else min(int(wanted['price']), int(planPrice))
+                    if int(current_subscription['balance'] or 0) + int(amountCents) >= price:
+                        plan_grants.end(self.cursor.execute, user_id, 'purchase')
+                        current_subscription['time_left'] = 0
+                        current_subscription['notify_count'] = 0
+
             plan = None
             if planId and (current_subscription is None
                            or not (current_subscription['tariff_id'] > 0
@@ -1907,6 +1920,11 @@ class SQLighter:
             self.connection.rollback()
             raise
 
+    def end_plan_grant(self, user_id, reason, restore=False):
+        """The user's grant ends (db/plan_grants.py): its plan stops, no days; False without one."""
+        with self.connection:
+            return plan_grants.end(self.cursor.execute, user_id, reason, restore=restore)
+
     def subscribeUserToTariffByTg(
             self, telegram_id, tariff_id, balance, time_left, notify_count):
         with self.connection:
@@ -1937,6 +1955,12 @@ class SQLighter:
                     (str(user_id), str(tariffId), str(balance),
                      str(time_left), str(notify_count),))
             else:
+                # a write that changes a grant's plan or its days replaces it (db/plan_grants.py);
+                # one that changes only the balance (a top-up) leaves it running
+                row = is_exist[0]
+                if int(row['tariff_id'] or 0) != int(tariffId or 0) \
+                        or int(row['time_left'] or 0) != int(time_left or 0):
+                    plan_grants.end(self.cursor.execute, user_id, 'replaced')
                 self.cursor.execute(
                     'UPDATE user_tariff_cs \
                     SET tariff_id = ?, balance = ?, \
@@ -1969,8 +1993,11 @@ class SQLighter:
                 INNER JOIN users u ON u.id = utc.uid
                 WHERE utc.balance >= t.price AND utc.time_left <= 1
                     AND u.deleted_at IS NULL
+                    -- a grant's plan is never renewed from money (db/plan_grants.py)
+                    AND %s
                 ORDER BY u.lang
-            """
+            """ % (plan_grants.NOT_HELD_SQL % 'u.id')
+            plan_grants.ensure_table(self.connection)
             return self.cursor.execute(sql).fetchall()
 
     def get_users_who_cannot_be_prolonged(self):
@@ -1984,8 +2011,11 @@ class SQLighter:
                 INNER JOIN users u ON u.id = utc.uid
                 WHERE utc.balance < t.price AND utc.time_left = 1
                     AND u.deleted_at IS NULL
+                    -- a grant ends by its check, which says so (app/jobs/plan_grants.py)
+                    AND %s
                 ORDER BY u.lang
-            """
+            """ % (plan_grants.NOT_HELD_SQL % 'u.id')
+            plan_grants.ensure_table(self.connection)
             return self.cursor.execute(sql).fetchall()
 
     def get_users_nearing_expiry(self, max_hours):
@@ -2000,8 +2030,11 @@ class SQLighter:
                     AND u.deleted_at IS NULL
                     -- enough balance: the tick renews it, "ends in N days" is false
                     AND (utc.balance IS NULL OR utc.balance < t.price)
+                    -- a grant does not end by the clock (db/plan_grants.py)
+                    AND %s
                 ORDER BY utc.time_left ASC
-            """
+            """ % (plan_grants.NOT_HELD_SQL % 'u.id')
+            plan_grants.ensure_table(self.connection)
             return self.cursor.execute(sql, (int(max_hours),)).fetchall()
 
     def prolong_users(self, tariff_period):
@@ -2030,7 +2063,10 @@ class SQLighter:
                         SELECT 1 FROM users u
                         WHERE u.id = user_tariff_cs.uid
                             AND u.deleted_at IS NOT NULL)
-            """
+                    -- as get_users_who_can_be_prolonged: never a grant's plan
+                    AND %s
+            """ % (plan_grants.NOT_HELD_SQL % 'user_tariff_cs.uid')
+            plan_grants.ensure_table(self.connection)
             self.cursor.execute(sql, (str(tariff_period),))
             rowcount = self.cursor.rowcount
             self.connection.commit()

@@ -1023,8 +1023,11 @@ Lock: `python app/controller/builders/test_latest_episode.py`.
 What a plan gives is data, not checks by level: `app/service/plan/features.py`
 holds a profile of features per kind of plan (`none`: no plan running;
 `trial`: a plan nobody paid for, whatever its level; `level:<n>`: a plan paid
-for), `app/service/plan/entitlements.py` picks the chat's profile once
-(`entitlements.of(chat_id)`: its running plan, `tariff_rows.paid_for_days`).
+for; `grant:<kind>`: a plan given for something else, below), and
+`app/service/plan/entitlements.py` picks the chat's profile once
+(`entitlements.of(chat_id)`: its running plan, `tariff_rows.paid_for_days`,
+the grant that holds it; `purchase_level`: the plan as buying sees it, 0 for
+a grant).
 Features: AI (`ai`, `ai_hours`, `ai_paid_hours`, `ai_questions_day`,
 `ai_questions_month`, `ai_budget`) and clicks (`clicks`, `clicks_hours`).
 The AI quota (`quota.check`, `questions`, `budget`, `paid_transcribe_fits`),
@@ -1032,11 +1035,61 @@ the click limit (`free_limit.limit_hit`), paid models, the summary hint, the
 settings toggle, the economics page and a plan's description read them there;
 a reader that asks the plan's level or config's dicts for a limit again breaks
 the constructor (the owner's call, 2026-11-07: plans built from pieces, edited
-in the admin). The defaults are config.py's values. Delivery (`notify_count`,
-`channel_control`) and the free subscription limit stay in `tariffs` and
-config for now. A new kind of plan is a profile and the rule that picks it in
-`entitlements.for_plan`. Lock: `python app/service/plan/test_entitlements.py`
-(CD gate).
+in the admin). The defaults are config.py's values; the admin's page
+"Tariffs" edits them (`features.save`, bot_runtime_kv `plan_profiles`: only
+what differs from the default, checked; every process reads the edits within
+`CACHE_SECONDS`, 60). Delivery (`notify_count`, `channel_control`) and the
+free subscription limit stay in `tariffs` and config for now. A new kind of
+plan is a profile and the rule that picks it in `entitlements.for_plan`.
+Lock: `python app/service/plan/test_entitlements.py` (CD gate).
+
+A grant (`db/plan_grants.py`, table `plan_grants`, one running per user) puts
+its plan on the user's `user_tariff_cs` row (the tariff of its level,
+`HOLD_HOURS` (a week) left, the tariff's deliveries; the balance stays), so
+delivery and every "plan running" check see a plan as before; what it gives is
+its profile, whoever holds it (a chat that paid before too). Its rules:
+started only with no plan running; money never renews it (the tick's renewal,
+its lists, D-3 and plan-off leave holders out: `NOT_HELD_SQL`); anything bought
+or given replaces it: a plan's invoice that pays for the plan (a top-up or
+money short of it keeps it), the change-plan page (from the balance at full
+price, never a price difference or a refund; "Disable" leaves no plan, tariff
+0: the plan it replaced would come back and the tick renew it from the
+balance), a referral award (Relay for the award's days: days on top of a plan
+with no end would end it in days), the survey's week (Relay in its place); any
+other write of the row that changes its plan or days ends it
+(`subscribeUserToTariffByUid`), a balance-only write does not; a Stars refund
+takes none of its days. Its check holds it or ends it with the plan it
+replaced back and no days, in one transaction that writes the row only while
+the grant still holds it: a payment between a check's read and its write is
+never undone. Win-back keeps a holder as away (Relay is still offered). The
+pages that sell a plan (`get_tariff_params_by_tg(purchase=True)`, the Stars
+invoice and subscription, `offers.relay_terms_open`) see no plan.
+
+The first grant is free Bronze for channels (`app/service/plan/channels.py`,
+the owner's call, 2026-11-07): Bronze without AI while the chat is subscribed
+to every channel the admin lists (page "Tariffs": a switch and the list, an
+@name, a t.me link or the id; the bot must be an admin of each, else Telegram
+does not say who is subscribed; a private channel gets the bot's invite link).
+No channel listed is off, whatever the switch; turning it off resolves no
+channel (one the bot lost must not keep it on). While on, /subscription has
+the button (route `bs_chan`: the channels and "Check", `bs_chan_ok`, state
+independent); /subscription and the menu say it is on while subscribed, never
+days left or "not enough for renewal". Every hour the jobs role checks each
+holder (`app/jobs/plan_grants.py`, getChatMember): subscribed to all, held; a
+channel missing (the chat left, or the owner added one), warned once with that
+channel and kept `GRACE_HOURS` (24; `plan_grants.missing_since`, a hold clears
+it), then ended with a message, the channels' screen and every plan's invoice
+(`free_limit.plans_offer`, `s: chn`: Bronze is the cheapest way to keep the
+files). Turned off: every grant ends at the next pass with a message and every
+plan (the admin asks first, naming how many hold it; adding a channel too). A
+check Telegram does not answer keeps the plan and warns the creator once a
+day. Clicks as a trial's (100 a day), at the limit every plan's invoice; AI
+offers say it has none (`aiGrantNoAi`) with every plan's invoice. Events:
+`plan_grant_started {kind}`, `plan_grant_ended {kind, reason, missing}`
+(reason `unsubscribed` or `stopped`). The page "Product" counts holders apart
+(`granted`), the AI by plan on "Economics" leaves them out. Locks:
+`python db/test_plan_grants.py`, `python app/service/plan/test_channels.py`
+(CD gates), `python tools/botsim/test_botsim.py` (bot requirements).
 
 ## Free weekly episodes
 

@@ -3,16 +3,25 @@
 
 Profiles: NONE (no plan running), TRIAL (a plan nobody paid for: the welcome
 plan, referral days, whatever its level), level_key(n) (a plan paid for, by
-its level in `tariffs`). entitlements.py picks the chat's profile; the AI
+its level in `tariffs`), grant_key(kind) (a plan given for something else,
+db/plan_grants.py, whoever holds it). entitlements.py picks the chat's profile; the AI
 quota and the click limits read their numbers from it, never from config or a
 plan's level. Delivery (notify_count, channel_control) stays in `tariffs`.
 
-The values are config.py's, what the bot gave before profiles; the admin's
-edits are to override them. A level without config values gives no AI and
-no click limit, as a paid plan without hours always did.
+The defaults are config.py's, what the bot gave before profiles. The admin
+edits them (page "Tariffs": bot_runtime_kv OVERRIDES_KEY, {profile: {feature:
+value}}, only what differs); every process reads the edits within
+CACHE_SECONDS. A level without values gives no AI and no click limit, as a paid
+plan without hours always did.
 Lock: python app/service/plan/test_entitlements.py
 """
+import json
+import threading
+import time
+
 import config
+from db import runtime_kv
+from lib.tools.logger import logger
 
 NONE = 'none'
 TRIAL = 'trial'
@@ -29,10 +38,22 @@ FEATURES = {
 }
 WEEK_HOURS = 7 * 24
 DAY_HOURS = 24
+OVERRIDES_KEY = 'plan_profiles'
+CACHE_SECONDS = 60
+BOOLEAN = ('ai', 'ai_budget')
+WHOLE = ('ai_questions_day', 'ai_questions_month', 'clicks', 'clicks_hours')
+NULLABLE = ('clicks',)  # None: no limit
+# grants (db/plan_grants.py): the plan level each kind gives
+CHANNELS = 'channels'  # Bronze while subscribed to the owner's channels (app/service/plan/channels.py)
+GRANT_LEVELS = {CHANNELS: 1}
 
 
 def level_key(level) -> str:
     return 'level:%d' % int(level)
+
+
+def grant_key(kind) -> str:
+    return 'grant:%s' % kind
 
 
 def _paid_level(level) -> dict:
@@ -53,14 +74,85 @@ def defaults() -> dict:
                 'ai_questions_day': config.ai_trial_questions_per_day,
                 'ai_questions_month': config.ai_trial_questions_per_month,
                 'ai_budget': False, 'clicks': config.trial_rec_per_day, 'clicks_hours': DAY_HOURS},
+        # Bronze's delivery for free, without AI; clicks as a trial's: nobody pays for the rec workers
+        grant_key(CHANNELS): {'ai': False, 'ai_hours': 0, 'ai_paid_hours': 0, 'ai_questions_day': 0,
+                              'ai_questions_month': 0, 'ai_budget': False, 'clicks': config.trial_rec_per_day,
+                              'clicks_hours': DAY_HOURS},
     }
     for level in config.ai_summary_hours_per_month:
         profiles[level_key(level)] = _paid_level(level)
     return profiles
 
 
+_cache = {'at': 0.0, 'value': {}}
+_cache_lock = threading.Lock()
+
+
+def overrides(database=None, fresh=False) -> dict:
+    """The admin's edits, {profile: {feature: value}}; {} when there are none or they cannot be read."""
+    with _cache_lock:
+        if database is None and not fresh and time.time() - _cache['at'] < CACHE_SECONDS:
+            return _cache['value']
+        try:
+            value = json.loads(runtime_kv.get_kv(OVERRIDES_KEY, database=database) or '{}')
+            value = value if isinstance(value, dict) else {}
+        except Exception as e:  # never a reason for a plan to give nothing
+            logger.warn("plan profiles:", type(e).__name__, e)
+            value = {}
+        if database is None:
+            _cache.update(at=time.time(), value=value)
+        return value
+
+
+def merged(edits) -> dict:
+    """defaults() with `edits` over them: known profiles and features only."""
+    result = defaults()
+    for name, edited in (edits or {}).items():
+        if name in result and isinstance(edited, dict):
+            result[name].update({key: value for key, value in edited.items() if key in FEATURES})
+    return result
+
+
 def profiles() -> dict:
-    return defaults()
+    return merged(overrides())
+
+
+def clean(edited) -> dict:
+    """A profile's features as the admin sent them, checked; ValueError says what is wrong."""
+    result = {}
+    for key, value in edited.items():
+        if key not in FEATURES:
+            raise ValueError('unknown feature: %s' % key)
+        if key in BOOLEAN:
+            if not isinstance(value, bool):
+                raise ValueError('%s: true or false' % key)
+        elif value is None and key in NULLABLE:
+            pass
+        elif isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 \
+                or (key in WHOLE and value != int(value)):
+            raise ValueError('%s: a number of 0 or more%s' % (key, ', whole' if key in WHOLE else ''))
+        elif key == 'clicks_hours' and value < 1:
+            raise ValueError('clicks_hours: 1 or more')
+        result[key] = int(value) if key in WHOLE and value is not None else value
+    return result
+
+
+def save(name, edited, database=None) -> dict:
+    """The admin's features of profile `name` (what equals the default is not kept; {} resets it)."""
+    base = defaults()
+    if name not in base:
+        raise ValueError('unknown profile: %s' % name)
+    edited = {key: value for key, value in clean(edited).items() if base[name][key] != value}
+    edits = dict(overrides(database, fresh=True))
+    if edited:
+        edits[name] = edited
+    else:
+        edits.pop(name, None)
+    runtime_kv.set_kv(OVERRIDES_KEY, json.dumps(edits), database=database)
+    if database is None:
+        with _cache_lock:
+            _cache.update(at=time.time(), value=edits)
+    return edits
 
 
 def profile(name) -> dict:

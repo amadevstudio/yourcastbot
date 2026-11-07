@@ -122,6 +122,30 @@ def test_readers_follow_the_profile(db):
     _assert(quota.check(ODD_CHAT, 60, database=db).limit == 0, "a paid level without values: no AI hours")
 
 
+def test_admin_edits(db):
+    """The admin's edits: kept apart from config's defaults, only what differs, checked, reset by {}."""
+    edits = features.save(features.TRIAL, {'ai_hours': 2, 'clicks': 100, 'ai': True}, database=db)
+    _assert(edits == {features.TRIAL: {'ai_hours': 2}}, "only what differs from the default is kept")
+    merged = features.merged(features.overrides(db))
+    _assert(merged[features.TRIAL]['ai_hours'] == 2 and merged[features.NONE] == features.defaults()[features.NONE],
+            "an edit changes its profile only")
+    for bad in ({'ai': 1}, {'clicks': 1.5}, {'clicks_hours': 0}, {'nope': 1}, {'ai_hours': -1}):
+        try:
+            features.save(features.TRIAL, bad, database=db)
+            _assert(False, "refused: %r" % bad)
+        except ValueError:
+            pass
+    _assert(features.overrides(db) == {features.TRIAL: {'ai_hours': 2}}, "a refused edit changes nothing")
+    try:
+        features.save('level:7', {'ai': True}, database=db)
+        _assert(False, "an unknown profile is refused")
+    except ValueError:
+        _assert(True, "an unknown profile is refused")
+    _assert(features.save(features.TRIAL, {}, database=db) == {}, "{} resets the profile")
+    _assert(features.merged({'level:9': {'ai': True}, features.NONE: {'nope': 1}}) == features.defaults(),
+            "unknown profiles and features in the store are left out")
+
+
 def main():
     test_defaults()
     test_for_plan()
@@ -129,6 +153,7 @@ def main():
         db = os.path.join(tmp, 'plan.sqlite')
         test_of(db)
         test_readers_follow_the_profile(db)
+        test_admin_edits(db)
     print("all entitlements tests passed")
 
 

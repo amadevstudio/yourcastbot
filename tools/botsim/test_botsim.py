@@ -25,6 +25,7 @@ except ImportError as e:  # CI has no bot requirements
     print("skip botsim (%s)" % e.__class__.__name__)
     sys.exit(0)
 
+from app.i18n.messages import get_message  # noqa: E402
 from tools.botsim import sim  # noqa: E402
 
 USER = 1001
@@ -335,6 +336,48 @@ def test_downgrade_refund():
     _assert(_plan_row(2002)[1] > 0, "a chat that paid still gets half of the days left back")
 
 
+def test_free_bronze_for_channels():
+    """Bronze for subscribing to the owner's channels: the button on /subscription, the screen with the
+    channel, "Check" (not subscribed: said; subscribed: Bronze on for a week, held by the hourly check),
+    the status on /subscription, the pages that sell say a plan replaces it, the AI says it has none."""
+    from app.service.plan import channels
+    channels.save_settings(True, [{'id': -100501, 'title': 'Sim channel', 'url': 'https://t.me/simchannel'}],
+                           sim._state['database'])
+    db = _db()
+    bronze = db.execute("SELECT id FROM tariffs WHERE level = 1").fetchone()[0]
+    db.close()
+    user = sim.BotSim(2010, 'en')
+    user.send('/start')
+    db = _db()
+    db.execute("UPDATE user_tariff_cs SET time_left = 0 WHERE uid = (SELECT id FROM users WHERE telegramId = 2010)")
+    db.commit()
+    db.close()
+    step = user.send('/subscription')
+    _assert({'tp': channels.SCREEN} in _callbacks(step), "/subscription: the button while it is on")
+    step = user.tap_data(json.dumps({'tp': channels.SCREEN}))
+    urls = [b.get('url') for m in step.new + step.edited for row in m.buttons for b in row]
+    _assert('https://t.me/simchannel' in urls and {'tp': channels.CHECK_ACTION} in _callbacks(step),
+            "the screen: the channel and Check")
+    step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
+    _assert(step.toasts and 'Not subscribed yet: Sim channel' in step.toasts[-1][0] and _plan_row(2010)[2] == 0,
+            "not subscribed: said, nothing on")
+    user.api.members[(-100501, 2010)] = 'member'
+    step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
+    _assert(any('Bronze is on' in text for text in step.texts) and _plan_row(2010)[0] == bronze
+            and _plan_row(2010)[2] == 168 and not step.errors, "subscribed: Bronze on for a week")
+    step = user.send('/subscription')
+    renewal = get_message('not_enough_for_renewal', 'en').split('%')[0].strip()
+    _assert(any('Bronze for channels is on' in text for text in step.texts)
+            and not any(renewal in text for text in step.texts), "/subscription says it is on, no renewal or days")
+    step = user.send('/menu')
+    _assert(any('Bronze for channels is on' in text for text in step.texts)
+            and not any(renewal in text for text in step.texts), "the menu too")
+    step = user.tap_data(json.dumps({'tp': 'bs_stars'}))
+    _assert(any('replaces it' in text for text in step.texts), "the Stars page: a plan bought replaces it")
+    user.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': 0}))
+    _assert(_plan_row(2010)[0] == 0 and _plan_row(2010)[2] == 0, "Disable: no plan left, nothing the tick renews")
+
+
 def main():
     sim.boot(network=False, ai='fake')
     try:
@@ -350,6 +393,7 @@ def main():
         test_show_question(user)
         test_show_notes(user)
         test_downgrade_refund()
+        test_free_bronze_for_channels()
     finally:
         sim.shutdown()
     print("all botsim checks passed")

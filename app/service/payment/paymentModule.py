@@ -24,11 +24,12 @@ from app.service.payment.paymentSafeModule import \
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
 from app.service.payment.storefront import (
     RELAY_INVOICE_CALLBACK, once_pay_rows, tariffs_for_change_plan, subscription_pay_rows)
-from app.service.plan import features
+from app.service.plan import channels as channel_plan, features
 from config import botName
 from config import creatorId
 from config import db_path, tariff_period
 from db.sqliteAdapter import SQLighter
+from db import plan_grants
 from db.tariff_rows import paid_for_days
 from lib.telegram.general.message_master import render_messages, InlineButtonData
 from lib.tools.logger import logger
@@ -129,14 +130,20 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
     message_text += get_message("relay_sub_page_body", language_code) + "\n\n"
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
-    message_text += get_tariff_info_message(
-        tariff_str, balance, tariff_price, time_left, notify_left, language_code)
+    grant_line = channel_plan.status_line(utgid, language_code)
+    if grant_line:  # free Bronze: while subscribed, not days left; money does not renew it
+        message_text += "<b>" + get_message("curr_tariff", language_code) + ": " + tariff_str + "</b>\n<b>" \
+            + get_message("curr_balance", language_code) % money_text(balance) + "</b>\n" + grant_line
+    else:
+        message_text += get_tariff_info_message(
+            tariff_str, balance, tariff_price, time_left, notify_left, language_code)
     message_text += "\n\n" + get_message("relay_sub_page_footnote", language_code)
     message_text += "\n\n" + get_message("donate_page_referral", language_code) + "\n" \
                     + "t.me/" + botName + "?start=" + str(utgid)
 
     # how to pay (a subscription, one payment), then change plan; the methods are one level down
     menu_keyboard: list[list[InlineButtonData]] = subscription_pay_rows(language_code)
+    menu_keyboard += channel_plan.entry_row(utgid, language_code)
     menu_keyboard.append([go_back_inline_button(language_code)])
 
     result = {
@@ -150,7 +157,7 @@ def open_once_page(data: ControllerParams):
     """One-time payments: Stars, CryptoBot (Robokassa for the creator) and Relay's
     longest prepaid bundle in one tap (the shorter ones are on the Stars page)."""
     language_code = data['language_code']
-    tariff, _balance, time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'])
+    tariff, _balance, time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
     menu_keyboard: list[list[InlineButtonData]] = once_pay_rows(
         language_code, include_robokassa=(data['chat_id'] == creatorId))
     if prepaid_months_sold(tariff['level'], tariff['level'] > 0 and time_left > 0):
@@ -165,13 +172,13 @@ def open_once_page(data: ControllerParams):
 
 
 def open_subscription_tariffs_page(data: ControllerParams):
-    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'])
+    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
 
     tariffs_sub_msg = get_tariffs_sub_message(data['language_code'], tariff['id'], balance, time_left, notify_left)
 
     render_messages(data['chat_id'], [{
         'type': 'text',
-        'text': tariffs_sub_msg['message'],
+        'text': tariffs_sub_msg['message'] + channel_plan.pay_note(data['chat_id'], data['language_code']),
         'reply_markup': tariffs_sub_msg['markup']
     }])
 
@@ -319,12 +326,31 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
     else:
         desire_tariff = db.getTariffById(data['united_data']['v'])
     db.close()
+    # a grant's plan (db/plan_grants.py) is no plan here: the chosen plan turns on in its place from the
+    # balance at its full price, its days are never a price difference or a refund
+    grant = current_subscription is not None and plan_grants.active_kind(data['chat_id'])
+    if grant:
+        current_subscription = {'tariff_id': 0, 'balance': current_subscription['balance'],
+                                'time_left': 0, 'notify_count': 0}
+        current_tariff = {'id': 0, 'price': 0, 'level': 0, 'notify_count': 0}
 
     if desire_tariff is None or current_tariff is None:
         notify(data['callback'], data['message'], get_message('error', data['language_code']), alert=True)
         return False
 
     after_action_keyboard: list[list[InlineButtonData]] = [[go_back_inline_button(data['language_code'])]]
+
+    if grant and int(desire_tariff['id']) == 0:
+        # "Disable": the grant's plan ends and no plan is left, as for anyone (the plan it replaced would
+        # come back with no days, and the tick would renew it from the balance)
+        plan_grants.end_for_chat(data['chat_id'], 'disabled', restore=False)
+        db = SQLighter(db_path)
+        try:
+            db.subscribeUserToTariffByTg(data['chat_id'], 0, current_subscription['balance'], 0, 0)
+        finally:
+            db.close()
+        notify(data['callback'], data['message'], get_message('tariffSuccessChanged', data['language_code']))
+        return open_subscription_tariffs_page(data)
 
     # текущий тариф
     if int(data['united_data']['v']) == int(current_tariff['id']):
@@ -428,6 +454,16 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
             if new_balance > desire_tariff['price']:
                 new_balance = new_balance - desire_tariff['price']
                 new_time_left = tariff_period
+
+        if grant:
+            if new_time_left == 0:  # short of the chosen plan: the grant's plan keeps running
+                render_messages(data['chat_id'], [{
+                    'type': 'text',
+                    'text': get_message("notEnoughMoneyToActivate", data['language_code']).format(
+                        missing=money_text(max(int(desire_tariff['price']) - int(new_balance), 0), 0.5)),
+                    'reply_markup': [_stars_top_up_row(data['language_code'])] + after_action_keyboard}])
+                return
+            plan_grants.end_for_chat(data['chat_id'], 'purchase')
 
         db = SQLighter(db_path)
         db.subscribeUserToTariffByTg(

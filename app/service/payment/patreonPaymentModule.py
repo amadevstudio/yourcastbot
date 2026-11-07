@@ -29,7 +29,7 @@ from lib.tools.logger import logger
 
 # страница ввода почты patreon
 def open_subscription_page(data: ControllerParams):
-    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'])
+    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
 
     sub_msg = get_sub_message(data['language_code'], tariff['level'], tariff['price'],
                               balance, time_left, notify_left)

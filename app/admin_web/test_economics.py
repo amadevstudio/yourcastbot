@@ -20,7 +20,6 @@ if _ROOT not in sys.path:
 
 import config  # noqa: E402
 from app.admin_web import economics  # noqa: E402
-from app.service.ai import quota  # noqa: E402
 from db import ai, usage  # noqa: E402
 
 PAYER, TRIAL, FREE, CHANNEL = 1001, 1002, 1003, -100500

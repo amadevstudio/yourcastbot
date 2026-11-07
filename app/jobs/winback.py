@@ -22,7 +22,7 @@ from app.service.payment.paymentSafeModule import is_subscription_active
 from app.service.payment.storefront import (
     RELAY_INVOICE_CALLBACK, SHOWCASE_TARIFF_LEVEL, relay_nudge_markup)
 from config import db_path, winback_after_days, winback_offer_discount
-from db import winback
+from db import plan_grants, winback
 from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
 
@@ -58,13 +58,15 @@ def winback_message(stage, language_code, with_offer):
 
 
 def _user_state(telegram_id, database):
-    """(language, still away) read now; still away is False for a gone user."""
+    """(language, still away) read now; still away is False for a gone user. A grant's plan
+    (db/plan_grants.py) is not a plan bought: its holder is still away, the schedule offers Relay."""
     db = SQLighter(database)
     try:
         if db.is_user_deleted_tg(telegram_id) or not db.user_exists_tg(telegram_id):
             return None, False
         user = db.get_user_by_tg(telegram_id)
-        away = not is_subscription_active(db.getUserSubscriptionByTg(telegram_id))
+        away = (not is_subscription_active(db.getUserSubscriptionByTg(telegram_id))
+                or plan_grants.active_kind(telegram_id, database) is not None)
         return (user["lang"] or "en"), away
     finally:
         db.close()

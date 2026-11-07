@@ -20,6 +20,7 @@ what its price brings), next to its price and to what its chats used.
 from __future__ import annotations
 
 import datetime
+import sqlite3
 import time
 from typing import Any, Optional
 
@@ -27,7 +28,7 @@ import config
 from app.admin_web.dbutil import connect
 from app.service.ai import quota
 from app.service.plan import features
-from db import payments, tariff_rows, usage
+from db import payments, plan_grants, tariff_rows, usage
 
 LOAD_MB_PER_UNIT = 50
 # plans are sold by Stars first: a plan's price reaches us at their share
@@ -134,10 +135,14 @@ def _hours_used(conn, since: float, until: float) -> dict[int, float]:
 
 def _running(conn, database) -> dict[int, tuple[bool, int]]:
     """{telegram id: (paid for, plan level)} for chats with a plan running, paid for as the AI quota
-    reads it (tariff_rows.paid_for_days: a Patreon credit too, the creator's own payments too)."""
-    rows = conn.execute(
-        "SELECT DISTINCT u.telegramId, t.level FROM users u JOIN user_tariff_cs ut ON ut.uid = u.id "
-        "JOIN tariffs t ON t.id = ut.tariff_id WHERE ut.tariff_id > 0 AND ut.time_left > 0").fetchall()
+    reads it (tariff_rows.paid_for_days: a Patreon credit too, the creator's own payments too). A grant's
+    plan (db/plan_grants.py) is none of them: no AI, nobody paid for it."""
+    sql = ("SELECT DISTINCT u.telegramId, t.level FROM users u JOIN user_tariff_cs ut ON ut.uid = u.id "
+           "JOIN tariffs t ON t.id = ut.tariff_id WHERE ut.tariff_id > 0 AND ut.time_left > 0")
+    try:
+        rows = conn.execute(sql + " AND " + plan_grants.NOT_HELD_SQL % 'u.id').fetchall()
+    except sqlite3.OperationalError:  # no grant was ever given: no table
+        rows = conn.execute(sql).fetchall()
     return {int(tg): (tariff_rows.paid_for_days(tg, database), int(level)) for tg, level in rows if tg}
 
 

@@ -13,6 +13,7 @@ message. Both are Relay's terms: never billed while Bronze or Silver runs
 (the balance would renew that plan instead), checked again at the pre-checkout.
 """
 from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
+from app.service.plan import entitlements
 from config import db_path, prepay_bundles, winback_offer_discount
 
 # the payload's "o" for the win-back offer; its single use is users.flags[WINBACK_OFFER_FLAG]
@@ -45,9 +46,9 @@ def prepaid_months_sold(current_level, plan_running) -> bool:
 def relay_terms_open(telegram_id, database=None) -> bool:
     """May this user pay for prepaid months or an offer now? The plan is read now,
     not when the invoice was sent: a user who switched to Bronze in between would
-    get Relay's discounted month credited to Bronze."""
-    from db.tariff_rows import running_plan_level
-    level = running_plan_level(telegram_id, db_path if database is None else database)
+    get Relay's discounted month credited to Bronze. A grant's plan is no plan here: what is bought
+    replaces it (db/plan_grants.py)."""
+    level = entitlements.of(telegram_id, db_path if database is None else database).purchase_level
     return prepaid_months_sold(level, level > 0)
 
 

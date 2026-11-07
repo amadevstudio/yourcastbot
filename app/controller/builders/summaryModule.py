@@ -280,12 +280,13 @@ def send_document(chat_id, name, body, caption, reply_to=None) -> bool:
     return False
 
 
-def ask_offer_message(language_code) -> dict:
+def ask_offer_message(language_code, grant=None) -> dict:
     """No plan: questions come with one; every plan's invoice, as for summaries."""
     from app.service.record.free_limit import plans_offer
     plans_text, rows = plans_offer(language_code)
     return {'type': 'text', 'disable_web_page_preview': True, 'reply_markup': rows,
-            'text': get_message('askForPlans', language_code).format(limit=ai_quota.most_questions_per_day())
+            'text': (get_message('aiGrantNoAi', language_code) + ' ' if grant else '')
+            + get_message('askForPlans', language_code).format(limit=ai_quota.most_questions_per_day())
             + '\n\n' + plans_text.strip()}
 
 
@@ -331,7 +332,7 @@ def open_ask(data):
     questions = ai_quota.questions(data['chat_id'])
     if not questions.limit:
         notify(data['callback'], data['message'], '')
-        outer_sender(data['chat_id'], [ask_offer_message(language_code)])
+        outer_sender(data['chat_id'], [ask_offer_message(language_code, questions.grant)])
         return False
     if not questions.allowed:
         notify(data['callback'], data['message'], '')
@@ -366,7 +367,7 @@ def answer_question(data):
     questions = ai_quota.questions(data['chat_id'])
     if not questions.allowed:
         outer_sender(data['chat_id'], [limit_message(language_code, questions) if questions.limit
-                                       else ask_offer_message(language_code)])
+                                       else ask_offer_message(language_code, questions.grant)])
         return
     # "Thinking...": a reply to the audio, edited into the answer (or into "could not")
     status = status_line(data['chat_id'], get_message('askThinking', language_code), state.get('audio'))

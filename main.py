@@ -192,6 +192,12 @@ def run_jobs():
     t_why_survey.start()
     watched.append(t_why_survey)
 
+    # free Bronze for channels (db/plan_grants.py): every hour, still subscribed or the plan ends
+    from app.jobs.plan_grants import grant_watcher
+    t_plan_grants = threading.Thread(target=grant_watcher, name="Plan grants", daemon=True)
+    t_plan_grants.start()
+    watched.append(t_plan_grants)
+
     # a newcomer with only the welcome show: one nudge to add their own (A/B, even ids)
     from app.jobs.own_show_nudge import nudge_watcher
     t_nudge_watcher = threading.Thread(target=nudge_watcher, name="Own show nudge", daemon=True)

@@ -84,19 +84,21 @@ class Hit(NamedTuple):
 def limit_hit(chat_id, link, open_links, now=None, database=None) -> Optional[Hit]:
     """None when this click may be queued: the chat's profile (entitlements) says how many
     episodes in what window: no plan, the free week's; a plan nobody paid for, the trial's day;
-    a paid plan, none."""
+    a paid plan, none; a grant (db/plan_grants.py), its profile's."""
     rights = entitlements.of(chat_id, database)
     count = rights.get('clicks')
     if count is None:
         return None
     allowed, wait = window_check(chat_id, link, open_links, count, rights.get('clicks_hours') * 3600, now, database)
-    return None if allowed else Hit('trial' if rights.running else 'week', wait, rights.level, count)
+    if allowed:
+        return None
+    return Hit('grant' if rights.grant else 'trial' if rights.running else 'week', wait, rights.level, count)
 
 
 def hit_message(hit: Hit, language_code) -> dict:
     if hit.limit == 'week':
         return limit_message(language_code, hit.wait, hit.count)
-    return trial_limit_message(language_code, hit.wait, hit.level, hit.count)
+    return trial_limit_message(language_code, hit.wait, hit.level, hit.count, grant=hit.limit == 'grant')
 
 
 def click_limit(chat_id, link, open_links, language_code, now=None, database=None):
@@ -159,18 +161,21 @@ def limit_message(language_code, wait_seconds, limit=None):
             'disable_web_page_preview': True}
 
 
-def trial_limit_message(language_code, wait_seconds, level, limit=None):
+def trial_limit_message(language_code, wait_seconds, level, limit=None, grant=False):
     """The trial's day used up: Relay's invoice when the trial is Relay (paying lifts the
     limit at once), else the Stars page (an invoice would only top up the running plan),
-    and change-plan next to it."""
+    and change-plan next to it. `grant`: a grant's day (db/plan_grants.py), every plan's
+    invoice: a plan bought replaces the grant, and Bronze is the cheapest."""
     from app.i18n.messages import get_message
     from app.service.analytics_events import LIMIT_SOURCE
     from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL, relay_nudge_markup
 
     limit = features.profile(features.TRIAL)['clicks'] if limit is None else limit
-    text = "<b>" + get_message("trialEpisodesUsed", language_code).format(limit=limit) + "</b>\n" \
+    used = "grantEpisodesUsed" if grant else "trialEpisodesUsed"
+    text = "<b>" + get_message(used, language_code).format(limit=limit) + "</b>\n" \
         + get_message("trialEpisodesNext", language_code).format(hours=math.ceil(wait_seconds / 3600))
-    return {'type': 'text', 'text': text,
-            'reply_markup': relay_nudge_markup(language_code, invoice=int(level) == SHOWCASE_TARIFF_LEVEL,
-                                               source=LIMIT_SOURCE),
-            'disable_web_page_preview': True}
+    if grant:
+        rows = plans_offer(language_code, source=LIMIT_SOURCE)[1]
+    else:
+        rows = relay_nudge_markup(language_code, invoice=int(level) == SHOWCASE_TARIFF_LEVEL, source=LIMIT_SOURCE)
+    return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}

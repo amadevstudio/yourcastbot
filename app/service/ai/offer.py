@@ -46,6 +46,8 @@ def offer_message(language_code, quota: Quota, transcript=False) -> dict:
     if not quota.limit:
         text = get_message('transcriptForPlans' if transcript else 'summaryForPlans', language_code).format(
             relay=_hours(3), silver=_hours(2), bronze=_hours(1))
+        if quota.grant:  # its invoices replace the grant (db/plan_grants.py)
+            text = get_message('aiGrantNoAi', language_code) + ' ' + text
         plans_text, rows = plans_offer(language_code)
         return {'type': 'text', 'text': text + '\n\n' + plans_text.strip(), 'reply_markup': rows,
                 'disable_web_page_preview': True}
