@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type ProductFunnel } from "@/lib/api";
+import { api, type Product as ProductData, type ProductFunnel } from "@/lib/api";
 import { Card, Hint, Skeleton } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 
@@ -51,6 +51,66 @@ const SURVEY_ANSWERS: Record<string, string> = {
   forgot: "Просто забыл",
   missing: "Чего-то не хватало",
 };
+
+type SurveyData = ProductData["survey"];
+
+// The warmest group first: the API sorts by name.
+const SURVEY_ORDER = ["limit", "ended", "idle", "old"];
+
+function surveyGroups(groups: SurveyData["groups"]) {
+  const rank = (g: string) => (SURVEY_ORDER.includes(g) ? SURVEY_ORDER.indexOf(g) : SURVEY_ORDER.length);
+  return [...groups].sort((a, b) => rank(a.group) - rank(b.group));
+}
+
+function SurveyGroup({ group, answers }: { group: SurveyData["groups"][number]; answers: SurveyData["answers"] }) {
+  const top = Math.max(1, ...answers.map((a) => a.count));
+  const sorted = [...answers].sort((a, b) => b.count - a.count);
+  return (
+    <div className="min-w-0 rounded-lg border border-line bg-ink p-4">
+      <div className="min-h-8 text-xs leading-4 font-medium uppercase tracking-wide text-zinc-500">
+        {SURVEY_GROUPS[group.group] ?? group.group}
+      </div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className={`text-2xl font-bold tabular-nums ${group.answered ? "text-brand" : "text-zinc-600"}`}>
+          {group.answered}
+        </span>
+        <span className="text-sm text-zinc-500 tabular-nums">из {group.sent}</span>
+        <span className="ml-auto text-sm text-zinc-400 tabular-nums">{pct(group.answered, group.sent)}%</span>
+      </div>
+      <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+        {[
+          ["неделю", group.rewarded],
+          ["блок", group.blocked],
+          ["платили", group.paid],
+        ].map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-zinc-500">{label}</dt>
+            <dd className={`tabular-nums ${value ? "text-zinc-200" : "text-zinc-600"}`}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-4 border-t border-line pt-3">
+        {sorted.length === 0 ? (
+          <p className="text-sm text-zinc-600">Ответов нет</p>
+        ) : (
+          <ul className="grid gap-2 text-sm">
+            {sorted.map((a) => (
+              <li key={a.answer} className="min-w-0">
+                <div className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate text-zinc-200">{SURVEY_ANSWERS[a.answer] ?? a.answer}</span>
+                  <span className="tabular-nums text-zinc-100">{a.count}</span>
+                </div>
+                <div className="mt-1 h-1 rounded-full bg-line">
+                  <div className="h-1 rounded-full bg-brand/70" style={{ width: `${(a.count / top) * 100}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function Metric({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
@@ -211,41 +271,33 @@ export default function Product() {
             {data.survey.groups.length === 0 ? (
               <Hint>Опрос ещё никому не ушёл.</Hint>
             ) : (
-              <div className="grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  {data.survey.groups.map((g) => (
-                    <Metric
+              <div className="grid gap-6">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {surveyGroups(data.survey.groups).map((g) => (
+                    <SurveyGroup
                       key={g.group}
-                      label={SURVEY_GROUPS[g.group] ?? g.group}
-                      value={`${g.answered} из ${g.sent}`}
-                      hint={`Ответили ${pct(g.answered, g.sent)}%, неделю получили ${g.rewarded}, заблокировали ${g.blocked}, платили когда-либо ${g.paid}.`}
+                      group={g}
+                      answers={data.survey.answers.filter((a) => a.group === g.group)}
                     />
                   ))}
                 </div>
-                {data.survey.answers.length > 0 && (
-                  <ul className="grid gap-1 text-sm">
-                    {data.survey.answers.map((a) => (
-                      <li key={`${a.group}-${a.answer}`} className="flex min-w-0 justify-between gap-3">
-                        <span className="min-w-0 truncate">
-                          {SURVEY_ANSWERS[a.answer] ?? a.answer}
-                          <span className="text-zinc-500"> · {SURVEY_GROUPS[a.group] ?? a.group}</span>
-                        </span>
-                        <span className="tabular-nums">{a.count}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
                 {data.survey.texts.length > 0 && (
-                  <div className="grid gap-2">
+                  <div className="grid gap-3">
                     <h3 className="text-sm font-semibold">Что написали</h3>
-                    {data.survey.texts.map((t, i) => (
-                      <blockquote key={i} className="border-l-2 border-zinc-300 pl-3 text-sm break-words whitespace-pre-wrap">
-                        {t.text}
-                        <div className="mt-1 text-xs text-zinc-500">
-                          {SURVEY_ANSWERS[t.answer] ?? t.answer} · {SURVEY_GROUPS[t.group] ?? t.group} · {t.lang ?? "?"}
-                        </div>
-                      </blockquote>
-                    ))}
+                    <div className="gap-3 lg:columns-2">
+                      {data.survey.texts.map((t, i) => (
+                        <figure key={i} className="mb-3 min-w-0 break-inside-avoid rounded-lg border border-line bg-ink p-3">
+                          <figcaption className="mb-2 flex flex-wrap gap-x-2 text-xs text-zinc-500">
+                            <span className="text-zinc-300">{SURVEY_ANSWERS[t.answer] ?? t.answer}</span>
+                            <span>{SURVEY_GROUPS[t.group] ?? t.group}</span>
+                            <span className="uppercase">{t.lang ?? "?"}</span>
+                          </figcaption>
+                          <blockquote className="text-sm leading-6 break-words whitespace-pre-wrap text-zinc-100">
+                            {t.text}
+                          </blockquote>
+                        </figure>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
