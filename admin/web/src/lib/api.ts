@@ -49,6 +49,24 @@ export type Tariff = {
   channel_control: number;
 };
 
+export type PlanChannel = { id: number; title: string; url: string; ref?: string };
+
+export type ChannelPlan = {
+  channels: PlanChannel[];
+  need: number;
+  grants: { running: number; started: number; ended: number };
+};
+
+export type PlanFeatures = Record<string, boolean | number | null>;
+
+export type PlanProfiles = {
+  features: Record<string, string>;
+  defaults: Record<string, PlanFeatures>;
+  edits: Record<string, PlanFeatures>;
+  profiles: Record<string, PlanFeatures>;
+  cache_seconds: number;
+};
+
 export type MailJob = {
   id: number;
   status: string;
@@ -135,7 +153,7 @@ export type Product = {
   days: number;
   newcomers: ProductFunnel;
   weeks: (ProductFunnel & { week: string })[];
-  plans: { paid: number; trial: number; trial_ending: number };
+  plans: { paid: number; trial: number; trial_ending: number; granted: number };
   payments: { payments: number; payers: number; first_time: number; revenue_usd: number };
   paid_first_days: { days: number; matured: number; paid: number; own_sub: number; own_sub_paid: number };
   nudge: (NudgeRead & { group: string; own_sub: number; got_episode: number; blocked: number; paid: number })[];
@@ -210,6 +228,18 @@ export const api = {
     request<Tariff>("/api/tariffs", {
       method: "POST",
       body: JSON.stringify(row),
+    }),
+  planProfiles: () => request<PlanProfiles>("/api/plan/profiles"),
+  savePlanProfile: (body: { name: string; features: PlanFeatures }) =>
+    request<PlanProfiles>("/api/plan/profiles", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  channelPlan: () => request<ChannelPlan>("/api/plan/channels"),
+  saveChannelPlan: (body: { channels: string[]; need: number }) =>
+    request<ChannelPlan>("/api/plan/channels", {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   mailJobs: () => request<{ jobs: MailJob[] }>("/api/mail"),
   mailJob: (id: number) => request<MailJob>(`/api/mail/${id}`),

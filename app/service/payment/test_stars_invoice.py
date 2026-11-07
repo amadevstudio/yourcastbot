@@ -381,7 +381,7 @@ def page_rows(stars):
         """The one-time payment page (bs_once) of a user on that plan."""
         sent = []
         tariff = {'id': level, 'level': level, 'price': 500}
-        with patch.object(paymentModule, 'get_tariff_params_by_tg', lambda _c: (tariff, 0, time_left, 0)), \
+        with patch.object(paymentModule, 'get_tariff_params_by_tg', lambda _c, **_kw: (tariff, 0, time_left, 0)), \
                 patch.object(paymentModule, 'render_messages', lambda _c, msgs: sent.append(msgs[0])):
             paymentModule.open_once_page({'chat_id': 1, 'language_code': 'en'})
         return [row[0]['callback_data'] for row in sent[0]['reply_markup']
@@ -489,7 +489,7 @@ def subscription(stars):
             sent = []
             with patch.object(stars, 'SQLighter', _TariffsDB), patch.object(sub, 'db_path', path), \
                     patch.object(stars, 'get_stars_withdraw_rate_x1000', lambda: RATE), \
-                    patch.object(stars, 'get_tariff_params_by_tg', lambda _c: ({'id': 0, 'level': 0, 'price': 0}, 0, 0, 0)), \
+                    patch.object(stars, 'get_tariff_params_by_tg', lambda _c, **_kw: ({'id': 0, 'level': 0, 'price': 0}, 0, 0, 0)), \
                     patch.object(stars, 'render_messages', lambda _c, msgs: sent.append(msgs[0])):
                 stars.open_recurring_page({'chat_id': chat_id, 'language_code': 'en'})
             return sent[0], [row[0].get('callback_data', {}) for row in sent[0]['reply_markup']]

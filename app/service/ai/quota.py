@@ -41,6 +41,7 @@ class Quota(NamedTuple):
     level: int
     trial: bool = False
     budget: bool = False  # refused by the plan's budget, not by its hours
+    grant: str | None = None  # a grant holds the plan (db/plan_grants.py): its profile, no AI today
 
     @property
     def left(self) -> int:
@@ -113,7 +114,7 @@ def check(chat_id, needed, level=None, trial=False, now=None, database=None) -> 
         cost = transcribe_cost(needed) if needed else config.ai_call_usd
         if left is not None and not left.fits(cost):
             return Quota(False, limit, used, int(needed), rights.level, rights.trial, budget=True)
-    return Quota(allowed, limit, used, int(needed), rights.level, rights.trial)
+    return Quota(allowed, limit, used, int(needed), rights.level, rights.trial, grant=rights.grant)
 
 
 # Questions about an episode (summaryModule.ask): one model call each, a few
@@ -134,6 +135,7 @@ class Questions(NamedTuple):
     budget: bool = False  # refused by the plan's budget, not by the day's count
     level: int = 0
     month_limit: int = 0  # refused by the 30 days' count: what it is
+    grant: str | None = None  # a grant holds the plan (db/plan_grants.py)
 
 
 def questions(chat_id, now=None, database=None) -> Questions:
@@ -142,7 +144,7 @@ def questions(chat_id, now=None, database=None) -> Questions:
     from db import usage
     rights = entitlements.of(chat_id, database)
     if not rights.ai:
-        return Questions(False, 0, 0)
+        return Questions(False, 0, 0, grant=rights.grant)
     limit = int(rights.get('ai_questions_day') or 0)
     now = time.time() if now is None else now
     left = max(limit - usage.count_since(chat_id, 'ask', now - 86400, database), 0)

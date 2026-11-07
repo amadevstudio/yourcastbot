@@ -52,7 +52,7 @@ def open_screen(data):
     if not questions.allowed:
         notify(data['callback'], data['message'], '')
         render_messages(data['chat_id'], [summaryModule.limit_message(language_code, questions) if questions.limit
-                                          else summaryModule.ask_offer_message(language_code)], resending=True)
+                                          else summaryModule.ask_offer_message(language_code, questions.grant)], resending=True)
         return False
     notify(data['callback'], data['message'], '')
     storage.set_user_state_data(data['chat_id'], show_ask.ACTION, {'at': time.time()})
@@ -81,7 +81,7 @@ def answer_question(data):
     questions = ai_quota.questions(data['chat_id'])
     if not questions.allowed:
         render_messages(data['chat_id'], [summaryModule.limit_message(language_code, questions) if questions.limit
-                                          else summaryModule.ask_offer_message(language_code)], resending=True)
+                                          else summaryModule.ask_offer_message(language_code, questions.grant)], resending=True)
         return
     status = summaryModule.status_line(data['chat_id'], get_message('askThinking', language_code))
     try:

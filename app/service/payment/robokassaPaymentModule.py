@@ -13,7 +13,7 @@ from lib.tools.logger import logger
 
 
 def open_subscription_payment_page(data: ControllerParams):
-    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'])
+    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
 
     tariff_payment_message = get_tariff_payment_message(data['language_code'], tariff['id'], balance, time_left,
                                                         notify_left)

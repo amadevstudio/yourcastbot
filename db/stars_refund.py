@@ -16,10 +16,12 @@ says it).
 
 Once per payment: the row's status is checked and changed in one transaction,
 so the service message and the daily check of the bot's transactions can both
-see the same refund. The inviter's referral days stay.
+see the same refund. The inviter's referral days stay. A grant's days (db/plan_grants.py) were
+never bought: a refund takes none of them.
 Lock: python app/service/payment/test_stars_refund.py
 """
 from config import db_path, tariff_period
+from db import plan_grants
 from db.connection import connect_sqlite
 
 STARS_SERVICE_TYPE = 'telegramStars'  # starsPaymentModule.STARS_SERVICE_TYPE (no telebot here)
@@ -56,7 +58,8 @@ def apply_refund(charge_id, database=None, period=tariff_period):
         tariff_id, balance, time_left = int(row[0] or 0), int(row[1] or 0) - amount, int(row[2] or 0)
         price = int(row[3] or 0)
         hours = 0
-        if balance < 0 and tariff_id > 0 and price > 0 and time_left > 0:
+        if balance < 0 and tariff_id > 0 and price > 0 and time_left > 0 \
+                and plan_grants.active(connection.execute, user_id) is None:
             hours = min(time_left, (-balance * period + price - 1) // price)
             balance = min(0, balance + hours * price // period)
             time_left -= hours

@@ -31,8 +31,10 @@ DIGEST_SOURCE = 'd'  # the `s` key of a digest's Listen button
 REMINDER_SOURCE, PLAN_OFF_SOURCE, WINBACK_SOURCE = 'd3', 'po', 'wb'
 LIMIT_SOURCE = 'lim'  # the pay buttons under the free episode limit
 SURVEY_SOURCE = 'why'  # the offer under "what stops you from taking a plan?"
+GRANT_SOURCE = 'chn'  # the pay buttons under "free Bronze is off" (app/service/plan/channels.py)
 SOURCES = {DIGEST_SOURCE: 'digest', REMINDER_SOURCE: 'reminder', PLAN_OFF_SOURCE: 'plan_off',
-           WINBACK_SOURCE: 'winback', LIMIT_SOURCE: 'free_limit', SURVEY_SOURCE: 'survey'}
+           WINBACK_SOURCE: 'winback', LIMIT_SOURCE: 'free_limit', SURVEY_SOURCE: 'survey',
+           GRANT_SOURCE: 'channels_plan'}
 
 
 def _analytics():

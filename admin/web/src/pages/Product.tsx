@@ -330,7 +330,7 @@ export default function Product() {
           <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             <Card className="min-w-0">
               <h2 className="mb-4 font-semibold">Тарифы сейчас</h2>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-4">
                 <Metric label="Платные" value={data.plans.paid} hint="Тариф идёт, была оплата." />
                 <Metric
                   label="Пробные"
@@ -341,6 +341,11 @@ export default function Product() {
                   label="Пробные кончаются"
                   value={data.plans.trial_ending}
                   hint="В ближайшие 3 дня, и баланса на продление нет."
+                />
+                <Metric
+                  label="За каналы"
+                  value={data.plans.granted}
+                  hint="Бесплатная Бронза за подписку на каналы, без ИИ."
                 />
               </div>
             </Card>

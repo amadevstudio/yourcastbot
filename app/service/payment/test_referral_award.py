@@ -47,6 +47,9 @@ class FakeDB:
     def subscribeUserToTariffByTg(self, tg_id, tariff_id, balance, time_left, notify_count):
         FakeDB.saved.append((tariff_id, balance, time_left, notify_count))
 
+    def end_plan_grant(self, user_id, reason, restore=False):
+        return False  # no grant here (db/test_plan_grants.py has them)
+
     def close(self):
         pass
 

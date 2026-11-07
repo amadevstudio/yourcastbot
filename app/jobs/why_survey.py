@@ -44,6 +44,7 @@ import time
 from app.service import analytics_events
 from app.service.payment.plan_end import WELCOME_CHANNEL_ID
 from config import db_path, free_rec_per_week, why_old_limit, why_survey_until
+from db import plan_grants
 from db.connection import connect_sqlite
 from lib.tools.logger import logger
 
@@ -130,7 +131,8 @@ def holdout(telegram_id) -> bool:
 
 def grant_week(telegram_id, database=None, now=None) -> int:
     """The survey's thanks: REWARD_HOURS of Relay, once, to a chat the survey reached. A running plan
-    gets the hours on top; else Relay runs for them (the balance stays). The hours given, 0 when none."""
+    gets the hours on top; else Relay runs for them (the balance stays), in place of a grant's plan too
+    (db/plan_grants.py: its check would take hours on top of it back). The hours given, 0 when none."""
     from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
     now = time.time() if now is None else now
     connection = connect_sqlite(db_path if database is None else database)
@@ -144,6 +146,7 @@ def grant_week(telegram_id, database=None, now=None) -> int:
         if user is None or user[1] != "sent" or user[2] is not None or relay is None:
             connection.rollback()
             return 0
+        plan_grants.end(connection.execute, user[0], 'survey')
         row = connection.execute(
             "SELECT id, tariff_id, time_left FROM user_tariff_cs WHERE uid = ?", (user[0],)).fetchone()
         if row is not None and int(row[1] or 0) > 0 and int(row[2] or 0) > 0:

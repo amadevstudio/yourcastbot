@@ -335,6 +335,41 @@ def test_downgrade_refund():
     _assert(_plan_row(2002)[1] > 0, "a chat that paid still gets half of the days left back")
 
 
+def test_free_bronze_for_channels():
+    """Bronze for subscribing to the owner's channels: the button on /subscription, the screen with the
+    channel, "Check" (not subscribed: said; subscribed: Bronze on for a week, held by the hourly check),
+    the status on /subscription, the pages that sell say a plan replaces it, the AI says it has none."""
+    from app.service.plan import channels
+    channels.save_settings([{'id': -100501, 'title': 'Sim channel', 'url': 'https://t.me/simchannel'}], 1,
+                           sim._state['database'])
+    db = _db()
+    bronze = db.execute("SELECT id FROM tariffs WHERE level = 1").fetchone()[0]
+    db.close()
+    user = sim.BotSim(2010, 'en')
+    user.send('/start')
+    db = _db()
+    db.execute("UPDATE user_tariff_cs SET time_left = 0 WHERE uid = (SELECT id FROM users WHERE telegramId = 2010)")
+    db.commit()
+    db.close()
+    step = user.send('/subscription')
+    _assert({'tp': channels.SCREEN} in _callbacks(step), "/subscription: the button while a list is set")
+    step = user.tap_data(json.dumps({'tp': channels.SCREEN}))
+    urls = [b.get('url') for m in step.new + step.edited for row in m.buttons for b in row]
+    _assert('https://t.me/simchannel' in urls and {'tp': channels.CHECK_ACTION} in _callbacks(step),
+            "the screen: the channel and Check")
+    step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
+    _assert(step.toasts and 'Subscribed to 0 of the 1' in step.toasts[-1][0] and _plan_row(2010)[2] == 0,
+            "not subscribed: said, nothing on")
+    user.api.members[(-100501, 2010)] = 'member'
+    step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
+    _assert(any('Bronze is on' in text for text in step.texts) and _plan_row(2010)[0] == bronze
+            and _plan_row(2010)[2] == 168 and not step.errors, "subscribed: Bronze on for a week")
+    step = user.send('/subscription')
+    _assert(any('Bronze for channels is on' in text for text in step.texts), "/subscription says it is on")
+    step = user.tap_data(json.dumps({'tp': 'bs_stars'}))
+    _assert(any('replaces it' in text for text in step.texts), "the Stars page: a plan bought replaces it")
+
+
 def main():
     sim.boot(network=False, ai='fake')
     try:
@@ -350,6 +385,7 @@ def main():
         test_show_question(user)
         test_show_notes(user)
         test_downgrade_refund()
+        test_free_bronze_for_channels()
     finally:
         sim.shutdown()
     print("all botsim checks passed")

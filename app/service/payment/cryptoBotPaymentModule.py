@@ -34,7 +34,7 @@ FIAT = 'USD'
 
 # страница оплаты через криптобот: планы и своя сумма
 def open_subscription_page(data: ControllerParams):
-    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'])
+    tariff, balance, time_left, notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
     page = get_amount_input_message(
         data['language_code'], tariff['id'], balance, time_left, notify_left)
     render_messages(data['chat_id'], [{

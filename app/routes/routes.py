@@ -2,7 +2,7 @@ from typing import TypedDict, Callable, Literal, Dict, Optional, Required
 
 from app.controller.builders import welcomeModule, menuModule, subsModule, searchModule, podcastModule, recsModule, \
     helpModule, channelModule, topModule, adminModule, settingsModule, summaryModule, episodeTextModule, \
-    showAskModule, whySurveyModule
+    showAskModule, whySurveyModule, planGrantModule
 from app.jobs import podcastsUpdater
 from app.routes.routes_list import AvailableCommands, AvailableRoutes, AvailableActions
 from app.routes.ptypes import ControllerParams
@@ -168,7 +168,15 @@ class RouteMap:
             'method': paymentModule.open_subscription_page,
             'available_from': ['call', 'command'],
             'commands': ['subscription', 'payment'],
-            'routes': ['bs_recur', 'bs_once', 'bs_trfs']
+            'routes': ['bs_recur', 'bs_once', 'bs_trfs', 'bs_chan']
+        },
+        # free Bronze for subscribing to the owner's channels (app/service/plan/channels.py)
+        'bs_chan': {
+            'method': planGrantModule.open_screen,
+            'available_from': ['call'],
+            'actions': {
+                'bs_chan_ok': {'method': planGrantModule.check, 'state_independent': True},
+            }
         },
         'bs_recur': {
             'method': starsPaymentModule.open_recurring_page,
