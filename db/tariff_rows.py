@@ -11,7 +11,11 @@ The row is the one the product writes when a plan is switched off
 (subscribeUserToTariffByUid: tariff_id 0, balance 0, time_left 0,
 notify_count 0). Deploy git-pulls and restarts, it does not run migrations:
 the supervisor heals at start, like hot_indexes. Idempotent and cheap (one
-anti-join); a user who has a row, whatever it says, is never touched.
+anti-join); a user who has a row, whatever it says, is never touched, except
+a row with no plan and days or deliveries on it: "Disable" kept the days
+(65 rows on 2026-11-08, "no plan, 14 days left" for good: the tick never counts
+tariff 0 down, and a switch charged a price difference for those days). Its
+days and deliveries go, its balance stays.
 """
 from __future__ import annotations
 
@@ -35,12 +39,18 @@ def ensure_tariff_rows(database=None) -> int:
             "INSERT INTO user_tariff_cs (uid, tariff_id, balance, notify_count, time_left) "
             "SELECT u.id, 0, 0, 0, 0 FROM users u "
             "WHERE NOT EXISTS (SELECT 1 FROM user_tariff_cs ut WHERE ut.uid = u.id)")
-        connection.commit()
         given = cursor.rowcount or 0
+        cleared = connection.execute(
+            "UPDATE user_tariff_cs SET time_left = 0, notify_count = 0 "
+            "WHERE COALESCE(tariff_id, 0) = 0 AND (COALESCE(time_left, 0) != 0 OR COALESCE(notify_count, 0) != 0)"
+        ).rowcount or 0
+        connection.commit()
     finally:
         connection.close()
     if given:
         logger.log("Users without a tariff row got 'no tariff':", given)
+    if cleared:
+        logger.log("Rows with no plan lost their days and deliveries:", cleared)
     return given
 
 

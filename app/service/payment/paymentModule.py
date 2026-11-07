@@ -325,6 +325,8 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
     current_subscription = db.getUserSubscriptionByTg(data['chat_id'])
     if current_subscription is None or current_subscription['tariff_id'] == 0:
         current_tariff = {'id': 0, 'price': 0, 'level': 0, 'notify_count': 0}
+        if current_subscription is not None:  # days on no plan are no days: no price difference for them
+            current_subscription = dict(current_subscription, time_left=0, notify_count=0)
     else:
         current_tariff = db.getTariffById(current_subscription['tariff_id'])
     if data['united_data']['v'] == 0:
@@ -358,8 +360,11 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
         notify(data['callback'], data['message'], get_message('tariffSuccessChanged', data['language_code']))
         return open_subscription_tariffs_page(data)
 
-    # текущий тариф
-    if int(data['united_data']['v']) == int(current_tariff['id']):
+    current_balance, hours_left = ((int(current_subscription['balance'] or 0), int(current_subscription['time_left'] or 0))
+                                   if current_subscription is not None else (0, 0))
+    # текущий тариф; the same plan with no days and the money for it is turned on below, as any plan
+    if int(data['united_data']['v']) == int(current_tariff['id']) and not (
+            int(desire_tariff['id']) > 0 and current_balance >= int(desire_tariff['price']) and hours_left <= 0):
         # остались дни или без подписки
         if (
                 (current_subscription is not None
@@ -456,10 +461,13 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
                 new_time_left = 0
                 new_notify_count = 0
 
-        if new_time_left == 0:
-            if new_balance > desire_tariff['price']:
+        if not new_time_left:
+            # as the tick renews (balance >= price): the period starts now, with the plan's own deliveries
+            # (a count carried from a plan with no days was what was left of an old period)
+            if new_balance >= desire_tariff['price'] and int(desire_tariff['id']) > 0:
                 new_balance = new_balance - desire_tariff['price']
                 new_time_left = tariff_period
+                new_notify_count = desire_tariff['notify_count']
 
         if grant:
             if new_time_left == 0:  # short of the chosen plan: the grant's plan keeps running

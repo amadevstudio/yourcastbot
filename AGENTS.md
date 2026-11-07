@@ -358,7 +358,19 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
   and a trial's curious tap on Bronze cost $1.86 to undo. "Not enough on the
   balance" there carries the Stars page, not Back alone. The Stars page says
   what a payment does: no plan running, the plan turns on; a plan running, it
-  renews that plan (another one: change-plan, a button on the page). Lock:
+  renews that plan (another one: change-plan, a button on the page). No plan
+  has no days: "Disable" kept the days on tariff 0, which the tick never
+  counts down ("no plan, 14 days left" for good, 65 rows on 2026-11-08), and a
+  switch from there charged a price difference for them. The one writer
+  (`subscribeUserToTariffByUid`) zeroes the days and deliveries of tariff 0,
+  the supervisor clears the old rows at start (`ensure_tariff_rows`, the
+  balance stays), the page reads such days as none. A plan with no days turns
+  on from the page as the tick renews it: balance >= price (it was >, so
+  exactly $5 said "not active" and the tick turned Relay on an hour later),
+  a full period with the plan's own deliveries (not a count carried from an
+  old period); the same plan with no days and the money is turned on, not
+  "top up". From unlimited to a limited plan the new plan's deliveries are
+  whole (nothing to count used against). Lock:
   `python tools/botsim/test_botsim.py`, `python db/test_tariff_rows.py`.
 
 ## Tariff clock

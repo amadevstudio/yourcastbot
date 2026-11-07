@@ -30,7 +30,7 @@ def _assert_eq(got, expected, label):
     print("ok  %s = %r" % (label, got))
 
 
-PAID, EXPIRED, NO_ROW, NULL_COUNT, BLOCKED_NO_ROW = 9001, 9002, 9003, 9004, 9005
+PAID, EXPIRED, NO_ROW, NULL_COUNT, BLOCKED_NO_ROW, OFF_WITH_DAYS = 9001, 9002, 9003, 9004, 9005, 9006
 
 
 def _fixture():
@@ -45,14 +45,15 @@ def _fixture():
         CREATE TABLE user_channel_cs (id INTEGER PRIMARY KEY, user_telegram_id INTEGER,
             channel_id INTEGER, last_guid TEXT, last_date TEXT, notify INTEGER);
         INSERT INTO tariffs VALUES (3, 3, 500, -1);
-        INSERT INTO users (id, telegramId) VALUES (1, 9001), (2, 9002), (3, 9003), (4, 9004), (5, 9005);
+        INSERT INTO users (id, telegramId) VALUES (1, 9001), (2, 9002), (3, 9003), (4, 9004), (5, 9005), (6, 9006);
         UPDATE users SET deleted_at = '2026-10-01 10:00:00' WHERE id = 5;
         INSERT INTO user_tariff_cs (uid, tariff_id, balance, notify_count, time_left) VALUES
             (1, 3, 500, -1, 400),
             (2, 3, 500, -1, 0),
-            (4, 3, 500, NULL, 400);
+            (4, 3, 500, NULL, 400),
+            (6, 0, 120, -1, 336);
         INSERT INTO user_channel_cs (user_telegram_id, channel_id, notify) VALUES
-            (9001, 7, 1), (9002, 7, 1), (9003, 7, 1), (9004, 7, 1), (9005, 7, 1);
+            (9001, 7, 1), (9002, 7, 1), (9003, 7, 1), (9004, 7, 1), (9005, 7, 1), (9006, 7, 1);
     """)
     conn.commit()
     conn.close()
@@ -75,9 +76,9 @@ def test_free_list_is_the_complement():
     path = _fixture()
     paid, free = _lists(path)
     _assert_eq(paid, {PAID}, "paid: only the one with a live tariff")
-    _assert_eq(free, {EXPIRED, NO_ROW, NULL_COUNT}, "free: expired, no row at all, a NULL in the row")
+    _assert_eq(free, {EXPIRED, NO_ROW, NULL_COUNT, OFF_WITH_DAYS}, "free: expired, no row at all, a NULL in the row, no plan")
     _assert_eq(paid & free, set(), "nobody is in both lists")
-    _assert_eq(paid | free, {PAID, EXPIRED, NO_ROW, NULL_COUNT},
+    _assert_eq(paid | free, {PAID, EXPIRED, NO_ROW, NULL_COUNT, OFF_WITH_DAYS},
                "every live listener is in exactly one list (the blocked one is in neither, as before)")
 
 
@@ -96,10 +97,11 @@ def test_heal():
     _assert_eq(rows[PAID], (3, 500, -1, 400), "a paid user is not touched")
     _assert_eq(rows[EXPIRED], (3, 500, -1, 0), "an expired one is not touched")
     _assert_eq(rows[NULL_COUNT], (3, 500, None, 400), "a row with a NULL is not touched either")
+    _assert_eq(rows[OFF_WITH_DAYS], (0, 120, 0, 0), "no plan with days ('Disable' kept them): no days, the balance stays")
     _assert_eq(ensure_tariff_rows(path), 0, "idempotent: the second start gives nobody anything")
 
     paid, free = _lists(path)
-    _assert_eq((paid, free), ({PAID}, {EXPIRED, NO_ROW, NULL_COUNT}), "the lists are the same after the heal")
+    _assert_eq((paid, free), ({PAID}, {EXPIRED, NO_ROW, NULL_COUNT, OFF_WITH_DAYS}), "the lists are the same after the heal")
 
     db = SQLighter(path)
     try:

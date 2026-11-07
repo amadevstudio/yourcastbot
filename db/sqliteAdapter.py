@@ -1936,6 +1936,10 @@ class SQLighter:
 
     def subscribeUserToTariffByUid(
             self, user_id, tariffId, balance, time_left, notify_count):
+        if not int(tariffId or 0):
+            # no plan has no days and no deliveries: the tick never counts a tariff 0 row down, so days
+            # left there ("Disable" kept them) read "no plan, 14 days left" for good
+            time_left, notify_count = 0, 0
         with self.connection:
             is_exist = self.cursor.execute(
                 'SELECT * FROM user_tariff_cs WHERE uid = ?',

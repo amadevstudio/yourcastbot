@@ -357,6 +357,8 @@ def test_downgrade_refund():
     off.send('/start')
     ask = off.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': 0}))
     _assert(_plan_row(2003)[0] == relay and 'off?' in ask.texts[0], "turning the plan off is asked first too")
+    off.tap('Turn off')
+    _assert(tuple(_plan_row(2003)) == (0, 0, 0), "off: no plan and no days (they stayed and read '14 days left')")
 
     payer = sim.BotSim(2002, 'en')
     payer.send('/start')
@@ -369,6 +371,47 @@ def test_downgrade_refund():
     _assert('comes back to your balance' in ask.texts[0], "a chat that paid is told what comes back")
     payer.tap('Yes, change plan')
     _assert(_plan_row(2002)[1] > 0, "a chat that paid still gets half of the days left back")
+
+
+def _set_plan(user_id, tariff_id, balance, hours, notify):
+    db = _db()
+    db.execute("UPDATE user_tariff_cs SET tariff_id = ?, balance = ?, time_left = ?, notify_count = ? "
+               "WHERE uid = (SELECT id FROM users WHERE telegramId = ?)", (tariff_id, balance, hours, notify, user_id))
+    db.commit()
+    db.close()
+
+
+def _notify_left(user_id):
+    return _db().execute("SELECT ut.notify_count FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
+                         "WHERE u.telegramId = ?", (user_id,)).fetchone()[0]
+
+
+def test_plan_switch_holes():
+    """The change-plan page turns a plan on as the tick does: at balance >= price, for a full period with
+    the plan's own deliveries; the plan already chosen with no days is turned on too; days on no plan
+    are no days (no price difference for them)."""
+    import config
+    db = _db()
+    bronze, silver, relay = (db.execute("SELECT id FROM tariffs WHERE level = ?", (level,)).fetchone()[0]
+                             for level in (1, 2, 3))
+    silver_price, silver_count = db.execute("SELECT price, notify_count FROM tariffs WHERE id = ?",
+                                            (silver,)).fetchone()
+    relay_price = db.execute("SELECT price FROM tariffs WHERE id = ?", (relay,)).fetchone()[0]
+    db.close()
+    user = sim.BotSim(2020, 'en')
+    user.send('/start')
+    _set_plan(2020, relay, relay_price, 0, 0)
+    user.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': relay}))
+    _assert(tuple(_plan_row(2020)) == (relay, 0, config.tariff_period),
+            "the plan chosen, no days, exactly its price: on now (it said 'top up' and the tick turned it on)")
+    _set_plan(2020, bronze, silver_price, 0, 0)
+    user.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': silver}))
+    _assert(tuple(_plan_row(2020)) == (silver, 0, config.tariff_period) and _notify_left(2020) == silver_count,
+            "Bronze with no days to Silver, exactly its price: a period with Silver's own deliveries")
+    _set_plan(2020, 0, relay_price, 336, -1)
+    user.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': relay}))
+    _assert(tuple(_plan_row(2020)) == (relay, 0, config.tariff_period),
+            "no plan with days left on the row: Relay for its price and a period, no difference for those days")
 
 
 def test_free_bronze_for_channels():
@@ -435,6 +478,7 @@ def main():
         test_show_question(user)
         test_show_notes(user)
         test_downgrade_refund()
+        test_plan_switch_holes()
         test_free_bronze_for_channels()
     finally:
         sim.shutdown()
