@@ -20,6 +20,7 @@ from app.repository.storage import storage
 from app.service import analytics_events
 from app.service.podcast import opml
 from app.service.podcast.subscription import add_sub
+from app.service.record.free_limit import plans_offer
 from config import db_path
 from db.connection import connect_sqlite
 from lib.markup import telegram_html
@@ -141,8 +142,7 @@ def result_message(language_code, result: opml.Result, cut: bool = False) -> dic
         # the next line names the limit
         parts.append(get_message('opmlOver', language_code).format(count=len(result.over), names=_names(result.over)))
         parts.append(get_message('withoutTariffSubscriptionsLimited', language_code))
-        from app.service.payment.storefront import relay_nudge_markup
-        message['reply_markup'] = relay_nudge_markup(language_code, invoice=True)
+        message['reply_markup'] = plans_offer(language_code, free_bronze=True)[1]
     if not parts:
         parts.append(get_message('opmlEmpty', language_code))
     message['text'] = '\n\n'.join(parts)

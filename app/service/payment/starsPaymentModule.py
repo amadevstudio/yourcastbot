@@ -27,8 +27,8 @@ from app.service.payment.paymentSafeModule import (
 from app.service.payment import stars_subscription
 from app.service.payment.referral import invite_row
 from app.service.payment.offers import (
-    WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, offer_discount, offer_open,
-    prepaid_months_sold, relay_terms_open)
+    BUNDLES_CALLBACK, WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, longest_bundle, offer_discount,
+    offer_open, plan_terms_open, prepaid_months_sold)
 from app.service.payment.storefront import (
     CHANGE_PLAN_CALLBACK, SHOWCASE_TARIFF_LEVEL, plan_name, showcase_tariff, tariffs_for_storefront)
 from app.service.plan import channels as channel_plan
@@ -196,9 +196,10 @@ def validate_precheckout_payload(
 ) -> tuple[bool, str | None]:
     """Before Telegram takes the money: the payment matches its invoice, the
     discount is the one sold for those terms, a one-time offer is still open,
-    and Relay's terms (prepaid months, an offer) meet a Relay plan or none: a
-    user who switched to Bronze after the invoice would have the discounted
-    Relay credited to Bronze's balance. The rules are checked only here: money
+    and a plan's terms (its prepaid months, Relay's offer) meet that plan or none:
+    a user who switched to Bronze after the invoice would have the discounted
+    Relay credited to Bronze's balance. An invoice without a plan (`v`, sent
+    before plans were named) is Relay's. The rules are checked only here: money
     taken is credited as it was sold, even if the config or the offer changed
     in between."""
     ok, error = validate_payment_payload(payload, user_id, currency, total_amount)
@@ -209,7 +210,7 @@ def validate_precheckout_payload(
         return False, "Invalid payment offer"
     if not offer_open(user_id, data["o"]):
         return False, "Offer is no longer available"
-    if (data["m"] != 1 or data["d"]) and not relay_terms_open(user_id):
+    if (data["m"] != 1 or data["d"]) and not plan_terms_open(user_id, data["v"]):
         return False, "Another plan is running"
     if data["u"] and stars_subscription.second_subscription(user_id, data["p"]):
         # Telegram would charge both every month; a renewal (same payload) passes
@@ -284,9 +285,9 @@ def get_sub_message(
             'text': button_text,
             'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id']}
         }])
-        if tariff['level'] == SHOWCASE_TARIFF_LEVEL and prepaid_months_sold(
-                tariff_lvl, tariff_id > 0 and time_left > 0):
-            menu_keyboard += bundle_rows(tariff, language_code, rate_x1000)
+    # every plan's prepaid months on a page of their own: a row per bundle was 3 more buttons per plan
+    menu_keyboard.append([{'text': get_message('bundlesButton', language_code).format(discount=longest_bundle()[1]),
+                           'callback_data': {'tp': BUNDLES_CALLBACK}}])
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
     message_text += get_tariff_info_message(
@@ -303,16 +304,43 @@ def get_sub_message(
     }
 
 
-def bundle_rows(tariff, language_code, rate_x1000):
-    rows = []
-    for months, discount in prepay_bundles:
-        stars_amount = stars_to_charge(int(tariff['price']) * months, rate_x1000, discount)
-        rows.append([{
-            'text': get_message('starsBundleButton', language_code).format(
-                months=months, discount=discount, stars=stars_amount),
-            'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id'], 'm': months},
-        }])
-    return rows
+def open_bundles_page(data: ControllerParams):
+    tariff, _balance, time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
+    render_messages(data['chat_id'], [bundles_message(
+        data['language_code'], tariff['level'], tariff['id'] > 0 and time_left is not None and time_left > 0,
+        get_stars_withdraw_rate_x1000())])
+
+
+def bundles_message(language_code, current_level, plan_running, rate_x1000):
+    """Every plan's prepaid months, Relay first: the terms once, each plan's Stars prices in a line,
+    its months as a row of buttons (the plan's medal and the months), one tap to the invoice. A running
+    plan sees its own (another one's months would renew it): change-plan first, a button."""
+    db_users = SQLighter(db_path)
+    try:
+        tariffs = db_users.getTariffs()
+    finally:
+        db_users.close()
+    months_text = lambda months: get_message('bundleMonths', language_code).format(months=months)
+    plans, rows = [], []
+    for tariff in tariffs_for_storefront(tariffs):
+        if not prepaid_months_sold(current_level, plan_running, tariff['level']):
+            continue
+        name = decode_tariff(tariff['level'], language_code)
+        plans.append("<b>%s</b>: %s" % (name, " · ".join(
+            "%s – %d ⭐" % (months_text(months), stars_to_charge(int(tariff['price']) * months, rate_x1000, discount))
+            for months, discount in prepay_bundles)))
+        medal = name.split(" ", 1)[0]
+        rows.append([{'text': "%s %s" % (medal, months_text(months)),
+                      'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id'], 'm': months}}
+                     for months, _discount in prepay_bundles])
+    text = get_message('bundlesBody', language_code).format(
+        terms=", ".join("%s −%d%%" % (months_text(months), discount) for months, discount in prepay_bundles),
+        plans="\n".join(plans))
+    if plan_running:
+        text += "\n\n" + get_message('bundlesOtherPlan', language_code)
+        rows.append([{'text': get_message('tariffs', language_code), 'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}])
+    rows.append([go_back_inline_button(language_code)])
+    return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}
 
 
 def send_invoice(data: ControllerParams):
@@ -345,9 +373,10 @@ def send_invoice(data: ControllerParams):
     except (TypeError, ValueError):
         discount = None
     if (selected_tariff is None or selected_tariff['price'] <= 0 or discount is None
-            or ((months != 1 or discount) and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)
-            # Relay's terms (months, an offer) are not sold to a running Bronze or Silver
-            or ((months != 1 or discount) and not prepaid_months_sold(current_level, plan_running))):
+            or (offer and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)  # the offer is Relay's
+            # a plan's terms (its months, the offer) are not sold while another plan runs
+            or ((months != 1 or discount)
+                and not prepaid_months_sold(current_level, plan_running, selected_tariff['level']))):
         notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
         return False
 
@@ -374,7 +403,7 @@ def send_invoice(data: ControllerParams):
         balance=money_text(amount_balance),
         stars=str(amount_stars),
         rate=pretty_stars_usd_rate(rate_x1000),
-        months=months, discount=discount)
+        months=months, discount=discount, plan=decode_tariff(selected_tariff['level'], data['language_code']))
 
     try:
         bot.send_invoice(

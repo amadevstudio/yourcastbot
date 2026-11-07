@@ -414,6 +414,62 @@ def test_plan_switch_holes():
             "no plan with days left on the row: Relay for its price and a period, no difference for those days")
 
 
+def test_bundles():
+    """Prepaid months of every plan on a page of their own (the Stars page and the one-time page lead
+    there); leaving a plan before its months are used takes back the discount on the months left,
+    once, and the question before says how much."""
+    import datetime
+    from app.service.payment import offers
+    from app.service.payment.offers import charged_cents
+    from db import payments
+    db = _db()
+    bronze, relay = (db.execute("SELECT id FROM tariffs WHERE level = ?", (level,)).fetchone()[0] for level in (1, 3))
+    plans = [row[0] for row in db.execute("SELECT id FROM tariffs WHERE price > 0")]
+    relay_price, bronze_price = (db.execute("SELECT price FROM tariffs WHERE id = ?", (t,)).fetchone()[0]
+                                 for t in (relay, bronze))
+    db.close()
+    user = sim.BotSim(2030, 'en')
+    user.send('/start')
+    _set_plan(2030, 0, 0, 0, 0)
+    step = user.tap_data(json.dumps({'tp': 'bs_stars'}))
+    _assert({'tp': 'bs_long'} in _callbacks(step) and not any(c.get('m') for c in _callbacks(step)),
+            "the Stars page: one button to the months")
+    step = user.tap_data(json.dumps({'tp': 'bs_long'}))
+    terms = {(c['v'], c['m']) for c in _callbacks(step) if c.get('m')}
+    _assert(step.edited and not step.new and terms == {(t, m) for t in plans for m in (3, 6, 12)},
+            "the months page: every plan's 3, 6 and 12 months, an edit of the screen")
+    _assert(any('12' in text and '25%' in text for text in step.texts), "it says the terms")
+    step = user.tap_data(json.dumps({'tp': 'bs_once'}))
+    _assert({'tp': 'bs_long'} in _callbacks(step), "the one-time page leads there too")
+
+    # Relay bought for 12 months 40 days ago: 10 months on the balance, $1.25 off each
+    credited = 12 * relay_price
+    charged = charged_cents(credited, dict(config_bundles())[12])
+    _set_plan(2030, relay, 10 * relay_price, 400, -1)
+    db = _db()
+    payments.ensure_charged_column(db)
+    db.execute("INSERT INTO payment_history (user_id, service_type, invoice_id, status, amount, charged, datetime) "
+               "SELECT id, 'telegramStars', 'sim-bundle', 'paid', ?, ?, ? FROM users WHERE telegramId = 2030",
+               (credited, charged, str(datetime.datetime.now() - datetime.timedelta(days=40))))
+    db.commit()
+    db.close()
+    discount_back = 10 * (credited - charged) // 12
+    ask = user.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
+    _assert(any(('$%.2f' % (discount_back / 100)) in text for text in ask.texts),
+            "the question names the discount that goes back")
+    user.tap('Yes, change plan')
+    refund = int(((400 - 1) / 720) * (relay_price - bronze_price) / 2)
+    _assert(tuple(_plan_row(2030)) == (bronze, 10 * relay_price - discount_back + refund, 400),
+            "Bronze: the balance loses the discount of the 10 months, gets half of the days' difference")
+    _assert(offers.bundle_discount_back(2030, relay_price, 10 * relay_price)[0] == 0,
+            "taken back once: going back to Relay and off again takes nothing")
+
+
+def config_bundles():
+    import config
+    return config.prepay_bundles
+
+
 def test_free_bronze_for_channels():
     """Bronze for subscribing to the owner's channels: the button on /subscription, the screen with the
     channel, "Check" (not subscribed: said; subscribed: Bronze on for a week, held by the hourly check),
@@ -479,6 +535,7 @@ def main():
         test_show_notes(user)
         test_downgrade_refund()
         test_plan_switch_holes()
+        test_bundles()
         test_free_bronze_for_channels()
     finally:
         sim.shutdown()

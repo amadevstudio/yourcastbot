@@ -190,7 +190,7 @@ class RouteMap:
         'bs_once': {
             'method': paymentModule.open_once_page,
             'available_from': ['call'],
-            'routes': ['bs_stars', 'bs_cryptobot', 'bs_robokassa', 'bs_stars_pay']
+            'routes': ['bs_stars', 'bs_cryptobot', 'bs_robokassa', 'bs_stars_pay', 'bs_long']
         },
         'bs_trfs': {
             'method': paymentModule.open_subscription_tariffs_page,
@@ -232,6 +232,12 @@ class RouteMap:
         },
         'bs_stars': {
             'method': starsPaymentModule.open_subscription_page,
+            'available_from': ['call'],
+            'routes': ['bs_stars_pay', 'bs_long']
+        },
+        # every plan's prepaid months (offers.BUNDLES_CALLBACK)
+        'bs_long': {
+            'method': starsPaymentModule.open_bundles_page,
             'available_from': ['call'],
             'routes': ['bs_stars_pay']
         },

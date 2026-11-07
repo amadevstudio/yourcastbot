@@ -5,7 +5,8 @@ bot's balance (Bot API, StarTransaction).
 
 The payment's row turns `refunded` (not `paid`: revenue, payers, "ever paid"
 and the paid AI models stop counting it) and what it credited leaves the
-balance. Money still on the balance pays it back; money the tick already
+balance, less what already left it: a bundle's discount taken back when its
+plan was left (`payment_history.bundle_back`, app/service/payment/offers.py). Money still on the balance pays it back; money the tick already
 turned into days does not exist any more, so the plan gives back the hours it
 bought at the running plan's price, as many as the debt needs and the plan
 has. What the hours do not cover stays as a balance below zero: the next
@@ -21,7 +22,7 @@ never bought: a refund takes none of them.
 Lock: python app/service/payment/test_stars_refund.py
 """
 from config import db_path, tariff_period
-from db import plan_grants
+from db import payments, plan_grants
 from db.connection import connect_sqlite
 
 STARS_SERVICE_TYPE = 'telegramStars'  # starsPaymentModule.STARS_SERVICE_TYPE (no telebot here)
@@ -36,8 +37,9 @@ def apply_refund(charge_id, database=None, period=tariff_period):
     connection = connect_sqlite(db_path if database is None else database)
     try:
         connection.execute("BEGIN IMMEDIATE")
+        back = "COALESCE(bundle_back, 0)" if payments.has_column(connection, 'bundle_back') else "0"
         payment = connection.execute(
-            "SELECT user_id, amount FROM payment_history "
+            "SELECT user_id, amount - " + back + " FROM payment_history "
             "WHERE service_type = ? AND invoice_id = ? AND status = 'paid'",
             (STARS_SERVICE_TYPE, str(charge_id))).fetchone()
         if payment is None:

@@ -20,9 +20,9 @@ from app.service.ai import paid_models
 from app.service.payment import referral, stars_subscription
 from app.service.payment.paymentSafeModule import \
     days_left_text, money_text, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
-from app.service.payment.offers import longest_bundle, prepaid_months_sold
+from app.service.payment.offers import BUNDLES_CALLBACK, bundle_discount_back, longest_bundle, settle_bundles
 from app.service.payment.storefront import (
-    RELAY_INVOICE_CALLBACK, once_pay_rows, tariffs_for_change_plan, subscription_pay_rows)
+    once_pay_rows, tariffs_for_change_plan, subscription_pay_rows)
 from app.service.plan import channels as channel_plan, features
 from config import creatorId
 from config import db_path, tariff_period
@@ -160,18 +160,14 @@ def open_referral_page(data: ControllerParams):
 
 
 def open_once_page(data: ControllerParams):
-    """One-time payments: Stars, CryptoBot (Robokassa for the creator) and Relay's
-    longest prepaid bundle in one tap (the shorter ones are on the Stars page)."""
+    """One-time payments: Stars, CryptoBot (Robokassa for the creator) and the page of
+    every plan's prepaid months (a running plan sees its own there)."""
     language_code = data['language_code']
-    tariff, _balance, time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
     menu_keyboard: list[list[InlineButtonData]] = once_pay_rows(
         language_code, include_robokassa=(data['chat_id'] == creatorId))
-    if prepaid_months_sold(tariff['level'], tariff['level'] > 0 and time_left > 0):
-        months, discount = longest_bundle()
-        menu_keyboard.append([{
-            'text': get_message('prepayLongestButton', language_code).format(
-                months=months, discount=discount),
-            'callback_data': dict(RELAY_INVOICE_CALLBACK, m=months)}])
+    menu_keyboard.append([{
+        'text': get_message('bundlesButton', language_code).format(discount=longest_bundle()[1]),
+        'callback_data': {'tp': BUNDLES_CALLBACK}}])
     menu_keyboard.append([go_back_inline_button(language_code)])
     render_messages(data['chat_id'], [{
         'type': 'text', 'text': get_message('payOnceBody', language_code), 'reply_markup': menu_keyboard}])
@@ -286,10 +282,10 @@ def _stars_top_up_row(language_code) -> list[InlineButtonData]:
     return [{'text': get_message('topUpStarsButton', language_code), 'callback_data': {'tp': 'bs_stars'}}]
 
 
-def downgrade_text(chat_id, current_tariff, desire_tariff, time_left, language_code) -> str:
+def downgrade_text(chat_id, current_tariff, desire_tariff, time_left, language_code, bundle_back=0) -> str:
     """The question before a move to a cheaper plan or off: the days, what comes back to the balance
-    (the chat ever paid: the same half as the move gives), what going back costs, a Stars subscription
-    that the move cancels."""
+    (the chat ever paid: the same half as the move gives), the prepaid months' discount that leaves
+    it, what going back costs, a Stars subscription that the move cancels."""
     current = decode_tariff(current_tariff['level'], language_code)
     difference = int(current_tariff['price']) - int(desire_tariff['price'])
     if int(desire_tariff['id']) == 0:
@@ -302,6 +298,8 @@ def downgrade_text(chat_id, current_tariff, desire_tariff, time_left, language_c
     refund = int(((time_left - 1) / tariff_period) * difference / 2)
     if refund > 0 and paid_for_days(chat_id):
         lines.append(get_message('planDowngradeRefund', language_code).format(refund=money_text(refund)))
+    if bundle_back:
+        lines.append(get_message('bundleDiscountBack', language_code).format(amount=money_text(bundle_back)))
     back = int((time_left / tariff_period) * difference)
     if back > 0:
         lines.append(get_message('planDowngradeBack', language_code).format(
@@ -392,6 +390,11 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
         # $1.86 to undo. Asked first, with what it changes; the yes names the plan it was asked from.
         running = (int(current_tariff['id']) > 0 and current_subscription is not None
                    and int(current_subscription['time_left'] or 0) > 0)
+        # leaving a plan its prepaid months renew: the discount on the months left comes off the
+        # balance (offers.bundle_discount_back); what stays is what was paid for them
+        bundle_back, bundle_settle = (bundle_discount_back(
+            data['chat_id'], current_tariff['price'], current_subscription['balance'])
+            if running else (0, []))
         if running and int(desire_tariff['price']) < int(current_tariff['price']) and not (
                 confirmed and int(data['united_data'].get('c', -1)) == int(current_tariff['id'])):
             yes = (get_message('planOffYes', data['language_code']) if int(desire_tariff['id']) == 0
@@ -400,11 +403,14 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
             render_messages(data['chat_id'], [{
                 'type': 'text',
                 'text': downgrade_text(data['chat_id'], current_tariff, desire_tariff,
-                                       int(current_subscription['time_left']), data['language_code']),
+                                       int(current_subscription['time_left']), data['language_code'],
+                                       bundle_back),
                 'reply_markup': [[{'text': yes, 'callback_data': {
                     'tp': CONFIRM_TARIFF_ACTION, 'v': desire_tariff['id'], 'c': current_tariff['id']}}]]
                 + after_action_keyboard}])
             return
+        if bundle_back:
+            current_subscription = dict(current_subscription, balance=int(current_subscription['balance']) - bundle_back)
 
         # если сейчас есть подписка
         if current_subscription is not None and current_subscription['time_left'] is not None:
@@ -479,6 +485,7 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
                 return
             plan_grants.end_for_chat(data['chat_id'], 'purchase')
 
+        settle_bundles(bundle_settle)
         db = SQLighter(db_path)
         db.subscribeUserToTariffByTg(
             data['chat_id'], desire_tariff['id'], new_balance, new_time_left, new_notify_count)
@@ -502,6 +509,9 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
                 tariff_str, current_subscription['balance'], current_tariff['price'],
                 current_subscription['time_left'], current_subscription['notify_count'],
                 data['language_code'])
+            if bundle_back:
+                message_str += "\n\n" + get_message('bundleDiscountBack', data['language_code']).format(
+                    amount=money_text(bundle_back))
             # a Stars subscription paid for the old plan: canceled, one for the new plan offered
             from app.service.payment.starsPaymentModule import plan_change_notice
             notice, rows = plan_change_notice(data['chat_id'], desire_tariff, data['language_code'])

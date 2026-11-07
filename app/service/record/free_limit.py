@@ -115,10 +115,12 @@ def wait_text(seconds, language_code) -> str:
     return get_message("freeEpisodesNextDays", language_code).format(days=math.ceil(hours / 24))
 
 
-def plans_offer(language_code, source=None) -> tuple[str, list]:
+def plans_offer(language_code, source=None, free_bronze=False) -> tuple[str, list]:
     """(text, keyboard rows): every plan with its Stars price, Relay first, then the
     page of plans for the other ways to pay. Shared by the limits that sell a plan.
-    source: the message's key in analytics_events.SOURCES, on every button (`s`)."""
+    source: the message's key in analytics_events.SOURCES, on every button (`s`).
+    free_bronze: a limit of a chat with no plan, which the free Bronze for channels lifts
+    too: its screen, before change-plan, while it is on."""
     from app.i18n.messages import get_message
     from app.service.payment.paymentModule import get_tariff_description_and_button_text
     from app.service.payment.starsPaymentModule import get_stars_withdraw_rate_x1000, stars_for_balance
@@ -142,6 +144,9 @@ def plans_offer(language_code, source=None) -> tuple[str, list]:
             'text': "%s – %d ⭐" % (texts['button_text'], stars_for_balance(tariff['price'], rate_x1000)),
             'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id'], **tag},
         }])
+    if free_bronze:
+        from app.service.plan import channels
+        rows += channels.entry_row(0, language_code)
     rows.append([{'text': get_message("tariffs", language_code),
                   'callback_data': {'tp': CHANGE_PLAN_CALLBACK, **tag}}])
     return text, rows
@@ -153,7 +158,7 @@ def limit_message(language_code, wait_seconds, limit=None):
     from app.service.analytics_events import LIMIT_SOURCE
 
     limit = features.profile(features.NONE)['clicks'] if limit is None else limit
-    plans_text, rows = plans_offer(language_code, source=LIMIT_SOURCE)
+    plans_text, rows = plans_offer(language_code, source=LIMIT_SOURCE, free_bronze=True)
     text = "<b>" + get_message("freeEpisodesUsed", language_code).format(limit=limit) + "</b>\n"
     text += wait_text(wait_seconds, language_code) + " "
     text += get_message("freeEpisodesAnyPlan", language_code) + "\n\n" + plans_text
