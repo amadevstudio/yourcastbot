@@ -8,6 +8,7 @@ gets one note, a reply to that audio, and users.flags FLAG is set. Without a
 plan the button leads to an invoice: no note for that. The sender never
 sends it with the note about the rich message (one note per delivery).
 """
+from app.service.plan import entitlements
 from config import db_path
 from db import ai
 from db.connection import connect_sqlite
@@ -29,15 +30,16 @@ def pending(chat_ids, database=None) -> set:
         for start in range(0, len(ids), CHUNK):
             part = ids[start:start + CHUNK]
             rows = connection.execute(
-                "SELECT u.telegramId FROM users u JOIN user_tariff_cs ut ON ut.uid = u.id "
-                "WHERE u.telegramId IN (%s) AND ut.tariff_id > 0 AND ut.time_left > 0 "
+                "SELECT u.telegramId FROM users u "
+                "WHERE u.telegramId IN (%s) "
                 "AND json_extract(COALESCE(u.flags, '{}'), '$.%s') IS NULL "
                 "AND NOT EXISTS(SELECT 1 FROM ai_requests r WHERE r.chat_id = u.telegramId AND r.kind = 'summary')"
                 % (','.join('?' * len(part)), FLAG), part).fetchall()
             found.update(int(row[0]) for row in rows)
     finally:
         connection.close()
-    return found
+    # a plan with AI (a trial too: it has hours)
+    return {chat_id for chat_id in found if entitlements.of(chat_id, database).ai}
 
 
 def mark(chat_id, database=None) -> None:

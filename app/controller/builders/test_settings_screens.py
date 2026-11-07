@@ -163,7 +163,7 @@ def test_redraw(settings):
 
 
 def test_auto_summary_toggle(settings):
-    import db.tariff_rows as tariff_rows
+    from app.service.plan import entitlements
     flags, toasts = {}, []
 
     class DB:
@@ -179,22 +179,22 @@ def test_auto_summary_toggle(settings):
         def close(self):
             pass
 
-    saved = (settings.SQLighter, settings.notify, settings._redraw, tariff_rows.running_plan_level)
+    saved = (settings.SQLighter, settings.notify, settings._redraw, settings.entitlements)
     settings.SQLighter, settings._redraw = DB, lambda data, screen: None
     settings.notify = lambda call, message, text, alert=False: toasts.append((text, alert))
     data = {'chat_id': 5, 'callback': None, 'message': None, 'language_code': 'en'}
     try:
-        tariff_rows.running_plan_level = lambda chat_id, database=None: 0
+        settings.entitlements = types.SimpleNamespace(of=lambda chat_id, database=None: entitlements.for_plan(0, False))
         settings.toggle_auto_summary(data)
         _assert(flags['auto_summary'] == 1 and toasts[-1] == (get_message('summaryAutoNeedsPlan', 'en'), True),
                 "no plan: turned on, and an alert says they come with a plan")
         settings.toggle_auto_summary(data)
         _assert(flags['auto_summary'] == 0 and toasts[-1] == (get_message('summaryAutoOff', 'en'), False), "off")
-        tariff_rows.running_plan_level = lambda chat_id, database=None: 3
+        settings.entitlements = types.SimpleNamespace(of=lambda chat_id, database=None: entitlements.for_plan(3, False))
         settings.toggle_auto_summary(data)
-        _assert(toasts[-1] == (get_message('summaryAutoOn', 'en'), False), "with a plan: on, a toast")
+        _assert(toasts[-1] == (get_message('summaryAutoOn', 'en'), False), "with a plan (a trial too): on, a toast")
     finally:
-        settings.SQLighter, settings.notify, settings._redraw, tariff_rows.running_plan_level = saved
+        settings.SQLighter, settings.notify, settings._redraw, settings.entitlements = saved
 
 
 def test_paid_models_switch(settings):
