@@ -18,7 +18,7 @@ from lib.markup import telegram_html
 from agent.bot_telebot import bot
 from app.controller.builders.podcastModule import (
     filter_genre, channel_query)
-from app.controller.builders.recsModule import load_records_data
+from app.controller.builders.recsModule import load_records_data, send_apple_episode_later
 from app.controller.general.notify import notify
 from app.core.message.navigationBuilder import get_full_message_navigation, FullMessageNavigation, \
     determine_search_query_and_page
@@ -28,11 +28,11 @@ from app.repository.storage import storage, telegram_cache
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams, InlineControllerParams
 from app.routes.routes_list import AvailableRoutes
-from app.service.podcast import catalog
+from app.service.podcast import apple_episode, catalog, opml
 from app.service.record.caption import record_caption
 from app.service.record.delivery import fetch_by_url_first
-from config import (
-    db_path, available_podcast_hoster_links, botName, server, maxPodcastDateCallDataHexLen)
+from config import db_path, botName, server, maxPodcastDateCallDataHexLen
+from db.connection import connect_sqlite
 from db.sqliteAdapter import SQLighter
 from lib.telegram.general.message_master import render_messages, MessageStructuresInterface, \
     InlineButtonData
@@ -42,6 +42,7 @@ PER_PAGE = 5
 
 
 APPLE_PODCAST_LINK = re.compile(r'https?://(?:podcasts|itunes)\.apple\.com/\S*?/id(\d+)')
+FEED_LINK = re.compile(r'https?://\S+', re.I)
 
 
 def apple_podcast_id(text) -> int | None:
@@ -50,18 +51,55 @@ def apple_podcast_id(text) -> int | None:
     return int(found.group(1)) if found else None
 
 
+def feed_page(url: str) -> dict:
+    """The podcast page an RSS link opens: the show we poll at that address, or the catalog's
+    show with that feed (matched as an OPML import matches it: iTunes-listed delivery), else
+    the feed itself."""
+    root, _ = app.service.podcast.podcast.podcast_info_query({'rss_link': url}, 'rss', cached=True)
+    title = '' if root is False else next(
+        (str(child.text or '').strip() for child in root if child.tag == 'title'), '')
+    connection = connect_sqlite(db_path)
+    try:
+        known = opml.known_channels(connection)
+    finally:
+        connection.close()
+    channel_id, service_id, service_name = opml.resolve(opml.Feed(title or url, url), known)
+    return {'id': channel_id} if channel_id is not None else {'sId': service_id, 'sName': service_name}
+
+
+def open_link(data: ControllerParams, text) -> bool:
+    """A link sent to the bot opens its podcast: a show or an episode in Apple Podcasts (an
+    episode is also sent, as a click on it would send it), or an RSS feed. False: not a link."""
+    text = str(text or '').strip()
+    itunes_id = apple_podcast_id(text)
+    if itunes_id is not None:
+        page = {'sId': itunes_id, 'sName': 'itunes'}
+    elif FEED_LINK.fullmatch(text):
+        page = feed_page(text)
+    else:
+        return False
+
+    data['route_name'] = 'podcast'
+    data['message'].text = json.dumps(page)
+    channel_query(data)
+    # Back from the podcast goes past the link page, not into its "wrong link"
+    if storage.get_user_curr_state(data['chat_id']) == 'addBRss':
+        storage.del_user_curr_state(data['chat_id'])
+    storage.add_user_state(data['chat_id'], 'podcast')
+
+    episode_link = apple_episode.parse(text) if itunes_id is not None else None
+    if episode_link is not None:
+        send_apple_episode_later(episode_link, data['chat_id'], data['language_code'])
+    return True
+
+
 def search(data: ControllerParams):
     current_state_data = determine_search_query_and_page(
         data['callback'], data['message'], data['united_data'], numbers_are_pages=False)
     search_query = current_state_data.get('search', None)
 
-    # a link from Apple Podcasts opens that podcast: subscriptions move over one link at a time
-    itunes_id = apple_podcast_id(search_query) if data['message'] is not None else None
-    if itunes_id is not None:
-        data['route_name'] = 'podcast'
-        data['message'].text = json.dumps({'sId': itunes_id, 'sName': 'itunes'})
-        channel_query(data)
-        storage.add_user_state(data['chat_id'], 'podcast')
+    # a link opens its podcast, as on the link page: subscriptions move over one link at a time
+    if data['message'] is not None and open_link(data, search_query):
         return False
 
     if search_query is None:
@@ -188,14 +226,9 @@ def open_adding_by_rss_page(data: ControllerParams):
 
 
 def construct_adding_by_rss_page(language_code):
-    message = get_message("addingByRssMessage", language_code)
-    for hosterLink in available_podcast_hoster_links:
-        message += "\n\U00002022 " + hosterLink  # точка bullet
     # subscriptions from another app: an OPML file sent to the bot (opmlModule)
-    message += "\n\n" + get_message("opmlHint", language_code)
-
     return {
-        "message": message,
+        "message": get_message("addingByRssMessage", language_code) + "\n\n" + get_message("opmlHint", language_code),
         "markup": go_back_inline_markup(language_code)
     }
 
@@ -205,65 +238,12 @@ def show_adding_rss_result(data: ControllerParams):
         notify(data['callback'], data['message'], get_message_rtd(['errors', 'unknown'], data['language_code']))
         return False
 
-    link_testers = []
-    for host_link in available_podcast_hoster_links:
-        prepared_host_link = r'%s' % "\\.".join(host_link.split('.'))
-        link_testers.append(
-            re.compile(r'https?:\/\/((?:[a-z0-9_-]+\.)*%s\/.*)' % prepared_host_link))
-
-    reg_result = None
-    for link_tester in link_testers:
-        # regResult = linkTester.fullmatch(message.text)
-        reg_result = link_tester.match(data['message'].text)
-        if reg_result is not None:
-            break
-
-    # строка не удовлетворяет регулярке
-    if reg_result is None or len(reg_result.groups()) != 1:
+    if not open_link(data, data['message'].text):
         render_messages(data['chat_id'], [{
             'type': 'text', 'text': get_message("wrongUrl", data['language_code']),
             'reply_markup': go_back_inline_markup(data['language_code'])
         }])
         return
-
-    # render_messages(data['chat_id'], [{
-    #     'type': 'text', 'text': get_message('loading', data['language_code'])}])
-
-    # проверка, существует ли подкаст
-    rss_link = "http://%s" % reg_result.group(1)
-
-    # db_users = SQLighter(db_path)
-    # # channel = db_users.get_channel_by_service(regResult.string, 'rss')
-    # channel = db_users.get_channel_by_service(rss_link, 'rss')
-    # channel_id = (channel["id"] if (channel is not None) else None)
-    # db_users.close()
-    #
-    # podcast_exist, podcast_data = get_and_set_podcast_data(
-    #     data['chat_id'], rss_link, channel_id, 'rss')
-    #
-    # # если не удалось получить, то сообщить об этом и выйти
-    # if not podcast_exist:
-    #     cant_find_response = cant_find_podcast(data['chat_id'], channel_id, data['language_code'])
-    #     # TODO Remove pc_unavailable
-    #     storage.set_user_state_data(
-    #         data['chat_id'], 'podcast',
-    #         {'id': channel_id, 'title': '', 'unavailable': True})
-    #     render_messages(data['chat_id'], cant_find_response)
-    #     return
-    #
-    # ch_msg = construct_channel_message(data['chat_id'], data['language_code'], podcast_data)
-    #
-    # render_messages(data['chat_id'], ch_msg)
-
-    podcast_route_name: AvailableRoutes = 'podcast'
-    data['route_name'] = podcast_route_name
-    data['message'].text = json.dumps({'sId': rss_link, 'sName': 'rss'})
-    channel_query(data)
-
-    # Don't show error messages when goback from podcast
-    if storage.get_user_curr_state(data['chat_id']) == 'addBRss':
-        storage.del_user_curr_state(data['chat_id'])
-    storage.add_user_state(data['chat_id'], 'podcast')
     return False
 
 

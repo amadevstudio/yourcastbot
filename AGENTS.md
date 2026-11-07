@@ -468,6 +468,35 @@ Lock: `python app/service/podcast/test_catalog.py` (CD gate; the page and
 subscribe parts run where the bot's requirements are installed),
 `python db/test_feed_recovery.py`.
 
+## Adding by link
+
+The menu's long button (`add_by_rss`, route `addChByRss`) opens the link
+page: a link to a podcast, or an OPML file. A link there or in search
+(`searchModule.open_link`) opens its podcast's page:
+
+- Apple Podcasts, a show (`id<show>`): the catalog's show, iTunes-listed.
+- Apple Podcasts, an episode (Share on it: `...?i=<episode>`): the show's
+  page, and that episode queued as a click on it
+  (`recsModule.send_apple_episode`, off the incoming worker; the rec pool and
+  the free limit as any click), found in the feed by its RSS guid
+  (`app/service/podcast/apple_episode.py`). Apple's lookup has no episode by
+  its id: the guid comes from the show's newest 200 (`catalog.episodes`,
+  `trackId` -> `episodeGuid`), else from the episode's web page
+  (`serialized-server-data`: the guid and the show it belongs to; Apple's own
+  format, so second). Neither knowing it, or a guid our copy of the feed
+  lacks: "not found", the page is open anyway. Asked for 2026-11-07: share
+  the link, get the file to listen offline.
+- Any other http(s) link is a feed, matched as an OPML import matches one
+  (`searchModule.feed_page`, `opml.resolve`): a channel we poll at that
+  address, else the catalog's show with that feed (iTunes-listed delivery),
+  else the feed as RSS. The page took three hosts only (castos, vk, redcircle,
+  from the first commit) and said "wrong link" to every other feed; fetches
+  of a feed's URL are `public_only` (Episode delivery), as for OPML.
+
+Locks: `python app/service/podcast/test_apple_episode.py` (CD gate),
+`python app/controller/builders/test_latest_episode.py`,
+`python tools/botsim/test_botsim.py`.
+
 ## OPML import
 
 An OPML file (subscriptions exported from another app) sent to the bot in a

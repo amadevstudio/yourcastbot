@@ -79,6 +79,10 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
         'callback_data': "{\"tp\": \"subs\", \"p\": 1}"}
     ])
 
+    # a podcast by a link (Apple Podcasts: a show or an episode; RSS) or an OPML file: a row of its own
+    menu_keyboard.append([
+        {'text': get_message("add_by_rss", language_code), 'callback_data': "{\"tp\": \"addChByRss\"}"}])
+
     menu_keyboard.append([
         {'text': get_message("update", language_code), 'callback_data': "{\"tp\": \"update\"}"},
         {'text': get_message("another_projects", language_code), 'callback_data': "{\"tp\": \"another\"}"}])
@@ -93,14 +97,13 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
         {'text': get_message("donation", language_code), 'callback_data': "{\"tp\": \"donate\"}"},
         {'text': get_message("help", language_code), 'callback_data': "{\"tp\": \"help\"}"}])
 
-    menu_keyboard.append([
-        {'text': get_message("channelConnect", language_code), 'callback_data': "{\"tp\": \"myTgChannels\"}"},
-        {'text': get_message("add_by_rss", language_code), 'callback_data': "{\"tp\": \"addChByRss\"}"}])
-
+    channels_row: list[InlineButtonData] = [
+        {'text': get_message("channelConnect", language_code), 'callback_data': "{\"tp\": \"myTgChannels\"}"}]
     from app.service.ai import summary
     if summary.enabled():
-        menu_keyboard.append([{'text': get_message('voiceButton', language_code),
-                               'callback_data': {'tp': 'voiceHelp'}}])
+        channels_row.append({'text': get_message('voiceButton', language_code),
+                             'callback_data': {'tp': 'voiceHelp'}})
+    menu_keyboard.append(channels_row)
 
     b1: InlineButtonData = {'text': get_message("bot_subscription", language_code),
                             'callback_data': "{\"tp\": \"botSub\"}"}

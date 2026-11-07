@@ -187,12 +187,6 @@ use_cache = True
 no_photo_path = os.path.join(BASE_DIR, 'static/no_podcast_cover.png')
 noPhoto = no_photo_path if os.path.isfile(no_photo_path) else getattr(constants, 'noPhoto', '')
 
-available_podcast_hoster_links = [
-    'castos.com',
-    'vk.com',
-    'redcircle.com'
-]
-
 try:
     another_projects_texts = constant_texts.anotherProjectsTexts
 except Exception:
