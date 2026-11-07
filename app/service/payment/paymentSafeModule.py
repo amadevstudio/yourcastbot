@@ -238,15 +238,22 @@ def giveAward(refer_tg_id, refered_tg_id, mode, invited=False):
     message = ""
     language_code = user['lang'] if user['lang'] is not None else 'en'
 
-    if mode in ('reged', 'replenished'):
-        # a grant's plan (db/plan_grants.py) is no plan to an award: it ends, the award's days count from
-        # none (its check would take days on top of it back)
-        db.end_plan_grant(user['id'], 'award')
+    # a grant's plan (db/plan_grants.py) is no plan to an award: it ends, the award's days count from none
+    # (its check would take days on top of it back)
+    granted = mode in ('reged', 'replenished') and db.end_plan_grant(user['id'], 'award')
 
     # приглашённый начал пользоваться
     if mode == 'reged':
         current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
-        if current_subscription is None:
+        if granted:
+            # +days of a free Bronze that runs with no end would end it in days: Relay for them instead
+            # (Check turns the free Bronze on again after)
+            extreme = db.getExtremeTariff('max')
+            db.subscribeUserToTariffByTg(
+                refer_tg_id, extreme['id'], current_subscription['balance'],
+                int(tariff_ref_period), extreme['notify_count'])
+            message += get_message("award_with_s_new_user", language_code)
+        elif current_subscription is None:
             extreme = db.getExtremeTariff('min')
             db.subscribeUserToTariffByTg(
                 refer_tg_id, extreme['id'], 0,

@@ -213,6 +213,27 @@ def test_refund_and_survey(path):
             "in place of the grant: Relay for the week, not hours a check would take back")
 
 
+def test_referral_award(path):
+    """An inviter on a grant: the award is Relay for its days, never days of a plan with no end."""
+    from app.service.payment import paymentSafeModule
+    from config import tariff_ref_period, tariff_ref_sub_period
+    inviter, payer = 5040, 5041
+    _user(path, inviter, balance=20)
+    _user(path, payer)
+    plan_grants.start(inviter, features.CHANNELS, 1, NOW, path)
+    plan_grants.start(payer, features.CHANNELS, 1, NOW, path)
+    saved, paymentSafeModule.db_path = paymentSafeModule.db_path, path
+    try:
+        paymentSafeModule.giveAward(inviter, 9001, 'reged')
+        paymentSafeModule.giveAward(payer, 9002, 'replenished')
+    finally:
+        paymentSafeModule.db_path = saved
+    _assert(_grant(path, inviter) is None and _row(path, inviter)[:2] == (RELAY, tariff_ref_period)
+            and _row(path, inviter)[3] == 20, "a friend joined: Relay for the award's days, the balance kept")
+    _assert(_grant(path, payer) is None and _row(path, payer)[:2] == (RELAY, tariff_ref_sub_period),
+            "a friend paid: Relay for the award's days, counted from none")
+
+
 def main():
     path = _db()
     try:
@@ -222,6 +243,7 @@ def main():
         test_payment(path)
         test_other_writers(path)
         test_refund_and_survey(path)
+        test_referral_award(path)
     finally:
         os.unlink(path)
     print("all plan grant tests passed")

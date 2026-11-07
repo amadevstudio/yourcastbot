@@ -25,6 +25,7 @@ except ImportError as e:  # CI has no bot requirements
     print("skip botsim (%s)" % e.__class__.__name__)
     sys.exit(0)
 
+from app.i18n.messages import get_message  # noqa: E402
 from tools.botsim import sim  # noqa: E402
 
 USER = 1001
@@ -365,9 +366,16 @@ def test_free_bronze_for_channels():
     _assert(any('Bronze is on' in text for text in step.texts) and _plan_row(2010)[0] == bronze
             and _plan_row(2010)[2] == 168 and not step.errors, "subscribed: Bronze on for a week")
     step = user.send('/subscription')
-    _assert(any('Bronze for channels is on' in text for text in step.texts), "/subscription says it is on")
+    renewal = get_message('not_enough_for_renewal', 'en').split('%')[0].strip()
+    _assert(any('Bronze for channels is on' in text for text in step.texts)
+            and not any(renewal in text for text in step.texts), "/subscription says it is on, no renewal or days")
+    step = user.send('/menu')
+    _assert(any('Bronze for channels is on' in text for text in step.texts)
+            and not any(renewal in text for text in step.texts), "the menu too")
     step = user.tap_data(json.dumps({'tp': 'bs_stars'}))
     _assert(any('replaces it' in text for text in step.texts), "the Stars page: a plan bought replaces it")
+    user.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': 0}))
+    _assert(_plan_row(2010)[0] == 0 and _plan_row(2010)[2] == 0, "Disable: no plan left, nothing the tick renews")
 
 
 def main():

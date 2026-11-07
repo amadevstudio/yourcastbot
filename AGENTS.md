@@ -1052,8 +1052,10 @@ started only with no plan running; money never renews it (the tick's renewal,
 its lists, D-3 and plan-off leave holders out: `NOT_HELD_SQL`); anything bought
 or given replaces it: a plan's invoice that pays for the plan (a top-up or
 money short of it keeps it), the change-plan page (from the balance at full
-price, never a price difference or a refund; "Disable" ends it), a referral
-award (counted from no days), the survey's week (Relay in its place); any
+price, never a price difference or a refund; "Disable" leaves no plan, tariff
+0: the plan it replaced would come back and the tick renew it from the
+balance), a referral award (Relay for the award's days: days on top of a plan
+with no end would end it in days), the survey's week (Relay in its place); any
 other write of the row that changes its plan or days ends it
 (`subscribeUserToTariffByUid`), a balance-only write does not; a Stars refund
 takes none of its days. Its check holds it or ends it with the plan it
@@ -1069,7 +1071,8 @@ to `need` of the channels the admin lists (page "Tariffs": an @name, a t.me
 link or the id; the bot must be an admin of each, else Telegram does not say
 who is subscribed; a private channel gets the bot's invite link). /subscription
 has the button while a list is set (route `bs_chan`: the channels and "Check",
-`bs_chan_ok`, state independent); its status says it is on. Every hour the jobs
+`bs_chan_ok`, state independent); /subscription and the menu say it is on
+while subscribed, never days left or "not enough for renewal". Every hour the jobs
 role checks each holder (`app/jobs/plan_grants.py`, getChatMember): still
 subscribed, held; fewer, ended with a message, the channels' screen and Relay's
 invoice (`s: chn`). A check Telegram does not answer keeps the plan and warns

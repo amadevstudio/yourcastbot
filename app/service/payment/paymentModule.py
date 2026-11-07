@@ -130,11 +130,13 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
     message_text += get_message("relay_sub_page_body", language_code) + "\n\n"
 
     tariff_str = decode_tariff(tariff_lvl, language_code)
-    message_text += get_tariff_info_message(
-        tariff_str, balance, tariff_price, time_left, notify_left, language_code)
-    grant_line = channel_plan.status_line(utgid, language_code)  # free Bronze: while, not days left
-    if grant_line:
-        message_text += "\n" + grant_line
+    grant_line = channel_plan.status_line(utgid, language_code)
+    if grant_line:  # free Bronze: while subscribed, not days left; money does not renew it
+        message_text += "<b>" + get_message("curr_tariff", language_code) + ": " + tariff_str + "</b>\n<b>" \
+            + get_message("curr_balance", language_code) % money_text(balance) + "</b>\n" + grant_line
+    else:
+        message_text += get_tariff_info_message(
+            tariff_str, balance, tariff_price, time_left, notify_left, language_code)
     message_text += "\n\n" + get_message("relay_sub_page_footnote", language_code)
     message_text += "\n\n" + get_message("donate_page_referral", language_code) + "\n" \
                     + "t.me/" + botName + "?start=" + str(utgid)
@@ -339,8 +341,14 @@ def choose_bot_subscription_tariff(data: ControllerParams, confirmed=False):
     after_action_keyboard: list[list[InlineButtonData]] = [[go_back_inline_button(data['language_code'])]]
 
     if grant and int(desire_tariff['id']) == 0:
-        # "Disable": the grant's plan ends, the plan it replaced comes back with no days
-        plan_grants.end_for_chat(data['chat_id'], 'disabled')
+        # "Disable": the grant's plan ends and no plan is left, as for anyone (the plan it replaced would
+        # come back with no days, and the tick would renew it from the balance)
+        plan_grants.end_for_chat(data['chat_id'], 'disabled', restore=False)
+        db = SQLighter(db_path)
+        try:
+            db.subscribeUserToTariffByTg(data['chat_id'], 0, current_subscription['balance'], 0, 0)
+        finally:
+            db.close()
         notify(data['callback'], data['message'], get_message('tariffSuccessChanged', data['language_code']))
         return open_subscription_tariffs_page(data)
 

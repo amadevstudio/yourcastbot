@@ -8,6 +8,7 @@ from app.i18n.messages import get_message, standartSymbols
 from app.repository.storage import storage
 from app.service.payment import paymentModule
 from app.service.payment.paymentSafeModule import days_left_text, money_text
+from app.service.plan import channels as channel_plan
 from config import db_path, advertising_contact
 from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
@@ -32,9 +33,12 @@ def construct_menu_message(language_code, chat_id) -> list[MessageStructuresInte
               get_message("curr_tariff", language_code) + \
               ": " + tariff_str + \
               "</b>"
+    grant_line = channel_plan.status_line(chat_id, language_code)  # free Bronze: no days, no renewal
     if tariff['level'] == 0:
         message += "\n" + get_message(
             "you_cant_recieve_notifications", language_code)
+    elif grant_line:
+        message += "\n" + grant_line
     else:
         if tariff['price'] > balance:
             message += "\n" + get_message("days_left", language_code) % \

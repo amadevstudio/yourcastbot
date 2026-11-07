@@ -122,7 +122,7 @@ def start(chat_id, kind, level, now=None, database=None) -> str:
         user_id = int(user[0])
         if active(execute, user_id) is not None and _hold(execute, user_id, now):
             return HELD
-        row =execute("SELECT tariff_id, time_left FROM user_tariff_cs WHERE uid = ?", (user_id,)).fetchone()
+        row = execute("SELECT tariff_id, time_left FROM user_tariff_cs WHERE uid = ?", (user_id,)).fetchone()
         if row is not None and int(row[0] or 0) > 0 and int(row[1] or 0) > 0:
             return BUSY
         execute("INSERT INTO plan_grants (user_id, kind, tariff_id, prev_tariff_id, started_at, checked_at,"
