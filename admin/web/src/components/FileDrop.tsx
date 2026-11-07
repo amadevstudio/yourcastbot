@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileAudio, Image as ImageIcon, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Hint } from "@/components/ui/primitives";
@@ -41,20 +41,22 @@ export function FileDrop({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
-  const [previews, setPreviews] = useState<string[]>([]);
   const total = files.reduce((sum, file) => sum + file.size, 0);
 
-  useEffect(() => {
-    const urls = files.map((file) =>
-      isImageFile(file) ? URL.createObjectURL(file) : "",
-    );
-    setPreviews(urls);
-    return () => {
-      urls.forEach((url) => {
+  // Made with the files, so a render never pairs new files with old previews;
+  // the effect only frees them.
+  const previews = useMemo(
+    () => files.map((file) => (isImageFile(file) ? URL.createObjectURL(file) : "")),
+    [files],
+  );
+  useEffect(
+    () => () => {
+      previews.forEach((url) => {
         if (url) URL.revokeObjectURL(url);
       });
-    };
-  }, [files]);
+    },
+    [previews],
+  );
 
   function add(list: FileList | File[]) {
     const incoming = Array.from(list);

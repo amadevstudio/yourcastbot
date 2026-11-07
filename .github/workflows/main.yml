@@ -111,8 +111,27 @@ jobs:
           python3 app/jobs/test_circle_pace.py
           python3 app/i18n/test_translations_complete.py
 
+  # The server builds the admin after `git reset --hard`: a build that fails
+  # there leaves new code on disk and the bot not restarted. Types and lint
+  # are checked here, before a merge, so that build does not fail.
+  admin-web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: admin/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
   deploy-build-restart:
-    needs: storefront-guards
+    needs: [storefront-guards, admin-web]
     if: github.event_name != 'pull_request'
     # The type of runner that the job will run on
     runs-on: ubuntu-latest

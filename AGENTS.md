@@ -1282,7 +1282,10 @@ README: `tools/botsim/README.md`. Lock: `python tools/botsim/test_botsim.py`.
 ## Tests
 
 Run the smallest existing suite that covers the change (for send jobs:
-`python db/test_send_outbox.py`). A refactor of claim/dispatch is
+`python db/test_send_outbox.py`). The admin web (`admin/web`) is checked by
+`npm run lint` (ESLint with the React hooks rules) and `npm run build`
+(`tsc --noEmit`, then Vite); the CI job `admin-web` runs both before a merge
+and the deploy waits for it. A refactor of claim/dispatch is
 incomplete without a test for the invariant you think you preserved.
 
 
