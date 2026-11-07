@@ -3,7 +3,8 @@
 
 A new user's /start (welcome screen, the welcome plan), the menu and its
 settings, the storefront (Stars first, change-plan kept), an OPML file whose
-feeds do not answer, and a summary with a question: what the user sees,
+feeds do not answer, the link page (Apple Podcasts, RSS), and a summary with a
+question: what the user sees,
 through the real handlers, dispatcher and database. Needs the bot's
 requirements (skipped where they are not installed, as in CI).
 
@@ -53,7 +54,7 @@ def test_start(user):
             "a newcomer's first /start reaches Amplitude as new_user (recorded, not sent)")
 
     menu = user.tap('menu')
-    _assert(menu.edited and any('RSS & Import' in text for text in menu.edited[0].button_texts()),
+    _assert(menu.edited and any('Apple Podcasts, RSS' in text for text in menu.edited[0].button_texts()),
             "the menu replaces the welcome screen")
     settings = user.tap('Settings')
     _assert(settings.edited and len(settings.edited[0].buttons) >= 2, "settings: a list of sections")
@@ -136,6 +137,40 @@ def test_opml_offline(user):
     _assert(not step.errors, "and nothing breaks")
     other = user.send_file('photo.jpg', b'\xff\xd8\xff', 'image/jpeg')
     _assert('opml_file (stop)' not in other.handlers, "other documents are not taken for OPML")
+
+
+def test_link_page(user):
+    """The menu's link page takes any podcast link (it used to take three hosts only)."""
+    from app.controller.builders import searchModule
+    user.send('/menu')
+    page = user.tap('Apple Podcasts, RSS')
+    _assert(page.edited and 'Apple Podcasts' in page.edited[0].text and 'OPML' in page.edited[0].text,
+            "the menu's long button opens the page: Apple Podcasts, RSS, the OPML import")
+    _assert(any('Copy' in text for text in page.texts) and not any('castos' in text for text in page.texts),
+            "it says how to get a link, no list of hosts")
+    wrong = user.send('hello')
+    _assert(wrong.handlers[-1] == 'processor(addBRss)' and any('does not match' in t for t in wrong.texts),
+            "a text that is no link: said so")
+
+    user.tap('Back')
+    feed = user.send('https://feeds.example.com/offline.xml')
+    _assert(feed.handlers[-1] == 'processor(addBRss)' and not any('does not match' in t for t in feed.texts)
+            and feed.new and not feed.errors, "any RSS feed is taken (offline here: the podcast page says so)")
+
+    sent, saved = [], searchModule.send_apple_episode_later
+    searchModule.send_apple_episode_later = lambda link, chat_id, lang: sent.append((link, chat_id))
+    try:
+        user.tap('Back')
+        user.send('https://podcasts.apple.com/us/podcast/a-show/id42?i=1000000000007')
+        user.send('/menu')
+        user.tap('Apple Podcasts, RSS')
+        user.send('https://podcasts.apple.com/us/podcast/a-show/id42')
+        user.send('/menu')
+        user.send('https://podcasts.apple.com/gb/podcast/id43?i=9')
+    finally:
+        searchModule.send_apple_episode_later = saved
+    _assert([(link.show_id, link.episode_id, chat) for link, chat in sent] == [(42, 1000000000007, USER), (43, 9, USER)],
+            "an Apple episode link sends its episode, from the page and from search; a show link does not")
 
 
 def test_summary_and_question(user):
@@ -344,6 +379,7 @@ def main():
         test_storefront(user)
         test_cryptobot(user)
         test_opml_offline(user)
+        test_link_page(user)
         test_summary_and_question(user)
         test_transcript_alone(user)
         test_done_opens_podcast(user)

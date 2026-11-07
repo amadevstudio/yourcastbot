@@ -8,6 +8,7 @@ import app.service.podcast.card
 import app.service.podcast.podcast
 import app.service.record.caption
 import app.service.record.helpers
+from app.service.podcast import apple_episode
 from lib.markup import telegram_html
 import lib.tools.time_tools.general
 from lib.requests.url import normalize_url
@@ -507,11 +508,11 @@ def send_record_by_hash_using_start(data: ControllerParams, episode_data: dict):
 
 def send_record_direct(
         channel: dict | None, chat_id: int, lang_code: str, prev_hash: str | None, from_num: int | None,
-        next_record: bool = False, latest: bool = False, quiet: bool = False
+        next_record: bool = False, latest: bool = False, quiet: bool = False, guid: str | None = None
 ) -> bool:
     """Queue an episode of the channel for the chat (the one with prev_hash, the one before it
-    with next_record, the newest with latest). quiet: nothing is said when it cannot be queued
-    (a gift nobody asked for). True when queued."""
+    with next_record, the newest with latest, the one with that RSS guid). quiet: nothing is said
+    when it cannot be queued (a gift nobody asked for). True when queued."""
     if channel is None:
         if not quiet:
             render_messages(chat_id, [{
@@ -562,7 +563,7 @@ def send_record_direct(
                 record_info['recordUniqId'].encode('utf-8')
             ).hexdigest()[0:maxPodcastDateCallDataHexLen]
             # пока хэш отличается, пропускаем
-            if not latest and date_hash != prev_hash:
+            if not latest and (date_hash != prev_hash if guid is None else record_info['guid'] != guid):
                 newer_record_info = record_info
                 record_info = {}
                 continue
@@ -691,6 +692,32 @@ def send_latest_episode_later(channel_id, chat_id: int, lang_code: str):
     Thread(target=send_latest_episode, args=(channel_id, chat_id, lang_code), daemon=True).start()
 
 
+def send_apple_episode(link: apple_episode.Link, chat_id: int, lang_code: str) -> bool:
+    """The episode an Apple Podcasts link names, as a click on it would send it (the free limit
+    counts it). Not found (Apple does not know it, or our copy of the feed has no such guid):
+    "not found"; the show's page is open anyway."""
+    try:
+        episode = apple_episode.find(link)
+        if episode is None:
+            render_messages(chat_id, [{'type': 'text', 'text': get_message('notFoundOrFuture', lang_code)}])
+            return False
+        db = SQLighter(db_path)
+        try:
+            row = db.get_channel_by_service(episode.show_id, 'itunes')
+        finally:
+            db.close()
+        channel = {'id': row['id'] if row is not None else None, 'itunes_id': episode.show_id}
+        return send_record_direct(channel, chat_id, lang_code, None, None, guid=episode.guid)
+    except Exception as e:
+        logger.warn("apple episode link:", link.show_id, link.episode_id, e)
+        return False
+
+
+def send_apple_episode_later(link: apple_episode.Link, chat_id: int, lang_code: str):
+    """send_apple_episode off the incoming worker: it asks Apple and reads the feed."""
+    Thread(target=send_apple_episode, args=(link, chat_id, lang_code), daemon=True).start()
+
+
 def send_record_thread(input_data, thonbot):
     func_params = input_data['func_params']
     sender = send_record_helper.Sender(
@@ -744,5 +771,6 @@ def collect_record_info(channel_descr_children):
 
     result['recordUniqId'] = app.service.record.helpers.get_record_uniq_id(
         guid, full_pub_date, result['title'])
+    result['guid'] = guid.strip()
 
     return result

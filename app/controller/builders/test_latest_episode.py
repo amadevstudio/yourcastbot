@@ -2,7 +2,8 @@
 """Right after a subscription the show's newest episode is queued as a click
 would queue it: the newest item, counted by the free limit, quiet when it
 cannot go (a feed that fails, the limit, several clicks already waiting), and
-never failing the subscription. A click on an episode is unchanged.
+never failing the subscription. A click on an episode is unchanged. An
+episode link from Apple Podcasts queues that episode (Apple's guid) the same way.
 
 Run from the repo root: python app/controller/builders/test_latest_episode.py
 (the behaviour runs where the bot's requirements are installed).
@@ -37,6 +38,9 @@ class FakeDB:
 
     def get_channel(self, channel_id):
         return {'id': channel_id, 'itunes_id': 500, 'rss_link': 'https://feeds.example/x.xml'} if channel_id == 7 else None
+
+    def get_channel_by_service(self, service_id, service_name='itunes'):
+        return {'id': 7, 'itunes_id': 500, 'rss_link': None} if service_id == 500 else None
 
     def get_user_by_tg(self, chat_id):
         return {'bitrate': None}
@@ -87,6 +91,38 @@ def test_behaviour(recs):
     state['allowed'] = False
     recs.send_record_direct({'id': 7, 'itunes_id': 500}, 1001, 'en', older, None)
     _assert(renders and renders[-1][0]['text'] == 'limit', "and a click at the limit still hears why")
+    test_apple_link(recs, state, queued, renders)
+
+
+def test_apple_link(recs, state, queued, renders):
+    from app.service.podcast.apple_episode import Episode, Link
+    state['allowed'] = True
+    found = {'episode': Episode(500, 'g1')}
+    recs.apple_episode.find = lambda link: found['episode']
+    link = Link(500, 1000000001, 'us')
+    _assert(recs.send_apple_episode(link, 1001, 'en') is True, "an Apple episode link queues an episode")
+    job = queued[-1]['func_params']
+    _assert(job['link'] == 'https://cdn.example/1.mp3' and job['podcastInfo']['title'] == 'Older'
+            and job['podcastInfo']['id'] == 7 and queued[-1]['action'] == 'rec',
+            "the one with Apple's guid, not the newest, as a click (our channel's id when we have it)")
+
+    found['episode'] = Episode(501, 'g2')
+    recs.send_apple_episode(link, 1001, 'en')
+    _assert(queued[-1]['func_params']['podcastInfo']['id'] is None
+            and queued[-1]['func_params']['podcastInfo']['title'] == 'Newest',
+            "a show we do not poll: sent from its feed all the same")
+
+    before, renders[:] = len(queued), []
+    found['episode'] = Episode(500, 'not-in-the-feed')
+    _assert(recs.send_apple_episode(link, 1001, 'en') is False and len(queued) == before
+            and renders and renders[-1][0]['text'] == recs.get_message('notFoundOrFuture', 'en'),
+            "a guid our feed does not have: said, nothing queued")
+    found['episode'], renders[:] = None, []
+    _assert(recs.send_apple_episode(link, 1001, 'en') is False and len(queued) == before
+            and renders[-1][0]['text'] == recs.get_message('notFoundOrFuture', 'en'),
+            "Apple does not know the episode: said, nothing queued")
+    recs.apple_episode.find = lambda link: (_ for _ in ()).throw(RuntimeError('boom'))
+    _assert(recs.send_apple_episode(link, 1001, 'en') is False, "an error stays inside")
 
 
 def main():
