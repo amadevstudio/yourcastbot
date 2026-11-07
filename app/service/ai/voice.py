@@ -186,9 +186,16 @@ def help_screen(chat_id, lang):
 
 def help_message(data):
     from app.service import analytics_events
-    from lib.telegram.general.message_master import outer_sender
-    outer_sender(data['chat_id'], [help_screen(data['chat_id'], data['language_code'])])
-    analytics_events.track(data['chat_id'], 'voice_help')
+    from lib.telegram.general.message_master import message_editor, outer_sender
+    from lib.tools.logger import logger
+    chat, screen = data['chat_id'], help_screen(data['chat_id'], data['language_code'])
+    try:
+        # the menu's button: the help replaces the menu, as every button of the help screen edits
+        message_editor(chat, screen, data['message'].message_id)
+    except Exception as e:
+        logger.warn("voice help edit:", chat, type(e).__name__, e)
+        outer_sender(chat, [screen])
+    analytics_events.track(chat, 'voice_help')
 
 
 def language_screen(chat_id, lang, ref='', from_help=False):

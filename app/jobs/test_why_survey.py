@@ -318,25 +318,32 @@ def test_answers():
             pass
 
     class Message:
-        def __init__(self, text):
-            self.text = text
+        def __init__(self, text, message_id=None):
+            self.text, self.message_id = text, message_id
 
     import db.sqliteAdapter as adapter
     saved = (adapter.SQLighter, module.storage.set_user_state_data, module.storage.get_user_state_data,
              module.storage.add_user_state, module.render_messages, module.send_message_to_creator,
-             module.analytics_events.track, module.notify, module.grant_week)
+             module.analytics_events.track, module.notify, module.grant_week, module.message_editor,
+             module.storage.set_user_message_structures, module.storage.del_user_resend_flag)
+    edits, screens, sent_anew = [], {}, []
+    module.message_editor = lambda chat, structure, message_id: (
+        edits.append(message_id) or renders.append(structure))
+    module.storage.set_user_message_structures = lambda chat, value: screens.__setitem__(chat, value)
+    module.storage.del_user_resend_flag = lambda chat: None
     gifts = []
     module.grant_week = lambda tg: 0 if tg in gifts else (gifts.append(tg) or 168)
     adapter.SQLighter = FakeDB
     module.storage.set_user_state_data = lambda chat, route, value: state.__setitem__((chat, route), value)
     module.storage.get_user_state_data = lambda chat, route: state.get((chat, route))
     module.storage.add_user_state = lambda chat, route: state.__setitem__((chat, 'current'), route)
-    module.render_messages = lambda chat, structures, *a, **k: renders.append(structures[0])
+    module.render_messages = lambda chat, structures, *a, **k: (
+        sent_anew.append(k.get('resending')) or renders.append(structures[0]))
     module.send_message_to_creator = lambda text, level='info': creator.append(text) or True
     module.analytics_events.track = lambda tg, event, props=None, **kw: events.append((event, props))
     module.notify = lambda call, message, text, alert=False: toasts.append(text)
     try:
-        tap = {'callback': object(), 'message': None, 'chat_id': 7001, 'language_code': 'en',
+        tap = {'callback': object(), 'message': Message(None, 55), 'chat_id': 7001, 'language_code': 'en',
                'united_data': {'tp': 'why', 'a': 'pay'}}
         _assert(module.why_route(tap) is False and not events and not creator,
                 "a chat the survey did not go to: a crafted button does nothing")
@@ -351,7 +358,9 @@ def test_answers():
                                                                            config.channel_direct_url]
                 and "our channel" in renders[-1]['text']
                 and renders[-1]['reply_markup'][1][0]['callback_data'] == {'tp': 'bck'},
-                "a new message says the gift and asks for more, the channel to read and to write, and Back")
+                "the answer says the gift and asks for more, the channel to read and to write, and Back")
+        _assert(edits == [55] and not sent_anew and screens[7001] == [{'id': 55, 'type': 'text'}],
+                "it replaces the tapped question, which becomes the screen Back and search edit")
         module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'own'}))
         _assert('Write it in one message' in renders[-1]['text'] and 'Relay is on' not in renders[-1]['text']
                 and events[-1][1]['reward_hours'] == 0, "a second answer: no second gift; 'own' asks for the text")
@@ -366,6 +375,17 @@ def test_answers():
         _assert('what got in the way' in renders[-1]['text'], "an idle answer asks what got in the way")
         _assert(module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'x'})) is False,
                 "an unknown answer is ignored")
+        saved_editor = module.message_editor
+
+        def cannot_edit(chat, structure, message_id):
+            raise RuntimeError("message to edit not found")
+        module.message_editor = cannot_edit
+        try:
+            module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'find'}))
+        finally:
+            module.message_editor = saved_editor
+        _assert(sent_anew == [True] and 'what got in the way' in renders[-1]['text'],
+                "a question that cannot be edited: the answer comes as a new message")
         text = {'callback': None, 'message': Message('Stars are hard to buy in my country <3'), 'chat_id': 7001,
                 'language_code': 'en', 'united_data': {}}
         _assert(module.why_route(text) is False and state[(7001, 'current')] == 'menu',
@@ -383,11 +403,12 @@ def test_answers():
             module.why_route(dict(text, message=Message('Lex Fridman')))
         finally:
             module.summaryModule.search_instead = saved_search
-        _assert(searched and len(creator) == 5, "long after the tap a text is a search, not an answer")
+        _assert(searched and len(creator) == 6, "long after the tap a text is a search, not an answer")
     finally:
         (adapter.SQLighter, module.storage.set_user_state_data, module.storage.get_user_state_data,
          module.storage.add_user_state, module.render_messages, module.send_message_to_creator,
-         module.analytics_events.track, module.notify, module.grant_week) = saved
+         module.analytics_events.track, module.notify, module.grant_week, module.message_editor,
+         module.storage.set_user_message_structures, module.storage.del_user_resend_flag) = saved
 
 
 def main():
