@@ -157,7 +157,8 @@ def main():
             _assert_eq([digest_variant(tg) for tg in (NEW_IDLE, OLD_PAYER, DIGEST_B, -1013)], ['a', 'a', 'b', 'b'],
                        "the page splits as the digest does")
         _assert_eq(report['digest'], {'last_week': 1, 'muted': 0}, 'digest: last week, a blocked user left out')
-        _assert_eq(report['survey'], {'groups': [], 'answers': [], 'texts': []}, "the survey: nobody asked yet")
+        _assert_eq(report['survey'], {'holdout': 0, 'groups': [], 'answers': [], 'texts': []},
+                   "the survey: nobody asked yet")
         conn = sqlite3.connect(path)
         conn.executescript(
             "UPDATE users SET flags = json_object('why_survey', 'sent', 'why_group', 'limit', 'why_answer', 'pay', "
@@ -165,7 +166,8 @@ def main():
             "UPDATE users SET flags = json_object('why_survey', 'sent', 'why_group', 'idle', 'why_answer', 'app', "
             "'why_reward', 1, 'why_text', 'Pocket Casts', 'why_text_at', 3) WHERE id = 8;"
             "UPDATE users SET flags = json_object('why_survey', 'sent', 'why_group', 'idle') WHERE id = 6;"
-            "UPDATE users SET flags = json_object('why_survey', 'unsent', 'why_group', 'idle') WHERE id = 9;")
+            "UPDATE users SET flags = json_object('why_survey', 'unsent', 'why_group', 'idle') WHERE id = 9;"
+            "UPDATE users SET flags = json_object('why_survey', 'control', 'why_group', 'old') WHERE id = 10;")
         conn.commit()
         conn.close()
         survey = product.product(days=1, database=path, now=now)['survey']
@@ -176,6 +178,7 @@ def main():
         _assert_eq(survey['answers'], [{'group': 'idle', 'answer': 'app', 'count': 1},
                                        {'group': 'limit', 'answer': 'pay', 'count': 1}], "the answers by group")
         _assert_eq([t['text'] for t in survey['texts']], ['Pocket Casts', 'cards please'], "the texts, newest first")
+        _assert_eq(survey['holdout'], 1, "the old accounts' holdout apart, never in 'sent'")
 
         _assert_eq(report['paid_first_days'], {'days': 30, 'matured': 0, 'paid': 0, 'own_sub': 0,
                                                'own_sub_paid': 0},

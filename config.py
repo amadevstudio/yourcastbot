@@ -110,6 +110,8 @@ winback_after_days = (7, 30)
 winback_offer_discount = 30
 # "what stops you from taking a plan?" goes to the chats due until this day, UTC (app/jobs/why_survey.py)
 why_survey_until = '2026-11-21'
+# the old accounts asked in all (the pilot; raised by the owner after reading its blocks), 300 an hour
+why_old_limit = 1000
 # the bot's channel (news), which takes messages from anyone: a longer answer can go there too
 channel_url = 'https://t.me/yourcast_channel'
 channel_direct_url = 'https://t.me/yourcast_channel?direct'

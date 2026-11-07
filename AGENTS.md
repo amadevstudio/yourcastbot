@@ -967,7 +967,18 @@ running and either `free_rec_per_week` episodes by click in the last 14 days
 chat itself: a show of its own, a click, a summary, a transcript (`ended`);
 a Relay that ended so with nothing used (`idle`, most trials) is asked what
 got in the way instead: not understood, podcasts not found, another app, no
-need for podcasts in Telegram, own words; no offer under it.
+need for podcasts in Telegram, own words; no offer under it. The old accounts
+(`old`: live, no plan, no digest in 14 days, no ended Relay; ~10k on
+2026-11-07, 9 in 10 with no subscription) hear what is new and why they
+stopped (forgot, another app, something missing, no need for podcasts in
+Telegram, own words), the week's gift; a search button after the answer
+(not under the question: a tap there turns the question into search). A
+pilot: newest rows first, `OLD_PER_RUN` (300) an hour, `why_old_limit`
+(config, 1000) in all, raised by the owner after reading the blocks; one in
+ten (hundreds digit of the id 0) is a holdout, marked `control`, never sent
+(`survey_control`), the revival read against it. Digest recipients stay out
+while the digest's A/B runs. The adapter backfills a NULL
+`nosub_digest_sent_at` with now, so "no digest" is a date older than 14 days.
 Not the creator, not a blocked chat, not a chat whose balance covers Relay
 (the tick would renew the gift from that money); `users.flags` `why_survey`
 unsent, then sent; `why_group` the group. Buttons: too expensive, paying is inconvenient, the free

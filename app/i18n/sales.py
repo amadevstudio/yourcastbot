@@ -472,6 +472,45 @@ ROWS = {
         '📣 החדשות של הבוט בערוץ שלנו, ואפשר גם לכתוב לנו שם.'),
     'whyChannelRead': ('📣 Канал бота', "📣 The bot's channel", '📣 Canal do bot', '📣 Canal del bot',
                        '📣 Kanal des Bots', '📣 ערוץ הבוט'),
+    'whySurveyOld': (
+        'Здравствуйте! Это Yourcast, бот для подкастов. Вы давно не заходили, а бот с тех пор сильно изменился: '
+        'новые выпуски ваших подкастов приходят сами, ИИ делает краткий пересказ и расшифровку, по выпуску '
+        'можно задавать вопросы. Почему вы перестали пользоваться? Одно нажатие очень поможет.',
+        "Hi! This is Yourcast, the podcast bot. It's been a while, and the bot has changed a lot since: new "
+        "episodes of your podcasts arrive on their own, AI makes a short summary and a transcript, and you can "
+        "ask questions about an episode. Why did you stop using it? One tap helps a lot.",
+        'Olá! Aqui é o Yourcast, o bot de podcasts. Faz tempo que você não aparece, e o bot mudou muito: os novos '
+        'episódios dos seus podcasts chegam sozinhos, a IA faz um resumo e a transcrição, e dá para fazer '
+        'perguntas sobre um episódio. Por que você parou de usar? Um toque já ajuda muito.',
+        '¡Hola! Soy Yourcast, el bot de podcasts. Hace tiempo que no entras, y el bot ha cambiado mucho: los '
+        'nuevos episodios de tus podcasts llegan solos, la IA hace un resumen y la transcripción, y puedes '
+        'hacer preguntas sobre un episodio. ¿Por qué dejaste de usarlo? Un toque ayuda mucho.',
+        'Hallo! Hier ist Yourcast, der Podcast-Bot. Du warst lange nicht hier, und der Bot hat sich stark '
+        'verändert: Neue Folgen deiner Podcasts kommen von selbst, eine KI macht eine Zusammenfassung und ein '
+        'Transkript, und du kannst Fragen zu einer Folge stellen. Warum hast du aufgehört? Ein Tippen hilft sehr.',
+        'שלום! כאן Yourcast, בוט הפודקאסטים. מזמן לא נכנסתם, והבוט השתנה מאוד: פרקים חדשים של הפודקאסטים '
+        'שלכם מגיעים לבד, בינה מלאכותית מכינה סיכום קצר ותמלול, ואפשר לשאול שאלות על פרק. למה הפסקתם '
+        'להשתמש? לחיצה אחת תעזור מאוד.'),
+    'whyAnswer_forgot': ('🙈 Просто забыл про бота', '🙈 I just forgot about the bot', '🙈 Só esqueci do bot',
+                         '🙈 Simplemente me olvidé del bot', '🙈 Ich habe den Bot einfach vergessen',
+                         '🙈 פשוט שכחתי מהבוט'),
+    'whyAnswer_missing': ('🧩 Чего-то не хватало', '🧩 Something was missing', '🧩 Faltava alguma coisa',
+                          '🧩 Faltaba algo', '🧩 Etwas hat gefehlt', '🧩 משהו היה חסר'),
+    'whySearch': ('🔍 Найти подкаст', '🔍 Find a podcast', '🔍 Encontrar um podcast', '🔍 Buscar un podcast',
+                  '🔍 Podcast finden', '🔍 למצוא פודקאסט'),
+    'whyMoreOld': (
+        'Спасибо! Найдите свой подкаст, и новые выпуски будут приходить сами. Если хотите, напишите одним '
+        'сообщением, чего не хватало. Я читаю всё сам.',
+        "Thank you! Find your podcast, and new episodes will arrive on their own. If you like, write in one "
+        "message what was missing. I read every reply myself.",
+        'Obrigado! Encontre seu podcast, e os novos episódios chegam sozinhos. Se quiser, escreva numa mensagem '
+        'o que faltava. Eu leio todas as respostas.',
+        '¡Gracias! Busca tu podcast y los nuevos episodios llegarán solos. Si quieres, escribe en un mensaje '
+        'qué faltaba. Leo todas las respuestas yo mismo.',
+        'Danke! Such deinen Podcast, dann kommen neue Folgen von selbst. Wenn du magst, schreib in einer '
+        'Nachricht, was gefehlt hat. Ich lese jede Antwort selbst.',
+        'תודה! מצאו את הפודקאסט שלכם, ופרקים חדשים יגיעו לבד. אם תרצו, כתבו בהודעה אחת מה היה חסר. '
+        'אני קורא כל תשובה בעצמי.'),
     'whyThanksToast': ('Спасибо!', 'Thank you!', 'Obrigado!', '¡Gracias!', 'Danke!', 'תודה!'),
     'whyMore': (
         'Спасибо! Если хотите, напишите одним сообщением чуть подробнее: какая цена была бы честной, '

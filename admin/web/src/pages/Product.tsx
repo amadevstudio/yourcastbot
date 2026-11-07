@@ -35,6 +35,7 @@ const SURVEY_GROUPS: Record<string, string> = {
   limit: "Упираются в лимит",
   ended: "Relay кончился, пользовались",
   idle: "Relay кончился, не пользовались",
+  old: "Старые аккаунты (пилот)",
 };
 
 const SURVEY_ANSWERS: Record<string, string> = {
@@ -47,6 +48,8 @@ const SURVEY_ANSWERS: Record<string, string> = {
   find: "Не нашёл свои подкасты",
   app: "Другое приложение",
   tg: "Не нужны подкасты в Telegram",
+  forgot: "Просто забыл",
+  missing: "Чего-то не хватало",
 };
 
 function Metric({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
@@ -202,12 +205,14 @@ export default function Product() {
             <Hint className="mb-4">
               Один раз каждому до 21.11: без плана и упираются в лимит, или Relay кончился 2+ дня назад.
               Первый ответ дарит неделю Relay. Каждый ответ и текст ещё приходят в Telegram с тегом #survey.
+              Старые аккаунты: пилот по 300 в час, каждый десятый – контроль без сообщения
+              ({data.survey.holdout}), возврат сравнивается с ним в Amplitude.
             </Hint>
             {data.survey.groups.length === 0 ? (
               <Hint>Опрос ещё никому не ушёл.</Hint>
             ) : (
               <div className="grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {data.survey.groups.map((g) => (
                     <Metric
                       key={g.group}
