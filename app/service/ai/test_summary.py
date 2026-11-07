@@ -437,6 +437,14 @@ def test_queue_and_quota(db):
     _assert(quota.questions(504, database=db)[:4] == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0, True),
             "a trial has fewer, counted over the last 24 hours")
     _assert(abs(usage.per_user(0, database=db)[504]['ai_usd'] - 0.006) < 1e-9, "questions are in the AI spend")
+    # the 30 days' count: a day with questions left still stops at it
+    for day in range(1, quota.TRIAL_QUESTIONS_PER_MONTH // quota.TRIAL_QUESTIONS_PER_DAY + 1):
+        for _ in range(quota.TRIAL_QUESTIONS_PER_DAY):
+            usage.record_ask(504, 'ep', 0.001, db, at=now - day * 86400 - 3600)
+    month = quota.questions(504, now=now + 86401, database=db)
+    _assert(month[:3] == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0) and month.month_limit == quota.TRIAL_QUESTIONS_PER_MONTH,
+            "a trial stops at its 30 days' questions, a day with questions left or not")
+    _assert(quota.questions(504, now=now + 40 * 86400, database=db).allowed, "past 30 days they come back")
 
 
 def test_budget(db):
@@ -754,7 +762,8 @@ def test_plan_text():
     try:
         text = paymentModule.ai_plan_text(2, 'en')
         _assert(text == '\n' + get_message('trf_descr_ai', 'en').format(
-            hours=config.ai_summary_hours_per_month[2], questions=config.ai_questions_per_day[2]) + ' '
+            hours=config.ai_summary_hours_per_month[2], questions=config.ai_questions_per_day[2],
+            month=config.ai_questions_per_month[2]) + ' '
                 + get_message('trf_descr_ai_paid', 'en').format(paid=config.ai_paid_transcribe_hours_per_month[2]),
                 "Silver: its hours, its questions, its hours of the paid model")
         paid_models.transcribe_model = lambda with_speakers: 'whisper'

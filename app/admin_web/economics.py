@@ -110,16 +110,16 @@ def _rates(conn) -> dict[str, dict]:
     return rates
 
 
-def _worst(hours: float, rates: dict, questions_per_day: int, paid_hours: float = 0.0) -> Optional[float]:
+def _worst(hours: float, rates: dict, questions: int, paid_hours: float = 0.0) -> Optional[float]:
     """The most a month of the plan's AI could cost: every hour new audio (`paid_hours` of it by the
-    paid model, the rest Whisper), a summary per hour, every question of every day. None while a rate
+    paid model, the rest Whisper), a summary per hour, every question of the 30 days (`questions`). None while a rate
     it needs is unknown."""
     if rates['whisper']['usd'] is None or (paid_hours and rates['speakers']['usd'] is None):
         return None
     paid_hours = min(paid_hours, hours)
     return (paid_hours * (rates['speakers']['usd'] or 0.0) + (hours - paid_hours) * rates['whisper']['usd']
             + hours * (rates['summary']['usd'] or 0.0)
-            + questions_per_day * quota.QUOTA_DAYS * (rates['question']['usd'] or 0.0))
+            + questions * (rates['question']['usd'] or 0.0))
 
 
 def _hours_used(conn, since: float, until: float) -> dict[int, float]:
@@ -155,14 +155,16 @@ def ai_plans(conn, database, since: float, until: float, spent: dict) -> dict[st
         return value if value is None or cap is None else min(value, cap)
 
     def plan(key, level, price, hours, questions, paid, paid_hours=0.0):
+        month = min(questions * quota.QUOTA_DAYS, quota.month_questions(level, not paid) or questions * quota.QUOTA_DAYS)
         net = price * config.payout_share.get(STARS, 1.0)
         cap = net * config.ai_budget_share if paid else None
         chats = [tg for tg, (paid_for, lvl) in running.items() if paid_for == paid and (not paid or lvl == level)]
         used = [hours_used.get(tg, 0.0) for tg in chats]
         return {'key': key, 'level': level, 'price_usd': price, 'net_usd': net, 'cap_usd': cap, 'hours': hours,
-                'questions_per_day': questions, 'paid_hours': paid_hours if paid and paid_model else 0.0,
-                'worst_whisper_usd': capped(_worst(hours, rates, questions), cap),
-                'worst_paid_usd': capped(_worst(hours, rates, questions, paid_hours), cap)
+                'questions_per_day': questions, 'questions_per_month': month,
+                'paid_hours': paid_hours if paid and paid_model else 0.0,
+                'worst_whisper_usd': capped(_worst(hours, rates, month), cap),
+                'worst_paid_usd': capped(_worst(hours, rates, month, paid_hours), cap)
                 if paid and paid_model else None,
                 'chats': len(chats), 'ai_chats': sum(1 for h in used if h > 0),
                 'hours_used': sum(used), 'max_hours': max(used, default=0.0),

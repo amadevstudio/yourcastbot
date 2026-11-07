@@ -124,9 +124,11 @@ def check(chat_id, needed, level=None, trial=False, now=None, database=None) -> 
 
 # Questions about an episode (summaryModule.ask): one model call each, a few
 # tenths of a cent with the transcript cached, so a count per day (config.ai_questions_per_day by
-# plan level) and the budget are enough. QUESTIONS_PER_DAY: the most a plan gives ("up to")
+# plan level), one per 30 days (config.ai_questions_per_month) and the budget are enough.
+# QUESTIONS_PER_DAY: the most a plan gives ("up to")
 QUESTIONS_PER_DAY = max(config.ai_questions_per_day.values(), default=0)
 TRIAL_QUESTIONS_PER_DAY = 5
+TRIAL_QUESTIONS_PER_MONTH = 50
 
 
 class Questions(NamedTuple):
@@ -136,18 +138,30 @@ class Questions(NamedTuple):
     trial: bool = False
     budget: bool = False  # refused by the plan's budget, not by the day's count
     level: int = 0
+    month_limit: int = 0  # refused by the 30 days' count: what it is
+
+
+def month_questions(level, trial) -> int:
+    """Questions in any 30 days: a trial's, else the plan level's."""
+    return TRIAL_QUESTIONS_PER_MONTH if trial else config.ai_questions_per_month.get(level, 0)
 
 
 def questions(chat_id, now=None, database=None) -> Questions:
-    """Questions left today (the last 24 hours) for this chat: a running plan only, fewer on a trial."""
+    """Questions left today (the last 24 hours) for this chat, within the last 30 days' count: a running
+    plan only, fewer on a trial."""
     from db import usage
     level = running_plan_level(chat_id, database)
     if level <= 0:
         return Questions(False, 0, 0)
     trial = not paid_for_days(chat_id, database)
     limit = TRIAL_QUESTIONS_PER_DAY if trial else config.ai_questions_per_day.get(level, QUESTIONS_PER_DAY)
-    since = (time.time() if now is None else now) - 86400
-    left = max(limit - usage.count_since(chat_id, 'ask', since, database), 0)
+    now = time.time() if now is None else now
+    left = max(limit - usage.count_since(chat_id, 'ask', now - 86400, database), 0)
+    month = month_questions(level, trial)
+    if left > 0 and month:
+        left = min(left, max(month - usage.count_since(chat_id, 'ask', now - QUOTA_DAYS * 86400, database), 0))
+        if left <= 0:
+            return Questions(False, limit, 0, trial, level=level, month_limit=month)
     if left > 0 and not trial:
         spend = budget(chat_id, now, database)
         if spend is not None and not spend.fits(config.ai_call_usd):
