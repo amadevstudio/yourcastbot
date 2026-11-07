@@ -1084,54 +1084,54 @@ messages = {
     },
     "add_by_rss": {
         "ru": {
-            "ro_msg": emojiCodes.get('link') + " " + "RSS & Import"
+            "ro_msg": emojiCodes.get('link') + " " + "Добавить из Apple Podcasts, RSS, OPML"
         },
         "en": {
-            "ro_msg": emojiCodes.get('link') + " " + "RSS & Import"
+            "ro_msg": emojiCodes.get('link') + " " + "Add from Apple Podcasts, RSS, OPML"
         },
         "pt-BR": {
-            "ro_msg": emojiCodes.get('link') + " " + "RSS e importação"
+            "ro_msg": emojiCodes.get('link') + " " + "Adicionar do Apple Podcasts, RSS, OPML"
         },
         "es": {
-            "ro_msg": emojiCodes.get('link') + " " + "RSS e importación"
+            "ro_msg": emojiCodes.get('link') + " " + "Añadir desde Apple Podcasts, RSS, OPML"
         },
         "de": {
-            "ro_msg": emojiCodes.get('link') + " " + "RSS & Import"
+            "ro_msg": emojiCodes.get('link') + " " + "Aus Apple Podcasts, RSS, OPML hinzufügen"
         },
         "he": {
-            "ro_msg": emojiCodes.get('link') + " " + "RSS וייבוא"
+            "ro_msg": emojiCodes.get('link') + " " + "הוספה מ-Apple Podcasts, RSS, OPML"
         }
     },
     "addingByRssMessage": {
         "ru": {
-            "ro_msg": emojiCodes.get('link') + " " + "Чтобы добавить подкаст, пришлите"
-                                                     " ссылку на RSS в формате https://host/url-path?params"
-                                                     "\n\nСервисы, которые поддерживает бот:"
+            "ro_msg": emojiCodes.get('link') + " " + ("Пришлите ссылку на подкаст:\n"
+                    "• из Apple Podcasts, на подкаст или на выпуск (Поделиться → Скопировать ссылку). Выпуск придёт сюда файлом\n"
+                    "• на RSS-ленту, например https://example.com/feed.xml")
         },
         "en": {
-            "ro_msg": emojiCodes.get('link') + " " + "To add a podcast, please send"
-                                                     " an RSS link in the format https://host/url-path?params"
-                                                     "\n\nServices that the bot supports:"
+            "ro_msg": emojiCodes.get('link') + " " + ("Send a podcast link:\n"
+                    "• from Apple Podcasts, to a show or an episode (Share → Copy Link). The episode arrives here as a file\n"
+                    "• to an RSS feed, like https://example.com/feed.xml")
         },
         "pt-BR": {
-            "ro_msg": emojiCodes.get('link') + " " + "Para adicionar um podcast, envie "
-                                                     "um link RSS no formato https://host/url-path?params"
-                                                     "\n\nServiços que o bot suporta:"
+            "ro_msg": emojiCodes.get('link') + " " + ("Envie o link de um podcast:\n"
+                    "• do Apple Podcasts, de um programa ou de um episódio (Compartilhar → Copiar Link). O episódio chega aqui como arquivo\n"
+                    "• de um feed RSS, como https://example.com/feed.xml")
         },
         "es": {
-            "ro_msg": emojiCodes.get('link') + " " + "Para agregar un podcast, envíe un"
-                                                     " enlace RSS en el formato https://host/url-path?params"
-                                                     "\n\nServicios que admite el bot:"
+            "ro_msg": emojiCodes.get('link') + " " + ("Envía el enlace de un pódcast:\n"
+                    "• de Apple Podcasts, de un programa o de un episodio (Compartir → Copiar enlace). El episodio llega aquí como archivo\n"
+                    "• de un feed RSS, como https://example.com/feed.xml")
         },
         "de": {
-            "ro_msg": emojiCodes.get('link') + " " + "Um einen Podcast hinzuzufügen, "
-                                                     "senden Sie bitte einen RSS-Link im Format https://host/url-path?params"
-                                                     "\n\nVom Bot unterstützte Dienste:"
+            "ro_msg": emojiCodes.get('link') + " " + ("Schick einen Podcast-Link:\n"
+                    "• aus Apple Podcasts, zu einer Sendung oder einer Folge (Teilen → Link kopieren). Die Folge kommt hier als Datei an\n"
+                    "• zu einem RSS-Feed, etwa https://example.com/feed.xml")
         },
         "he": {
-            "ro_msg": emojiCodes.get('link') + " " + "כדי להוסיף פודקאסט,"
-                                                     " אנא שלח קישור RSS בפורמט https://host/url-path?params"
-                                                     "\n\nשירותים שהבוט תומך בהם:"
+            "ro_msg": emojiCodes.get('link') + " " + ("שלחו קישור לפודקאסט:\n"
+                    "• מ-Apple Podcasts, לתוכנית או לפרק (שיתוף → העתקת קישור). הפרק יגיע לכאן כקובץ\n"
+                    "• לפיד RSS, למשל https://example.com/feed.xml")
         }
     },
     'wrongUrl': {

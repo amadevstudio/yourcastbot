@@ -34,6 +34,7 @@ INDEX = 'index'
 
 TIMEOUT = (5, 15)  # (connect, read)
 INDEX_GRACE_SECONDS = 2  # how long a search that has Apple's answer waits for the Index
+EPISODES_LIMIT = 200  # Apple's most
 HEADERS = {'User-Agent': 'yourcastbot'}  # the Index refuses requests without one
 
 
@@ -112,6 +113,13 @@ def feed_urls(itunes_id, get=None) -> list[str]:
     if not answered:
         raise CatalogUnavailable(itunes_id)
     return urls
+
+
+def episodes(itunes_id, get=None) -> list[dict]:
+    """A show's newest episodes in Apple's lookup (`trackId`, `episodeGuid`...): at most 200,
+    whatever the limit; Apple's alone (the Index has no episodes in this format). Raises when
+    Apple does not answer."""
+    return _results(APPLE_LOOKUP, {'id': itunes_id, 'entity': 'podcastEpisode', 'limit': EPISODES_LIMIT}, get)
 
 
 def lookup(itunes_id, get=None) -> tuple[list[dict], str]:
