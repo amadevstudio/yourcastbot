@@ -15,6 +15,13 @@ ROWS = {
         '🎁 Invitar a un amigo: +{days} días',
         '🎁 Freund einladen: +{days} Tage',
         '🎁 להזמין חבר: עוד {days} ימים'),
+    'referralMenuButton': (
+        '👥 Пригласить друзей',
+        '👥 Invite friends',
+        '👥 Convidar amigos',
+        '👥 Invitar amigos',
+        '👥 Freunde einladen',
+        '👥 להזמין חברים'),
     'referralShareText': (
         'Слушаю подкасты в Telegram: новые выпуски приходят файлом прямо в чат. По этой ссылке {days} дней бесплатно.',
         'I listen to podcasts in Telegram: new episodes arrive as files right in the chat. This link gives you {days} days free.',

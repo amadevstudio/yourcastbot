@@ -227,6 +227,7 @@ FA_MESSAGES = {
     "digestEpisodes": "قسمت‌های جدید در اشتراک‌های شما",
     "digestRelayLine": "📨 با Relay، قسمت‌های جدید پادکست‌هایتان به‌صورت فایل همین‌جا می‌آیند: ماهی \u200e$5، پرداخت با Stars.",
     "award_welcome_invited": "🎁 دوستی دعوتتان کرده است: {days} روز Relay علاوه بر دورهٔ آزمایشی رایگان.",
+    "referralMenuButton": "👥 دعوت از دوستان",
     "referralInviteButton": "🎁 دعوت از دوست: {days} روز هدیه",
     "referralShareText": "پادکست‌ها را در تلگرام گوش می‌دهم: قسمت‌های جدید به‌صورت فایل مستقیم در چت می‌آیند. با این لینک {days} روز رایگان دارید.",
     "freeLimitReached": "سقف طرح رایگان: {limit} پادکست",

@@ -389,10 +389,16 @@ def test_free_bronze_for_channels():
     db.close()
     step = user.send('/subscription')
     _assert({'tp': channels.SCREEN} in _callbacks(step), "/subscription: the button while it is on")
+    _assert(not any('?start=2010' in text for text in step.texts) and {'tp': 'bs_ref'} in _callbacks(step),
+            "/subscription: the referral is a page of its own")
+    step = user.tap_data(json.dumps({'tp': 'bs_ref'}))
+    urls = [b.get('url') or '' for m in step.new + step.edited for row in m.buttons for b in row]
+    _assert(step.edited and not step.new and any('?start=2010' in text for text in step.texts)
+            and any(url.startswith('https://t.me/share/url') for url in urls), "the referral page: the link, share")
     step = user.tap_data(json.dumps({'tp': channels.SCREEN}))
     urls = [b.get('url') for m in step.new + step.edited for row in m.buttons for b in row]
-    _assert('https://t.me/simchannel' in urls and {'tp': channels.CHECK_ACTION} in _callbacks(step),
-            "the screen: the channel and Check")
+    _assert('https://t.me/simchannel' in urls and {'tp': channels.CHECK_ACTION} in _callbacks(step)
+            and any('end it at any time' in text for text in step.texts), "the screen: the channel, Check, the terms")
     step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
     _assert(step.toasts and 'Not subscribed yet: Sim channel' in step.toasts[-1][0] and _plan_row(2010)[2] == 0,
             "not subscribed: said, nothing on")

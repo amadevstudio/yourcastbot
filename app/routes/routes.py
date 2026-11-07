@@ -168,7 +168,7 @@ class RouteMap:
             'method': paymentModule.open_subscription_page,
             'available_from': ['call', 'command'],
             'commands': ['subscription', 'payment'],
-            'routes': ['bs_recur', 'bs_once', 'bs_trfs', 'bs_chan']
+            'routes': ['bs_recur', 'bs_once', 'bs_trfs', 'bs_chan', 'bs_ref']
         },
         # free Bronze for subscribing to the owner's channels (app/service/plan/channels.py)
         'bs_chan': {
@@ -177,6 +177,10 @@ class RouteMap:
             'actions': {
                 'bs_chan_ok': {'method': planGrantModule.check, 'state_independent': True},
             }
+        },
+        'bs_ref': {
+            'method': paymentModule.open_referral_page,
+            'available_from': ['call'],
         },
         'bs_recur': {
             'method': starsPaymentModule.open_recurring_page,
