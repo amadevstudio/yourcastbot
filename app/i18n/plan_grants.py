@@ -9,7 +9,7 @@ _COPY = {
     '🎁 Bronze gratis: Kanäle abonnieren',
     '🎁 ברונזה בחינם: הרשמה לערוצים',
     '🎁 برنزی رایگان: عضویت در کانال‌ها'),
-'chanPlanBodyAll': (
+'chanPlanBody': (
     '<b>Bronze for free</b>\n\nSubscribe to the channels below and Bronze is yours while you stay subscribed: '
     'new episodes of your podcasts come as files, as on the paid Bronze. AI (summaries, transcripts, questions) '
     'is not included.\n\nSubscribed? Tap "Check".',
@@ -30,61 +30,32 @@ _COPY = {
     '<b>برنزی رایگان</b>\n\nعضو کانال‌های زیر شوید و تا وقتی عضو هستید برنزی مال شماست: قسمت‌های تازهٔ '
     'پادکست‌هایتان مثل برنزی پولی به‌صورت فایل می‌آیند. هوش مصنوعی (خلاصه، متن پیاده‌شده، سؤال) در آن نیست.'
     '\n\nعضو شدید؟ "بررسی" را بزنید.'),
-'chanPlanBodySome': (
-    '<b>Bronze for free</b>\n\nSubscribe to {need} of the {total} channels below and Bronze is yours while you '
-    'stay subscribed: new episodes of your podcasts come as files, as on the paid Bronze. AI (summaries, '
-    'transcripts, questions) is not included.\n\nSubscribed? Tap "Check".',
-    '<b>Бронза бесплатно</b>\n\nПодпишитесь на {need} из {total} каналов ниже, и Бронза ваша, пока вы на них '
-    'подписаны: новые выпуски ваших подкастов приходят файлами, как на платной Бронзе. ИИ (пересказы, '
-    'расшифровки, вопросы) в неё не входит.\n\nПодписались? Нажмите "Проверить".',
-    '<b>Bronze grátis</b>\n\nAssine {need} dos {total} canais abaixo e o Bronze é seu enquanto continuar '
-    'inscrito: episódios novos dos seus podcasts chegam como arquivos, como no Bronze pago. A IA (resumos, '
-    'transcrições, perguntas) não está incluída.\n\nAssinou? Toque em "Verificar".',
-    '<b>Bronce gratis</b>\n\nSuscríbete a {need} de los {total} canales de abajo y el Bronce es tuyo mientras '
-    'sigas suscrito: los episodios nuevos de tus pódcasts llegan como archivos, como en el Bronce de pago. La IA '
-    '(resúmenes, transcripciones, preguntas) no está incluida.\n\n¿Ya te suscribiste? Toca "Comprobar".',
-    '<b>Bronze gratis</b>\n\nAbonniere {need} der {total} Kanäle unten, und Bronze gehört dir, solange du sie '
-    'abonniert hast: neue Folgen deiner Podcasts kommen als Dateien, wie beim bezahlten Bronze. KI '
-    '(Zusammenfassungen, Transkripte, Fragen) ist nicht dabei.\n\nAbonniert? Tippe auf "Prüfen".',
-    '<b>ברונזה בחינם</b>\n\nהירשמו ל-{need} מתוך {total} הערוצים שלמטה, והברונזה שלכם כל עוד אתם רשומים: פרקים '
-    'חדשים של הפודקאסטים שלכם מגיעים כקבצים, כמו בברונזה בתשלום. AI (סיכומים, תמלילים, שאלות) לא כלול.'
-    '\n\nנרשמתם? הקישו "בדיקה".',
-    '<b>برنزی رایگان</b>\n\nعضو {need} کانال از {total} کانال زیر شوید و تا وقتی عضو هستید برنزی مال شماست: '
-    'قسمت‌های تازهٔ پادکست‌هایتان مثل برنزی پولی به‌صورت فایل می‌آیند. هوش مصنوعی (خلاصه، متن پیاده‌شده، '
-    'سؤال) در آن نیست.\n\nعضو شدید؟ "بررسی" را بزنید.'),
 'chanPlanActive': (
-    '✅ Bronze for channels is on. It stays while you are subscribed to {need} of them: the bot checks every hour.',
-    '✅ Бронза за каналы включена. Она действует, пока вы подписаны на {need} из них: бот проверяет каждый час.',
-    '✅ O Bronze pelos canais está ativo. Fica enquanto você assinar {need} deles: o bot verifica a cada hora.',
-    '✅ El Bronce por canales está activo. Sigue mientras estés suscrito a {need} de ellos: el bot lo comprueba cada hora.',
-    '✅ Bronze für Kanäle ist an. Es bleibt, solange du {need} davon abonniert hast: der Bot prüft jede Stunde.',
-    '✅ ברונזה בזכות הערוצים פעילה. היא נשארת כל עוד אתם רשומים ל-{need} מהם: הבוט בודק כל שעה.',
-    '✅ برنزیِ کانال‌ها روشن است. تا وقتی عضو {need} کانال از آن‌ها باشید می‌ماند: ربات هر ساعت بررسی می‌کند.'),
+    '✅ Bronze for channels is on. It stays while you are subscribed to all of them: the bot checks every hour.',
+    '✅ Бронза за каналы включена. Она действует, пока вы подписаны на все эти каналы: бот проверяет каждый час.',
+    '✅ O Bronze pelos canais está ativo. Fica enquanto você assinar todos eles: o bot verifica a cada hora.',
+    '✅ El Bronce por canales está activo. Sigue mientras estés suscrito a todos: el bot lo comprueba cada hora.',
+    '✅ Bronze für Kanäle ist an. Es bleibt, solange du alle abonniert hast: der Bot prüft jede Stunde.',
+    '✅ ברונזה בזכות הערוצים פעילה. היא נשארת כל עוד אתם רשומים לכולם: הבוט בודק כל שעה.',
+    '✅ برنزیِ کانال\u200cها روشن است. تا وقتی عضو همهٔ آن\u200cها باشید می\u200cماند: ربات هر ساعت بررسی می\u200cکند.'),
 'chanPlanCheck': (
     '✅ Check', '✅ Проверить', '✅ Verificar', '✅ Comprobar', '✅ Prüfen', '✅ בדיקה', '✅ بررسی'),
 'chanPlanOn': (
-    'Bronze is on 🎉 New episodes of your podcasts will come as files. It stays while you are subscribed to '
-    '{need} of the channels; a plan you pay for replaces it whenever you like.',
-    'Бронза включена 🎉 Новые выпуски ваших подкастов будут приходить файлами. Она действует, пока вы подписаны '
-    'на {need} из каналов; оплаченный тариф заменит её, когда захотите.',
-    'Bronze ativado 🎉 Episódios novos dos seus podcasts vão chegar como arquivos. Fica enquanto você assinar '
-    '{need} dos canais; um plano pago o substitui quando quiser.',
-    'Bronce activado 🎉 Los episodios nuevos de tus pódcasts llegarán como archivos. Sigue mientras estés '
-    'suscrito a {need} de los canales; un plan de pago lo reemplaza cuando quieras.',
-    'Bronze ist an 🎉 Neue Folgen deiner Podcasts kommen als Dateien. Es bleibt, solange du {need} der Kanäle '
-    'abonniert hast; ein bezahlter Tarif ersetzt es, wann du willst.',
-    'הברונזה פעילה 🎉 פרקים חדשים של הפודקאסטים שלכם יגיעו כקבצים. היא נשארת כל עוד אתם רשומים ל-{need} '
-    'מהערוצים; מסלול בתשלום מחליף אותה מתי שתרצו.',
-    'برنزی روشن شد 🎉 قسمت‌های تازهٔ پادکست‌هایتان به‌صورت فایل می‌آیند. تا وقتی عضو {need} کانال باشید می‌ماند؛ '
-    'هر وقت بخواهید طرح پولی جایش را می‌گیرد.'),
+    'Bronze is on 🎉 New episodes of your podcasts will come as files. It stays while you are subscribed to the channels; a plan you pay for replaces it whenever you like.',
+    'Бронза включена 🎉 Новые выпуски ваших подкастов будут приходить файлами. Она действует, пока вы подписаны на каналы; оплаченный тариф заменит её, когда захотите.',
+    'Bronze ativado 🎉 Episódios novos dos seus podcasts vão chegar como arquivos. Fica enquanto você assinar os canais; um plano pago o substitui quando quiser.',
+    'Bronce activado 🎉 Los episodios nuevos de tus pódcasts llegarán como archivos. Sigue mientras estés suscrito a los canales; un plan de pago lo reemplaza cuando quieras.',
+    'Bronze ist an 🎉 Neue Folgen deiner Podcasts kommen als Dateien. Es bleibt, solange du die Kanäle abonniert hast; ein bezahlter Tarif ersetzt es, wann du willst.',
+    'הברונזה פעילה 🎉 פרקים חדשים של הפודקאסטים שלכם יגיעו כקבצים. היא נשארת כל עוד אתם רשומים לערוצים; מסלול בתשלום מחליף אותה מתי שתרצו.',
+    'برنزی روشن شد 🎉 قسمت\u200cهای تازهٔ پادکست\u200cهایتان به\u200cصورت فایل می\u200cآیند. تا وقتی عضو کانال\u200cها باشید می\u200cماند؛ هر وقت بخواهید طرح پولی جایش را می\u200cگیرد.'),
 'chanPlanMissing': (
-    'Subscribed to {count} of the {need} needed. Subscribe and tap "Check" again.',
-    'Подписок: {count} из {need} нужных. Подпишитесь и нажмите "Проверить" ещё раз.',
-    'Inscrito em {count} dos {need} necessários. Assine e toque em "Verificar" de novo.',
-    'Suscrito a {count} de los {need} necesarios. Suscríbete y toca "Comprobar" otra vez.',
-    '{count} von {need} nötigen abonniert. Abonniere und tippe noch einmal auf "Prüfen".',
-    'רשומים ל-{count} מתוך {need} הנדרשים. הירשמו והקישו שוב "בדיקה".',
-    'عضو {count} کانال از {need} کانال لازم هستید. عضو شوید و دوباره "بررسی" را بزنید.'),
+    'Not subscribed yet: {channels}. Subscribe and tap "Check" again.',
+    'Пока нет подписки: {channels}. Подпишитесь и нажмите "Проверить" ещё раз.',
+    'Ainda sem inscrição: {channels}. Assine e toque em "Verificar" de novo.',
+    'Aún sin suscripción: {channels}. Suscríbete y toca "Comprobar" otra vez.',
+    'Noch nicht abonniert: {channels}. Abonniere und tippe noch einmal auf "Prüfen".',
+    'עדיין לא רשומים: {channels}. הירשמו והקישו שוב "בדיקה".',
+    'هنوز عضو نیستید: {channels}. عضو شوید و دوباره "بررسی" را بزنید.'),
 'chanPlanBusy': (
     'You have a plan running. Free Bronze is for when no plan runs: it will be here when yours ends.',
     'У вас уже идёт тариф. Бесплатная Бронза для тех, у кого тарифа нет: она будет ждать, когда ваш закончится.',
@@ -110,24 +81,29 @@ _COPY = {
     'לא הצלחנו לבדוק את ההרשמות כרגע. נסו שוב בעוד דקה.',
     'الان نشد عضویت‌ها را بررسی کنیم. یک دقیقهٔ دیگر دوباره امتحان کنید.'),
 'chanPlanOff': (
-    '<b>Free Bronze is off</b>: you are subscribed to {count} of the {need} channels it needs. New episodes no '
-    'longer come as files. Subscribe again and tap "Check", or take Relay: files, AI summaries and questions.',
-    '<b>Бесплатная Бронза выключена</b>: вы подписаны на {count} из {need} нужных каналов. Новые выпуски '
-    'больше не приходят файлами. Подпишитесь снова и нажмите "Проверить" или возьмите Relay: файлы, '
-    'ИИ-пересказы и вопросы.',
-    '<b>O Bronze grátis foi desativado</b>: você assina {count} dos {need} canais necessários. Episódios novos '
-    'não chegam mais como arquivos. Assine de novo e toque em "Verificar", ou pegue o Relay: arquivos, resumos '
-    'com IA e perguntas.',
-    '<b>El Bronce gratis se desactivó</b>: estás suscrito a {count} de los {need} canales necesarios. Los '
-    'episodios nuevos ya no llegan como archivos. Vuelve a suscribirte y toca "Comprobar", o toma Relay: '
-    'archivos, resúmenes con IA y preguntas.',
-    '<b>Gratis-Bronze ist aus</b>: du hast {count} der {need} nötigen Kanäle abonniert. Neue Folgen kommen '
-    'nicht mehr als Dateien. Abonniere wieder und tippe auf "Prüfen", oder nimm Relay: Dateien, '
-    'KI-Zusammenfassungen und Fragen.',
-    '<b>ברונזה בחינם כבויה</b>: אתם רשומים ל-{count} מתוך {need} הערוצים הנדרשים. פרקים חדשים כבר לא מגיעים '
-    'כקבצים. הירשמו שוב והקישו "בדיקה", או קחו את Relay: קבצים, סיכומי AI ושאלות.',
-    '<b>برنزی رایگان خاموش شد</b>: عضو {count} کانال از {need} کانال لازم هستید. قسمت‌های تازه دیگر '
-    'به‌صورت فایل نمی‌آیند. دوباره عضو شوید و "بررسی" را بزنید، یا Relay بگیرید: فایل، خلاصهٔ هوش مصنوعی و سؤال.'),
+    '<b>Free Bronze is off</b>: you are not subscribed to {channels}. New episodes no longer come as files. Subscribe and tap "Check" to get it back, or pick a plan below: each comes with AI summaries and questions.',
+    '<b>Бесплатная Бронза выключена</b>: вы не подписаны на {channels}. Новые выпуски больше не приходят файлами. Подпишитесь и нажмите "Проверить", чтобы вернуть её, или выберите тариф ниже: в каждом есть ИИ-пересказы и вопросы.',
+    '<b>O Bronze grátis foi desativado</b>: você não assina {channels}. Episódios novos não chegam mais como arquivos. Assine e toque em "Verificar" para recuperá-lo, ou escolha um plano abaixo: todos têm resumos com IA e perguntas.',
+    '<b>El Bronce gratis se desactivó</b>: no estás suscrito a {channels}. Los episodios nuevos ya no llegan como archivos. Suscríbete y toca "Comprobar" para recuperarlo, o elige un plan abajo: todos tienen resúmenes con IA y preguntas.',
+    '<b>Gratis-Bronze ist aus</b>: du hast {channels} nicht abonniert. Neue Folgen kommen nicht mehr als Dateien. Abonniere und tippe auf "Prüfen", um es zurückzubekommen, oder wähle unten einen Tarif: jeder hat KI-Zusammenfassungen und Fragen.',
+    '<b>ברונזה בחינם כבויה</b>: אתם לא רשומים ל-{channels}. פרקים חדשים כבר לא מגיעים כקבצים. הירשמו והקישו "בדיקה" כדי להחזיר אותה, או בחרו מסלול למטה: בכל אחד יש סיכומי AI ושאלות.',
+    '<b>برنزی رایگان خاموش شد</b>: عضو {channels} نیستید. قسمت\u200cهای تازه دیگر به\u200cصورت فایل نمی\u200cآیند. عضو شوید و "بررسی" را بزنید تا برگردد، یا یکی از طرح\u200cهای زیر را بگیرید: همه خلاصهٔ هوش مصنوعی و سؤال دارند.'),
+'chanPlanWarn': (
+    '<b>Free Bronze needs every channel</b>: you are not subscribed to {channels}. Subscribe within {hours} hours to keep it, then tap "Check".',
+    '<b>Для бесплатной Бронзы нужны все каналы</b>: вы не подписаны на {channels}. Подпишитесь в течение {hours} часов, чтобы её сохранить, и нажмите "Проверить".',
+    '<b>O Bronze grátis precisa de todos os canais</b>: você não assina {channels}. Assine em até {hours} horas para mantê-lo e toque em "Verificar".',
+    '<b>El Bronce gratis necesita todos los canales</b>: no estás suscrito a {channels}. Suscríbete en las próximas {hours} horas para conservarlo y toca "Comprobar".',
+    '<b>Gratis-Bronze braucht alle Kanäle</b>: du hast {channels} nicht abonniert. Abonniere innerhalb von {hours} Stunden, um es zu behalten, und tippe auf "Prüfen".',
+    '<b>ברונזה בחינם דורשת את כל הערוצים</b>: אתם לא רשומים ל-{channels}. הירשמו בתוך {hours} שעות כדי לשמור עליה, והקישו "בדיקה".',
+    '<b>برنزی رایگان همهٔ کانال\u200cها را لازم دارد</b>: عضو {channels} نیستید. تا {hours} ساعت دیگر عضو شوید تا بماند، و "بررسی" را بزنید.'),
+'chanPlanStopped': (
+    '<b>Free Bronze for channels has ended</b>: the offer is over. New episodes no longer come as files. To keep them coming, pick a plan below: each comes with AI summaries and questions.',
+    '<b>Бесплатная Бронза за каналы закончилась</b>: акция завершена. Новые выпуски больше не приходят файлами. Чтобы они приходили, выберите тариф ниже: в каждом есть ИИ-пересказы и вопросы.',
+    '<b>O Bronze grátis pelos canais acabou</b>: a promoção terminou. Episódios novos não chegam mais como arquivos. Para continuar recebendo, escolha um plano abaixo: todos têm resumos com IA e perguntas.',
+    '<b>El Bronce gratis por canales terminó</b>: la promoción acabó. Los episodios nuevos ya no llegan como archivos. Para seguir recibiéndolos, elige un plan abajo: todos tienen resúmenes con IA y preguntas.',
+    '<b>Gratis-Bronze für Kanäle ist vorbei</b>: die Aktion ist beendet. Neue Folgen kommen nicht mehr als Dateien. Damit sie weiter kommen, wähle unten einen Tarif: jeder hat KI-Zusammenfassungen und Fragen.',
+    '<b>ברונזה בחינם בזכות ערוצים הסתיימה</b>: המבצע נגמר. פרקים חדשים כבר לא מגיעים כקבצים. כדי שימשיכו להגיע, בחרו מסלול למטה: בכל אחד יש סיכומי AI ושאלות.',
+    '<b>برنزی رایگانِ کانال\u200cها تمام شد</b>: این طرح به پایان رسید. قسمت\u200cهای تازه دیگر به\u200cصورت فایل نمی\u200cآیند. برای اینکه بیایند، یکی از طرح\u200cهای زیر را بگیرید: همه خلاصهٔ هوش مصنوعی و سؤال دارند.'),
 'chanPlanScreenButton': (
     '🎁 Free Bronze: the channels', '🎁 Бесплатная Бронза: каналы', '🎁 Bronze grátis: os canais',
     '🎁 Bronce gratis: los canales', '🎁 Gratis-Bronze: die Kanäle', '🎁 ברונזה בחינם: הערוצים',

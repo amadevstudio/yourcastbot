@@ -341,7 +341,7 @@ def test_free_bronze_for_channels():
     channel, "Check" (not subscribed: said; subscribed: Bronze on for a week, held by the hourly check),
     the status on /subscription, the pages that sell say a plan replaces it, the AI says it has none."""
     from app.service.plan import channels
-    channels.save_settings([{'id': -100501, 'title': 'Sim channel', 'url': 'https://t.me/simchannel'}], 1,
+    channels.save_settings(True, [{'id': -100501, 'title': 'Sim channel', 'url': 'https://t.me/simchannel'}],
                            sim._state['database'])
     db = _db()
     bronze = db.execute("SELECT id FROM tariffs WHERE level = 1").fetchone()[0]
@@ -353,13 +353,13 @@ def test_free_bronze_for_channels():
     db.commit()
     db.close()
     step = user.send('/subscription')
-    _assert({'tp': channels.SCREEN} in _callbacks(step), "/subscription: the button while a list is set")
+    _assert({'tp': channels.SCREEN} in _callbacks(step), "/subscription: the button while it is on")
     step = user.tap_data(json.dumps({'tp': channels.SCREEN}))
     urls = [b.get('url') for m in step.new + step.edited for row in m.buttons for b in row]
     _assert('https://t.me/simchannel' in urls and {'tp': channels.CHECK_ACTION} in _callbacks(step),
             "the screen: the channel and Check")
     step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
-    _assert(step.toasts and 'Subscribed to 0 of the 1' in step.toasts[-1][0] and _plan_row(2010)[2] == 0,
+    _assert(step.toasts and 'Not subscribed yet: Sim channel' in step.toasts[-1][0] and _plan_row(2010)[2] == 0,
             "not subscribed: said, nothing on")
     user.api.members[(-100501, 2010)] = 'member'
     step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))

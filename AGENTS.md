@@ -1067,22 +1067,29 @@ invoice and subscription, `offers.relay_terms_open`) see no plan.
 
 The first grant is free Bronze for channels (`app/service/plan/channels.py`,
 the owner's call, 2026-11-07): Bronze without AI while the chat is subscribed
-to `need` of the channels the admin lists (page "Tariffs": an @name, a t.me
-link or the id; the bot must be an admin of each, else Telegram does not say
-who is subscribed; a private channel gets the bot's invite link). /subscription
-has the button while a list is set (route `bs_chan`: the channels and "Check",
-`bs_chan_ok`, state independent); /subscription and the menu say it is on
-while subscribed, never days left or "not enough for renewal". Every hour the jobs
-role checks each holder (`app/jobs/plan_grants.py`, getChatMember): still
-subscribed, held; fewer, ended with a message, the channels' screen and Relay's
-invoice (`s: chn`). A check Telegram does not answer keeps the plan and warns
-the creator once a day; an empty list keeps every plan. Clicks as a trial's
-(100 a day); AI offers say it has none (`aiGrantNoAi`) with every plan's
-invoice. Events: `plan_grant_started {kind, need}`, `plan_grant_ended {kind,
-count, need}`. The page "Product" counts holders apart (`granted`), the AI by
-plan on "Economics" leaves them out. Locks: `python db/test_plan_grants.py`,
-`python app/service/plan/test_channels.py` (CD gates),
-`python tools/botsim/test_botsim.py` (bot requirements).
+to every channel the admin lists (page "Tariffs": a switch and the list, an
+@name, a t.me link or the id; the bot must be an admin of each, else Telegram
+does not say who is subscribed; a private channel gets the bot's invite link).
+No channel listed is off, whatever the switch; turning it off resolves no
+channel (one the bot lost must not keep it on). While on, /subscription has
+the button (route `bs_chan`: the channels and "Check", `bs_chan_ok`, state
+independent); /subscription and the menu say it is on while subscribed, never
+days left or "not enough for renewal". Every hour the jobs role checks each
+holder (`app/jobs/plan_grants.py`, getChatMember): subscribed to all, held; a
+channel missing (the chat left, or the owner added one), warned once with that
+channel and kept `GRACE_HOURS` (24; `plan_grants.missing_since`, a hold clears
+it), then ended with a message, the channels' screen and every plan's invoice
+(`free_limit.plans_offer`, `s: chn`: Bronze is the cheapest way to keep the
+files). Turned off: every grant ends at the next pass with a message and every
+plan (the admin asks first, naming how many hold it; adding a channel too). A
+check Telegram does not answer keeps the plan and warns the creator once a
+day. Clicks as a trial's (100 a day), at the limit every plan's invoice; AI
+offers say it has none (`aiGrantNoAi`) with every plan's invoice. Events:
+`plan_grant_started {kind}`, `plan_grant_ended {kind, reason, missing}`
+(reason `unsubscribed` or `stopped`). The page "Product" counts holders apart
+(`granted`), the AI by plan on "Economics" leaves them out. Locks:
+`python db/test_plan_grants.py`, `python app/service/plan/test_channels.py`
+(CD gates), `python tools/botsim/test_botsim.py` (bot requirements).
 
 ## Free weekly episodes
 

@@ -28,19 +28,18 @@ def open_screen(data: ControllerParams):
 
 def check(data: ControllerParams):
     language_code = data['language_code']
-    conf = channels.settings()
-    outcome, count = channels.start(data['chat_id'], conf)
+    outcome, absent = channels.start(data['chat_id'], channels.settings())
     if outcome in ANSWERS:
         notify(data['callback'], data['message'],
-               get_message(ANSWERS[outcome], language_code).format(count=count, need=conf['need']), alert=True)
+               get_message(ANSWERS[outcome], language_code).format(channels=channels.names(absent)), alert=True)
         return False
     if outcome == plan_grants.STARTED:
         notify(data['callback'], data['message'], '')
-        analytics_events.track(data['chat_id'], 'plan_grant_started', {'kind': channels.KIND, 'need': conf['need']})
+        analytics_events.track(data['chat_id'], 'plan_grant_started', {'kind': channels.KIND})
         render_messages(data['chat_id'], [{
-            'type': 'text', 'text': get_message('chanPlanOn', language_code).format(need=conf['need']),
+            'type': 'text', 'text': get_message('chanPlanOn', language_code),
             'reply_markup': go_back_inline_markup(language_code)}])
         return True
-    notify(data['callback'], data['message'], get_message('chanPlanActive', language_code).format(need=conf['need']))
+    notify(data['callback'], data['message'], get_message('chanPlanActive', language_code))
     open_screen(data)
     return True

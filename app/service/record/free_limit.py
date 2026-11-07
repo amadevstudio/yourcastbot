@@ -164,8 +164,8 @@ def limit_message(language_code, wait_seconds, limit=None):
 def trial_limit_message(language_code, wait_seconds, level, limit=None, grant=False):
     """The trial's day used up: Relay's invoice when the trial is Relay (paying lifts the
     limit at once), else the Stars page (an invoice would only top up the running plan),
-    and change-plan next to it. `grant`: a grant's day (db/plan_grants.py), Relay's invoice:
-    a plan bought replaces the grant."""
+    and change-plan next to it. `grant`: a grant's day (db/plan_grants.py), every plan's
+    invoice: a plan bought replaces the grant, and Bronze is the cheapest."""
     from app.i18n.messages import get_message
     from app.service.analytics_events import LIMIT_SOURCE
     from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL, relay_nudge_markup
@@ -174,7 +174,8 @@ def trial_limit_message(language_code, wait_seconds, level, limit=None, grant=Fa
     used = "grantEpisodesUsed" if grant else "trialEpisodesUsed"
     text = "<b>" + get_message(used, language_code).format(limit=limit) + "</b>\n" \
         + get_message("trialEpisodesNext", language_code).format(hours=math.ceil(wait_seconds / 3600))
-    return {'type': 'text', 'text': text,
-            'reply_markup': relay_nudge_markup(language_code, invoice=grant or int(level) == SHOWCASE_TARIFF_LEVEL,
-                                               source=LIMIT_SOURCE),
-            'disable_web_page_preview': True}
+    if grant:
+        rows = plans_offer(language_code, source=LIMIT_SOURCE)[1]
+    else:
+        rows = relay_nudge_markup(language_code, invoice=int(level) == SHOWCASE_TARIFF_LEVEL, source=LIMIT_SOURCE)
+    return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}

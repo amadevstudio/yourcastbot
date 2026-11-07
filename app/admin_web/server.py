@@ -57,8 +57,8 @@ class PlanProfileBody(BaseModel):
 
 
 class ChannelPlanBody(BaseModel):
+    enabled: bool  # on only with a channel listed
     channels: list[str]  # @name, t.me/name or the -100 id, as the admin typed them
-    need: int
 
 
 class _NoCacheHTML(BaseHTTPMiddleware):
@@ -286,20 +286,26 @@ def save_plan_profile(body: PlanProfileBody, _admin: dict = Depends(current_admi
 
 
 def _channel_plan(conf: dict) -> dict:
-    return {**conf, 'grants': plan_grants.counts(channel_plan.KIND, time.time() - 30 * 86400)}
+    return {**conf, 'grace_hours': channel_plan.GRACE_HOURS,
+            'grants': plan_grants.counts(channel_plan.KIND, time.time() - 30 * 86400)}
 
 
 @api.get("/plan/channels")
 def channel_plan_settings(_admin: dict = Depends(current_admin)):
-    """Free Bronze for channels (app/service/plan/channels.py): the list, `need`, grants running and of 30 days."""
+    """Free Bronze for channels (app/service/plan/channels.py): on or off, the list, grants running and of 30 days."""
     return _channel_plan(channel_plan.settings())
 
 
 @api.post("/plan/channels")
 def save_channel_plan(body: ChannelPlanBody, _admin: dict = Depends(current_admin)):
-    """Each channel resolved by the Bot API (the bot must be its admin); all or nothing."""
+    """Each channel resolved by the Bot API (the bot must be its admin); all or nothing. No channel: off.
+    Turning it off with the list as it is resolves nothing: a channel the bot lost must not keep it on."""
+    texts = list(dict.fromkeys(t.strip() for t in body.channels if t.strip()))
+    current = channel_plan.settings()
+    if not body.enabled and texts == [c.get('ref') or str(c['id']) for c in current['channels']]:
+        return _channel_plan(channel_plan.save_settings(False, current['channels']))
     resolved, errors = [], []
-    for text in dict.fromkeys(t.strip() for t in body.channels if t.strip()):
+    for text in texts:
         try:
             channel = channel_plan.resolve(text)
         except ValueError as e:
@@ -309,9 +315,7 @@ def save_channel_plan(body: ChannelPlanBody, _admin: dict = Depends(current_admi
             resolved.append(channel)
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
-    if not 0 <= body.need <= len(resolved):
-        raise HTTPException(status_code=400, detail="need: 0..%d (0 turns it off)" % len(resolved))
-    return _channel_plan(channel_plan.save_settings(resolved, body.need))
+    return _channel_plan(channel_plan.save_settings(body.enabled and bool(resolved), resolved))
 
 
 @api.get("/mail")

@@ -2,40 +2,61 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ChannelPlan } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, Field, Hint, Input, Skeleton, Textarea } from "@/components/ui/primitives";
+import { Card, Field, Hint, Skeleton, Textarea } from "@/components/ui/primitives";
+
+const refOf = (c: ChannelPlan["channels"][number]) => c.ref || String(c.id);
+
+/** What saving does to the people who hold it now: asked before, null when nothing happens to them. */
+function consequence(plan: ChannelPlan, enabled: boolean, lines: string[]): string | null {
+  const holders = plan.grants.running;
+  if (!holders || !plan.enabled) return null;
+  if (!enabled || !lines.length) {
+    return `У ${holders} чел. бесплатная Бронза закончится в течение часа, им придёт сообщение с тарифами. Выключить?`;
+  }
+  const had = new Set(plan.channels.map(refOf));
+  if (lines.some((line) => !had.has(line))) {
+    return (
+      `Новый канал нужен и тем ${holders} чел., у кого Бронза уже есть: кто на него не подписан, получит ` +
+      `сообщение и ${plan.grace_hours} ч, чтобы подписаться, иначе Бронза закончится. Сохранить?`
+    );
+  }
+  return null;
+}
 
 function Form({ plan }: { plan: ChannelPlan }) {
   const queryClient = useQueryClient();
-  const [channels, setChannels] = useState(plan.channels.map((c) => c.ref || String(c.id)).join("\n"));
-  const [need, setNeed] = useState(plan.need);
+  const [channels, setChannels] = useState(plan.channels.map(refOf).join("\n"));
+  const [enabled, setEnabled] = useState(plan.enabled);
   const save = useMutation({
     mutationFn: api.saveChannelPlan,
     onSuccess: (data) => queryClient.setQueryData(["channelPlan"], data),
   });
   const lines = channels.split("\n").map((l) => l.trim()).filter(Boolean);
+  const submit = () => {
+    const ask = consequence(plan, enabled, lines);
+    if (ask && !window.confirm(ask)) return;
+    save.mutate({ enabled: enabled && lines.length > 0, channels: lines });
+  };
   return (
     <div className="space-y-4">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="h-4 w-4"
+          checked={enabled && lines.length > 0}
+          disabled={!lines.length}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        Акция включена{lines.length ? "" : " (нужен хотя бы один канал)"}
+      </label>
       <Field
-        label="Каналы, по одному в строке"
+        label="Каналы, по одному в строке: нужна подписка на все"
         hint="@имя, ссылка t.me/имя или id -100…. Бот должен быть админом каждого канала: иначе Telegram не скажет, кто подписан. Приватному каналу бот сам сделает ссылку-приглашение."
       >
         <Textarea rows={4} value={channels} onChange={(e) => setChannels(e.target.value)} />
       </Field>
-      <Field label="Сколько из них нужно" hint={`0 выключает. Сейчас в списке ${lines.length}.`}>
-        <Input
-          type="number"
-          min={0}
-          max={lines.length}
-          value={need}
-          onChange={(e) => setNeed(Number(e.target.value))}
-        />
-      </Field>
       <div className="flex items-center gap-3">
-        <Button
-          size="sm"
-          disabled={save.isPending}
-          onClick={() => save.mutate({ channels: lines, need })}
-        >
+        <Button size="sm" disabled={save.isPending} onClick={submit}>
           {save.isPending ? "Проверяю каналы…" : "Сохранить"}
         </Button>
         {save.isError ? <span className="text-sm text-red-400 wrap-anywhere">{save.error.message}</span> : null}
@@ -64,10 +85,12 @@ export default function ChannelPlanCard() {
       <div className="space-y-1">
         <div className="text-lg font-semibold">Бронза за подписку на каналы</div>
         <Hint>
-          Бесплатная Бронза без ИИ, пока человек подписан на нужное число каналов из списка. Даётся, только
-          когда у него нет другого тарифа; любая оплата или смена тарифа её заменяет. Бот проверяет подписки
-          каждый час: отписался, и план выключается с сообщением и счётом на Relay. Кнопка в /subscription
-          видна, пока список не пуст и число больше 0.
+          Бесплатная Бронза без ИИ, пока человек подписан на все каналы из списка. Даётся, только когда у него
+          нет другого тарифа; любая оплата или смена тарифа её заменяет. Бот проверяет подписки каждый час:
+          не хватает канала (отписался или вы добавили новый), и человек получает предупреждение и
+          {data ? ` ${data.grace_hours} ч` : " сутки"}, чтобы подписаться, потом Бронза выключается с
+          сообщением и всеми тарифами. Выключили акцию или убрали все каналы: кнопка в /subscription пропадает,
+          а у держателей Бронза заканчивается в течение часа с сообщением. Убрать канал можно без последствий.
         </Hint>
       </div>
       {isLoading || !data ? (
@@ -75,10 +98,10 @@ export default function ChannelPlanCard() {
       ) : (
         <>
           <div className="text-sm text-zinc-400">
-            Сейчас действует: {data.grants.running} · за 30 дней включили: {data.grants.started} · выключились:{" "}
-            {data.grants.ended}
+            {data.enabled ? "Включена" : "Выключена"} · сейчас действует: {data.grants.running} · за 30 дней
+            включили: {data.grants.started} · выключились: {data.grants.ended}
           </div>
-          <Form key={JSON.stringify([data.channels, data.need])} plan={data} />
+          <Form key={JSON.stringify([data.channels, data.enabled])} plan={data} />
         </>
       )}
     </Card>

@@ -12,8 +12,10 @@ they always did. What makes it a grant is the row here, `ended_at` NULL, one per
   award, the survey's week end it first (`end`), then write their own plan, as for a chat with none;
   a write of the row that changes its plan or days ends it too (SQLighter.subscribeUserToTariffByUid);
 - its check (app/jobs/plan_grants.py) holds it (`hold`: the days back to HOLD_HOURS, the deliveries
-  renewed every tariff_period) or ends it with the plan it replaced back, no days (`end`, restore).
-  A check that stops leaves the grant to run out on the clock: the next one that runs holds it again.
+  renewed every tariff_period), notes when it first found the chat no longer entitled (`mark_missing`,
+  `missing_since`: the chat is warned and has a grace; a `hold` clears it) or ends it with the plan it
+  replaced back, no days (`end`, restore). A check that stops leaves the grant to run out on the clock:
+  the next one that runs holds it again.
 
 `hold` and `end` change the row only while the grant holds it (same tariff, grant not ended), in one
 transaction: a payment that replaced the grant between a check's read and its write is never undone.
@@ -31,7 +33,7 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS plan_grants ("
     " id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, kind TEXT NOT NULL, tariff_id INTEGER NOT NULL,"
     " prev_tariff_id INTEGER NOT NULL DEFAULT 0, started_at REAL NOT NULL, checked_at REAL,"
-    " period_started_at REAL NOT NULL, ended_at REAL, end_reason TEXT)",
+    " period_started_at REAL NOT NULL, missing_since REAL, ended_at REAL, end_reason TEXT)",
     "CREATE UNIQUE INDEX IF NOT EXISTS plan_grants_active ON plan_grants(user_id) WHERE ended_at IS NULL",
 )
 # SQL: the users.id in `%s` holds no grant (the tick, D-3, plan-off)
@@ -154,13 +156,29 @@ def _hold(execute, user_id, now) -> bool:
         execute("UPDATE user_tariff_cs SET notify_count = "
                 "(SELECT notify_count FROM tariffs WHERE id = ?) WHERE uid = ?", (tariff_id, int(user_id)))
         execute("UPDATE plan_grants SET period_started_at = ? WHERE id = ?", (now, grant_id))
-    execute("UPDATE plan_grants SET checked_at = ? WHERE id = ?", (now, grant_id))
+    execute("UPDATE plan_grants SET checked_at = ?, missing_since = NULL WHERE id = ?", (now, grant_id))
     return True
 
 
 def hold(user_id, now=None, database=None) -> bool:
     """The check found the chat entitled: its grant runs on (HOLD_HOURS ahead). False: none held."""
     return _transaction(database, lambda execute: _hold(execute, user_id, time.time() if now is None else now))
+
+
+def mark_missing(user_id, now=None, database=None):
+    """The check found the chat no longer entitled: when it first did (`now` the first time), None when
+    no grant is held. The plan runs on meanwhile; a `hold` clears the mark."""
+    now = time.time() if now is None else now
+
+    def work(execute):
+        grant = active(execute, user_id)
+        if grant is None:
+            return None
+        execute("UPDATE plan_grants SET checked_at = ?, missing_since = COALESCE(missing_since, ?) WHERE id = ?",
+                (now, now, grant[0]))
+        return float(execute("SELECT missing_since FROM plan_grants WHERE id = ?", (grant[0],)).fetchone()[0])
+
+    return _transaction(database, work)
 
 
 def end_now(user_id, reason, restore=True, now=None, database=None) -> bool:

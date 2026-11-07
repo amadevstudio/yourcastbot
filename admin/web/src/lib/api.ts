@@ -52,8 +52,9 @@ export type Tariff = {
 export type PlanChannel = { id: number; title: string; url: string; ref?: string };
 
 export type ChannelPlan = {
+  enabled: boolean;
   channels: PlanChannel[];
-  need: number;
+  grace_hours: number;
   grants: { running: number; started: number; ended: number };
 };
 
@@ -236,7 +237,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   channelPlan: () => request<ChannelPlan>("/api/plan/channels"),
-  saveChannelPlan: (body: { channels: string[]; need: number }) =>
+  saveChannelPlan: (body: { enabled: boolean; channels: string[] }) =>
     request<ChannelPlan>("/api/plan/channels", {
       method: "POST",
       body: JSON.stringify(body),

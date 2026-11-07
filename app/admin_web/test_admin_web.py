@@ -284,6 +284,44 @@ def test_http(path):
         config.server = original_server
 
 
+def test_channel_plan_http(path):
+    """Free Bronze for channels: on only with a channel listed; turning it off asks Telegram nothing
+    (a channel the bot lost must not keep it on), turning it on checks every channel."""
+    from app.service.plan import channels
+    from db import plan_grants, runtime_kv
+    saved = config.db_path, runtime_kv.db_path, plan_grants.db_path, channels.resolve
+    config.db_path = runtime_kv.db_path = plan_grants.db_path = path
+    asked = []
+
+    def resolve(text, request=None):
+        asked.append(text)
+        return {'id': -1001, 'title': 'One', 'url': 'https://t.me/one', 'ref': text}
+
+    def lost(text, request=None):
+        asked.append(text)
+        raise ValueError('%s: the bot is not an admin of this channel' % text)
+
+    channels.resolve = resolve
+    try:
+        client = TestClient(app)
+        client.post("/api/login", json={"mail": "ops@yourcast.test", "password": "secret"})
+        on = client.post("/api/plan/channels", json={"enabled": True, "channels": ["@one"]}).json()
+        _assert_eq((on["enabled"], [c["ref"] for c in on["channels"]]), (True, ["@one"]), "on with a channel")
+        _assert_eq(on["grace_hours"], channels.GRACE_HOURS, "the admin knows the grace")
+        empty = client.post("/api/plan/channels", json={"enabled": True, "channels": []}).json()
+        _assert_eq((empty["enabled"], empty["channels"]), (False, []), "no channel left: off")
+        client.post("/api/plan/channels", json={"enabled": True, "channels": ["@one"]})
+        channels.resolve, asked[:] = lost, []
+        off = client.post("/api/plan/channels", json={"enabled": False, "channels": ["@one"]})
+        _assert_eq((off.status_code, off.json()["enabled"], len(off.json()["channels"]), asked),
+                   (200, False, 1, []), "off with the list as it is: Telegram not asked, the list kept")
+        again = client.post("/api/plan/channels", json={"enabled": True, "channels": ["@one"]})
+        _assert_eq((again.status_code, channels.settings(path)["enabled"]), (400, False),
+                   "on again with a channel the bot lost: refused, still off")
+    finally:
+        config.db_path, runtime_kv.db_path, plan_grants.db_path, channels.resolve = saved
+
+
 def test_diag_http(path):
     """/api/diag/*: its own read-only token, never the admin cookie."""
     original = config.db_path
@@ -537,6 +575,7 @@ def main():
     _prepare(path)
     test_queries_and_mailer(path)
     test_http(path)
+    test_channel_plan_http(path)
     test_diag_http(path)
     print("all admin_web checks passed")
 
