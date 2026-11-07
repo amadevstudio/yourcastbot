@@ -52,6 +52,7 @@ def main():
     ok(user.send('/menu'))
     help_step = ok(user.tap('🎙 Voice messages'))
     assert '24 hours' in help_step.new[-1].text
+    assert [e for e, _, _ in help_step.analytics] == ['voice_help'], 'the menu button is counted'
     ok(user.tap('Back'))
     assert '🎙 Voice messages' in user.last().button_texts()
     ok(user.tap('🎙 Voice messages'))
@@ -85,6 +86,8 @@ def main():
             patch.object(transcript, 'from_file', side_effect=AssertionError('AI before confirmation')):
         received = ok(user._observe('twelve simultaneous forwards', lambda: asyncio.run(forward_all())))
     assert len(received.new) == 1, 'one collection card, updated for every recording'
+    assert [p for e, _, p in received.analytics if e == 'voice_received'] == [{'seconds': 60}] * 12, \
+        'each recording is counted'
     assert '12' in received.new[0].text
     assert '⬅️ Back' in received.new[0].button_texts()
     assert ai.seconds_used(8101, 0) == 0 and ai.claim() is None
@@ -102,8 +105,11 @@ def main():
     assert any(b['text'] == '⬅️ Back' for row in card.buttons for b in row)
     launch_data = next(b['callback_data'] for row in card.buttons for b in row if b['text'] == '🗂 Each separately')
     assert ai.seconds_used(8101, 0) == 0, 'choosing output alone cannot start AI'
-    ok(user.tap('Each separately'))
+    started = ok(user.tap('Each separately'))
     assert ai.seconds_used(8101, 0) == 720
+    assert [p for e, _, p in started.analytics if e == 'voice_requested'] == [
+        {'output': 'summary', 'mode': 'each', 'recordings': 12, 'seconds': 720, 'allowed': True}], \
+        'the start is counted'
     ok(user.tap_data(launch_data, message=card))
     assert ai.seconds_used(8101, 0) == 720, 'double tap cannot reserve twice'
     assert ai.claim() is None, 'reserved, but nothing is claimable before the audio is here'

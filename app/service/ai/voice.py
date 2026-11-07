@@ -1,4 +1,10 @@
-"""Private voice collections: download without AI; explicitly confirm output and grouping."""
+"""Private voice collections: download without AI; explicitly confirm output and grouping.
+
+These handlers live outside the route map, so they say to Amplitude themselves: the menu's
+button (`voice_help`), each recording sent (`voice_received {seconds}` or `{rejected}`) and each
+start (`voice_requested {output, mode, recordings, seconds, allowed}`); what comes of it is the
+worker's `summary_ready` / `transcript_ready` with `source: voice`.
+Lock: python tools/botsim/test_voice.py"""
 import asyncio
 import collections
 import hashlib
@@ -179,8 +185,10 @@ def help_screen(chat_id, lang):
 
 
 def help_message(data):
+    from app.service import analytics_events
     from lib.telegram.general.message_master import outer_sender
     outer_sender(data['chat_id'], [help_screen(data['chat_id'], data['language_code'])])
+    analytics_events.track(data['chat_id'], 'voice_help')
 
 
 def language_screen(chat_id, lang, ref='', from_help=False):
@@ -285,6 +293,10 @@ def callback(data):
             chosen_language = language(chat, lang)
             batches.select(ref, chat, output)
             allowed = _allow(ref, chat, chosen_language, output, mode, needed, rows)
+            from app.service import analytics_events
+            analytics_events.track(chat, 'voice_requested', {
+                'output': output, 'mode': mode, 'recordings': len({row['ref'] for row in rows}),
+                'seconds': int(needed), 'allowed': bool(allowed.allowed)})
             if not allowed.allowed:
                 outer_sender(chat, [offer_message(lang, allowed, transcript=output == 'transcript')])
                 return
@@ -315,6 +327,7 @@ async def receive(event):
     measured here (see `download_pending`), so a long run of forwards is one quick card update."""
     from functools import partial
     from app.i18n.messages import get_message
+    from app.service import analytics_events
     from app.service.ai import summary
     from lib.telegram.general.message_master import outer_sender
     from lib.tools.logger import logger
@@ -335,6 +348,7 @@ async def receive(event):
             await run(outer_sender, chat, [{'type': 'text', 'text': get_message(key, lang), 'reply_to': event.message.id}])
         if not summary.enabled():
             await say('summaryUnavailable')
+            await run(analytics_events.track, chat, 'voice_received', {'rejected': 'off'})
             return
         from app.routes.middleware.default_middleware import get_user
         await run(get_user, chat)
@@ -342,6 +356,7 @@ async def receive(event):
         size, seconds = event.file.size or 0, math.ceil(event.file.duration or 0)
         if not 0 < size <= MAX_BYTES or not 0 < seconds <= MAX_SECONDS:
             await say('voiceLimit')
+            await run(analytics_events.track, chat, 'voice_received', {'rejected': 'limit', 'seconds': seconds})
             return
         ref = 'v_' + hashlib.sha256(('%s:%s' % (chat, event.message.document.id)).encode()).hexdigest()[:20]
         batch_ref, item, new = await run(batches.stage, chat, ref, event.message.id, seconds, size)
@@ -351,6 +366,7 @@ async def receive(event):
         await run(ai.prune_voices)
         await run(ai.remember_voice, ref, chat, get_message('voiceTitle', lang), seconds)
         _remember_message(chat, event.message)
+        await run(analytics_events.track, chat, 'voice_received', {'seconds': seconds})
         item = None
         # the last of a run of forwards redraws the card; the ones before it only when it is quiet
         if _active[chat][1] <= 1 or time.time() - _edited.get(batch_ref, 0) > CARD_GAP:
