@@ -88,7 +88,8 @@ def test_plan_off(db):
 def test_tap_source():
     _assert(analytics_events.tap_properties({'tp': 'rec', 's': 'd'}) == {'source': 'digest'},
             "a digest's Listen tap carries its source")
-    for key, source in (('d3', 'reminder'), ('po', 'plan_off'), ('wb', 'winback'), ('lim', 'free_limit')):
+    for key, source in (('d3', 'reminder'), ('po', 'plan_off'), ('wb', 'winback'), ('lim', 'free_limit'),
+                        ('why', 'survey')):
         _assert(analytics_events.tap_properties({'tp': 'bs_stars_pay', 's': key}) == {'source': source},
                 "a pay button under %s carries its source" % source)
     _assert(analytics_events.tap_properties({'tp': 'rec'}) == {} and analytics_events.tap_properties(None) == {},

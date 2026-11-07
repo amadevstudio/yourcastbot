@@ -404,6 +404,16 @@ ROWS = {
         'Was hält dich von einem Plan ab? Ein Tippen hilft sehr.',
         'שלום! אני המפתח של Yourcast. אתם מאזינים לפודקאסטים דרך הבוט, ואני רוצה להבין דבר אחד: '
         'מה מונע מכם לבחור תוכנית? לחיצה אחת תעזור מאוד.'),
+    'whyReward': (
+        '🎁 За ответ – {days} дней Relay в подарок: новые выпуски ваших подкастов будут приходить сами.',
+        '🎁 Answer and get {days} days of Relay as a gift: new episodes of your podcasts will arrive on their own.',
+        '🎁 Respondendo, você ganha {days} dias de Relay: os novos episódios dos seus podcasts chegam sozinhos.',
+        '🎁 Por responder, {days} días de Relay de regalo: los nuevos episodios de tus podcasts llegarán solos.',
+        '🎁 Für deine Antwort gibt es {days} Tage Relay geschenkt: neue Folgen deiner Podcasts kommen von selbst.',
+        '🎁 על תשובה – {days} ימים של Relay במתנה: פרקים חדשים של הפודקאסטים שלכם יגיעו לבד.'),
+    'whyRewardGiven': ('🎁 Включил вам Relay на {days} дней.', '🎁 Relay is on for you for {days} days.',
+                       '🎁 Ativei o Relay para você por {days} dias.', '🎁 Te activé Relay durante {days} días.',
+                       '🎁 Relay ist für dich {days} Tage aktiv.', '🎁 הפעלתי לכם Relay ל-{days} ימים.'),
     'whyAnswer_price': ('💸 Дорого', '💸 Too expensive', '💸 Caro demais', '💸 Demasiado caro', '💸 Zu teuer',
                         '💸 יקר מדי'),
     'whyAnswer_pay': ('💳 Неудобно платить', '💳 Paying is inconvenient', '💳 Pagar é complicado',
@@ -415,6 +425,8 @@ ROWS = {
                        '🤷 No necesito mucho el bot', '🤷 Ich brauche den Bot kaum', '🤷 אני לא ממש צריך את הבוט'),
     'whyAnswer_own': ('✍️ Напишу сам', "✍️ I'll write it myself", '✍️ Vou escrever', '✍️ Lo escribo yo',
                       '✍️ Ich schreibe es selbst', '✍️ אכתוב בעצמי'),
+    'whyChannel': ('💬 Написать в канал', '💬 Message the channel', '💬 Escrever ao canal', '💬 Escribir al canal',
+                   '💬 Dem Kanal schreiben', '💬 לכתוב לערוץ'),
     'whyThanksToast': ('Спасибо!', 'Thank you!', 'Obrigado!', '¡Gracias!', 'Danke!', 'תודה!'),
     'whyMore': (
         'Спасибо! Если хотите, напишите одним сообщением чуть подробнее: какая цена была бы честной, '

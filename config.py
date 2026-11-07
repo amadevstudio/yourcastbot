@@ -110,6 +110,8 @@ winback_after_days = (7, 30)
 winback_offer_discount = 30
 # "what stops you from taking a plan?" goes to the chats due until this day, UTC (app/jobs/why_survey.py)
 why_survey_until = '2026-11-21'
+# the bot's channel takes messages from anyone: a longer answer can go there too
+channel_direct_url = 'https://t.me/yourcast_channel?direct'
 # the server's monthly bill, USD: the fixed cost the admin economics page spreads over users by load
 server_usd_month = 10
 # the share of a payment that reaches us, by payment_history.service_type (others: all of it), for the

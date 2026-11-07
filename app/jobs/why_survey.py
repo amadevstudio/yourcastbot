@@ -14,7 +14,11 @@ bot asks them, once each:
 
 The message names four reasons and "I'll write it myself" (route `why`,
 `whySurveyModule`); a trial's end that has not spent the offer gets the first
-month at the discount under it. It goes until `why_survey_until` (config), so
+month at the discount under it, with change-plan (storefront rules). The first
+answer of a chat the survey reached gives a week of Relay (`grant_week`, once:
+`users.flags` `why_reward`): a running plan gets the hours on top, else Relay
+runs for the week on the balance the chat has. A chat whose balance covers
+Relay is not asked: the tick would renew the gift from that money. It goes until `why_survey_until` (config), so
 the trials that end meanwhile are asked too. `users.flags` `why_survey`:
 unsent, then sent (a crash in between never sends it twice). Never to a blocked
 chat, never fails the jobs role.
@@ -31,6 +35,8 @@ from lib.tools.logger import logger
 SURVEY_FLAG = "why_survey"
 ACTION = "why"  # the route its buttons open
 ANSWERS = ("price", "pay", "free", "need", "own")
+REWARD_FLAG = "why_reward"
+REWARD_HOURS = 7 * 24
 LIMIT_DAYS = 14
 ENDED_AFTER_DAYS = 2
 CHECK_SECONDS = 3600
@@ -46,6 +52,7 @@ def due(database=None, now=None) -> list:
     """[(telegram id, lang, group)] not asked yet, here still, no plan running."""
     from db.tariff_rows import running_plan_level
     from config import creatorId
+    from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
     now = time.time() if now is None else now
     database = db_path if database is None else database
     connection = connect_sqlite(database)
@@ -65,6 +72,9 @@ def due(database=None, now=None) -> list:
             "OR EXISTS (SELECT 1 FROM usage_events e WHERE e.user_id = u.telegramId "
             "AND e.kind IN ('rec', 'ai', 'transcript', 'ask')))" % unmarked,
             (now - ENDED_AFTER_DAYS * 86400, WELCOME_CHANNEL_ID)).fetchall()
+        covered = {row[0] for row in connection.execute(
+            "SELECT u.telegramId FROM users u JOIN user_tariff_cs ut ON ut.uid = u.id "
+            "WHERE ut.balance >= (SELECT price FROM tariffs WHERE level = ?)", (SHOWCASE_TARIFF_LEVEL,))}
     finally:
         connection.close()
     found = {}
@@ -72,7 +82,46 @@ def due(database=None, now=None) -> list:
         for telegram_id, lang in rows:
             found.setdefault(telegram_id, (telegram_id, lang, group))
     return [row for telegram_id, row in found.items()
-            if telegram_id != int(creatorId) and running_plan_level(telegram_id, database) <= 0]
+            if telegram_id != int(creatorId) and telegram_id not in covered
+            and running_plan_level(telegram_id, database) <= 0]
+
+
+def grant_week(telegram_id, database=None, now=None) -> int:
+    """The survey's thanks: REWARD_HOURS of Relay, once, to a chat the survey reached. A running plan
+    gets the hours on top; else Relay runs for them (the balance stays). The hours given, 0 when none."""
+    from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
+    now = time.time() if now is None else now
+    connection = connect_sqlite(db_path if database is None else database)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        user = connection.execute(
+            "SELECT id, json_extract(COALESCE(flags, '{}'), '$.%s'), json_extract(COALESCE(flags, '{}'), '$.%s') "
+            "FROM users WHERE telegramId = ?" % (SURVEY_FLAG, REWARD_FLAG), (int(telegram_id),)).fetchone()
+        relay = connection.execute(
+            "SELECT id, notify_count FROM tariffs WHERE level = ?", (SHOWCASE_TARIFF_LEVEL,)).fetchone()
+        if user is None or user[1] != "sent" or user[2] is not None or relay is None:
+            connection.rollback()
+            return 0
+        row = connection.execute(
+            "SELECT id, tariff_id, time_left FROM user_tariff_cs WHERE uid = ?", (user[0],)).fetchone()
+        if row is not None and int(row[1] or 0) > 0 and int(row[2] or 0) > 0:
+            connection.execute("UPDATE user_tariff_cs SET time_left = time_left + ? WHERE id = ?",
+                               (REWARD_HOURS, row[0]))
+        elif row is not None:
+            connection.execute("UPDATE user_tariff_cs SET tariff_id = ?, time_left = ?, notify_count = ? "
+                               "WHERE id = ?", (relay[0], REWARD_HOURS, relay[1], row[0]))
+        else:
+            connection.execute("INSERT INTO user_tariff_cs (uid, tariff_id, balance, time_left, notify_count) "
+                               "VALUES (?, ?, 0, ?, ?)", (user[0], relay[0], REWARD_HOURS, relay[1]))
+        connection.execute("UPDATE users SET flags = json_set(COALESCE(flags, '{}'), ?, ?) WHERE id = ?",
+                           ('$.' + REWARD_FLAG, int(now), user[0]))
+        connection.commit()
+        return REWARD_HOURS
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def survey_message(language_code, telegram_id, database=None) -> dict:
@@ -90,10 +139,14 @@ def survey_message(language_code, telegram_id, database=None) -> dict:
         db.close()
     line, offer_row = plan_end.trial_offer(telegram_id, SHOWCASE_TARIFF_LEVEL, price, language_code,
                                            analytics_events.SURVEY_SOURCE, database=database)
-    text = get_message("whySurvey", language_code)
+    text = get_message("whySurvey", language_code) + "\n\n" + get_message("whyReward", language_code).format(
+        days=REWARD_HOURS // 24)
     if offer_row:
+        from app.service.payment.storefront import CHANGE_PLAN_CALLBACK
         text += "\n\n" + line
         rows.append(offer_row)
+        rows.append([{'text': get_message("tariffs", language_code),
+                      'callback_data': {'tp': CHANGE_PLAN_CALLBACK, 's': analytics_events.SURVEY_SOURCE}}])
     return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}
 
 
