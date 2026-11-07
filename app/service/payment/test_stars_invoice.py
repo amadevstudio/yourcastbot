@@ -428,6 +428,14 @@ def page_rows(stars):
                 and not any(data.get('m') for data in stars_page(0, 0, 0)),
                 "the Stars page: one button to the months, not a row per bundle")
     _assert_eq(main_page(0, 0), [], "the one-time page bills no bundle itself")
+    with patch.object(stars, 'SQLighter', _TariffsDB):
+        page = stars.bundles_message('en', 0, False, RATE)['text']
+        running = stars.bundles_message('en', 1, True, RATE)['text']
+    _assert('3 mo: $13.50 (%d ⭐), you save $1.50' % stars.stars_to_charge(1500, RATE, 10) in page
+            and '12 mo: $45 (%d ⭐), you save $15' % stars.stars_to_charge(6000, RATE, 25) in page,
+            "each term in dollars with its Stars and what it saves")
+    _assert('Relay' in running.split('change plan first')[0] and 'renew' in running and 'Bronze' in running,
+            "a running plan is told which plans' months need a switch, and why")
 
     def once_rows(level, time_left):
         sent = []

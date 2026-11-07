@@ -312,32 +312,39 @@ def open_bundles_page(data: ControllerParams):
 
 
 def bundles_message(language_code, current_level, plan_running, rate_x1000):
-    """Every plan's prepaid months, Relay first: the terms once, each plan's Stars prices in a line,
-    its months as a row of buttons (the plan's medal and the months), one tap to the invoice. A running
-    plan sees its own (another one's months would renew it): change-plan first, a button."""
+    """Every plan's prepaid months, Relay first: the terms once, each plan's months with their price
+    in dollars (as the plans are priced everywhere), in Stars (what the invoice asks) and what they
+    save, its months as a row of buttons (the plan's medal and the months), one tap to the invoice. A
+    running plan sees its own: the others' months would renew it, so they are named, change-plan first."""
     db_users = SQLighter(db_path)
     try:
         tariffs = db_users.getTariffs()
     finally:
         db_users.close()
     months_text = lambda months: get_message('bundleMonths', language_code).format(months=months)
-    plans, rows = [], []
+    plans, rows, others = [], [], []
     for tariff in tariffs_for_storefront(tariffs):
-        if not prepaid_months_sold(current_level, plan_running, tariff['level']):
-            continue
         name = decode_tariff(tariff['level'], language_code)
-        plans.append("<b>%s</b>: %s" % (name, " · ".join(
-            "%s – %d ⭐" % (months_text(months), stars_to_charge(int(tariff['price']) * months, rate_x1000, discount))
-            for months, discount in prepay_bundles)))
+        if not prepaid_months_sold(current_level, plan_running, tariff['level']):
+            others.append(name)
+            continue
+        lines = ["<b>%s</b>" % name]
+        for months, discount in prepay_bundles:
+            full = int(tariff['price']) * months
+            lines.append(get_message('bundlePriceLine', language_code).format(
+                months=months_text(months), price=money_text(charged_cents(full, discount)),
+                stars=stars_to_charge(full, rate_x1000, discount), saved=money_text(full - charged_cents(full, discount))))
+        plans.append("\n".join(lines))
         medal = name.split(" ", 1)[0]
         rows.append([{'text': "%s %s" % (medal, months_text(months)),
                       'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id'], 'm': months}}
                      for months, _discount in prepay_bundles])
     text = get_message('bundlesBody', language_code).format(
         terms=", ".join("%s −%d%%" % (months_text(months), discount) for months, discount in prepay_bundles),
-        plans="\n".join(plans))
-    if plan_running:
-        text += "\n\n" + get_message('bundlesOtherPlan', language_code)
+        plans="\n\n".join(plans))
+    if others:
+        text += "\n\n" + get_message('bundlesOtherPlan', language_code).format(
+            plans=", ".join(others), current=decode_tariff(current_level, language_code))
         rows.append([{'text': get_message('tariffs', language_code), 'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}])
     rows.append([go_back_inline_button(language_code)])
     return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}
