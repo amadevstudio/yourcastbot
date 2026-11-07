@@ -44,7 +44,7 @@ ai_summary_trial_hours = 5
 # of those hours, what the paid model (openrouterPaidTranscribeModel) may transcribe in 30 days, by plan
 # level; past it, Whisper. With questions a day by level, a plan's worst month fits its budget (below)
 ai_paid_transcribe_hours_per_month = {1: 2, 2: 4, 3: 15}
-# questions a day about an episode or a show, by plan level (a trial: quota.TRIAL_QUESTIONS_PER_DAY)
+# questions a day about an episode or a show, by plan level (a trial: ai_trial_questions_per_day)
 ai_questions_per_day = {1: 5, 2: 10, 3: 20}
 # and in any 30 days, ten days of them (a trial: ai_trial_questions_per_month): the worst month is a third
 # of every question of every day

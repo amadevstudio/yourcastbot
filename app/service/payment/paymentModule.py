@@ -19,12 +19,12 @@ from app.routes.message_tools import go_back_inline_markup, go_back_inline_butto
 from app.routes.ptypes import ControllerParams
 from app.service.ai import paid_models
 from app.service.payment import stars_subscription
-from app.service.plan import features
 from app.service.payment.paymentSafeModule import \
     days_left_text, money_text, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
 from app.service.payment.storefront import (
     RELAY_INVOICE_CALLBACK, once_pay_rows, tariffs_for_change_plan, subscription_pay_rows)
+from app.service.plan import features
 from config import botName
 from config import creatorId
 from config import db_path, tariff_period
