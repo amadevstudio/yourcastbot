@@ -12,6 +12,8 @@
   not tell, kept; turned off, every grant ended with a message and every plan.
 - The admin's list: an @name, a t.me link or the id; the bot must be an admin; a private channel
   gets the bot's invite link.
+- The hourly refresh by id: a renamed channel gets its new title, link and ref; a private one keeps its
+  link (no new invite link); one Telegram does not answer for stays; an admin's save meanwhile is kept.
 
 Run from the repo root: python app/service/plan/test_channels.py
 """
@@ -191,6 +193,38 @@ def test_admin_list():
         _assert('not an admin' in str(e), "the bot not an admin: refused, saying so")
 
 
+def test_refresh(path):
+    channels.save_settings(True, [
+        {'id': A, 'title': 'Old', 'url': 'https://t.me/oldname', 'ref': '@oldname'},
+        {'id': B, 'title': 'Private', 'url': 'https://t.me/+abc', 'ref': str(B)},
+        {'id': C, 'title': 'Lost', 'url': 'https://t.me/lost', 'ref': '@lost'}], path)
+    calls = []
+
+    def tg(method, params):
+        calls.append(method)
+        if params['chat_id'] == C:
+            raise RuntimeError('Bad Request: chat not found')
+        return {A: {'id': A, 'title': 'New', 'username': 'newname'},
+                B: {'id': B, 'title': 'Private 2', 'invite_link': None}}[params['chat_id']]
+    _assert(channels.refresh(tg, path) == 2, "two channels changed")
+    got = {c['id']: c for c in channels.settings(path)['channels']}
+    _assert(got[A] == {'id': A, 'title': 'New', 'url': 'https://t.me/newname', 'ref': '@newname'},
+            "renamed: new title, link and ref")
+    _assert(got[B]['url'] == 'https://t.me/+abc' and got[B]['title'] == 'Private 2'
+            and 'exportChatInviteLink' not in calls, "private: title follows, the invite link is kept")
+    _assert(got[C]['url'] == 'https://t.me/lost' and channels.settings(path)['enabled'], "not answered: kept, still on")
+    _assert(channels.refresh(tg, path) == 0, "nothing new: nothing written")
+
+    def admin_saves(method, params):
+        channels.save_settings(False, [{'id': A, 'title': 'New', 'url': 'https://t.me/newname', 'ref': '@newname'},
+                                       {'id': -1009, 'title': 'Added', 'url': 'https://t.me/added', 'ref': '@added'}], path)
+        return {'id': params['chat_id'], 'title': 'Newer', 'username': 'newername'}
+    channels.refresh(admin_saves, path)
+    conf = channels.settings(path)
+    _assert(not conf['enabled'] and [c['id'] for c in conf['channels']] == [A, -1009]
+            and conf['channels'][0]['ref'] == '@newername', "an admin's save meanwhile is kept, the refresh applied on it")
+
+
 def test_ai_offer():
     """A holder asking for AI hears that this Bronze has none, then every plan's invoice (it replaces the grant)."""
     from app.i18n.messages import get_message
@@ -220,6 +254,7 @@ def main():
         who = test_check(path)
         test_hourly(path, who)
         test_admin_list()
+        test_refresh(path)
         test_ai_offer()
         test_click_limit()
     finally:

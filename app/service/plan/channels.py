@@ -101,6 +101,38 @@ def resolve(text, request=None) -> dict:
     return {'id': int(chat['id']), 'title': chat.get('title') or text, 'url': url, 'ref': ref}
 
 
+def _fresh(channel, chat) -> dict:
+    """The stored channel with what getChat says now: a renamed @name moves its link and ref. A private
+    channel keeps its link: exportChatInviteLink would revoke the one already sent in messages."""
+    fresh = dict(channel, title=chat.get('title') or channel.get('title'))
+    if chat.get('username'):
+        fresh.update(url='https://t.me/' + chat['username'], ref='@' + chat['username'])
+    return fresh
+
+
+def refresh(request=None, database=None) -> int:
+    """Re-read the listed channels by id (the owner renames one: its buttons and the admin's list follow).
+    A channel Telegram does not answer for stays as it is. The settings are read again before the write
+    and only those channels change, so an admin's save meanwhile is kept. Answers how many changed."""
+    request = request or bot_request
+    fresh = {}
+    for channel in settings(database)['channels']:
+        try:
+            fresh[channel['id']] = request('getChat', {'chat_id': channel['id']})
+        except Exception as e:
+            logger.warn("free Bronze channel", channel['id'], "not refreshed:", type(e).__name__, e)
+    try:
+        data = json.loads(runtime_kv.get_kv(SETTINGS_KEY, database=database) or '{}')
+    except (TypeError, ValueError):
+        return 0
+    stored = data.get('channels') or []
+    updated = [_fresh(c, fresh[c['id']]) if isinstance(c, dict) and c.get('id') in fresh else c for c in stored]
+    changed = sum(a != b for a, b in zip(stored, updated))
+    if changed:
+        save_settings(data.get('enabled'), updated, database)
+    return changed
+
+
 def bot_request(method, params):
     """A Bot API call by the bot's token (pyTelegramBotAPI's raw request)."""
     from telebot import apihelper

@@ -7,6 +7,7 @@
 - turned off in the admin (or no channel left): every grant ends with a message and every plan;
 - a check Telegram does not answer keeps the plan and tells the creator once a day.
 A holder the hour misses is held by the next one: the hold is a week.
+Before the holders, the listed channels are re-read by id (channels.refresh): a renamed one keeps working.
 Lock: python app/service/plan/test_channels.py
 """
 import time
@@ -79,6 +80,12 @@ def check_holders(database=None, now=None, request=None, send=None, pause=PAUSE_
 
 def grant_watcher():
     while True:
+        try:
+            renamed = channels.refresh()
+            if renamed:
+                logger.log("free Bronze channels refreshed:", renamed)
+        except Exception as e:
+            logger.err("free Bronze channels refresh:", e)
         try:
             done = check_holders()
             if any(done.values()):
