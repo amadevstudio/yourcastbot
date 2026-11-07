@@ -26,6 +26,7 @@ from typing import Any, Optional
 import config
 from app.admin_web.dbutil import connect
 from app.service.ai import quota
+from app.service.plan import features
 from db import payments, tariff_rows, usage
 
 LOAD_MB_PER_UNIT = 50
@@ -154,10 +155,15 @@ def ai_plans(conn, database, since: float, until: float, spent: dict) -> dict[st
     def capped(value, cap):
         return value if value is None or cap is None else min(value, cap)
 
-    def plan(key, level, price, hours, questions, paid, paid_hours=0.0):
-        month = min(questions * quota.QUOTA_DAYS, quota.month_questions(level, not paid) or questions * quota.QUOTA_DAYS)
+    def plan(key, level, price, paid):
+        rights = features.profile(features.level_key(level) if paid else features.TRIAL)
+        hours = float(rights['ai_hours'] or 0) if rights['ai'] else 0.0
+        questions = int(rights['ai_questions_day'] or 0) if rights['ai'] else 0
+        month = questions * quota.QUOTA_DAYS
+        month = min(month, int(rights['ai_questions_month'] or 0) or month)
+        paid_hours = float(rights['ai_paid_hours'] or 0) if rights['ai'] else 0.0
         net = price * config.payout_share.get(STARS, 1.0)
-        cap = net * config.ai_budget_share if paid else None
+        cap = net * config.ai_budget_share if rights['ai_budget'] else None
         chats = [tg for tg, (paid_for, lvl) in running.items() if paid_for == paid and (not paid or lvl == level)]
         used = [hours_used.get(tg, 0.0) for tg in chats]
         return {'key': key, 'level': level, 'price_usd': price, 'net_usd': net, 'cap_usd': cap, 'hours': hours,
@@ -170,11 +176,8 @@ def ai_plans(conn, database, since: float, until: float, spent: dict) -> dict[st
                 'hours_used': sum(used), 'max_hours': max(used, default=0.0),
                 'ai_usd': sum(spent.get(tg, 0.0) for tg in chats)}
 
-    plans = [plan(str(level), level, price, float(config.ai_summary_hours_per_month.get(level, 0)),
-                  config.ai_questions_per_day.get(level, 0), True,
-                  float(config.ai_paid_transcribe_hours_per_month.get(level, 0)))
-             for level, price in sorted(prices.items())]
-    plans.append(plan('trial', None, 0.0, float(config.ai_summary_trial_hours), quota.TRIAL_QUESTIONS_PER_DAY, False))
+    plans = [plan(str(level), level, price, True) for level, price in sorted(prices.items())]
+    plans.append(plan('trial', None, 0.0, False))
     return {'rates': rates, 'paid_model': paid_model, 'plans': [_rounded(p) for p in plans]}
 
 

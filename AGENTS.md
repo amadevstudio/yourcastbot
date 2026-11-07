@@ -1018,6 +1018,26 @@ OPML import (up to 100 shows) or the TED Talks Daily subscription /start
 makes on its own. A click on an episode is unchanged.
 Lock: `python app/controller/builders/test_latest_episode.py`.
 
+## Plan profiles (entitlements)
+
+What a plan gives is data, not checks by level: `app/service/plan/features.py`
+holds a profile of features per kind of plan (`none`: no plan running;
+`trial`: a plan nobody paid for, whatever its level; `level:<n>`: a plan paid
+for), `app/service/plan/entitlements.py` picks the chat's profile once
+(`entitlements.of(chat_id)`: its running plan, `tariff_rows.paid_for_days`).
+Features: AI (`ai`, `ai_hours`, `ai_paid_hours`, `ai_questions_day`,
+`ai_questions_month`, `ai_budget`) and clicks (`clicks`, `clicks_hours`).
+The AI quota (`quota.check`, `questions`, `budget`, `paid_transcribe_fits`),
+the click limit (`free_limit.limit_hit`), paid models, the summary hint, the
+settings toggle, the economics page and a plan's description read them there;
+a reader that asks the plan's level or config's dicts for a limit again breaks
+the constructor (the owner's call, 2026-11-07: plans built from pieces, edited
+in the admin). The defaults are config.py's values. Delivery (`notify_count`,
+`channel_control`) and the free subscription limit stay in `tariffs` and
+config for now. A new kind of plan is a profile and the rule that picks it in
+`entitlements.for_plan`. Lock: `python app/service/plan/test_entitlements.py`
+(CD gate).
+
 ## Free weekly episodes
 
 A listener without a running plan gets `free_rec_per_week` (10) episodes

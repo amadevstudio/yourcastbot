@@ -11,7 +11,7 @@ A summary is a reply to the episode's audio: Telegram turns its times
 "Ask" opens the route `ask` (summary.ASK_ACTION): the text the user sends
 next is a question, answered from the cached transcript in this worker (one
 model call with a short timeout), as a reply to the audio too. A running plan
-asks quota.QUESTIONS_PER_DAY a day (a trial fewer). "Done" leaves: its button
+asks its plan's questions a day (quota.questions, a trial fewer). "Done" leaves: its button
 goes and the episode's podcast page comes as a new message at the bottom
 (Back on it: the menu); the menu when the podcast is not known or gone (a
 plain `menu` tap would redraw the old question screen up the chat). A text after
@@ -285,7 +285,7 @@ def ask_offer_message(language_code) -> dict:
     from app.service.record.free_limit import plans_offer
     plans_text, rows = plans_offer(language_code)
     return {'type': 'text', 'disable_web_page_preview': True, 'reply_markup': rows,
-            'text': get_message('askForPlans', language_code).format(limit=ai_quota.QUESTIONS_PER_DAY)
+            'text': get_message('askForPlans', language_code).format(limit=ai_quota.most_questions_per_day())
             + '\n\n' + plans_text.strip()}
 
 
@@ -301,7 +301,7 @@ def limit_message(language_code, questions) -> dict:
         return {'type': 'text', 'text': text}
     from app.service.payment.storefront import relay_nudge_markup
     return {'type': 'text', 'disable_web_page_preview': True, 'reply_markup': relay_nudge_markup(language_code),
-            'text': text + ' ' + get_message('askTrialMore', language_code).format(limit=ai_quota.QUESTIONS_PER_DAY)}
+            'text': text + ' ' + get_message('askTrialMore', language_code).format(limit=ai_quota.most_questions_per_day())}
 
 
 def ask(data):

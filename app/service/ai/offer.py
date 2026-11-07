@@ -7,7 +7,12 @@ the 30 days is spent (quota.budget) hears that, whatever was asked.
 """
 from app.i18n.messages import get_message
 from app.service.ai.quota import Quota
-from config import ai_summary_hours_per_month
+from app.service.plan import features
+
+
+def _hours(level):
+    """A paid level's hours of AI audio in 30 days, as its profile has them."""
+    return features.profile(features.level_key(level))['ai_hours']
 
 
 def length_text(seconds, language_code) -> str:
@@ -23,7 +28,7 @@ def budget_message(language_code, level) -> dict:
     """The plan's AI for these 30 days is spent; below the top plan a bigger one gives more
     (the Stars page and change-plan: an invoice would only top the running plan up)."""
     text = get_message('aiBudgetSpent', language_code)
-    if level >= max(ai_summary_hours_per_month, default=0):
+    if level >= features.top_level():
         return {'type': 'text', 'text': text, 'disable_web_page_preview': True}
     from app.service.payment.storefront import relay_nudge_markup
     return {'type': 'text', 'text': text + ' ' + get_message('summaryBiggerPlan', language_code),
@@ -40,8 +45,7 @@ def offer_message(language_code, quota: Quota, transcript=False) -> dict:
         return budget_message(language_code, quota.level)
     if not quota.limit:
         text = get_message('transcriptForPlans' if transcript else 'summaryForPlans', language_code).format(
-            relay=ai_summary_hours_per_month.get(3, 0), silver=ai_summary_hours_per_month.get(2, 0),
-            bronze=ai_summary_hours_per_month.get(1, 0))
+            relay=_hours(3), silver=_hours(2), bronze=_hours(1))
         plans_text, rows = plans_offer(language_code)
         return {'type': 'text', 'text': text + '\n\n' + plans_text.strip(), 'reply_markup': rows,
                 'disable_web_page_preview': True}
@@ -51,7 +55,7 @@ def offer_message(language_code, quota: Quota, transcript=False) -> dict:
         needed=length_text(quota.needed, language_code))
     if quota.top_plan:
         return {'type': 'text', 'text': text, 'disable_web_page_preview': True}
-    more = (get_message('summaryTrialMore', language_code).format(relay=ai_summary_hours_per_month.get(3, 0))
+    more = (get_message('summaryTrialMore', language_code).format(relay=_hours(3))
             if quota.trial else get_message('summaryBiggerPlan', language_code))
     return {'type': 'text', 'text': text + ' ' + more,
             'reply_markup': relay_nudge_markup(language_code), 'disable_web_page_preview': True}

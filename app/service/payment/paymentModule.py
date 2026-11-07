@@ -19,6 +19,7 @@ from app.routes.message_tools import go_back_inline_markup, go_back_inline_butto
 from app.routes.ptypes import ControllerParams
 from app.service.ai import paid_models
 from app.service.payment import stars_subscription
+from app.service.plan import features
 from app.service.payment.paymentSafeModule import \
     days_left_text, money_text, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
@@ -223,16 +224,15 @@ def get_tariffs_sub_message(language_code, tariff_id, balance, time_left, notify
 
 def ai_plan_text(level, language_code) -> str:
     """What the plan gives in AI, a line of its description ('' with AI off): hours of audio for summaries
-    and transcripts, questions a day and per 30 days, the paid model's hours among them (quota, config)."""
+    and transcripts, questions a day and per 30 days, the paid model's hours among them (the level's profile)."""
     from app.service.ai import summary
-    from config import (ai_paid_transcribe_hours_per_month, ai_questions_per_day, ai_questions_per_month,
-                        ai_summary_hours_per_month)
-    hours = ai_summary_hours_per_month.get(level, 0)
+    rights = features.profile(features.level_key(level)) if int(level or 0) > 0 else features.profile(features.NONE)
+    hours = rights['ai_hours'] if rights['ai'] else 0
     if not hours or not summary.enabled():
         return ''
     text = "\n" + get_message('trf_descr_ai', language_code).format(
-        hours=hours, questions=ai_questions_per_day.get(level, 0), month=ai_questions_per_month.get(level, 0))
-    paid = min(ai_paid_transcribe_hours_per_month.get(level, 0), hours)
+        hours=hours, questions=rights['ai_questions_day'], month=rights['ai_questions_month'])
+    paid = min(rights['ai_paid_hours'] or 0, hours)
     if paid and paid_models.transcribe_model(True) != paid_models.transcribe_model(False):
         text += ' ' + get_message('trf_descr_ai_paid', language_code).format(paid=paid)
     return text

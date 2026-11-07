@@ -133,7 +133,7 @@ def _ai_plans(path, now):
     trial = plans['trial']
     _assert_eq(trial['worst_paid_usd'], None, 'a trial never gets the paid model')
     _assert_close(trial['worst_whisper_usd'], config.ai_summary_trial_hours * 0.018
-                  + quota.TRIAL_QUESTIONS_PER_MONTH * 0.001, "a trial's hours and its 30 days' questions")
+                  + config.ai_trial_questions_per_month * 0.001, "a trial's hours and its 30 days' questions")
     _assert_close(trial['hours_used'], 0.5, "a trial's hours")
     _assert_close(trial['ai_usd'], 0.25, "a trial's AI spend in the period")
     _assert_eq({p['key']: p['worst_paid_usd'] for p in off['plans']}['3'], None,

@@ -429,20 +429,21 @@ def test_queue_and_quota(db):
     bronze = config.ai_questions_per_day[1]
     _assert(quota.questions(501, database=db)[:4] == (True, bronze, bronze, False),
             "a paid plan asks its plan's questions a day")
-    _assert(quota.QUESTIONS_PER_DAY == max(config.ai_questions_per_day.values()), "'up to': the most a plan gives")
+    _assert(quota.most_questions_per_day() == max(config.ai_questions_per_day.values()),
+            "'up to': the most a plan gives")
     _assert(quota.questions(502, database=db)[:3] == (False, 0, 0), "no plan: no questions")
-    for _ in range(quota.TRIAL_QUESTIONS_PER_DAY):
+    for _ in range(config.ai_trial_questions_per_day):
         usage.record_ask(504, 'ep', 0.001, db)
     usage.record_ask(504, 'ep', 0.001, db, at=now - 2 * 86400)
-    _assert(quota.questions(504, database=db)[:4] == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0, True),
+    _assert(quota.questions(504, database=db)[:4] == (False, config.ai_trial_questions_per_day, 0, True),
             "a trial has fewer, counted over the last 24 hours")
     _assert(abs(usage.per_user(0, database=db)[504]['ai_usd'] - 0.006) < 1e-9, "questions are in the AI spend")
     # the 30 days' count: a day with questions left still stops at it
-    for day in range(1, quota.TRIAL_QUESTIONS_PER_MONTH // quota.TRIAL_QUESTIONS_PER_DAY + 1):
-        for _ in range(quota.TRIAL_QUESTIONS_PER_DAY):
+    for day in range(1, config.ai_trial_questions_per_month // config.ai_trial_questions_per_day + 1):
+        for _ in range(config.ai_trial_questions_per_day):
             usage.record_ask(504, 'ep', 0.001, db, at=now - day * 86400 - 3600)
     month = quota.questions(504, now=now + 86401, database=db)
-    _assert(month[:3] == (False, quota.TRIAL_QUESTIONS_PER_DAY, 0) and month.month_limit == quota.TRIAL_QUESTIONS_PER_MONTH,
+    _assert(month[:3] == (False, config.ai_trial_questions_per_day, 0) and month.month_limit == config.ai_trial_questions_per_month,
             "a trial stops at its 30 days' questions, a day with questions left or not")
     _assert(quota.questions(504, now=now + 40 * 86400, database=db).allowed, "past 30 days they come back")
 
@@ -573,6 +574,9 @@ def test_hint(db):
     c.executescript("""
         CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT, flags TEXT);
         CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, time_left INTEGER);
+        CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER, price INTEGER);
+        INSERT INTO tariffs VALUES (3, 3, 500);
+        CREATE TABLE payment_history (user_id INTEGER, status TEXT);
         INSERT INTO users VALUES (1, 701, 'en', NULL), (2, 702, 'en', NULL), (3, 703, 'en', NULL),
             (4, 704, 'en', '{"auto_summary": 1}');
         INSERT INTO user_tariff_cs VALUES (1, 1, 3, 100), (2, 2, 0, 0), (3, 3, 3, 100), (4, 4, 3, 100);

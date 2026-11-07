@@ -6,7 +6,7 @@ texts the user sends there are questions. Each one gets one text answer, a
 new message: the episodes it is based on as numbers, a download button per
 episode (the ordinary rec button) and Back. The next question is typed
 right away. Same daily count as questions about an episode
-(quota.QUESTIONS_PER_DAY, a trial fewer, a running plan only); it is
+(quota.questions: a plan with AI only, a trial fewer); it is
 answered in the incoming worker, like those.
 """
 import time
