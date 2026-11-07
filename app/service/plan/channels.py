@@ -145,7 +145,7 @@ def screen_message(chat_id, language_code, database=None) -> dict:
     if not available(conf):
         return {'type': 'text', 'text': get_message('chanPlanUnavailable', language_code),
                 'reply_markup': [[go_back_inline_button(language_code)]]}
-    text = get_message('chanPlanBody', language_code)
+    text = get_message('chanPlanBody', language_code) + '\n\n' + get_message('chanPlanTerms', language_code)
     if entitlements.of(chat_id, database).grant == KIND:
         text += '\n\n' + get_message('chanPlanActive', language_code)
     rows = _channel_rows(conf['channels'])

@@ -13,7 +13,7 @@ AvailableRoutes = Literal[
     'donate',
     'botSub', 'bs_trfs', 'bs_trf_v', 'bs_patr', 'bs_patrem',
     'bs_cryptobot', 'bs_crbot_input',
-    'bs_stars', 'bs_stars_pay', 'bs_stars_sub', 'bs_recur', 'bs_once', 'bs_chan',
+    'bs_stars', 'bs_stars_pay', 'bs_stars_sub', 'bs_recur', 'bs_once', 'bs_chan', 'bs_ref',
     'bs_robokassa', 'bs_robokassa_input',
     'help',
     'setts', 'settsText', 'settsSum', 'settsRem',

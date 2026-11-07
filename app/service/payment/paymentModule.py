@@ -8,7 +8,6 @@ from app.service.payment.paymentSafeModule import \
     prepare_price, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
 from config import creatorId
 from config import db_path, tariff_period
-from config import botName
 from db.sqliteAdapter import SQLighter
 from app.routes.ptypes import ControllerParams
 from telebot import types  # type: ignore
@@ -18,14 +17,13 @@ from app.i18n.messages import get_message
 from app.routes.message_tools import go_back_inline_markup, go_back_inline_button
 from app.routes.ptypes import ControllerParams
 from app.service.ai import paid_models
-from app.service.payment import stars_subscription
+from app.service.payment import referral, stars_subscription
 from app.service.payment.paymentSafeModule import \
     days_left_text, money_text, get_tariff_info_message, get_tariff_params_by_tg, decode_tariff
 from app.service.payment.offers import longest_bundle, prepaid_months_sold
 from app.service.payment.storefront import (
     RELAY_INVOICE_CALLBACK, once_pay_rows, tariffs_for_change_plan, subscription_pay_rows)
 from app.service.plan import channels as channel_plan, features
-from config import botName
 from config import creatorId
 from config import db_path, tariff_period
 from db.sqliteAdapter import SQLighter
@@ -138,12 +136,11 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
         message_text += get_tariff_info_message(
             tariff_str, balance, tariff_price, time_left, notify_left, language_code)
     message_text += "\n\n" + get_message("relay_sub_page_footnote", language_code)
-    message_text += "\n\n" + get_message("donate_page_referral", language_code) + "\n" \
-                    + "t.me/" + botName + "?start=" + str(utgid)
 
     # how to pay (a subscription, one payment), then change plan; the methods are one level down
     menu_keyboard: list[list[InlineButtonData]] = subscription_pay_rows(language_code)
     menu_keyboard += channel_plan.entry_row(utgid, language_code)
+    menu_keyboard.append([{'text': get_message('referralMenuButton', language_code), 'callback_data': {'tp': 'bs_ref'}}])
     menu_keyboard.append([go_back_inline_button(language_code)])
 
     result = {
@@ -151,6 +148,15 @@ def get_sub_message(utgid, language_code, tariff_lvl, tariff_price, balance, tim
         "markup": menu_keyboard
     }
     return result
+
+
+def open_referral_page(data: ControllerParams):
+    """Invite friends: what the inviter gets (giveAward), the link and the share button."""
+    language_code = data['language_code']
+    render_messages(data['chat_id'], [{
+        'type': 'text', 'disable_web_page_preview': True,
+        'text': get_message('donate_page_referral', language_code) + '\n\n' + referral.invite_link(data['chat_id']),
+        'reply_markup': [referral.invite_row(data['chat_id'], language_code), [go_back_inline_button(language_code)]]}])
 
 
 def open_once_page(data: ControllerParams):

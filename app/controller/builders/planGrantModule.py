@@ -37,7 +37,7 @@ def check(data: ControllerParams):
         notify(data['callback'], data['message'], '')
         analytics_events.track(data['chat_id'], 'plan_grant_started', {'kind': channels.KIND})
         render_messages(data['chat_id'], [{
-            'type': 'text', 'text': get_message('chanPlanOn', language_code),
+            'type': 'text', 'text': get_message('chanPlanOn', language_code) + '\n\n' + get_message('chanPlanTerms', language_code),
             'reply_markup': go_back_inline_markup(language_code)}])
         return True
     notify(data['callback'], data['message'], get_message('chanPlanActive', language_code))

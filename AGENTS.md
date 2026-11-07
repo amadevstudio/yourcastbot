@@ -220,7 +220,9 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
   from the bot's menu (/search) creates the user with no plan, and a
   newcomer who subscribed before /start got 2 days instead of 14. "Invite a friend" (`referral.invite_row`,
   the share sheet with the user's own link) goes in D-3, plan-off and after a
-  Stars payment, below Stars and change-plan.
+  Stars payment, below Stars and change-plan. On `/subscription` the rules and
+  the link are a page of their own ("Invite friends", `bs_ref`), not a
+  paragraph under the plan.
   Lock: `python app/service/payment/test_referral_award.py`.
 - A Stars invoice names its plan (payload `v`). With no plan running the
   payment switches to that plan and turns it on when the balance covers

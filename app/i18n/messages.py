@@ -3067,7 +3067,7 @@ messages = {
         },
         "en": {
             "ro_msg": "Bring friends and get bonuses! If a person follows your link"
-                      ", you will get additional" + str(
+                      ", you will get additional " + str(
                 int(tariff_ref_period / 24)) + " days and " + str(tariff_ref_notifies) \
                       + " notifications to the current tariff or, if you are not subscribed, " \
                       + str(int(tariff_ref_no_subscription_period / 24)) + " days of subscription"

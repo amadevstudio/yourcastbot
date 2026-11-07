@@ -40,6 +40,14 @@ _COPY = {
     '✅ برنزیِ کانال\u200cها روشن است. تا وقتی عضو همهٔ آن\u200cها باشید می\u200cماند: ربات هر ساعت بررسی می\u200cکند.'),
 'chanPlanCheck': (
     '✅ Check', '✅ Проверить', '✅ Verificar', '✅ Comprobar', '✅ Prüfen', '✅ בדיקה', '✅ بررسی'),
+'chanPlanTerms': (
+    'This is a promo, and we may end it at any time; you will get a message if we do.',
+    'Это акция, и мы можем завершить её в любой момент; тогда пришлём сообщение.',
+    'É uma promoção e podemos encerrá-la a qualquer momento; se isso acontecer, você recebe uma mensagem.',
+    'Es una promoción y podemos terminarla en cualquier momento; si pasa, te enviaremos un mensaje.',
+    'Das ist eine Aktion, die wir jederzeit beenden können; dann bekommst du eine Nachricht.',
+    'זה מבצע, ואנחנו יכולים לסיים אותו בכל עת; אם זה יקרה, תקבלו הודעה.',
+    'این یک پیشنهاد ویژه است و ممکن است هر زمان تمامش کنیم؛ در آن صورت پیام می\u200cگیرید.'),
 'chanPlanOn': (
     'Bronze is on 🎉 New episodes of your podcasts will come as files. It stays while you are subscribed to the channels; a plan you pay for replaces it whenever you like.',
     'Бронза включена 🎉 Новые выпуски ваших подкастов будут приходить файлами. Она действует, пока вы подписаны на каналы; оплаченный тариф заменит её, когда захотите.',
