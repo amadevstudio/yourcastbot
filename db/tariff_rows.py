@@ -61,6 +61,28 @@ def running_plan_level(chat_id, database=None) -> int:
         connection.close()
 
 
+def running_plan(chat_id, database=None) -> tuple:
+    """(level, price in cents) of the plan this Telegram chat has time left on, (0, 0) without one."""
+    if database is None:
+        from config import db_path as database
+    connection = connect_sqlite(database)
+    try:
+        row = connection.execute(
+            "SELECT t.level, t.price FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
+            "JOIN tariffs t ON t.id = ut.tariff_id "
+            "WHERE u.telegramId = ? AND ut.tariff_id > 0 AND ut.time_left > 0",
+            (int(chat_id),)).fetchone()
+    except sqlite3.OperationalError:  # a tariffs table without prices: tests' databases
+        row = connection.execute(
+            "SELECT t.level, 0 FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
+            "JOIN tariffs t ON t.id = ut.tariff_id "
+            "WHERE u.telegramId = ? AND ut.tariff_id > 0 AND ut.time_left > 0",
+            (int(chat_id),)).fetchone()
+    finally:
+        connection.close()
+    return (int(row[0]), int(row[1] or 0)) if row else (0, 0)
+
+
 def running_plan_price(chat_id, database=None) -> int:
     """The price in cents of the plan this Telegram chat has time left on, 0 without one (or a tariffs
     table without prices: tests' databases)."""

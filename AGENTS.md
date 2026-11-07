@@ -1047,6 +1047,26 @@ OPML import (up to 100 shows) or the TED Talks Daily subscription /start
 makes on its own. A click on an episode is unchanged.
 Lock: `python app/controller/builders/test_latest_episode.py`.
 
+## Plan profiles (entitlements)
+
+What a plan gives is data, not checks by level: `app/service/plan/features.py`
+holds a profile of features per kind of plan (`none`: no plan running;
+`trial`: a plan nobody paid for, whatever its level; `level:<n>`: a plan paid
+for), `app/service/plan/entitlements.py` picks the chat's profile once
+(`entitlements.of(chat_id)`: its running plan, `tariff_rows.paid_for_days`).
+Features: AI (`ai`, `ai_hours`, `ai_paid_hours`, `ai_questions_day`,
+`ai_questions_month`, `ai_budget`) and clicks (`clicks`, `clicks_hours`).
+The AI quota (`quota.check`, `questions`, `budget`, `paid_transcribe_fits`),
+the click limit (`free_limit.limit_hit`), paid models, the summary hint, the
+settings toggle, the economics page and a plan's description read them there;
+a reader that asks the plan's level or config's dicts for a limit again breaks
+the constructor (the owner's call, 2026-11-07: plans built from pieces, edited
+in the admin). The defaults are config.py's values. Delivery (`notify_count`,
+`channel_control`) and the free subscription limit stay in `tariffs` and
+config for now. A new kind of plan is a profile and the rule that picks it in
+`entitlements.for_plan`. Lock: `python app/service/plan/test_entitlements.py`
+(CD gate).
+
 ## Free weekly episodes
 
 A listener without a running plan gets `free_rec_per_week` (10) episodes
@@ -1121,10 +1141,13 @@ into broken English, and a Persian show's feed says "en" (2026-11-02).
   what is left.
 - No plan costs more in AI than it brings (the owner's rule, 2026-11-02). Each
   plan's limits are set so its worst month (every hour new audio, the paid
-  model for its hours, a summary per hour, every question of every day) stays
-  under its budget: `config.ai_paid_transcribe_hours_per_month` (the paid
-  model's hours among the plan's, 2/4/15) and `config.ai_questions_per_day`
-  (5/10/20; a trial 5). Behind them a plan paid for has a budget
+  model for its hours, a summary per hour, every question the 30 days allow)
+  stays under its budget: `config.ai_paid_transcribe_hours_per_month` (the paid
+  model's hours among the plan's, 2/4/15), `config.ai_questions_per_day`
+  (5/10/20; a trial 5) and `config.ai_questions_per_month` (ten days of them:
+  50/100/200; a trial 50, `quota.TRIAL_QUESTIONS_PER_MONTH`; the owner's call,
+  2026-11-07: 13 questions came in October's 30 days, none past 3 a day; at it,
+  `askMonthLimit`). Behind them a plan paid for has a budget
   (`quota.budget`): its AI cost in the last 30 days (usage ledger) stays under
   `config.ai_budget_share` of what its price brings (`payout_share`); a call
   starts only if what it is reckoned to cost (`ai_transcribe_usd_hour`,
@@ -1200,8 +1223,8 @@ into broken English, and a Persian show's feed says "en" (2026-11-02).
   or a photo is asked to be typed. Questions need the
   transcript (a summary first) and a running plan: `QUESTIONS_PER_DAY` (20),
   a trial `TRIAL_QUESTIONS_PER_DAY` (5; at its limit it hears what paying
-  gives, with the Stars page and change-plan), in the last 24 hours (usage ledger
-  kind `ask`, its cost in the AI spend). No plan: every plan's invoice.
+  gives, with the Stars page and change-plan), in the last 24 hours and within
+  the 30 days' count (usage ledger kind `ask`, its cost in the AI spend). No plan: every plan's invoice.
 - "Ask about the podcast" on the podcast page (AI on; route `showAsk`,
   `app/service/ai/show_ask.py`, `showAskModule`): questions about the whole
   show, answered from what is already there (the owner's call, 2026-10-26:

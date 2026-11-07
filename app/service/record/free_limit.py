@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Free listeners get `free_rec_per_week` episodes by click in any 7 days.
+"""Free listeners get the no-plan profile's episodes by click (`free_rec_per_week`, 10) in any 7 days.
 
 Counted from the usage ledger (db/usage.py, kind 'rec'): distinct episodes
 delivered in the last 7 days, plus clicks still waiting in the outbox (one
 in flight per user: fast taps must not slip past the limit). The same
 episode again is free. A paid plan has no limit. A plan nobody paid for
-(the welcome trial, referral days; `tariff_rows.paid_for_days`) gets
-`trial_rec_per_day` episodes by click in any 24 hours, counted the same way:
+(the welcome trial, referral days; `tariff_rows.paid_for_days`) gets the
+trial profile's (`trial_rec_per_day`) by click in any 24 hours, counted the same way:
 one trial took ~1000 episodes of one show in 4 days, holding one of the 4 rec
 workers the whole time (2026-10). Automatic deliveries and the episode list
 are not limited.
@@ -23,11 +23,10 @@ import math
 import time
 from typing import NamedTuple, Optional
 
-from config import db_path, free_rec_per_week, trial_rec_per_day
+from app.service.plan import entitlements, features
+from config import db_path
 from db import usage
-from db.tariff_rows import paid_for_days, running_plan_level
-
-DAY_SECONDS = 86400
+from db.tariff_rows import running_plan_level
 
 
 def has_running_plan(chat_id, database=None) -> bool:
@@ -35,41 +34,43 @@ def has_running_plan(chat_id, database=None) -> bool:
     return running_plan_level(chat_id, database) > 0
 
 
+def window_check(chat_id, link, open_links, limit, window_seconds, now=None, database=None):
+    """(allowed, seconds until the next episode or None): `limit` distinct episodes by click in
+    any `window_seconds`, waiting clicks (open_links) included; the same episode again is free."""
+    now = time.time() if now is None else now
+    since = now - window_seconds
+    counted = usage.episodes_since(chat_id, 'rec', since, database=database)
+    counted |= {usage.episode_ref(other) for other in open_links}
+    if usage.episode_ref(link) in counted or len(counted) < limit:
+        return True, None
+    leaves = usage.first_to_leave(chat_id, 'rec', since, database=database)
+    wait = (leaves + window_seconds - now) if leaves is not None else window_seconds
+    return False, max(wait, 60)
+
+
 def check(chat_id, link, open_links=(), plan=None, now=None, database=None, limit=None):
-    """(allowed, seconds until the next free episode or None).
+    """(allowed, seconds until the next free episode or None) of a chat without a plan.
 
     open_links: links of this chat's clicks not delivered yet.
     plan: has_running_plan(chat_id), read here when not given.
     """
-    limit = free_rec_per_week if limit is None else limit
+    free = features.profile(features.NONE)
+    limit = free['clicks'] if limit is None else limit
     if plan is None:
         plan = has_running_plan(chat_id, database)
-    if plan:
+    if plan or limit is None:
         return True, None
-    now = time.time() if now is None else now
-    since = now - usage.WEEK_SECONDS
-    counted = usage.episodes_since(chat_id, 'rec', since, database=database)
-    counted |= {usage.episode_ref(other) for other in open_links}
-    if usage.episode_ref(link) in counted or len(counted) < limit:
-        return True, None
-    leaves = usage.first_to_leave(chat_id, 'rec', since, database=database)
-    wait = (leaves + usage.WEEK_SECONDS - now) if leaves is not None else usage.WEEK_SECONDS
-    return False, max(wait, 60)
+    return window_check(chat_id, link, open_links, limit, free['clicks_hours'] * 3600, now, database)
 
 
 def trial_check(chat_id, link, open_links=(), now=None, database=None, limit=None):
-    """(allowed, seconds until the next episode or None) for a plan nobody paid for:
-    `trial_rec_per_day` distinct episodes by click in any 24 hours, waiting clicks included."""
-    limit = trial_rec_per_day if limit is None else limit
-    now = time.time() if now is None else now
-    since = now - DAY_SECONDS
-    counted = usage.episodes_since(chat_id, 'rec', since, database=database)
-    counted |= {usage.episode_ref(other) for other in open_links}
-    if usage.episode_ref(link) in counted or len(counted) < limit:
+    """(allowed, seconds until the next episode or None) for a plan nobody paid for: the trial
+    profile's episodes by click in any of its windows, waiting clicks included."""
+    trial = features.profile(features.TRIAL)
+    limit = trial['clicks'] if limit is None else limit
+    if limit is None:
         return True, None
-    leaves = usage.first_to_leave(chat_id, 'rec', since, database=database)
-    wait = (leaves + DAY_SECONDS - now) if leaves is not None else DAY_SECONDS
-    return False, max(wait, 60)
+    return window_check(chat_id, link, open_links, limit, trial['clicks_hours'] * 3600, now, database)
 
 
 class Hit(NamedTuple):
@@ -77,25 +78,25 @@ class Hit(NamedTuple):
     limit: str
     wait: float
     level: int
+    count: Optional[int] = None  # the episodes the limit allows; None: the profile's
 
 
 def limit_hit(chat_id, link, open_links, now=None, database=None) -> Optional[Hit]:
-    """None when this click may be queued: no plan, the free week's; a plan nobody paid
-    for, the trial's day; a paid plan, none."""
-    level = running_plan_level(chat_id, database)
-    if level <= 0:
-        allowed, wait = check(chat_id, link, open_links, plan=False, now=now, database=database)
-        return None if allowed else Hit('week', wait, level)
-    if paid_for_days(chat_id, database):
+    """None when this click may be queued: the chat's profile (entitlements) says how many
+    episodes in what window: no plan, the free week's; a plan nobody paid for, the trial's day;
+    a paid plan, none."""
+    rights = entitlements.of(chat_id, database)
+    count = rights.get('clicks')
+    if count is None:
         return None
-    allowed, wait = trial_check(chat_id, link, open_links, now=now, database=database)
-    return None if allowed else Hit('trial', wait, level)
+    allowed, wait = window_check(chat_id, link, open_links, count, rights.get('clicks_hours') * 3600, now, database)
+    return None if allowed else Hit('trial' if rights.running else 'week', wait, rights.level, count)
 
 
 def hit_message(hit: Hit, language_code) -> dict:
     if hit.limit == 'week':
-        return limit_message(language_code, hit.wait)
-    return trial_limit_message(language_code, hit.wait, hit.level)
+        return limit_message(language_code, hit.wait, hit.count)
+    return trial_limit_message(language_code, hit.wait, hit.level, hit.count)
 
 
 def click_limit(chat_id, link, open_links, language_code, now=None, database=None):
@@ -149,7 +150,7 @@ def limit_message(language_code, wait_seconds, limit=None):
     from app.i18n.messages import get_message
     from app.service.analytics_events import LIMIT_SOURCE
 
-    limit = free_rec_per_week if limit is None else limit
+    limit = features.profile(features.NONE)['clicks'] if limit is None else limit
     plans_text, rows = plans_offer(language_code, source=LIMIT_SOURCE)
     text = "<b>" + get_message("freeEpisodesUsed", language_code).format(limit=limit) + "</b>\n"
     text += wait_text(wait_seconds, language_code) + " "
@@ -166,7 +167,7 @@ def trial_limit_message(language_code, wait_seconds, level, limit=None):
     from app.service.analytics_events import LIMIT_SOURCE
     from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL, relay_nudge_markup
 
-    limit = trial_rec_per_day if limit is None else limit
+    limit = features.profile(features.TRIAL)['clicks'] if limit is None else limit
     text = "<b>" + get_message("trialEpisodesUsed", language_code).format(limit=limit) + "</b>\n" \
         + get_message("trialEpisodesNext", language_code).format(hours=math.ceil(wait_seconds / 3600))
     return {'type': 'text', 'text': text,

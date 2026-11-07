@@ -115,11 +115,11 @@ def _ai_plans(path, now):
     plans = {p['key']: p for p in report['plans']}
     relay = plans['3']
     hours = config.ai_summary_hours_per_month[3]
-    month_of_questions = config.ai_questions_per_day[3] * quota.QUOTA_DAYS * 0.001
+    month_of_questions = config.ai_questions_per_month[3] * 0.001
     paid_hours = config.ai_paid_transcribe_hours_per_month[3]
     _assert_close(relay['price_usd'], 5.0, "the plan's price")
     _assert_close(relay['worst_whisper_usd'], min(hours * (0.015 + 0.003) + month_of_questions, relay['cap_usd']),
-                  'worst month: every hour new audio, a summary per hour, every question')
+                  'worst month: every hour new audio, a summary per hour, every question of the 30 days')
     _assert_close(relay['worst_paid_usd'], min(paid_hours * 0.10 + (hours - paid_hours) * 0.015 + hours * 0.003
                                                + month_of_questions, relay['cap_usd']),
                   'the paid model for its hours, Whisper for the rest, never above the budget')
@@ -133,7 +133,7 @@ def _ai_plans(path, now):
     trial = plans['trial']
     _assert_eq(trial['worst_paid_usd'], None, 'a trial never gets the paid model')
     _assert_close(trial['worst_whisper_usd'], config.ai_summary_trial_hours * 0.018
-                  + quota.TRIAL_QUESTIONS_PER_DAY * quota.QUOTA_DAYS * 0.001, "a trial's hours and questions")
+                  + config.ai_trial_questions_per_month * 0.001, "a trial's hours and its 30 days' questions")
     _assert_close(trial['hours_used'], 0.5, "a trial's hours")
     _assert_close(trial['ai_usd'], 0.25, "a trial's AI spend in the period")
     _assert_eq({p['key']: p['worst_paid_usd'] for p in off['plans']}['3'], None,

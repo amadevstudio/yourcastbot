@@ -24,6 +24,7 @@ cost without paying users, so the free models stay for everyone else.
   brings; a paying chat that turned the models off is told nothing.
 """
 from app.i18n.messages import get_message
+from app.service.plan import entitlements
 from config import ai_paid_summary_model, ai_paid_transcribe_model, ai_summary_model, ai_transcribe_model, db_path
 from lib.tools.logger import logger
 
@@ -48,10 +49,10 @@ def standing(chat_id, database=None) -> str | None:
     if not available():
         return None
     from db.sqliteAdapter import SQLighter
-    from db.tariff_rows import paid_for_days, running_plan_level
     database = db_path if database is None else database
-    running = running_plan_level(chat_id, database) > 0
-    if not paid_for_days(chat_id, database):
+    rights = entitlements.of(chat_id, database)
+    running = rights.running and rights.ai
+    if not rights.paid:
         return TRIAL if running else NO_PLAN
     if not running:
         return LAPSED
@@ -174,7 +175,6 @@ def paying_users(database=None) -> list[int]:
     """users.id of the chats that paid (as paid_for_days reads it) and have a plan running: those who
     paid before the effect existed."""
     from db.connection import connect_sqlite
-    from db.tariff_rows import paid_for_days
     database = db_path if database is None else database
     connection = connect_sqlite(database)
     try:
@@ -183,4 +183,9 @@ def paying_users(database=None) -> list[int]:
             "WHERE ut.tariff_id > 0 AND ut.time_left > 0").fetchall()
     finally:
         connection.close()
-    return [user_id for user_id, telegram_id in running if telegram_id and paid_for_days(telegram_id, database)]
+    return [user_id for user_id, telegram_id in running
+            if telegram_id and _paid_with_ai(entitlements.of(telegram_id, database))]
+
+
+def _paid_with_ai(rights) -> bool:
+    return rights.running and rights.paid and rights.ai

@@ -6,6 +6,7 @@ from app.jobs.nosub_digest import DIGEST_TOGGLE_ACTION, digest_enabled
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams
 from app.service.ai import auto as ai_auto, paid_models, summary as ai_summary
+from app.service.plan import entitlements
 from app.service.record.text_format import (
     EPISODE_FORMAT_ACTIONS, SEPARATE, user_format)
 from config import db_path
@@ -306,8 +307,7 @@ def toggle_auto_summary(data: ControllerParams):
         db_users.set_user_flag(data['chat_id'], ai_auto.FLAG, 1 if enabled else 0)
     finally:
         db_users.close()
-    from db.tariff_rows import running_plan_level
-    without_plan = enabled and running_plan_level(data['chat_id']) <= 0
+    without_plan = enabled and not entitlements.of(data['chat_id']).ai
     notify(data['callback'], data['message'],
            get_message('summaryAutoNeedsPlan' if without_plan else 'summaryAutoOn' if enabled else 'summaryAutoOff',
                        data['language_code']), alert=without_plan)

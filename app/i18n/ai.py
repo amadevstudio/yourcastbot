@@ -241,6 +241,13 @@ ROWS = {
         'Se acabaron las preguntas de hoy: {limit} al día. Pronto podrás volver a preguntar.',
         'Für heute sind keine Fragen mehr übrig: {limit} am Tag. Bald geht es wieder.',
         'נגמרו השאלות להיום: {limit} ביום. בקרוב אפשר לשאול שוב.'),
+    'askMonthLimit': (
+        'Вопросы за 30 дней закончились: до {limit} за 30 дней. Новые появятся, когда старые выйдут за этот срок.',
+        'No questions left for these 30 days: up to {limit} in 30 days. New ones come as the old ones pass that mark.',
+        'As perguntas destes 30 dias acabaram: até {limit} em 30 dias. Novas vêm quando as antigas passam desse prazo.',
+        'Se acabaron las preguntas de estos 30 días: hasta {limit} en 30 días. Llegan nuevas cuando las viejas pasan ese plazo.',
+        'Für diese 30 Tage sind keine Fragen mehr übrig: bis zu {limit} in 30 Tagen. Neue kommen, wenn die alten aus dieser Frist fallen.',
+        'נגמרו השאלות ל-30 הימים האלה: עד {limit} ב-30 יום. שאלות חדשות מתפנות כשהישנות עוברות את התקופה.'),
     'askTrialMore': (
         'С оплаченным тарифом – до {limit} вопросов в сутки.',
         'A paid plan gives up to {limit} questions a day.',
@@ -488,12 +495,12 @@ ROWS = {
         '✨ תמליל מדויק יותר שמראה מי מדבר לא נכנס במה שנשאר למסלול שלכם ב-30 הימים האלה, אז הנה התמליל הרגיל.'),
     # a plan's description (paymentModule.ai_plan_text): its AI in a line
     'trf_descr_ai': (
-        'ИИ: пересказы и расшифровки – {hours} ч аудио за 30 дней, вопросы – до {questions} в день.',
-        'AI: summaries and transcripts – {hours} h of audio per 30 days, questions – up to {questions} a day.',
-        'IA: resumos e transcrições – {hours} h de áudio a cada 30 dias, perguntas – até {questions} por dia.',
-        'IA: resúmenes y transcripciones – {hours} h de audio cada 30 días, preguntas – hasta {questions} al día.',
-        'KI: Zusammenfassungen und Transkripte – {hours} Std. Audio pro 30 Tage, Fragen – bis zu {questions} am Tag.',
-        'AI: סיכומים ותמלילים – {hours} שעות אודיו ל-30 יום, שאלות – עד {questions} ביום.'),
+        'ИИ: пересказы и расшифровки – {hours} ч аудио за 30 дней, вопросы – до {questions} в день и {month} за 30 дней.',
+        'AI: summaries and transcripts – {hours} h of audio per 30 days, questions – up to {questions} a day and {month} in 30 days.',
+        'IA: resumos e transcrições – {hours} h de áudio a cada 30 dias, perguntas – até {questions} por dia e {month} em 30 dias.',
+        'IA: resúmenes y transcripciones – {hours} h de audio cada 30 días, preguntas – hasta {questions} al día y {month} en 30 días.',
+        'KI: Zusammenfassungen und Transkripte – {hours} Std. Audio pro 30 Tage, Fragen – bis zu {questions} am Tag und {month} in 30 Tagen.',
+        'AI: סיכומים ותמלילים – {hours} שעות אודיו ל-30 יום, שאלות – עד {questions} ביום ו-{month} ב-30 יום.'),
     'trf_descr_ai_paid': (
         'Из них {paid} ч – точной моделью, с разметкой, кто говорит.',
         '{paid} h of it with the precise model that shows who is speaking.',
