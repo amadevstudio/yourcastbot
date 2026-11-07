@@ -141,6 +141,11 @@ export type Product = {
   nudge: (NudgeRead & { group: string; own_sub: number; got_episode: number; blocked: number; paid: number })[];
   nudge_read: { assigned: NudgeRead; control: NudgeRead };
   digest_ab: { variant: string; recipients: number; muted: number; blocked: number; paid: number }[];
+  survey: {
+    groups: { group: string; sent: number; answered: number; rewarded: number; blocked: number; paid: number }[];
+    answers: { group: string; answer: string; count: number }[];
+    texts: { group: string; answer: string; lang: string | null; text: string }[];
+  };
   ai: {
     summary_taps: number;
     summary_auto: number;

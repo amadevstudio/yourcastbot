@@ -186,6 +186,12 @@ def run_jobs():
     t_digest_watcher.start()
     watched.append(t_digest_watcher)
 
+    # the listeners nearest to paying: one question, what stops them from taking a plan
+    from app.jobs.why_survey import survey_watcher
+    t_why_survey = threading.Thread(target=survey_watcher, name="Why survey", daemon=True)
+    t_why_survey.start()
+    watched.append(t_why_survey)
+
     # a newcomer with only the welcome show: one nudge to add their own (A/B, even ids)
     from app.jobs.own_show_nudge import nudge_watcher
     t_nudge_watcher = threading.Thread(target=nudge_watcher, name="Own show nudge", daemon=True)

@@ -390,6 +390,114 @@ ROWS = {
         'Factura por ${summa}. Eliges la moneda en CryptoBot.',
         'Rechnung über ${summa}. Die Münze wählst du in CryptoBot.',
         'חשבון על ‎${summa}. את המטבע בוחרים ב-CryptoBot.'),
+    # "what stops you from taking a plan?" (app/jobs/why_survey.py)
+    'whySurvey': (
+        'Здравствуйте! Я разработчик Yourcast. Вы слушаете подкасты через бота, и мне важно понять одно: '
+        'что мешает оформить план? Одно нажатие очень поможет.',
+        "Hi! I'm the developer of Yourcast. You listen to podcasts through the bot, and I'd like to understand "
+        "one thing: what stops you from taking a plan? One tap helps a lot.",
+        'Olá! Sou o desenvolvedor do Yourcast. Você ouve podcasts pelo bot, e eu queria entender uma coisa: '
+        'o que impede você de assinar um plano? Um toque já ajuda muito.',
+        '¡Hola! Soy el desarrollador de Yourcast. Escuchas podcasts con el bot y quiero entender una cosa: '
+        '¿qué te impide contratar un plan? Un toque ayuda mucho.',
+        'Hallo! Ich entwickle Yourcast. Du hörst Podcasts über den Bot, und ich möchte eins verstehen: '
+        'Was hält dich von einem Plan ab? Ein Tippen hilft sehr.',
+        'שלום! אני המפתח של Yourcast. אתם מאזינים לפודקאסטים דרך הבוט, ואני רוצה להבין דבר אחד: '
+        'מה מונע מכם לבחור תוכנית? לחיצה אחת תעזור מאוד.'),
+    'whyReward': (
+        '🎁 За ответ – {days} дней Relay в подарок: новые выпуски ваших подкастов будут приходить сами.',
+        '🎁 Answer and get {days} days of Relay as a gift: new episodes of your podcasts will arrive on their own.',
+        '🎁 Respondendo, você ganha {days} dias de Relay: os novos episódios dos seus podcasts chegam sozinhos.',
+        '🎁 Por responder, {days} días de Relay de regalo: los nuevos episodios de tus podcasts llegarán solos.',
+        '🎁 Für deine Antwort gibt es {days} Tage Relay geschenkt: neue Folgen deiner Podcasts kommen von selbst.',
+        '🎁 על תשובה – {days} ימים של Relay במתנה: פרקים חדשים של הפודקאסטים שלכם יגיעו לבד.'),
+    'whyRewardGiven': ('🎁 Включил вам Relay на {days} дней.', '🎁 Relay is on for you for {days} days.',
+                       '🎁 Ativei o Relay para você por {days} dias.', '🎁 Te activé Relay durante {days} días.',
+                       '🎁 Relay ist für dich {days} Tage aktiv.', '🎁 הפעלתי לכם Relay ל-{days} ימים.'),
+    'whyAnswer_price': ('💸 Дорого', '💸 Too expensive', '💸 Caro demais', '💸 Demasiado caro', '💸 Zu teuer',
+                        '💸 יקר מדי'),
+    'whyAnswer_pay': ('💳 Неудобно платить', '💳 Paying is inconvenient', '💳 Pagar é complicado',
+                      '💳 Pagar es incómodo', '💳 Bezahlen ist umständlich', '💳 לא נוח לשלם'),
+    'whyAnswer_free': ('🆓 Мне хватает бесплатного', '🆓 The free version is enough', '🆓 A versão grátis basta',
+                       '🆓 Me basta la versión gratis', '🆓 Die Gratis-Version reicht mir',
+                       '🆓 הגרסה החינמית מספיקה לי'),
+    'whyAnswer_need': ('🤷 Бот мне не очень нужен', "🤷 I don't really need the bot", '🤷 Não preciso muito do bot',
+                       '🤷 No necesito mucho el bot', '🤷 Ich brauche den Bot kaum', '🤷 אני לא ממש צריך את הבוט'),
+    'whyAnswer_own': ('✍️ Напишу сам', "✍️ I'll write it myself", '✍️ Vou escrever', '✍️ Lo escribo yo',
+                      '✍️ Ich schreibe es selbst', '✍️ אכתוב בעצמי'),
+    'whyChannel': ('💬 Написать в канал', '💬 Message the channel', '💬 Escrever ao canal', '💬 Escribir al canal',
+                   '💬 Dem Kanal schreiben', '💬 לכתוב לערוץ'),
+    'whySurveyIdle': (
+        'Здравствуйте! Я разработчик Yourcast. Вижу, что бот вам так и не пригодился, и мне важно понять почему. '
+        'Что помешало? Одно нажатие очень поможет.',
+        "Hi! I'm the developer of Yourcast. It looks like the bot didn't turn out useful for you, and I'd like to "
+        "understand why. What got in the way? One tap helps a lot.",
+        'Olá! Sou o desenvolvedor do Yourcast. Parece que o bot não chegou a ser útil para você, e eu queria '
+        'entender por quê. O que atrapalhou? Um toque já ajuda muito.',
+        '¡Hola! Soy el desarrollador de Yourcast. Parece que el bot no te llegó a servir y quiero entender por qué. '
+        '¿Qué te lo impidió? Un toque ayuda mucho.',
+        'Hallo! Ich entwickle Yourcast. Der Bot war dir anscheinend nicht nützlich, und ich möchte verstehen, '
+        'warum. Was stand im Weg? Ein Tippen hilft sehr.',
+        'שלום! אני המפתח של Yourcast. נראה שהבוט לא היה שימושי עבורכם, ואני רוצה להבין למה. מה הפריע? '
+        'לחיצה אחת תעזור מאוד.'),
+    'whyAnswer_how': ('🤔 Не разобрался, как пользоваться', "🤔 I didn't get how it works",
+                      '🤔 Não entendi como funciona', '🤔 No entendí cómo funciona',
+                      '🤔 Ich habe nicht verstanden, wie er funktioniert', '🤔 לא הבנתי איך זה עובד'),
+    'whyAnswer_find': ('🔍 Не нашёл свои подкасты', "🔍 I couldn't find my podcasts", '🔍 Não achei meus podcasts',
+                       '🔍 No encontré mis podcasts', '🔍 Ich habe meine Podcasts nicht gefunden',
+                       '🔍 לא מצאתי את הפודקאסטים שלי'),
+    'whyAnswer_app': ('📱 Слушаю в другом приложении', '📱 I listen in another app', '📱 Ouço em outro app',
+                      '📱 Escucho en otra app', '📱 Ich höre in einer anderen App', '📱 אני מאזין באפליקציה אחרת'),
+    'whyAnswer_tg': ('🚫 Не нужны подкасты в Telegram', "🚫 I don't need podcasts in Telegram",
+                     '🚫 Não preciso de podcasts no Telegram', '🚫 No necesito podcasts en Telegram',
+                     '🚫 Ich brauche keine Podcasts in Telegram', '🚫 לא צריך פודקאסטים בטלגרם'),
+    'whyMoreIdle': (
+        'Спасибо! Если хотите, напишите одним сообщением, что помешало или что должно было быть иначе. '
+        'Я читаю всё сам.',
+        'Thank you! If you like, write in one message what got in the way or what should have been different. '
+        'I read every reply myself.',
+        'Obrigado! Se quiser, escreva numa mensagem o que atrapalhou ou o que deveria ser diferente. '
+        'Eu leio todas as respostas.',
+        '¡Gracias! Si quieres, escribe en un mensaje qué te lo impidió o qué debería ser distinto. '
+        'Leo todas las respuestas yo mismo.',
+        'Danke! Wenn du magst, schreib in einer Nachricht, was im Weg stand oder was anders sein sollte. '
+        'Ich lese jede Antwort selbst.',
+        'תודה! אם תרצו, כתבו בהודעה אחת מה הפריע או מה היה צריך להיות אחרת. אני קורא כל תשובה בעצמי.'),
+    'whyChannelLine': (
+        '📣 Новости бота – в нашем канале, туда же можно написать.',
+        "📣 The bot's news is in our channel, and you can message us there too.",
+        '📣 As novidades do bot estão no nosso canal, e você também pode nos escrever lá.',
+        '📣 Las novedades del bot están en nuestro canal, y también puedes escribirnos allí.',
+        '📣 Neuigkeiten zum Bot gibt es in unserem Kanal, dort kannst du uns auch schreiben.',
+        '📣 החדשות של הבוט בערוץ שלנו, ואפשר גם לכתוב לנו שם.'),
+    'whyChannelRead': ('📣 Канал бота', "📣 The bot's channel", '📣 Canal do bot', '📣 Canal del bot',
+                       '📣 Kanal des Bots', '📣 ערוץ הבוט'),
+    'whyThanksToast': ('Спасибо!', 'Thank you!', 'Obrigado!', '¡Gracias!', 'Danke!', 'תודה!'),
+    'whyMore': (
+        'Спасибо! Если хотите, напишите одним сообщением чуть подробнее: какая цена была бы честной, '
+        'как вам удобно платить, чего не хватает. Я читаю всё сам.',
+        "Thank you! If you like, add a few words in one message: what price would be fair, how you'd like "
+        "to pay, what's missing. I read every reply myself.",
+        'Obrigado! Se quiser, escreva um pouco mais numa mensagem: que preço seria justo, como prefere pagar, '
+        'o que falta. Eu leio todas as respostas.',
+        '¡Gracias! Si quieres, cuéntame un poco más en un mensaje: qué precio sería justo, cómo prefieres '
+        'pagar, qué falta. Leo todas las respuestas yo mismo.',
+        'Danke! Wenn du magst, schreib mir in einer Nachricht etwas mehr: welcher Preis fair wäre, wie du '
+        'zahlen möchtest, was fehlt. Ich lese jede Antwort selbst.',
+        'תודה! אם תרצו, כתבו עוד כמה מילים בהודעה אחת: איזה מחיר יהיה הוגן, איך נוח לכם לשלם, מה חסר. '
+        'אני קורא כל תשובה בעצמי.'),
+    'whyWrite': (
+        'Напишите одним сообщением, я читаю всё сам.',
+        'Write it in one message, I read every reply myself.',
+        'Escreva numa mensagem, eu leio todas as respostas.',
+        'Escríbelo en un mensaje, leo todas las respuestas yo mismo.',
+        'Schreib es in einer Nachricht, ich lese jede Antwort selbst.',
+        'כתבו בהודעה אחת, אני קורא כל תשובה בעצמי.'),
+    'whyTextOnly': ('Напишите, пожалуйста, текстом.', 'Please write it as text.', 'Escreva em texto, por favor.',
+                    'Escríbelo en texto, por favor.', 'Bitte schreib es als Text.', 'כתבו בטקסט, בבקשה.'),
+    'whyGot': ('Получил, спасибо! Это очень помогает.', 'Got it, thank you! This helps a lot.',
+               'Recebi, obrigado! Isso ajuda muito.', '¡Recibido, gracias! Esto ayuda mucho.',
+               'Angekommen, danke! Das hilft sehr.', 'קיבלתי, תודה! זה עוזר מאוד.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}

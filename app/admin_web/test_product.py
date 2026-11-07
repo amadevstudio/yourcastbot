@@ -41,7 +41,7 @@ def _setup(path, now):
     conn.executescript("""
         CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER NOT NULL UNIQUE, deleted_at TEXT,
                             created_at TEXT, flags TEXT, nosub_digest_enabled INTEGER NOT NULL DEFAULT 1,
-                            nosub_digest_sent_at TEXT);
+                            nosub_digest_sent_at TEXT, lang TEXT);
         CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER, price INTEGER);
         CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER,
                                      balance INTEGER, notify_count INTEGER, time_left INTEGER);
@@ -157,6 +157,25 @@ def main():
             _assert_eq([digest_variant(tg) for tg in (NEW_IDLE, OLD_PAYER, DIGEST_B, -1013)], ['a', 'a', 'b', 'b'],
                        "the page splits as the digest does")
         _assert_eq(report['digest'], {'last_week': 1, 'muted': 0}, 'digest: last week, a blocked user left out')
+        _assert_eq(report['survey'], {'groups': [], 'answers': [], 'texts': []}, "the survey: nobody asked yet")
+        conn = sqlite3.connect(path)
+        conn.executescript(
+            "UPDATE users SET flags = json_object('why_survey', 'sent', 'why_group', 'limit', 'why_answer', 'pay', "
+            "'why_reward', 1, 'why_text', 'cards please', 'why_text_at', 2) WHERE id = 7;"
+            "UPDATE users SET flags = json_object('why_survey', 'sent', 'why_group', 'idle', 'why_answer', 'app', "
+            "'why_reward', 1, 'why_text', 'Pocket Casts', 'why_text_at', 3) WHERE id = 8;"
+            "UPDATE users SET flags = json_object('why_survey', 'sent', 'why_group', 'idle') WHERE id = 6;"
+            "UPDATE users SET flags = json_object('why_survey', 'unsent', 'why_group', 'idle') WHERE id = 9;")
+        conn.commit()
+        conn.close()
+        survey = product.product(days=1, database=path, now=now)['survey']
+        _assert_eq(survey['groups'], [
+            {'group': 'idle', 'sent': 2, 'answered': 1, 'rewarded': 1, 'blocked': 0, 'paid': 1},
+            {'group': 'limit', 'sent': 1, 'answered': 1, 'rewarded': 1, 'blocked': 0, 'paid': 1}],
+            "the survey by group: sent (an unsent one left out), answered, weeks given, ever paid")
+        _assert_eq(survey['answers'], [{'group': 'idle', 'answer': 'app', 'count': 1},
+                                       {'group': 'limit', 'answer': 'pay', 'count': 1}], "the answers by group")
+        _assert_eq([t['text'] for t in survey['texts']], ['Pocket Casts', 'cards please'], "the texts, newest first")
 
         _assert_eq(report['paid_first_days'], {'days': 30, 'matured': 0, 'paid': 0, 'own_sub': 0,
                                                'own_sub_paid': 0},
@@ -182,7 +201,7 @@ def main():
         empty = os.path.join(tmp, 'empty.sqlite')
         sqlite3.connect(empty).executescript(
             "CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, deleted_at TEXT, created_at TEXT,"
-            " flags TEXT, nosub_digest_enabled INTEGER, nosub_digest_sent_at TEXT);"
+            " flags TEXT, nosub_digest_enabled INTEGER, nosub_digest_sent_at TEXT, lang TEXT);"
             "CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER, price INTEGER);"
             "CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER,"
             " balance INTEGER, notify_count INTEGER, time_left INTEGER);"

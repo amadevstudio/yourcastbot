@@ -116,6 +116,38 @@ def _digest_ab(conn, params) -> list:
              'blocked': row['blocked'] or 0, 'paid': row['paid'] or 0} for row in rows]
 
 
+SURVEY_TEXTS = 50
+
+
+def _survey(conn, params) -> dict:
+    """The survey (app/jobs/why_survey.py), whatever the page's period: who it went to by group,
+    the answers by group, the weeks given, those who ever paid, and the latest texts (newest
+    first, up to SURVEY_TEXTS; the chat's last text, the answer it followed)."""
+    flag = "json_extract(COALESCE(u.flags, '{}'), '$.%s')"
+    groups = conn.execute(
+        "SELECT COALESCE(%s, '?') grp, COUNT(*) n, SUM(%s IS NOT NULL) answered, "
+        "SUM(%s IS NOT NULL) rewarded, SUM(u.deleted_at IS NOT NULL) blocked, SUM(%s) paid "
+        "FROM users u WHERE %s = 'sent' GROUP BY grp ORDER BY grp"
+        % (flag % 'why_group', flag % 'why_answer', flag % 'why_reward', _PAID, flag % 'why_survey'),
+        params).fetchall()
+    answers = conn.execute(
+        "SELECT COALESCE(%s, '?') grp, %s answer, COUNT(*) n FROM users u WHERE %s IS NOT NULL "
+        "GROUP BY grp, answer ORDER BY grp, n DESC" % (flag % 'why_group', flag % 'why_answer', flag % 'why_answer'),
+        params).fetchall()
+    texts = conn.execute(
+        "SELECT COALESCE(%s, '?') grp, %s answer, u.lang, %s text FROM users u WHERE %s IS NOT NULL "
+        "ORDER BY %s DESC LIMIT %d" % (flag % 'why_group', flag % 'why_answer', flag % 'why_text',
+                                            flag % 'why_text', flag % 'why_text_at', SURVEY_TEXTS),
+        params).fetchall()
+    return {
+        'groups': [{'group': r['grp'], 'sent': r['n'], 'answered': r['answered'] or 0,
+                    'rewarded': r['rewarded'] or 0, 'blocked': r['blocked'] or 0, 'paid': r['paid'] or 0}
+                   for r in groups],
+        'answers': [{'group': r['grp'], 'answer': r['answer'], 'count': r['n']} for r in answers],
+        'texts': [{'group': r['grp'], 'answer': r['answer'], 'lang': r['lang'], 'text': r['text']} for r in texts],
+    }
+
+
 def _paid_first_days(conn, params) -> dict:
     """Newcomers of the period whose first PAY_DAYS are over, and who paid in them: all of
     them, and those who subscribed to a show of their own. A share over a fixed window does
@@ -222,6 +254,7 @@ def product(days: int = 30, database: Optional[str] = None, now: Optional[float]
             'nudge': nudge,
             'nudge_read': _nudge_read(nudge),
             'digest_ab': _digest_ab(conn, params),
+            'survey': _survey(conn, params),
             'ai': _ai(conn, since, until),
             'activity': _activity(conn, since, until),
             'digest': _digest(conn, until),

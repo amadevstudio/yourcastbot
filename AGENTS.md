@@ -953,6 +953,43 @@ per chat: a send Telegram did not take is marked unsent, not retried.
 Lock: `python app/jobs/test_own_show_nudge.py` (CD gate),
 `python app/admin_web/test_product.py`.
 
+## Why nobody pays: the survey
+
+On 2026-11-07 none of 66 ended Relay trials was paid for and 154 plan-end
+messages with the 30% offer brought one tap. So the jobs role asks the chats
+nearest to paying, once each, until `why_survey_until` (config): "what stops
+you from taking a plan?" (`app/jobs/why_survey.py`, hourly). Due: no plan
+running and either `free_rec_per_week` episodes by click in the last 14 days
+(`limit`) or a Relay that ended 2+ days ago (`winback`) and a bot used by the
+chat itself: a show of its own, a click, a summary, a transcript (`ended`);
+a Relay that ended so with nothing used (`idle`, most trials) is asked what
+got in the way instead: not understood, podcasts not found, another app, no
+need for podcasts in Telegram, own words; no offer under it.
+Not the creator, not a blocked chat, not a chat whose balance covers Relay
+(the tick would renew the gift from that money); `users.flags` `why_survey`
+unsent, then sent; `why_group` the group. Buttons: too expensive, paying is inconvenient, the free
+version is enough, no real need, "I'll write it myself" (route `why`,
+`whySurveyModule`), and the trial's first-month offer when due with
+change-plan next to it (`s: why`, `source: survey`). The answer is thanked
+with a week of Relay (the owner's call, 2026-11-07; `grant_week`, one
+transaction, once: `users.flags` `why_reward`; a running plan gets the hours
+on top, else Relay runs for the week and the balance stays; it ends through
+D-3 and plan-off as any unpaid plan). Only a chat the survey went to (flag
+`sent`) gets it; a crafted button does nothing. A tap keeps the answer
+(`users.flags` `why_answer`), counts it (`survey_answer`), tells the creator
+(`#survey`) and asks for a few words, with a line on the bot's channel and
+buttons to read it and to write to it (`channel_url`, `channel_direct_url`)
+and Back; the next text goes to the creator as it is and is kept
+(`users.flags` `why_text`, `why_text_at`; `survey_text`), then the menu. The
+admin page "Product" has the survey's card (`product._survey`, whatever the
+period): sent and answered by group, weeks given, the answers, the latest
+texts. Half an hour later, or a link, a text is a
+search. Events: `survey_sent {group}`, `survey_answer {answer, reward_hours}`,
+`survey_text {answer, chars}` (the text itself never goes to Amplitude).
+Locks: `python app/jobs/test_why_survey.py` (CD gate; the message and answer
+parts run where the bot's requirements are installed),
+`python app/admin_web/test_product.py`.
+
 ## First episode after subscribing
 
 A subscription from the podcast page or the welcome screen queues the show's
