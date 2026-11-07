@@ -1101,6 +1101,11 @@ the owner's call, 2026-11-07): Bronze without AI while the chat is subscribed
 to every channel the admin lists (page "Tariffs": a switch and the list, an
 @name, a t.me link or the id; the bot must be an admin of each, else Telegram
 does not say who is subscribed; a private channel gets the bot's invite link).
+The list is stored as Telegram said it when saved (id, title, link, @name); every hour, before the
+holders, the jobs role re-reads each channel by id (`channels.refresh`): a renamed channel's buttons
+and the admin's list follow it (before, its link was the old @name and saving the list again failed).
+A private channel keeps its link (a new invite link would revoke the one already sent); a channel
+Telegram does not answer for stays as it was; an admin's save meanwhile is kept.
 No channel listed is off, whatever the switch; turning it off resolves no
 channel (one the bot lost must not keep it on). While on, /subscription has
 the button (route `bs_chan`: the channels and "Check", `bs_chan_ok`, state
