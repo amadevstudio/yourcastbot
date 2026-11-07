@@ -120,7 +120,8 @@ SURVEY_TEXTS = 50
 
 
 def _survey(conn, params) -> dict:
-    """The survey (app/jobs/why_survey.py), whatever the page's period: who it went to by group,
+    """The survey (app/jobs/why_survey.py), whatever the page's period: who it went to by group
+    (the old accounts' holdout apart: marked, never sent; their return is read in Amplitude),
     the answers by group, the weeks given, those who ever paid, and the latest texts (newest
     first, up to SURVEY_TEXTS; the chat's last text, the answer it followed)."""
     flag = "json_extract(COALESCE(u.flags, '{}'), '$.%s')"
@@ -139,7 +140,9 @@ def _survey(conn, params) -> dict:
         "ORDER BY %s DESC LIMIT %d" % (flag % 'why_group', flag % 'why_answer', flag % 'why_text',
                                             flag % 'why_text', flag % 'why_text_at', SURVEY_TEXTS),
         params).fetchall()
+    holdout = conn.execute("SELECT COUNT(*) FROM users u WHERE %s = 'control'" % (flag % 'why_survey')).fetchone()[0]
     return {
+        'holdout': holdout,
         'groups': [{'group': r['grp'], 'sent': r['n'], 'answered': r['answered'] or 0,
                     'rewarded': r['rewarded'] or 0, 'blocked': r['blocked'] or 0, 'paid': r['paid'] or 0}
                    for r in groups],

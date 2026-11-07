@@ -20,7 +20,7 @@ from app.controller.builders import summaryModule
 from app.controller.builders.adminModule import send_message_to_creator
 from app.controller.general.notify import notify, render_outdated_screen
 from app.i18n.messages import get_message
-from app.jobs.why_survey import ACTION, ANSWERS, IDLE_ANSWERS, REWARD_HOURS, SURVEY_FLAG, grant_week
+from app.jobs.why_survey import ACTION, ANSWERS, GROUP_FLAG, IDLE_ANSWERS, REWARD_HOURS, SURVEY_FLAG, grant_week
 from app.repository.storage import storage
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.screen_state import state_lost
@@ -54,10 +54,11 @@ def answer(data):
     from db.sqliteAdapter import SQLighter
     db = SQLighter(db_path)
     try:
-        if db.get_user_flag(data['chat_id'], SURVEY_FLAG) is None:  # not asked: a crafted button
+        if db.get_user_flag(data['chat_id'], SURVEY_FLAG) in (None, 'control'):  # not asked: a crafted button
             notify(data['callback'], data['message'], '')
             return False
         db.set_user_flag(data['chat_id'], ANSWER_FLAG, choice)
+        group = db.get_user_flag(data['chat_id'], GROUP_FLAG)
     finally:
         db.close()
     notify(data['callback'], data['message'], get_message("whyThanksToast", language_code))
@@ -66,15 +67,17 @@ def answer(data):
     send_message_to_creator("#survey %s (%s) from %s%s" % (
         choice, language_code, data['chat_id'], ", +%d d of Relay" % (hours // 24) if hours else ""))
     storage.set_user_state_data(data['chat_id'], ACTION, {'a': choice, 'at': time.time()})
-    text = get_message("whyWrite" if choice == "own" else "whyMoreIdle" if choice in IDLE_ANSWERS else "whyMore",
-                       language_code)
+    text = get_message("whyWrite" if choice == "own" else "whyMoreOld" if group == "old"
+                       else "whyMoreIdle" if choice in IDLE_ANSWERS else "whyMore", language_code)
     if hours:
         text = get_message("whyRewardGiven", language_code).format(days=REWARD_HOURS // 24) + "\n\n" + text
     text += "\n\n" + get_message("whyChannelLine", language_code)
     render_messages(data['chat_id'], [{
         'type': 'text', 'disable_web_page_preview': True, 'text': text,
-        'reply_markup': [[{'text': get_message("whyChannelRead", language_code), 'url': channel_url},
-                          {'text': get_message("whyChannel", language_code), 'url': channel_direct_url}]]
+        'reply_markup': ([[{'text': get_message("whySearch", language_code), 'callback_data': {'tp': 'search'}}]]
+                         if group == "old" else [])
+        + [[{'text': get_message("whyChannelRead", language_code), 'url': channel_url},
+            {'text': get_message("whyChannel", language_code), 'url': channel_direct_url}]]
         + go_back_inline_markup(language_code),
     }], resending=True)
 

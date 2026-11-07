@@ -45,7 +45,7 @@ def _db(path, now):
     c = sqlite3.connect(path)
     c.executescript("""
         CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT, deleted_at TEXT,
-                            created_at TEXT, flags TEXT);
+                            created_at TEXT, flags TEXT, nosub_digest_sent_at TEXT);
         CREATE TABLE user_channel_cs (id INTEGER PRIMARY KEY, user_telegram_id INTEGER, channel_id INTEGER,
                                       notify INTEGER);
         CREATE TABLE usage_events (id INTEGER PRIMARY KEY, at REAL, user_id INTEGER, kind TEXT, ref TEXT,
@@ -113,7 +113,8 @@ def test_schedule():
     fd, path = tempfile.mkstemp(suffix=".sqlite")
     os.close(fd)
     sent, events = [], []
-    saved = why_survey.survey_message, analytics_events.track, why_survey.why_survey_until
+    saved = why_survey.survey_message, analytics_events.track, why_survey.why_survey_until, why_survey.why_old_limit
+    why_survey.why_old_limit = 0  # the old accounts: test_old
     why_survey.survey_message = lambda lang, tg, database=None, group='ended': {
         'type': 'text', 'text': 'why %s %s' % (lang, group)}
     analytics_events.track = lambda tg, event, props=None, database=None, **kw: events.append((tg, event, props))
@@ -149,7 +150,69 @@ def test_schedule():
         _assert(why_survey.send_surveys(path, now, send=telegram) == 0 and not sent,
                 "after why_survey_until nobody new is asked")
     finally:
-        why_survey.survey_message, analytics_events.track, why_survey.why_survey_until = saved
+        (why_survey.survey_message, analytics_events.track, why_survey.why_survey_until,
+         why_survey.why_old_limit) = saved
+        os.remove(path)
+
+
+def test_old():
+    now = time.time()
+    fd, path = tempfile.mkstemp(suffix=".sqlite")
+    os.close(fd)
+    sent, events = [], []
+    saved = (why_survey.survey_message, analytics_events.track, why_survey.why_survey_until,
+             why_survey.why_old_limit, why_survey.OLD_PER_RUN)
+    why_survey.survey_message = lambda lang, tg, database=None, group='ended': {'type': 'text', 'text': group}
+    analytics_events.track = lambda tg, event, props=None, database=None, **kw: events.append((tg, event, props))
+    why_survey.why_survey_until = time.strftime('%Y-%m-%d', time.gmtime(now + DAY))
+    why_survey.why_old_limit, why_survey.OLD_PER_RUN = 4, 3
+
+    def telegram(chat_id, messages):
+        sent.append(chat_id)
+        return [{'id': 1}]
+
+    def digest(days_ago):
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(now - days_ago * DAY))
+    try:
+        c = sqlite3.connect(path)
+        c.executescript("""
+            CREATE TABLE users (id INTEGER PRIMARY KEY, telegramId INTEGER, lang TEXT, deleted_at TEXT,
+                                created_at TEXT, flags TEXT, nosub_digest_sent_at TEXT);
+            CREATE TABLE user_channel_cs (id INTEGER PRIMARY KEY, user_telegram_id INTEGER, channel_id INTEGER,
+                                          notify INTEGER);
+            CREATE TABLE usage_events (id INTEGER PRIMARY KEY, at REAL, user_id INTEGER, kind TEXT, ref TEXT);
+            CREATE TABLE winback (user_telegram_id INTEGER PRIMARY KEY, ended_at REAL, stage INTEGER DEFAULT 0);
+            CREATE TABLE tariffs (id INTEGER PRIMARY KEY, level INTEGER, price INTEGER, notify_count INTEGER);
+            CREATE TABLE user_tariff_cs (id INTEGER PRIMARY KEY, uid INTEGER, tariff_id INTEGER, balance INTEGER,
+                                         time_left INTEGER, notify_count INTEGER);
+            INSERT INTO tariffs VALUES (3, 3, 500, -1);
+        """)
+        # by row id (newest last): 7101, 7102 (a digest a week ago: the A/B's), 7000 (holdout), 7103, 7104,
+        # 7105 (a digest a month ago: old), 7106 (a Relay that ended: the trials' groups, not old), 7107 (blocked).
+        # The adapter backfills a NULL digest time with now (as on the server long ago): old ones have a date.
+        c.executemany("INSERT INTO users (telegramId, lang, deleted_at, nosub_digest_sent_at) VALUES (?, 'en', ?, ?)",
+                      [(7101, None, digest(400)), (7102, None, digest(7)), (7000, None, digest(400)),
+                       (7103, None, digest(400)), (7104, None, digest(400)), (7105, None, digest(30)),
+                       (7106, None, digest(400)), (7107, '2026-01-01 00:00:00', digest(400))])
+        c.execute("INSERT INTO winback VALUES (7106, ?, 0)", (now - DAY,))
+        c.commit()
+        c.close()
+        _assert(why_survey.send_surveys(path, now, send=telegram) == 3 and sent == [7105, 7104, 7103],
+                "the old accounts, newest first, OLD_PER_RUN an hour; not a digest's, a trial's or a blocked one")
+        _assert(_flags(path)[7103] == 'sent' and _flags(path, 'why_group')[7103] == 'old', "marked old")
+        _assert([e for e in events if e[1] == 'survey_sent'][0][2] == {'group': 'old'}, "counted as old")
+        sent.clear()
+        why_survey.send_surveys(path, now + 3600, send=telegram)
+        _assert(sent == [] and _flags(path)[7000] == 'control' and _flags(path, 'why_group')[7000] == 'old'
+                and (7000, 'survey_control', {'group': 'old'}) in events,
+                "one in ten (hundreds digit 0) is the holdout: marked, counted, never sent; it fills the cap")
+        why_survey.send_surveys(path, now + 7200, send=telegram)
+        _assert(sent == [] and _flags(path)[7101] is None, "why_old_limit in all: the pilot stops there")
+        _assert(why_survey.holdout(7000) and why_survey.holdout(123456009)
+                and not why_survey.holdout(123456109) and not why_survey.holdout(5551234567), "the holdout digit")
+    finally:
+        (why_survey.survey_message, analytics_events.track, why_survey.why_survey_until,
+         why_survey.why_old_limit, why_survey.OLD_PER_RUN) = saved
         os.remove(path)
 
 
@@ -184,6 +247,11 @@ def test_message():
                 "in Russian too")
         _assert(len(why_survey.survey_message('en', 6001, path, 'limit')['reply_markup']) in (5, 7),
                 "a free chat gets the reasons")
+        old = why_survey.survey_message('en', 6002, path, 'old')
+        _assert([row[0]['callback_data'].get('a') for row in old['reply_markup'][:5]] == list(why_survey.OLD_ANSWERS)
+                and len(old['reply_markup']) == 5
+                and 'Why did you stop' in old['text'] and '7 days of Relay' in old['text'],
+                "an old account hears what is new and why it stopped, with the gift (search: after the answer)")
         idle = why_survey.survey_message('en', 6005, path, 'idle')
         _assert([row[0]['callback_data']['a'] for row in idle['reply_markup']] == list(why_survey.IDLE_ANSWERS)
                 and 'What got in the way' in idle['text'] and '7 days of Relay' in idle['text'],
@@ -287,6 +355,13 @@ def test_answers():
         module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'own'}))
         _assert('Write it in one message' in renders[-1]['text'] and 'Relay is on' not in renders[-1]['text']
                 and events[-1][1]['reward_hours'] == 0, "a second answer: no second gift; 'own' asks for the text")
+        flags[(7002, 'why_survey')], flags[(7002, 'why_group')] = 'sent', 'old'
+        module.why_route(dict(tap, chat_id=7002, united_data={'tp': 'why', 'a': 'forgot'}))
+        _assert('Find your podcast' in renders[-1]['text']
+                and renders[-1]['reply_markup'][0][0]['callback_data'] == {'tp': 'search'},
+                "an old account's answer: find your podcast, with the search button")
+        flags[(7003, 'why_survey')] = 'control'
+        _assert(module.why_route(dict(tap, chat_id=7003)) is False, "a holdout's crafted button does nothing")
         module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'find'}))
         _assert('what got in the way' in renders[-1]['text'], "an idle answer asks what got in the way")
         _assert(module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'x'})) is False,
@@ -308,7 +383,7 @@ def test_answers():
             module.why_route(dict(text, message=Message('Lex Fridman')))
         finally:
             module.summaryModule.search_instead = saved_search
-        _assert(searched and len(creator) == 4, "long after the tap a text is a search, not an answer")
+        _assert(searched and len(creator) == 5, "long after the tap a text is a search, not an answer")
     finally:
         (adapter.SQLighter, module.storage.set_user_state_data, module.storage.get_user_state_data,
          module.storage.add_user_state, module.render_messages, module.send_message_to_creator,
@@ -317,6 +392,7 @@ def test_answers():
 
 def main():
     test_schedule()
+    test_old()
     test_message()
     test_grant()
     test_answers()
