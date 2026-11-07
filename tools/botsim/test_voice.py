@@ -51,7 +51,7 @@ def main():
     ok(user.send('/start'))
     ok(user.send('/menu'))
     help_step = ok(user.tap('🎙 Voice messages'))
-    assert '24 hours' in help_step.new[-1].text
+    assert not help_step.new and '24 hours' in help_step.edited[-1].text, 'the menu is edited into the help'
     assert [e for e, _, _ in help_step.analytics] == ['voice_help'], 'the menu button is counted'
     ok(user.tap('Back'))
     assert '🎙 Voice messages' in user.last().button_texts()

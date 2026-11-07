@@ -3,9 +3,11 @@
 
 A reason's button opens the route `why`: the answer is kept (`users.flags`
 `why_answer`, the last one tapped), counted (`survey_answer`) and sent to the
-creator, and a new message asks for a few words more (the idle trials: what got
-in the way), with the bot's channel to read and to write to
-(`channel_url`, `channel_direct_url`) and Back; the question stays in the chat.
+creator, and the question (the tapped message) turns into one asking for a few
+words more (the idle trials: what got in the way), with the bot's channel to read
+and to write to (`channel_url`, `channel_direct_url`) and Back; it becomes the
+chat's screen, so Back and search edit it in turn. A question that cannot be
+edited (deleted): the answer comes as a new message.
 Only a chat the survey went to answers (a crafted button is a silent tap); its
 first answer gives the week of Relay (`why_survey.grant_week`, once) and the
 message says so. The next text there goes to the creator as it is and is kept
@@ -26,7 +28,7 @@ from app.routes.message_tools import go_back_inline_markup
 from app.routes.screen_state import state_lost
 from app.service import analytics_events
 from config import channel_direct_url, channel_url, db_path
-from lib.telegram.general.message_master import render_messages
+from lib.telegram.general.message_master import message_editor, render_messages
 
 ANSWER_FLAG = "why_answer"
 TEXT_FLAG = "why_text"  # the text after the answer, for the admin page "Product"
@@ -43,6 +45,20 @@ def why_route(data):
 
 def _menu_markup(language_code) -> list:
     return [[{'text': get_message('goBackMenu', language_code), 'callback_data': {'tp': 'menu'}}]]
+
+
+def _replace_question(data, screen) -> None:
+    """The answer takes the place of the tapped question and becomes the chat's screen."""
+    message_id = getattr(data['message'], 'message_id', None)
+    if message_id is not None:
+        try:
+            message_editor(data['chat_id'], screen, message_id)
+            storage.set_user_message_structures(data['chat_id'], [{'id': message_id, 'type': screen['type']}])
+            storage.del_user_resend_flag(data['chat_id'])
+            return
+        except Exception:
+            pass
+    render_messages(data['chat_id'], [screen], resending=True)
 
 
 def answer(data):
@@ -72,14 +88,14 @@ def answer(data):
     if hours:
         text = get_message("whyRewardGiven", language_code).format(days=REWARD_HOURS // 24) + "\n\n" + text
     text += "\n\n" + get_message("whyChannelLine", language_code)
-    render_messages(data['chat_id'], [{
+    _replace_question(data, {
         'type': 'text', 'disable_web_page_preview': True, 'text': text,
         'reply_markup': ([[{'text': get_message("whySearch", language_code), 'callback_data': {'tp': 'search'}}]]
                          if group == "old" else [])
         + [[{'text': get_message("whyChannelRead", language_code), 'url': channel_url},
             {'text': get_message("whyChannel", language_code), 'url': channel_direct_url}]]
         + go_back_inline_markup(language_code),
-    }], resending=True)
+    })
 
 
 def comment(data):

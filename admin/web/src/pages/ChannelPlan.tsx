@@ -31,7 +31,8 @@ function Form({ plan }: { plan: ChannelPlan }) {
     mutationFn: api.saveChannelPlan,
     onSuccess: (data) => queryClient.setQueryData(["channelPlan"], data),
   });
-  const lines = channels.split("\n").map((l) => l.trim()).filter(Boolean);
+  // "@a, @b; @c" on one line or one per line: a ref never holds a comma, a semicolon or a space
+  const lines = channels.split(/[\s,;]+/).filter(Boolean);
   const submit = () => {
     const ask = consequence(plan, enabled, lines);
     if (ask && !window.confirm(ask)) return;
@@ -50,7 +51,7 @@ function Form({ plan }: { plan: ChannelPlan }) {
         Акция включена{lines.length ? "" : " (нужен хотя бы один канал)"}
       </label>
       <Field
-        label="Каналы, по одному в строке: нужна подписка на все"
+        label="Каналы через запятую, пробел или с новой строки: нужна подписка на все"
         hint="@имя, ссылка t.me/имя или id -100…. Бот должен быть админом каждого канала: иначе Telegram не скажет, кто подписан. Приватному каналу бот сам сделает ссылку-приглашение."
       >
         <Textarea rows={4} value={channels} onChange={(e) => setChannels(e.target.value)} />
