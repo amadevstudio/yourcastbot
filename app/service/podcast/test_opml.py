@@ -201,10 +201,29 @@ def test_message():
     _assert('Tom &amp; Jerry, x &lt; y' in message['text'] and 'reply_markup' not in message,
             "names are feed text made safe for HTML; within the limit no plans are sold")
     _assert(get_message('opmlHad', 'en').format(count=1) in message['text'], "what the user had is counted")
-    over = opmlModule.result_message('en', opml.Result(['A'], [], [], ['E', 'F']), cut=True)
-    tps = [row[0]['callback_data']['tp'] for row in over['reply_markup']]
-    _assert('E, F' in over['text'] and tps[:2] == ['bs_stars_pay', 'bs_trfs'],
-            "over the free limit: named, Relay's invoice and change-plan")
+    from unittest.mock import patch
+    import db.sqliteAdapter
+    from app.service.payment import starsPaymentModule
+    from app.service.plan import channels
+
+    class Tariffs:
+        def __init__(self, _path):
+            pass
+
+        def getTariffs(self, channel_control=None):
+            return [{'id': 1, 'level': 1, 'price': 100, 'notify_count': 60, 'compression': 0, 'channel_control': 0},
+                    {'id': 3, 'level': 3, 'price': 500, 'notify_count': -1, 'compression': 1, 'channel_control': 1}]
+
+        def close(self):
+            pass
+    with patch.object(db.sqliteAdapter, 'SQLighter', Tariffs), \
+            patch.object(starsPaymentModule, 'get_stars_withdraw_rate_x1000', lambda **kw: 1300), \
+            patch.object(channels, 'entry_row', lambda *a, **kw: []):
+        over = opmlModule.result_message('en', opml.Result(['A'], [], [], ['E', 'F']), cut=True)
+    ctas = [row[0]['callback_data'] for row in over['reply_markup']]
+    _assert('E, F' in over['text'] and ctas == [{'tp': 'bs_stars_pay', 'v': 3}, {'tp': 'bs_stars_pay', 'v': 1},
+                                                 {'tp': 'bs_trfs'}],
+            "over the free limit: named, every plan's invoice (Relay first) and change-plan")
     _assert(str(opml.MAX_FEEDS) in over['text'], "a cut file says so")
     _assert(opmlModule.result_message('en', opml.Result([], [], [], []))['text']
             == get_message('opmlEmpty', 'en'), "nothing at all: never an empty message")

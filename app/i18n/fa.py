@@ -119,7 +119,7 @@ FA_MESSAGES = {
     "nosubDigestRemindersOnToast": "یادآوری قسمت‌ها روشن شد",
     "nosubDigestRemindersOffToast": "یادآوری قسمت‌ها خاموش شد",
     "noSubs": "هیچ اشتراکی ندارید!",
-    "withoutTariffSubscriptionsLimited": "سقف رایگان: 15 پادکست.\n\nRelay (ماهی 5 دلار): برنامه‌های نامحدود + فایل صوتی در چت + انتشار خودکار در کانال شما.\n/subscription",
+    "withoutTariffSubscriptionsLimited": "سقف رایگان: 15 پادکست.\n\nهر طرح پایین این سقف را برمی‌دارد: پادکست نامحدود و قسمت‌های جدید به‌صورت فایل در چت. Relay آن‌ها را در کانال شما هم منتشر می‌کند.\nهمهٔ راه‌های پرداخت: /subscription",
     "withoutTariffCantChooseBitrate": "برای تغییر بیت‌ریت به اشتراک ربات نیاز دارید. اطلاعات بیشتر: /subscription",
     "podcastDoesNotExist": "دریافت اطلاعات پادکست ممکن نشد، بعداً دوباره تلاش کنید. شاید حذف شده باشد یا سازنده اجازهٔ دیدنش را نداده باشد.\nتوجه: اگر مشترک هستید و الان لغو کنید، ممکن است دیگر نتوانید مشترک شوید.",
     "botDescr": "با این ربات می‌توانید پادکست جستجو کنید، گوش دهید و مشترک شوید. اگر مشترک کانالی شوید، با انتشار هر قسمت جدید، ربات آن را برایتان می‌فرستد.",
@@ -237,9 +237,12 @@ FA_MESSAGES = {
     "freeEpisodesAnyPlan": "هر طرحی این سقف را برمی‌دارد:",
     "trialEpisodesUsed": "در دورهٔ آزمایشی روزانه تا {limit} قسمت می‌توانید بگیرید و سهم امروز تمام شده است.",
     "trialEpisodesNext": "قسمت بعدی تا {hours} ساعت دیگر. پرداخت Relay سقف را همان لحظه برمی‌دارد؛ قسمت‌های جدید پادکست‌هایتان مثل همیشه می‌آیند.",
-    "starsBundleButton": "📅 Relay برای {months} ماه · −{discount}% · {stars} ⭐",
-    "prepayLongestButton": "📅 Relay برای {months} ماه، {discount}% تخفیف",
-    "telegram_stars_bundle_description": "Relay برای {months} ماه با {discount}% تخفیف: ${balance} به موجودی شما در ازای {stars} ⭐. هر ماه از موجودی تمدید می‌شود. نرخ: 1000 ⭐ ≈ ${rate}.",
+    "bundlesButton": "📅 چند ماه یکجا: تا {discount}% تخفیف",
+    "bundlesBody": "<b>چند ماه یکجا</b>\n\nهرچه طولانی‌تر، ارزان‌تر: {terms}. قیمت کامل ماه‌ها به موجودی می‌رود و طرح هر ماه از آن تمدید می‌شود. اگر زودتر طرح را عوض کنید، تخفیف ماه‌های باقی‌مانده از موجودی کم می‌شود.\n\n{plans}",
+    "bundleMonths": "{months} ماه",
+    "bundlesOtherPlan": "ماه‌های طرحی دیگر: اول طرح را عوض کنید.",
+    "bundleDiscountBack": "تخفیف ماه‌های استفاده‌نشدهٔ بسته: ‎−${amount} از موجودی.",
+    "telegram_stars_bundle_description": "{plan} برای {months} ماه با {discount}% تخفیف: ${balance} به موجودی شما در ازای {stars} ⭐. هر ماه از موجودی تمدید می‌شود. نرخ: 1000 ⭐ ≈ ${rate}.",
     "winbackOffer": "یک هفته است Relay خاموش است و قسمت‌های جدید پادکست‌هایتان دیگر به‌صورت فایل نمی‌آیند.\n\nتحویل خودکار را برگردانید: ماه اول {discount}% تخفیف.",
     "winbackOfferLast": "تخفیف {discount}% ماه اول Relay هنوز منتظر شماست.\n\nقسمت‌های جدید دوباره به‌صورت فایل همین‌جا و به‌صورت پست در کانالتان می‌آیند.",
     "winbackOfferButton": "⭐ برگرداندن Relay −{discount}%",
@@ -421,8 +424,8 @@ FA_MESSAGES = {
 # built from config values, as messages.py builds the other languages
 FA_MESSAGES.update({
     "withoutTariffUpdateLimited":
-        "بدون Relay، به‌روزرسانی دستی به " + str(max_subscriptions_without_tariff)
-        + " پادکست محدود است. Relay: /subscription\n\n"
+        "بدون طرح، به‌روزرسانی دستی " + str(max_subscriptions_without_tariff)
+        + " پادکست را پوشش می‌دهد؛ هر طرح پایین این محدودیت را برمی‌دارد.\n\n"
         "می‌توانید از ربات هم حمایت کنید: /donate یا [Patreon.com](%s)" % donate_link,
     "functsDescr":
         "باز کردن منوی اصلی: /menu. همهٔ دستورهای زیر از منو هم در دسترس‌اند\n\n"

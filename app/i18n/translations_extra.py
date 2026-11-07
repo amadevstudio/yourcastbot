@@ -122,9 +122,9 @@ EXTRA_TRANSLATIONS = {
         "he": "<b>יש לך פרקים חדשים!</b>",
     },
     "withoutTariffUpdateLimited": {
-        "es": "Sin Relay, la actualización manual está limitada a 15 podcasts. Relay: /subscription\n\nTambién puede apoyar este bot: /donate o [Patreon.com](https://example.invalid/donate)",
-        "de": "Ohne Relay ist die manuelle Aktualisierung auf 15 Podcasts begrenzt. Relay: /subscription\n\nDu kannst diesen Bot auch unterstützen: /donate oder [Patreon.com](https://example.invalid/donate)",
-        "he": "ללא Relay העדכון הידני מוגבל ל-15 פודקאסטים. Relay: /subscription\n\nאפשר גם לתמוך בבוט הזה: /donate או [Patreon.com](https://example.invalid/donate)",
+        "es": "Sin plan, la actualización manual cubre 15 podcasts; cualquier plan de abajo quita el límite.\n\nTambién puede apoyar este bot: /donate o [Patreon.com](https://example.invalid/donate)",
+        "de": "Ohne Tarif umfasst die manuelle Aktualisierung 15 Podcasts; jeder Tarif unten hebt das Limit auf.\n\nDu kannst diesen Bot auch unterstützen: /donate oder [Patreon.com](https://example.invalid/donate)",
+        "he": "ללא מסלול העדכון הידני מכסה 15 פודקאסטים; כל מסלול למטה מסיר את המגבלה.\n\nאפשר גם לתמוך בבוט הזה: /donate או [Patreon.com](https://example.invalid/donate)",
     },
     "withoutTariffCantChooseBitrate": {
         "pt-BR": "É necessária uma assinatura do bot para alterar a taxa de bits. Mais informações: /subscription",

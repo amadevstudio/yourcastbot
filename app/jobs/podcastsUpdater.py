@@ -20,7 +20,7 @@ from app.controller.general.notify import notify
 from app.core.sender.send_record_helper import ChatParamsType, DescriptionModeOptions
 from app.routes.message_tools import go_back_inline_markup
 from app.service.payment.paymentSafeModule import is_subscription_active
-from app.service.payment.storefront import relay_nudge_markup
+from app.service.record.free_limit import plans_offer
 from lib.telegram.general.message_master import message_master, outer_sender, render_messages
 import lib.tools.time_tools.general
 from app.controller.builders.adminModule import send_message_to_creator
@@ -922,8 +922,8 @@ def update_feed(data: ControllerParams):
     ):
         need_time_to_load_message += "\n\n" + get_message(
             'withoutTariffUpdateLimited', data['language_code'])
-        # the limit is where Relay sells: its invoice is one tap away
-        need_time_markup = relay_nudge_markup(data['language_code'], invoice=True) + need_time_markup
+        # any plan lifts the limit: every plan's invoice is one tap away
+        need_time_markup = plans_offer(data['language_code'], free_bronze=True)[1] + need_time_markup
 
     notify_as_message = data.get('callback', None) is None or send_promo_message
 

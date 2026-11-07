@@ -2189,52 +2189,58 @@ messages = {
     "withoutTariffSubscriptionsLimited": {
         "ru": {
             "ro_msg": "Лимит бесплатно — 15 подкастов.\n\n"
-                      "Relay ($5/мес): безлимит подписок + файлы в чат + автопост в ваш канал.\n"
-                      "/subscription"
+                      "Любой план ниже снимает его: подкасты без лимита и новые выпуски файлами в чат. "
+                      "Relay ещё и публикует их в ваш канал.\n"
+                      "Все способы оплаты: /subscription"
         },
         "en": {
             "ro_msg": "Free limit: 15 podcasts.\n\n"
-                      "Relay ($5/mo): unlimited shows + audio files in chat + auto-post to your channel.\n"
-                      "/subscription"
+                      "Any plan below lifts it: unlimited shows and new episodes as files in the chat. "
+                      "Relay also posts them to your channel.\n"
+                      "Every way to pay: /subscription"
         },
         "pt-BR": {
             "ro_msg": "Limite grátis: 15 podcasts.\n\n"
-                      "Relay (US$5/mês): shows ilimitados + arquivos no chat + autopost no canal.\n"
-                      "/subscription"
+                      "Qualquer plano abaixo remove o limite: shows ilimitados e episódios novos como arquivos no chat. "
+                      "O Relay também os publica no seu canal.\n"
+                      "Todas as formas de pagar: /subscription"
         },
         "es": {
             "ro_msg": "Límite gratis: 15 podcasts.\n\n"
-                      "Relay ($5/mes): shows ilimitados + archivos en el chat + autopost en tu canal.\n"
-                      "/subscription"
+                      "Cualquier plan de abajo lo quita: shows ilimitados y episodios nuevos como archivos en el chat. "
+                      "Relay además los publica en tu canal.\n"
+                      "Todas las formas de pago: /subscription"
         },
         "de": {
             "ro_msg": "Kostenloses Limit: 15 Podcasts.\n\n"
-                      "Relay ($5/Monat): unbegrenzt Shows + Dateien im Chat + Autopost in deinen Kanal.\n"
-                      "/subscription"
+                      "Jeder Tarif unten hebt es auf: unbegrenzt Shows und neue Folgen als Dateien im Chat. "
+                      "Relay postet sie außerdem in deinen Kanal.\n"
+                      "Alle Zahlungswege: /subscription"
         },
         "he": {
             "ro_msg": "מגבלת חינם: 15 פודקאסטים.\n\n"
-                      "Relay ($5 לחודש): ללא הגבלה + קבצים בצ'אט + פרסום לערוץ.\n"
-                      "/subscription"
+                      "כל מסלול למטה מסיר אותה: פודקאסטים ללא הגבלה ופרקים חדשים כקבצים בצ'אט. "
+                      "Relay גם מפרסם אותם בערוץ שלכם.\n"
+                      "כל דרכי התשלום: /subscription"
         }
     },
     "withoutTariffUpdateLimited": {
         "ru": {
-            "ro_msg": "Без Relay ручное обновление ограничено "
+            "ro_msg": "Без плана ручное обновление охватывает "
                       + str(max_subscriptions_without_tariff)
-                      + " подкастами. Relay — /subscription\n\n"
+                      + " подкастов; любой план ниже снимает лимит.\n\n"
                       "Можно также поддержать бота: /donate или [Patreon.com](%s)" % donate_link
         },
         "en": {
-            "ro_msg": "Without Relay, manual update is limited to "
+            "ro_msg": "Without a plan, manual update covers "
                       + str(max_subscriptions_without_tariff)
-                      + " podcasts. Relay: /subscription\n\n"
+                      + " podcasts; any plan below lifts the limit.\n\n"
                       "You can also support this bot: /donate or [Patreon.com](%s)" % donate_link
         },
         "pt-BR": {
-            "ro_msg": "Sem Relay, a atualização manual é limitada a "
+            "ro_msg": "Sem plano, a atualização manual cobre "
                       + str(max_subscriptions_without_tariff)
-                      + " podcasts. Relay: /subscription\n\n"
+                      + " podcasts; qualquer plano abaixo remove o limite.\n\n"
                       "Você também pode apoiar o bot: /donate ou [Patreon.com](%s)" % donate_link
         }
     },

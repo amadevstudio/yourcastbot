@@ -87,8 +87,8 @@ def pricing():
 
 
 def _terms_open(stars):
-    """No plan running: Relay's terms are open (relay_terms reads a real database)."""
-    return patch.object(stars, 'relay_terms_open', lambda *_a, **_kw: True)
+    """No plan running: every plan's terms are open (plan_terms_open reads a real database)."""
+    return patch.object(stars, 'plan_terms_open', lambda *_a, **_kw: True)
 
 
 def bundle_invoice(stars):
@@ -105,8 +105,13 @@ def _bundle_invoice(stars):
     _assert_eq(sent[0][6][0].amount, payload['s'], "the invoice asks exactly that")
     _assert(stars.validate_precheckout_payload(sent[0][3], 601, 'XTR', payload['s'])[0],
             "the bundle passes the pre-checkout")
-    _assert_eq(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 1, 'm': 6}), [],
-               "prepaid months are Relay's only")
+    bronze_months = _invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 1, 'm': 6})
+    bronze_payload = json.loads(bronze_months[0][3])
+    _assert_eq((bronze_payload['b'], bronze_payload['m'], bronze_payload['d'], bronze_payload['v']),
+               (300, 6, 15, 1), "every plan has prepaid months: 6 of Bronze credit 6 Bronze prices, 15% off")
+    _assert_eq(bronze_payload['s'], stars.stars_for_balance(255, RATE), "and charge 85% of them")
+    _assert_eq(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 1, 'o': 'wb'}), [],
+               "the win-back offer is Relay's only")
     _assert_eq(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 3, 'm': 5}), [],
                "months that are not sold get no invoice")
     _assert_eq(payload['v'], 3, "the invoice names the plan it is for")
@@ -114,6 +119,8 @@ def _bundle_invoice(stars):
     with patch.object(_TariffsDB, 'subscription', bronze):
         _assert_eq(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 3, 'm': 12}), [],
                    "a running Bronze is not sold Relay's months (it would renew Bronze)")
+        _assert_eq(len(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 1, 'm': 12})), 1,
+                   "but is sold its own months")
         _assert_eq(len(_invoice(stars, 601, {'tp': 'bs_stars_pay', 'v': 3})), 1,
                    "but can top up as before")
 
@@ -358,6 +365,21 @@ def relay_terms(stars):
                 _assert_eq(stars.validate_precheckout_payload(payload, 631, 'XTR', amount),
                            (False, "Another plan is running"),
                            "%s: refused at the pre-checkout once Bronze runs (Bronze would get it)" % what)
+            own = stars.create_payload(631, 600, stars.stars_to_charge(600, RATE, 25), RATE, 12, 25, plan_id=1)
+            _assert(stars.validate_precheckout_payload(own, 631, 'XTR', json.loads(own)['s'])[0],
+                    "a running Bronze may take Bronze's own months")
+            db = SQLighter(path)
+            try:
+                db.subscribeUserToTariffByTg(631, 3, 0, 100, -1)  # and now Relay runs
+            finally:
+                db.close()
+            _assert_eq(stars.validate_precheckout_payload(own, 631, 'XTR', json.loads(own)['s']),
+                       (False, "Another plan is running"), "Bronze's months are refused once Relay runs")
+            db = SQLighter(path)
+            try:
+                db.subscribeUserToTariffByTg(631, 1, 0, 100, 30)
+            finally:
+                db.close()
             plain = stars.create_payload(631, 500, stars.stars_for_balance(500, RATE), RATE, plan_id=3)
             _assert(stars.validate_precheckout_payload(plain, 631, 'XTR', json.loads(plain)['s'])[0],
                     "a plain top-up of Relay's price still passes: it tops Bronze up, as before")
@@ -373,9 +395,19 @@ def page_rows(stars):
     from app.service.payment import paymentModule
 
     def months(tariff_id, level, time_left):
+        """{plan id: months} on the page of prepaid months of a user on that plan."""
+        page = stars.bundles_message('en', level, tariff_id > 0 and time_left > 0, RATE)
+        found = {}
+        for row in page['reply_markup']:
+            for button in row:
+                data = button.get('callback_data') or {}
+                if data.get('m'):
+                    found.setdefault(data['v'], []).append(data['m'])
+        return found
+
+    def stars_page(tariff_id, level, time_left):
         markup = stars.get_sub_message('en', tariff_id, level, 0, 0, time_left, 0, RATE)['markup']
-        return [row[0]['callback_data'].get('m') for row in markup
-                if row[0]['callback_data'].get('m')]
+        return [button['callback_data'] for row in markup for button in row if button.get('callback_data')]
 
     def main_page(level, time_left):
         """The one-time payment page (bs_once) of a user on that plan."""
@@ -386,14 +418,114 @@ def page_rows(stars):
             paymentModule.open_once_page({'chat_id': 1, 'language_code': 'en'})
         return [row[0]['callback_data'] for row in sent[0]['reply_markup']
                 if row[0].get('callback_data', {}).get('m')]
+    every = {3: [3, 6, 12], 1: [3, 6, 12]}
     with patch.object(stars, 'SQLighter', _TariffsDB):
-        _assert_eq(months(3, 3, 100), [3, 6, 12], "a Relay plan sees the prepaid months")
-        _assert_eq(months(0, 0, 0), [3, 6, 12], "so does a user with no plan running")
-        _assert_eq(months(1, 1, 0), [3, 6, 12], "and one whose Bronze has ended")
-        _assert_eq(months(1, 1, 100), [], "a running Bronze does not")
-    _assert_eq(main_page(0, 0), [{'tp': 'bs_stars_pay', 'm': 12}],
-               "the one-time page bills the longest bundle in one tap")
-    _assert_eq(main_page(1, 100), [], "but not to a running Bronze")
+        _assert_eq(months(0, 0, 0), every, "no plan running: every plan's months, Relay first")
+        _assert_eq(months(1, 1, 0), every, "a Bronze that has ended: the same")
+        _assert_eq(months(3, 3, 100), {3: [3, 6, 12]}, "a running Relay: its own months")
+        _assert_eq(months(1, 1, 100), {1: [3, 6, 12]}, "a running Bronze: its own months, not Relay's")
+        _assert({'tp': 'bs_long'} in stars_page(0, 0, 0) and {'tp': 'bs_long'} in stars_page(1, 1, 100)
+                and not any(data.get('m') for data in stars_page(0, 0, 0)),
+                "the Stars page: one button to the months, not a row per bundle")
+    _assert_eq(main_page(0, 0), [], "the one-time page bills no bundle itself")
+
+    def once_rows(level, time_left):
+        sent = []
+        tariff = {'id': level, 'level': level, 'price': 500}
+        with patch.object(paymentModule, 'get_tariff_params_by_tg', lambda _c, **_kw: (tariff, 0, time_left, 0)), \
+                patch.object(paymentModule, 'render_messages', lambda _c, msgs: sent.append(msgs[0])):
+            paymentModule.open_once_page({'chat_id': 1, 'language_code': 'en'})
+        return [row[0].get('callback_data') for row in sent[0]['reply_markup']]
+    _assert({'tp': 'bs_long'} in once_rows(0, 0) and {'tp': 'bs_long'} in once_rows(1, 100),
+            "it opens the months, for a running Bronze too (its own)")
+
+
+def bundle_take_back(stars):
+    """Leaving a plan before its prepaid months are used takes back the discount on the months still
+    on the balance, to the cent and once: what stays is what was paid for those months. It never
+    takes more than the months the balance holds, nor for a month the tick may already have renewed;
+    a refund of the bundle afterwards takes back only what is left of it."""
+    import datetime
+    from app.service.payment import offers
+    from db import payments, stars_refund
+    from db.sqliteAdapter import SQLighter
+    path = _temp_db()
+    now = datetime.datetime(2026, 11, 8, 12, 0, 0)
+    db = SQLighter(path)
+    try:
+        for tg in range(651, 665):
+            db.register_new_user(tg, 'en')
+    finally:
+        db.close()
+
+    def paid(tg, amount, charged, hours_ago, status='paid'):
+        conn = sqlite3.connect(path)
+        try:
+            payments.ensure_charged_column(conn)
+            uid = conn.execute("SELECT id FROM users WHERE telegramId = ?", (tg,)).fetchone()[0]
+            charge = 'c-%d-%s-%d' % (tg, hours_ago, amount)
+            conn.execute(
+                "INSERT INTO payment_history (user_id, service_type, invoice_id, status, amount, charged, datetime) "
+                "VALUES (?, 'telegramStars', ?, ?, ?, ?, ?)",
+                (uid, charge, status, amount, charged,
+                 str(now - datetime.timedelta(hours=hours_ago))))
+            conn.commit()
+        finally:
+            conn.close()
+        return charge
+
+    def back(tg, price, balance):
+        return offers.bundle_discount_back(tg, price, balance, now=now, database=path)[0]
+
+    # Relay $5, 12 months 25% off: $60 credited, $45 charged, $1.25 off each month
+    _assert_eq((charged_cents(6000, 25), charged_cents(3000, 15), charged_cents(1500, 10)), (4500, 2550, 1350),
+               "the bundles' charges")
+    paid(651, 6000, 4500, 960)
+    _assert_eq(back(651, 500, 5000), 1250, "40 days in: 2 months used, 10 on the balance, 10 x $1.25 back")
+    _assert_eq(5000 - 1250, 10 * 4500 // 12, "what stays is what was paid for those 10 months")
+    paid(652, 6000, 4500, 718)
+    _assert_eq(back(652, 500, 5500), 11 * 125, "718 h in: the first month runs, 11 on the balance")
+    paid(653, 6000, 4500, 719.5)
+    _assert_eq(back(653, 500, 5500), 10 * 125,
+               "719.5 h in, the renewal may be due: counted as renewed (less taken, never more)")
+    paid(654, 6000, 4500, 960)
+    _assert_eq(back(654, 500, 1200), 2 * 125, "never more months than the balance holds")
+    paid(655, 6000, 4500, 960)
+    _assert_eq(back(655, 500, 9000), 1250, "a top-up on top is not a bundle: still 10 months")
+    paid(656, 3000, 2550, 240)
+    _assert_eq(back(656, 500, 2500), 5 * 450 // 6, "6 months 15% off, 10 days in: 5 months of $0.75")
+    paid(657, 500, 350, 10)
+    _assert_eq(back(657, 500, 0), 0, "the win-back month is no bundle")
+    paid(658, 6000, 4500, 960, status='refunded')
+    _assert_eq(back(658, 500, 5000), 0, "a refunded bundle is not taken back again")
+    paid(659, 6000, 4500, 12 * 720)
+    _assert_eq(back(659, 500, 0), 0, "a bundle used up: nothing")
+    paid(660, 150, 135, 0)
+    _assert_eq(back(660, 50, 100), 2 * 15 // 3, "Bronze's 3 months at 10%, just bought: 2 months on the balance")
+    paid(661, 6000, 4500, 960)
+    paid(661, 1500, 1350, 100)
+    taken = back(661, 500, 6500)
+    _assert_eq(taken, 1250 + 2 * 50, "two bundles: each by its own clock")
+    _assert(taken <= 10 * 125 + 3 * 50, "never more than the discount truly left (the second's 3 months)")
+    _assert_eq(back(662, 500, 5000), 0, "no bundle: nothing")
+    paid(663, 6000, 4545, 960)
+    _assert_eq(back(663, 500, 5000), 0, "a charge no bundle gives (another discount): not taken")
+
+    cents, settle = offers.bundle_discount_back(651, 500, 5000, now=now, database=path)
+    offers.settle_bundles(settle, database=path)
+    _assert_eq(back(651, 500, 3750), 0, "taken back once: a second switch takes nothing")
+
+    charge = paid(664, 6000, 4500, 960)
+    cents, settle = offers.bundle_discount_back(664, 500, 5000, now=now, database=path)
+    offers.settle_bundles(settle, database=path)
+    db = SQLighter(path)
+    try:
+        db.subscribeUserToTariffByTg(664, 1, 5000 - cents, 400, 30)
+    finally:
+        db.close()
+    refund = stars_refund.apply_refund(charge, database=path)
+    _assert_eq(refund['amount'], 6000 - 1250, "a refund afterwards takes what is left of the bundle, not the discount twice")
+    os.remove(path)
 
 
 def subscription(stars):
@@ -548,6 +680,7 @@ def main():
     winback_offer(stars)
     relay_terms(stars)
     page_rows(stars)
+    bundle_take_back(stars)
     subscription(stars)
     print("all Stars invoice checks passed")
 
