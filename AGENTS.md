@@ -842,6 +842,9 @@ convert), `plan_reminder_sent {level, days_left, paid_before, offer, shows}`
 (D-3), `winback_sent {stage, offer}`, `payment {method, amount_cents,
 charged_cents, offer, ...}` (Stars, CryptoBot),
 `summary_ready {cached, seconds, model}`, `transcript_ready {source, made, seconds, model}`
+(both with `source: voice` for voice messages; the voice handlers, outside the route map,
+send `voice_help`, `voice_received {seconds | rejected}`, `voice_requested {output, mode,
+recordings, seconds, allowed}` themselves)
 (a transcript file sent; `made`: we made it now; `source` `speakers`: the paid model; `model`: the
 OpenRouter id when made now), `episode_delivered {mode, format}` (one per
 user chat that got the audio, from the sender: most listeners never tap, so
