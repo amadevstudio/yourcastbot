@@ -31,6 +31,24 @@ function usd(value: number) {
   return `$${value < 1 && value > 0 ? value.toFixed(3) : value.toFixed(2)}`;
 }
 
+const SURVEY_GROUPS: Record<string, string> = {
+  limit: "Упираются в лимит",
+  ended: "Relay кончился, пользовались",
+  idle: "Relay кончился, не пользовались",
+};
+
+const SURVEY_ANSWERS: Record<string, string> = {
+  price: "Дорого",
+  pay: "Неудобно платить",
+  free: "Хватает бесплатного",
+  need: "Бот не очень нужен",
+  own: "Напишу сам",
+  how: "Не разобрался",
+  find: "Не нашёл свои подкасты",
+  app: "Другое приложение",
+  tg: "Не нужны подкасты в Telegram",
+};
+
 function Metric({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className="min-w-0 space-y-1">
@@ -176,6 +194,56 @@ export default function Product() {
                   ))}
                 </div>
               </>
+            )}
+          </Card>
+
+          <Card className="min-w-0">
+            <h2 className="mb-1 font-semibold">Опрос: почему не платят</h2>
+            <Hint className="mb-4">
+              Один раз каждому до 21.11: без плана и упираются в лимит, или Relay кончился 2+ дня назад.
+              Первый ответ дарит неделю Relay. Каждый ответ и текст ещё приходят в Telegram с тегом #survey.
+            </Hint>
+            {data.survey.groups.length === 0 ? (
+              <Hint>Опрос ещё никому не ушёл.</Hint>
+            ) : (
+              <div className="grid gap-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {data.survey.groups.map((g) => (
+                    <Metric
+                      key={g.group}
+                      label={SURVEY_GROUPS[g.group] ?? g.group}
+                      value={`${g.answered} из ${g.sent}`}
+                      hint={`Ответили ${pct(g.answered, g.sent)}%, неделю получили ${g.rewarded}, заблокировали ${g.blocked}, платили когда-либо ${g.paid}.`}
+                    />
+                  ))}
+                </div>
+                {data.survey.answers.length > 0 && (
+                  <ul className="grid gap-1 text-sm">
+                    {data.survey.answers.map((a) => (
+                      <li key={`${a.group}-${a.answer}`} className="flex min-w-0 justify-between gap-3">
+                        <span className="min-w-0 truncate">
+                          {SURVEY_ANSWERS[a.answer] ?? a.answer}
+                          <span className="text-zinc-500"> · {SURVEY_GROUPS[a.group] ?? a.group}</span>
+                        </span>
+                        <span className="tabular-nums">{a.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {data.survey.texts.length > 0 && (
+                  <div className="grid gap-2">
+                    <h3 className="text-sm font-semibold">Что написали</h3>
+                    {data.survey.texts.map((t, i) => (
+                      <blockquote key={i} className="border-l-2 border-zinc-300 pl-3 text-sm break-words whitespace-pre-wrap">
+                        {t.text}
+                        <div className="mt-1 text-xs text-zinc-500">
+                          {SURVEY_ANSWERS[t.answer] ?? t.answer} · {SURVEY_GROUPS[t.group] ?? t.group} · {t.lang ?? "?"}
+                        </div>
+                      </blockquote>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </Card>
 

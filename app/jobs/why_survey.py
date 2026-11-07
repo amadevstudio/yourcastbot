@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""One question to the listeners nearest to paying: what stops you from taking a plan?
+"""One question to the listeners nearest to paying, what stops you from taking a plan,
+and to the trials nobody used, what got in the way.
 
 On 2026-11-07 none of the 66 Relay trials that had ended was paid for, and the
 D-3, plan-off and win-back messages (154, with the 30% offer) brought one tap.
@@ -10,7 +11,11 @@ bot asks them, once each:
   last 14 days (they meet the cap or come close to it);
 - `ended`: their Relay ended (`winback`) at least `ENDED_AFTER_DAYS` ago, no plan
   running now, and they used the bot themselves (a show of their own, a click,
-  a summary or a transcript), not only the welcome show's files.
+  a summary or a transcript), not only the welcome show's files;
+- `idle`: their Relay ended as above, and they used nothing (most trials: the
+  welcome show's files only). They are asked what got in the way instead
+  (`IDLE_ANSWERS`: how it works, their podcasts not found, another app, no
+  need for podcasts in Telegram), with no offer.
 
 The message names four reasons and "I'll write it myself" (route `why`,
 `whySurveyModule`); a trial's end that has not spent the offer gets the first
@@ -18,9 +23,10 @@ month at the discount under it, with change-plan (storefront rules). The first
 answer of a chat the survey reached gives a week of Relay (`grant_week`, once:
 `users.flags` `why_reward`): a running plan gets the hours on top, else Relay
 runs for the week on the balance the chat has. A chat whose balance covers
-Relay is not asked: the tick would renew the gift from that money. It goes until `why_survey_until` (config), so
-the trials that end meanwhile are asked too. `users.flags` `why_survey`:
-unsent, then sent (a crash in between never sends it twice). Never to a blocked
+Relay is not asked: the tick would renew the gift from that money. It goes
+until `why_survey_until` (config), so the trials that end meanwhile are asked
+too. `users.flags` `why_survey`: unsent, then sent (a crash in between never
+sends it twice); `why_group` the group it was sent for. Never to a blocked
 chat, never fails the jobs role.
 Lock: python app/jobs/test_why_survey.py
 """
@@ -34,7 +40,10 @@ from lib.tools.logger import logger
 
 SURVEY_FLAG = "why_survey"
 ACTION = "why"  # the route its buttons open
-ANSWERS = ("price", "pay", "free", "need", "own")
+PAY_ANSWERS = ("price", "pay", "free", "need", "own")
+IDLE_ANSWERS = ("how", "find", "app", "tg", "own")
+ANSWERS = PAY_ANSWERS + IDLE_ANSWERS[:-1]
+GROUP_FLAG = "why_group"
 REWARD_FLAG = "why_reward"
 REWARD_HOURS = 7 * 24
 LIMIT_DAYS = 14
@@ -64,21 +73,24 @@ def due(database=None, now=None) -> list:
             "WHERE %s AND e.kind = 'rec' AND e.at >= ? GROUP BY u.telegramId "
             "HAVING COUNT(DISTINCT e.ref) >= ?" % unmarked,
             (now - LIMIT_DAYS * 86400, free_rec_per_week)).fetchall()
-        ended = connection.execute(
-            "SELECT u.telegramId, u.lang FROM users u JOIN winback w ON w.user_telegram_id = u.telegramId "
-            "WHERE %s AND w.ended_at <= ? AND ("
+        trials = connection.execute(
+            "SELECT u.telegramId, u.lang, ("
             "EXISTS (SELECT 1 FROM user_channel_cs s WHERE s.user_telegram_id = u.telegramId "
             "AND s.channel_id != ?) "
             "OR EXISTS (SELECT 1 FROM usage_events e WHERE e.user_id = u.telegramId "
-            "AND e.kind IN ('rec', 'ai', 'transcript', 'ask')))" % unmarked,
-            (now - ENDED_AFTER_DAYS * 86400, WELCOME_CHANNEL_ID)).fetchall()
+            "AND e.kind IN ('rec', 'ai', 'transcript', 'ask'))) "
+            "FROM users u JOIN winback w ON w.user_telegram_id = u.telegramId "
+            "WHERE %s AND w.ended_at <= ?" % unmarked,
+            (WELCOME_CHANNEL_ID, now - ENDED_AFTER_DAYS * 86400)).fetchall()
         covered = {row[0] for row in connection.execute(
             "SELECT u.telegramId FROM users u JOIN user_tariff_cs ut ON ut.uid = u.id "
             "WHERE ut.balance >= (SELECT price FROM tariffs WHERE level = ?)", (SHOWCASE_TARIFF_LEVEL,))}
     finally:
         connection.close()
     found = {}
-    for group, rows in (("ended", ended), ("limit", limit)):
+    ended = [(tg, lang) for tg, lang, used in trials if used]
+    idle = [(tg, lang) for tg, lang, used in trials if not used]
+    for group, rows in (("ended", ended), ("limit", limit), ("idle", idle)):
         for telegram_id, lang in rows:
             found.setdefault(telegram_id, (telegram_id, lang, group))
     return [row for telegram_id, row in found.items()
@@ -124,14 +136,20 @@ def grant_week(telegram_id, database=None, now=None) -> int:
         connection.close()
 
 
-def survey_message(language_code, telegram_id, database=None) -> dict:
-    """The question, a button per reason, and a trial's offer when it is due."""
+def survey_message(language_code, telegram_id, database=None, group="ended") -> dict:
+    """The question, a button per reason, the gift, and a trial's offer when it is due; an idle
+    trial is asked what got in the way, with no offer."""
     from app.i18n.messages import get_message
     from app.service.payment import plan_end
     from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
     from db.sqliteAdapter import SQLighter
+    answers = IDLE_ANSWERS if group == "idle" else PAY_ANSWERS
     rows = [[{'text': get_message("whyAnswer_" + answer, language_code),
-              'callback_data': {'tp': ACTION, 'a': answer}}] for answer in ANSWERS]
+              'callback_data': {'tp': ACTION, 'a': answer}}] for answer in answers]
+    reward = get_message("whyReward", language_code).format(days=REWARD_HOURS // 24)
+    if group == "idle":
+        return {'type': 'text', 'text': get_message("whySurveyIdle", language_code) + "\n\n" + reward,
+                'reply_markup': rows, 'disable_web_page_preview': True}
     db = SQLighter(db_path if database is None else database)
     try:
         price = next((int(t['price']) for t in db.getTariffs() if int(t['level']) == SHOWCASE_TARIFF_LEVEL), 500)
@@ -139,8 +157,7 @@ def survey_message(language_code, telegram_id, database=None) -> dict:
         db.close()
     line, offer_row = plan_end.trial_offer(telegram_id, SHOWCASE_TARIFF_LEVEL, price, language_code,
                                            analytics_events.SURVEY_SOURCE, database=database)
-    text = get_message("whySurvey", language_code) + "\n\n" + get_message("whyReward", language_code).format(
-        days=REWARD_HOURS // 24)
+    text = get_message("whySurvey", language_code) + "\n\n" + reward
     if offer_row:
         from app.service.payment.storefront import CHANGE_PLAN_CALLBACK
         text += "\n\n" + line
@@ -150,11 +167,11 @@ def survey_message(language_code, telegram_id, database=None) -> dict:
     return {'type': 'text', 'text': text, 'reply_markup': rows, 'disable_web_page_preview': True}
 
 
-def _mark(telegram_id, value, database=None):
+def _mark(telegram_id, value, database=None, flag=SURVEY_FLAG):
     from db.sqliteAdapter import SQLighter
     db = SQLighter(db_path if database is None else database)
     try:
-        db.set_user_flag(telegram_id, SURVEY_FLAG, value)
+        db.set_user_flag(telegram_id, flag, value)
     finally:
         db.close()
 
@@ -169,8 +186,9 @@ def send_surveys(database=None, now=None, send=None) -> int:
     for telegram_id, lang, group in due(database, now):
         try:
             _mark(telegram_id, "unsent", database)  # first: a crash in between never sends it twice
-            if send(telegram_id, [survey_message(lang or "en", telegram_id, database)]):
+            if send(telegram_id, [survey_message(lang or "en", telegram_id, database, group)]):
                 _mark(telegram_id, "sent", database)
+                _mark(telegram_id, group, database, GROUP_FLAG)
                 analytics_events.track(telegram_id, "survey_sent", {"group": group}, database=database)
                 sent += 1
         except Exception as e:

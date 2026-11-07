@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-""""What stops you from taking a plan?": asked once of the chats nearest to paying.
+""""What stops you from taking a plan?": asked once of the chats nearest to paying;
+the trials nobody used are asked what got in the way.
 A free chat with the week's episodes by click in the last 14 days, and a chat
-whose Relay ended two days ago or more and that used the bot itself; not a chat
-with a plan running, not one that only got the welcome show, not a blocked one,
+whose Relay ended two days ago or more and that used the bot itself (one that
+only got the welcome show is asked the idle question); not a chat with a plan
+running, not a blocked one,
 not the creator, never twice, not a chat whose balance would renew Relay, and only
 until why_survey_until. A send Telegram did not take is marked and not
 retried. The message has a button per reason, the week's gift and, for a
@@ -59,7 +61,7 @@ def _db(path, now):
         (6002, 'ru', None),  # free, nine: not
         (6003, 'es', None),  # ten episodes, but a plan running: not
         (6004, 'de', None),  # Relay ended 3 days ago, a show of their own: asked (ended)
-        (6005, 'en', None),  # Relay ended 3 days ago, only the welcome show's files: not
+        (6005, 'en', None),  # Relay ended 3 days ago, only the welcome show's files: asked (idle)
         (6006, 'en', None),  # Relay ended yesterday, clicked: not yet
         (6007, 'fa', None),  # Relay ended 5 days ago, asked for a summary: asked (ended)
         (6008, 'en', '2026-11-01 10:00:00'),  # blocked, ten episodes: not
@@ -112,7 +114,8 @@ def test_schedule():
     os.close(fd)
     sent, events = [], []
     saved = why_survey.survey_message, analytics_events.track, why_survey.why_survey_until
-    why_survey.survey_message = lambda lang, tg, database=None: {'type': 'text', 'text': 'why ' + lang}
+    why_survey.survey_message = lambda lang, tg, database=None, group='ended': {
+        'type': 'text', 'text': 'why %s %s' % (lang, group)}
     analytics_events.track = lambda tg, event, props=None, database=None, **kw: events.append((tg, event, props))
     why_survey.why_survey_until = time.strftime('%Y-%m-%d', time.gmtime(now + DAY))
 
@@ -123,15 +126,17 @@ def test_schedule():
     try:
         _db(path, now)
         due = {tg: group for tg, _, group in why_survey.due(path, now)}
-        _assert(due == {6001: 'limit', 6004: 'ended', 6007: 'ended', 6009: 'limit'},
-                "the free chats at the week's cap and the ended trials that used the bot are due")
-        _assert(why_survey.send_surveys(path, now, send=telegram) == 3, "three got it")
-        _assert(sorted(sent) == [(6001, 'why en'), (6004, 'why de'), (6007, 'why fa'), (6009, 'why pt-BR')],
-                "in each chat's language")
+        _assert(due == {6001: 'limit', 6004: 'ended', 6005: 'idle', 6007: 'ended', 6009: 'limit'},
+                "the free chats at the week's cap, the ended trials that used the bot, and the idle ones")
+        _assert(why_survey.send_surveys(path, now, send=telegram) == 4, "four got it")
+        _assert(sorted(sent) == [(6001, 'why en limit'), (6004, 'why de ended'), (6005, 'why en idle'),
+                                 (6007, 'why fa ended'), (6009, 'why pt-BR limit')],
+                "in each chat's language, each its group's question")
         flags = _flags(path)
         _assert(flags[6001] == 'sent' and flags[6009] == 'unsent' and flags[6002] is None,
                 "marked; the one Telegram did not take is marked unsent")
-        _assert(sorted(e[2]['group'] for e in events if e[1] == 'survey_sent') == ['ended', 'ended', 'limit'],
+        _assert(_flags(path, 'why_group')[6005] == 'idle', "with the group it was sent for")
+        _assert(sorted(e[2]['group'] for e in events if e[1] == 'survey_sent') == ['ended', 'ended', 'idle', 'limit'],
                 "each send is counted with its group")
         sent.clear()
         _assert(why_survey.send_surveys(path, now + 600, send=telegram) == 0 and not sent,
@@ -167,7 +172,7 @@ def test_message():
         c.close()
         message = why_survey.survey_message('en', 6004, path)
         buttons = [row[0]['callback_data'] for row in message['reply_markup']]
-        _assert([b.get('a') for b in buttons[:5]] == list(why_survey.ANSWERS) and buttons[0]['tp'] == 'why',
+        _assert([b.get("a") for b in buttons[:5]] == list(why_survey.PAY_ANSWERS) and buttons[0]['tp'] == 'why',
                 "a button per reason, the route why")
         _assert(buttons[5]['tp'] == 'bs_stars_pay' and buttons[5].get('o') and buttons[5].get('s') == 'why',
                 "a trial that has not spent it gets the first month's offer, tagged as the survey's")
@@ -177,8 +182,12 @@ def test_message():
         again = why_survey.survey_message('ru', 6004, path)
         _assert(len(again['reply_markup']) == 7 and 'план' in again['text'] and '7 дней' in again['text'],
                 "in Russian too")
-        _assert(len(why_survey.survey_message('en', 6001, path)['reply_markup']) in (5, 7),
+        _assert(len(why_survey.survey_message('en', 6001, path, 'limit')['reply_markup']) in (5, 7),
                 "a free chat gets the reasons")
+        idle = why_survey.survey_message('en', 6005, path, 'idle')
+        _assert([row[0]['callback_data']['a'] for row in idle['reply_markup']] == list(why_survey.IDLE_ANSWERS)
+                and 'What got in the way' in idle['text'] and '7 days of Relay' in idle['text'],
+                "an idle trial is asked what got in the way, with the gift and no offer")
     finally:
         os.remove(path)
 
@@ -270,21 +279,27 @@ def test_answers():
                 "the answer is kept and counted, with the gift")
         _assert('#survey pay (en) from 7001, +7 d of Relay' in creator[-1], "and sent to the creator")
         _assert('Relay is on for you for 7 days' in renders[-1]['text'] and 'a few words' in renders[-1]['text']
-                and renders[-1]['reply_markup'][0][0]['url'] == config.channel_direct_url
+                and [b['url'] for b in renders[-1]['reply_markup'][0]] == [config.channel_url,
+                                                                           config.channel_direct_url]
+                and "our channel" in renders[-1]['text']
                 and renders[-1]['reply_markup'][1][0]['callback_data'] == {'tp': 'bck'},
-                "a new message says the gift and asks for more, the channel's messages and Back")
+                "a new message says the gift and asks for more, the channel to read and to write, and Back")
         module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'own'}))
         _assert('Write it in one message' in renders[-1]['text'] and 'Relay is on' not in renders[-1]['text']
                 and events[-1][1]['reward_hours'] == 0, "a second answer: no second gift; 'own' asks for the text")
+        module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'find'}))
+        _assert('what got in the way' in renders[-1]['text'], "an idle answer asks what got in the way")
         _assert(module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'x'})) is False,
                 "an unknown answer is ignored")
         text = {'callback': None, 'message': Message('Stars are hard to buy in my country <3'), 'chat_id': 7001,
                 'language_code': 'en', 'united_data': {}}
         _assert(module.why_route(text) is False and state[(7001, 'current')] == 'menu',
                 "the text after it: back at the menu")
-        _assert(creator[-1].endswith('Stars are hard to buy in my country <3') and '#survey own' in creator[-1],
+        _assert(flags[(7001, 'why_text')] == 'Stars are hard to buy in my country <3'
+                and flags[(7001, 'why_text_at')] > 0, "and kept for the admin page")
+        _assert(creator[-1].endswith('Stars are hard to buy in my country <3') and '#survey find' in creator[-1],
                 "the creator gets the text as it is")
-        _assert(events[-1] == ('survey_text', {'answer': 'own', 'chars': 38}), "the text is counted")
+        _assert(events[-1] == ('survey_text', {'answer': 'find', 'chars': 38}), "the text is counted")
         state[(7001, 'why')]['at'] = time.time() - 2 * module.IDLE_SECONDS
         searched = []
         saved_search = module.summaryModule.search_instead
@@ -293,7 +308,7 @@ def test_answers():
             module.why_route(dict(text, message=Message('Lex Fridman')))
         finally:
             module.summaryModule.search_instead = saved_search
-        _assert(searched and len(creator) == 3, "long after the tap a text is a search, not an answer")
+        _assert(searched and len(creator) == 4, "long after the tap a text is a search, not an answer")
     finally:
         (adapter.SQLighter, module.storage.set_user_state_data, module.storage.get_user_state_data,
          module.storage.add_user_state, module.render_messages, module.send_message_to_creator,

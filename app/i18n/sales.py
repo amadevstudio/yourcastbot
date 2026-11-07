@@ -427,6 +427,51 @@ ROWS = {
                       '✍️ Ich schreibe es selbst', '✍️ אכתוב בעצמי'),
     'whyChannel': ('💬 Написать в канал', '💬 Message the channel', '💬 Escrever ao canal', '💬 Escribir al canal',
                    '💬 Dem Kanal schreiben', '💬 לכתוב לערוץ'),
+    'whySurveyIdle': (
+        'Здравствуйте! Я разработчик Yourcast. Вижу, что бот вам так и не пригодился, и мне важно понять почему. '
+        'Что помешало? Одно нажатие очень поможет.',
+        "Hi! I'm the developer of Yourcast. It looks like the bot didn't turn out useful for you, and I'd like to "
+        "understand why. What got in the way? One tap helps a lot.",
+        'Olá! Sou o desenvolvedor do Yourcast. Parece que o bot não chegou a ser útil para você, e eu queria '
+        'entender por quê. O que atrapalhou? Um toque já ajuda muito.',
+        '¡Hola! Soy el desarrollador de Yourcast. Parece que el bot no te llegó a servir y quiero entender por qué. '
+        '¿Qué te lo impidió? Un toque ayuda mucho.',
+        'Hallo! Ich entwickle Yourcast. Der Bot war dir anscheinend nicht nützlich, und ich möchte verstehen, '
+        'warum. Was stand im Weg? Ein Tippen hilft sehr.',
+        'שלום! אני המפתח של Yourcast. נראה שהבוט לא היה שימושי עבורכם, ואני רוצה להבין למה. מה הפריע? '
+        'לחיצה אחת תעזור מאוד.'),
+    'whyAnswer_how': ('🤔 Не разобрался, как пользоваться', "🤔 I didn't get how it works",
+                      '🤔 Não entendi como funciona', '🤔 No entendí cómo funciona',
+                      '🤔 Ich habe nicht verstanden, wie er funktioniert', '🤔 לא הבנתי איך זה עובד'),
+    'whyAnswer_find': ('🔍 Не нашёл свои подкасты', "🔍 I couldn't find my podcasts", '🔍 Não achei meus podcasts',
+                       '🔍 No encontré mis podcasts', '🔍 Ich habe meine Podcasts nicht gefunden',
+                       '🔍 לא מצאתי את הפודקאסטים שלי'),
+    'whyAnswer_app': ('📱 Слушаю в другом приложении', '📱 I listen in another app', '📱 Ouço em outro app',
+                      '📱 Escucho en otra app', '📱 Ich höre in einer anderen App', '📱 אני מאזין באפליקציה אחרת'),
+    'whyAnswer_tg': ('🚫 Не нужны подкасты в Telegram', "🚫 I don't need podcasts in Telegram",
+                     '🚫 Não preciso de podcasts no Telegram', '🚫 No necesito podcasts en Telegram',
+                     '🚫 Ich brauche keine Podcasts in Telegram', '🚫 לא צריך פודקאסטים בטלגרם'),
+    'whyMoreIdle': (
+        'Спасибо! Если хотите, напишите одним сообщением, что помешало или что должно было быть иначе. '
+        'Я читаю всё сам.',
+        'Thank you! If you like, write in one message what got in the way or what should have been different. '
+        'I read every reply myself.',
+        'Obrigado! Se quiser, escreva numa mensagem o que atrapalhou ou o que deveria ser diferente. '
+        'Eu leio todas as respostas.',
+        '¡Gracias! Si quieres, escribe en un mensaje qué te lo impidió o qué debería ser distinto. '
+        'Leo todas las respuestas yo mismo.',
+        'Danke! Wenn du magst, schreib in einer Nachricht, was im Weg stand oder was anders sein sollte. '
+        'Ich lese jede Antwort selbst.',
+        'תודה! אם תרצו, כתבו בהודעה אחת מה הפריע או מה היה צריך להיות אחרת. אני קורא כל תשובה בעצמי.'),
+    'whyChannelLine': (
+        '📣 Новости бота – в нашем канале, туда же можно написать.',
+        "📣 The bot's news is in our channel, and you can message us there too.",
+        '📣 As novidades do bot estão no nosso canal, e você também pode nos escrever lá.',
+        '📣 Las novedades del bot están en nuestro canal, y también puedes escribirnos allí.',
+        '📣 Neuigkeiten zum Bot gibt es in unserem Kanal, dort kannst du uns auch schreiben.',
+        '📣 החדשות של הבוט בערוץ שלנו, ואפשר גם לכתוב לנו שם.'),
+    'whyChannelRead': ('📣 Канал бота', "📣 The bot's channel", '📣 Canal do bot', '📣 Canal del bot',
+                       '📣 Kanal des Bots', '📣 ערוץ הבוט'),
     'whyThanksToast': ('Спасибо!', 'Thank you!', 'Obrigado!', '¡Gracias!', 'Danke!', 'תודה!'),
     'whyMore': (
         'Спасибо! Если хотите, напишите одним сообщением чуть подробнее: какая цена была бы честной, '
