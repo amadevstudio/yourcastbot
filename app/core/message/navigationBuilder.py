@@ -179,6 +179,8 @@ def generate_nav_layout_parts(
     text = ("❮" if current_page > 1 else "-")
     button_prev = {'text': text, 'callback_data': cb_data}
 
+    if back_button_text == 'goBackMenu':
+        back_button_text = 'goBackMenuShort'  # one of three buttons: the long one was cut on a phone
     b = {'text': get_message(back_button_text, language_code), 'callback_data': {'tp': 'bck'}}
 
     text = ("❯" if current_page < page_count else "-")

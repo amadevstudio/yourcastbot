@@ -36,6 +36,8 @@ class Callback(Serializable):
         self.from_user = user
         self.chat = chat
         self.message = message
+        # a tap is answered once: a toast, an alert, or nothing when the handler ends (notify.answer_tap)
+        self.answered = False
 
 
 class Inline(Serializable):

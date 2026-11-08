@@ -5,6 +5,7 @@ import typing
 
 import config
 from app.controller.builders import welcomeModule
+from app.controller.general.notify import answer_tap
 from app.repository.storage import storage
 from app.routes.middleware.default_middleware import analytics_serving, \
     check_threads, get_user, analytics_serving_inline
@@ -114,7 +115,10 @@ class TheSender(threading.Thread):
 
             input_data['data']['user'] = get_user(input_data['data']['chat_id'])
 
-            start_related_params = self._action(input_data)
+            try:
+                start_related_params = self._action(input_data)
+            finally:
+                answer_tap(controller_params['callback'])
             analytics_serving(
                 controller_params, input_data['data']['user'],
                 start_related_params['is_new_user'],

@@ -6,6 +6,7 @@ from app.repository.storage import storage
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import Callback, Message
 from lib.telegram.general.message_master import render_messages, MessageStructuresInterface
+from lib.tools.logger import logger
 
 
 # A button of an old screen: its saved state is gone (app/routes/screen_state.py).
@@ -36,6 +37,7 @@ def notify(
         disable_web_page_preview: bool = True
 ):
     if call is not None:
+        call.answered = True
         bot.answer_callback_query(
             callback_query_id=call.id, show_alert=alert, text=text)
         return
@@ -51,3 +53,16 @@ def notify(
 
         if not save_state:
             storage.add_user_state(message.chat.id, 'empty')
+
+
+# A tap the handler did not answer: the button kept its spinner until Telegram gave up
+# (32 of 49 taps in botsim, 2026-11-08). The incoming worker answers it with nothing
+# once the handler is done, so a toast the handler sends is never refused as answered.
+def answer_tap(call: Callback | None):
+    if call is None or getattr(call, 'answered', True):
+        return
+    call.answered = True
+    try:
+        bot.answer_callback_query(callback_query_id=call.id)
+    except Exception as e:  # a query older than Telegram keeps (a restart, a slow handler)
+        logger.warn("tap answer:", e)

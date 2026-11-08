@@ -70,7 +70,7 @@ def test_sections(settings):
         _assert(_texts(settings.construct_settings_message('en', 1))[1].endswith(
             get_message("summaryLanguageMine", "en")), "and the user's choice")
         _assert(_texts(settings.construct_settings_message('en', 1))[2].endswith(
-            get_message('voiceLanguageOriginal', 'en')), 'podcast language does not change voice language')
+            get_message('settingsVoiceOriginal', 'en')), 'podcast language does not change voice language')
         user['flags'] = '{"summary_language": "original", "voice_summary_language": "mine"}'
         both = settings.construct_settings_message('en', 1)
         _assert(_texts(both)[1].endswith(get_message('summaryLanguageOriginal', 'en'))

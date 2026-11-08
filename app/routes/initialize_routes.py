@@ -228,6 +228,8 @@ def initialize_routes(t_answer_sender_outer: TelebotBalancer, answer_sender_queu
 
     async def voice_help(event):
         callback, message = await get_call_and_message(event)
+        if get_tp(event.data) == 'voiceHelp':
+            callback.answered = True  # answered here, not again by the worker
         handle_event_in_thread({'action': voice.help_message if get_tp(event.data) == 'voiceHelp' else voice.callback,
                                 'data': construct_params(callback, message, None)})
         if get_tp(event.data) == 'voiceHelp':
