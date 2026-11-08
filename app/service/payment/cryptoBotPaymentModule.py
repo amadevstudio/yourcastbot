@@ -8,7 +8,7 @@ from app.i18n.messages import get_message
 from app.repository.storage import storage
 from app.service.payment.paymentModule import (
     decode_tariff, get_tariff_info_message, get_tariff_description_and_button_text,
-    get_tariff_params_by_tg, prepare_price)
+    get_tariff_params_by_tg)
 from app.service.payment.paymentSafeModule import money_text
 from config import crypto_bot_api_key, crypto_bot_api_key_test
 from config import db_path
@@ -29,7 +29,23 @@ else:
 # "parsing error"). A plan's button carries the plan (`pl`): with no plan
 # running the payment turns it on, as a Stars invoice does
 # (applyPaymentReplenishmentOnce planId); a typed amount tops the balance up.
+# A plan's invoice asks the plan's price, read here: callback data can be forged,
+# and a button's amount (`v`) of $0.01 with Relay's `pl` turned Relay on for it.
 FIAT = 'USD'
+
+
+def plan_price_cents(plan_id) -> int | None:
+    """What a plan's invoice asks: its price now, None for no such plan or a free one."""
+    try:
+        plan_id = int(plan_id)
+    except (TypeError, ValueError):
+        return None
+    db_users = SQLighter(db_path)
+    try:
+        plan = db_users.getTariffById(plan_id)
+    finally:
+        db_users.close()
+    return int(plan['price']) if plan is not None and int(plan['price'] or 0) > 0 else None
 
 
 # страница оплаты через криптобот: планы и своя сумма
@@ -51,10 +67,17 @@ def open_amount_input_page(data: ControllerParams):
     storage.set_user_state_data(data['chat_id'], 'bs_crbot_input', data['united_data'])
 
     plan_id = None
+    plan_cents = None
     if data['callback'] is not None:
         summa = data['united_data'].get('v', None)
         plan_id = data['united_data'].get('pl', None)
         test_mode = False
+        if plan_id is not None:
+            plan_cents = plan_price_cents(plan_id)
+            if plan_cents is None:
+                notify(data['callback'], data['message'],
+                       get_message('parsingError', data['language_code']), alert=True)
+                return False
 
     elif data['message'] is not None:
         summa = data['message'].text
@@ -73,7 +96,7 @@ def open_amount_input_page(data: ControllerParams):
         return False
 
     # "Another amount" (or a coin button of an old page): the amount is typed here
-    if summa is None:
+    if summa is None and plan_cents is None:
         render_messages(data['chat_id'], [{
             'type': 'text', 'text': get_message("bot_sub_cryptobot_amount_input", data['language_code']),
             'reply_markup': [[go_back_inline_button(data['language_code'])]]}])
@@ -81,7 +104,7 @@ def open_amount_input_page(data: ControllerParams):
         return
 
     try:
-        summa_cents = round(float(summa) * 100)
+        summa_cents = plan_cents if plan_cents is not None else round(float(summa) * 100)
     except ValueError:
         notify(data['callback'], data['message'],
                get_message('notANumber', data['language_code']), alert=True)
@@ -133,7 +156,7 @@ def get_amount_input_message(language_code, tariff_id, balance, time_left, notif
         message_text += tariff_texts["text"] + "\n\n"
 
         # кнопки
-        cbd = {"tp": "bs_crbot_input", "v": prepare_price(tariff['price']), "pl": tariff['id']}
+        cbd = {"tp": "bs_crbot_input", "pl": tariff['id']}  # the amount is the plan's, read on the tap
         button_text = get_message("tariff_lvl" + str(tariff['level']), language_code) \
             + " – $" + money_text(tariff['price'])
         if tariff_id == tariff['id']:

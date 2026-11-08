@@ -31,6 +31,23 @@ def credit_once(tg_id, service: str, invoice_id, cents: int, invoice_hash=None, 
         db.close()
 
 
+def plan_invoice(plan_id, cents):
+    """The plan a webhook's invoice may turn on: the invoice's plan when it asked at least the
+    plan's price now, else None (a top-up). The bot reads the price for the invoice; one for less
+    was made from a forged button before that (a CryptoBot invoice for $0.01 named Relay). An
+    invoice made before a price rise and paid after it is a top-up too: rare, and the money stays."""
+    if not plan_id:
+        return None
+    db = SQLighter(config.db_path)
+    try:
+        plan = db.getTariffById(int(plan_id))
+    finally:
+        db.close()
+    if plan is None or int(plan['price'] or 0) <= 0 or int(cents) < int(plan['price']):
+        return None
+    return int(plan_id)
+
+
 def notify(bot, coroutine, what: str) -> bool:
     """Run one Telegram notice of a payment already credited; a failure is logged, never raised.
 

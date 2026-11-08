@@ -35,7 +35,7 @@ from lib.api.payment.cryptoBotApi import CryptoBotApi
 from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, award_referrer_for_payment
 from app.service import analytics_events
 from scripts.payment.webhook_input import crypto_invoice
-from scripts.payment.credit import credit_once, notify
+from scripts.payment.credit import credit_once, notify, plan_invoice
 
 # TODO: refactor the file, make some tests
 
@@ -158,7 +158,7 @@ def income_processing():
 
 		# the invoice is checked and written with the credit: a retried webhook credits nothing
 		# a plan's invoice (`v`) turns that plan on when none runs, as a Stars invoice does
-		plan_id = customPayload.get("v")
+		plan_id = plan_invoice(customPayload.get("v"), amountCents)
 		user, credited = credit_once(
 			chat_tg_id, "cryptoBot", invoice_id, amountCents, invoice_hash,
 			plan_id=plan_id, plan_price=int(amountCents) if plan_id else None)
