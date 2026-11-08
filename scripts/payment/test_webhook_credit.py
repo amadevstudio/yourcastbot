@@ -185,11 +185,14 @@ def main():
                 "a plan's CryptoBot invoice turns that plan on when none runs (as Stars)")
         _crypto(81, 6008, 500, plan=3)
         _assert(_plan(path, 6008) == (3, 500, 720), "with the plan running it only tops the balance up")
+        _crypto(82, 6009, 1, plan=3)
+        _assert(_plan(path, 6009)[0] != 3 and _plan(path, 6009)[1] == 1,
+                "an invoice for less than its plan's price (a forged button) is a top-up, no plan")
 
         _robokassa(9001, 6002, "4.99")
-        _assert(_balance(path, 6002) == (499, 5), "a Robokassa invoice is credited, to the cent")
+        _assert(_balance(path, 6002) == (499, 6), "a Robokassa invoice is credited, to the cent")
         _robokassa(9001, 6002, "4.99")
-        _assert(_balance(path, 6002) == (499, 5), "the same signed notice again credits nothing")
+        _assert(_balance(path, 6002) == (499, 6), "the same signed notice again credits nothing")
 
         # A payer who blocked the bot: the notice fails, the inviter still gets the bonus
         # (before, Telethon's error skipped everything after the payer's notice).

@@ -257,7 +257,12 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
   each button that plan's invoice (payload `v`: with no plan running the
   webhook turns it on, as Stars, `credit_once(plan_id=, plan_price=)`), and
   "Another amount" (typed, a top-up). The webhook credits the payload's cents,
-  never the coin. Locks: `python scripts/payment/test_webhook_credit.py`,
+  never the coin. A plan's button carries the plan only (`pl`): the invoice asks
+  the plan's price, read on the tap (`plan_price_cents`). Before 2026-11-08 it
+  asked the button's amount (`v`), and a forged button of $0.01 with Relay's
+  `pl` turned Relay on for it. The webhook turns a plan on only for an invoice
+  of at least its price now (`credit.plan_invoice`), else it is a top-up: an
+  invoice made before a price rise and paid after it too. Locks: `python scripts/payment/test_webhook_credit.py`,
   `python tools/botsim/test_botsim.py` (bot requirements).
 - Prepaid months and offers (`app/service/payment/offers.py`) credit the full
   price and charge the discounted one; the tick renews month by month from

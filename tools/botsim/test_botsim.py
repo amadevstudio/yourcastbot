@@ -121,6 +121,11 @@ def test_cryptobot(user):
         sent = (step.edited or step.new)[0]
         _assert('$5' in sent.text and sent.buttons[0][0].get('url', '').endswith('IV1') and not step.errors,
                 "the invoice comes as a Pay button")
+        user.tap_data(json.dumps({'tp': 'bs_crbot_input', 'v': 0.01, 'pl': 3}))
+        _assert(invoices[-1]['amount'] == '5.00' and json.loads(invoices[-1]['payload'])['amount'] == 500,
+                "a forged button's amount is not billed: a plan's invoice asks the plan's price")
+        missing = user.tap_data(json.dumps({'tp': 'bs_crbot_input', 'v': 0.01, 'pl': 999}))
+        _assert(len(invoices) == 2 and missing.toasts, "no such plan: no invoice")
         user.tap_data(json.dumps({'tp': 'bs_crbot_input'}))
         typed = user.send('3')
         _assert(invoices[-1]['amount'] == '3.00' and 'v' not in json.loads(invoices[-1]['payload'])
