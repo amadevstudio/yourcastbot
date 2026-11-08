@@ -35,7 +35,8 @@ from lib.api.payment.cryptoBotApi import CryptoBotApi
 from app.service.payment.paymentSafeModule import get_tariff_info_message, decode_tariff, award_referrer_for_payment
 from app.service import analytics_events
 from scripts.payment.webhook_input import crypto_invoice
-from scripts.payment.credit import credit_once, notify, plan_invoice
+from scripts.payment.credit import credit_once, notify
+from app.service.payment import purchase
 
 # TODO: refactor the file, make some tests
 
@@ -157,11 +158,11 @@ def income_processing():
 			return
 
 		# the invoice is checked and written with the credit: a retried webhook credits nothing
-		# a plan's invoice (`v`) turns that plan on when none runs, as a Stars invoice does
-		plan_id = plan_invoice(customPayload.get("v"), amountCents)
-		user, credited = credit_once(
-			chat_tg_id, "cryptoBot", invoice_id, amountCents, invoice_hash,
-			plan_id=plan_id, plan_price=int(amountCents) if plan_id else None)
+		# a plan's invoice (`v`) turns that plan on when none runs, as a Stars invoice does; its
+		# months and offer are checked now (no pre-checkout here): what no longer holds is a top-up
+		terms = purchase.at_credit(chat_tg_id, purchase.from_payload(customPayload, amountCents))
+		plan_id = terms.plan_id or None
+		user, credited = credit_once(chat_tg_id, "cryptoBot", invoice_id, amountCents, invoice_hash, terms=terms)
 		user_language = user['lang'] if user['lang'] is not None else 'en'
 		invoice_already_paid = credited['already_processed']
 		if not invoice_already_paid:
@@ -182,7 +183,7 @@ def income_processing():
 								"cryptoBot paid invoice=%s tgid=%s amount=%s\n"
 								% (invoice_id, chat_tg_id, amountCents))
 
-				analytics_events.track(user['telegramId'], 'payment', {'method': 'cryptoBot', 'amount_cents': int(amountCents), 'plan': plan_id}, sync=True)
+				analytics_events.track(user['telegramId'], 'payment', {'method': 'cryptoBot', 'amount_cents': terms.credit, 'charged_cents': terms.charge, 'plan': plan_id, 'months': terms.months, 'offer': terms.offer or None}, sync=True)
 				refer_id, message = award_referrer_for_payment(user['telegramId'])
 				if message is not None:
 					with bot:

@@ -88,7 +88,7 @@ def pricing():
 
 def _terms_open(stars):
     """No plan running: every plan's terms are open (plan_terms_open reads a real database)."""
-    return patch.object(stars, 'plan_terms_open', lambda *_a, **_kw: True)
+    return patch.object(stars.purchase, 'plan_terms_open', lambda *_a, **_kw: True)
 
 
 def bundle_invoice(stars):
@@ -141,7 +141,7 @@ def _precheckout(stars):
     _assert_eq('m' in json.loads(stars.create_payload(602, 500, 385, RATE)), False,
                "a plain top-up keeps the old payload")
     sold = stars.create_payload(602, 3000, stars.stars_to_charge(3000, RATE, 15), RATE, 6, 15)
-    with patch.object(stars, 'offer_discount', lambda *_: 20):
+    with patch.object(stars.purchase, 'offer_discount', lambda *_: 20):
         _assert_eq(stars.validate_precheckout_payload(sold, 602, 'XTR', json.loads(sold)['s'])[0],
                    False, "after a discount change an old invoice is refused before payment")
         _assert_eq(stars.validate_payment_payload(sold, 602, 'XTR', json.loads(sold)['s']),
@@ -461,12 +461,12 @@ def bundle_take_back(stars):
     now = datetime.datetime(2026, 11, 8, 12, 0, 0)
     db = SQLighter(path)
     try:
-        for tg in range(651, 665):
+        for tg in range(651, 667):
             db.register_new_user(tg, 'en')
     finally:
         db.close()
 
-    def paid(tg, amount, charged, hours_ago, status='paid'):
+    def paid(tg, amount, charged, hours_ago, status='paid', service='telegramStars'):
         conn = sqlite3.connect(path)
         try:
             payments.ensure_charged_column(conn)
@@ -474,8 +474,8 @@ def bundle_take_back(stars):
             charge = 'c-%d-%s-%d' % (tg, hours_ago, amount)
             conn.execute(
                 "INSERT INTO payment_history (user_id, service_type, invoice_id, status, amount, charged, datetime) "
-                "VALUES (?, 'telegramStars', ?, ?, ?, ?, ?)",
-                (uid, charge, status, amount, charged,
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uid, service, charge, status, amount, charged,
                  str(now - datetime.timedelta(hours=hours_ago))))
             conn.commit()
         finally:
@@ -518,6 +518,10 @@ def bundle_take_back(stars):
     _assert_eq(back(662, 500, 5000), 0, "no bundle: nothing")
     paid(663, 6000, 4545, 960)
     _assert_eq(back(663, 500, 5000), 0, "a charge no bundle gives (another discount): not taken")
+    paid(665, 6000, 4500, 960, service='cryptoBot')
+    _assert_eq(back(665, 500, 5000), 1250, "a bundle paid through CryptoBot is taken back the same way")
+    paid(666, 500, None, 10, service='robokassa')
+    _assert_eq(back(666, 500, 500), 0, "a payment with no charge beside it (Robokassa, Patreon) is no bundle")
 
     cents, settle = offers.bundle_discount_back(651, 500, 5000, now=now, database=path)
     offers.settle_bundles(settle, database=path)

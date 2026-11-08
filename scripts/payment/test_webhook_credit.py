@@ -135,10 +135,21 @@ def _b64(text):
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
-def _crypto(invoice_id, tg, cents, plan=None):
+def _charged(path, invoice_id):
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute("SELECT amount, charged FROM payment_history WHERE service_type = 'cryptoBot' "
+                            "AND invoice_id = ?", (str(invoice_id),)).fetchone()
+    finally:
+        conn.close()
+
+
+def _crypto(invoice_id, tg, cents, plan=None, months=None, discount=None):
     payload = {"tgid": tg, "amount": cents}
     if plan:
         payload["v"] = plan
+    if months:
+        payload.update(m=months, d=discount)
     body = json.dumps({"update_type": "invoice_paid", "payload": {
         "invoice_id": invoice_id, "hash": "h%d" % invoice_id, "paid_at": "2026-10-23T10:00:00Z",
         "status": "paid", "payload": json.dumps(payload)}})
@@ -164,11 +175,11 @@ def main():
     _stub_telethon()
     import config
     from app.service import analytics_events
-    from app.service.payment import paymentSafeModule
+    from app.service.payment import offers, paymentSafeModule
     path = _database()
-    saved = (config.db_path, paymentSafeModule.db_path, config.server, config.crypto_bot_api_key,
+    saved = (config.db_path, paymentSafeModule.db_path, offers.db_path, config.server, config.crypto_bot_api_key,
              config.payment_p2_test, analytics_events.track)
-    config.db_path = paymentSafeModule.db_path = path
+    config.db_path = paymentSafeModule.db_path = offers.db_path = path
     config.server = False
     config.crypto_bot_api_key = "crypto-key"
     config.payment_p2_test = "p2-test"
@@ -189,10 +200,25 @@ def main():
         _assert(_plan(path, 6009)[0] != 3 and _plan(path, 6009)[1] == 1,
                 "an invoice for less than its plan's price (a forged button) is a top-up, no plan")
 
+        # prepaid months through CryptoBot, as through Stars (purchase.py): the payload's terms
+        _crypto(83, 6010, 3000, plan=3, months=6, discount=15)
+        _assert(_plan(path, 6010) == (3, 2500, 720),
+                "6 months of Relay: Relay on, the other five on the balance at full price")
+        _assert(_charged(path, 83) == (3000, 2550), "the payment keeps what was charged (15% off) beside it")
+        _crypto(83, 6010, 3000, plan=3, months=6, discount=15)
+        _assert(_plan(path, 6010) == (3, 2500, 720), "the same bundle delivered again credits nothing")
+        _crypto(84, 6011, 50, plan=1)
+        _crypto(85, 6011, 3000, plan=3, months=6, discount=15)
+        _assert(_plan(path, 6011) == (1, 2550, 720) and _charged(path, 85) == (2550, 2550),
+                "Relay's months paid while Bronze runs (no pre-checkout to refuse): what was paid, a top-up")
+        _crypto(86, 6012, 3000, plan=3, months=6, discount=60)
+        _assert(_plan(path, 6012)[0] != 3 and _charged(path, 86) == (1200, 1200),
+                "terms that were never sold (60% off) credit what was paid, no plan")
+
         _robokassa(9001, 6002, "4.99")
-        _assert(_balance(path, 6002) == (499, 6), "a Robokassa invoice is credited, to the cent")
+        _assert(_balance(path, 6002) == (499, 10), "a Robokassa invoice is credited, to the cent")
         _robokassa(9001, 6002, "4.99")
-        _assert(_balance(path, 6002) == (499, 6), "the same signed notice again credits nothing")
+        _assert(_balance(path, 6002) == (499, 10), "the same signed notice again credits nothing")
 
         # A payer who blocked the bot: the notice fails, the inviter still gets the bonus
         # (before, Telethon's error skipped everything after the payer's notice).
@@ -214,7 +240,7 @@ def main():
         _assert(made == 0 and all(chat == int(config.creatorId) for chat, _ in SENT),
                 "an unsigned request makes no user and writes to nobody but the creator")
     finally:
-        (config.db_path, paymentSafeModule.db_path, config.server, config.crypto_bot_api_key,
+        (config.db_path, paymentSafeModule.db_path, offers.db_path, config.server, config.crypto_bot_api_key,
          config.payment_p2_test, analytics_events.track) = saved
         os.remove(path)
     print("all webhook credit checks passed")

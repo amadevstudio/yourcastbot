@@ -24,13 +24,12 @@ from app.service.payment.paymentModule import (
 from app.service.payment.paymentSafeModule import (
     award_referrer_for_payment, get_tariff_info_message, get_tariff_params_by_tg,
     is_subscription_active, money_text)
-from app.service.payment import stars_subscription
+from app.service.payment import purchase, stars_subscription
 from app.service.payment.referral import invite_row
 from app.service.payment.offers import (
-    BUNDLES_CALLBACK, WINBACK_OFFER, WINBACK_OFFER_FLAG, charged_cents, longest_bundle, offer_discount,
-    offer_open, plan_terms_open, prepaid_months_sold)
+    BUNDLES_CALLBACK, BUNDLES_CRYPTO, charged_cents, longest_bundle, offer_open, prepaid_months_sold)
 from app.service.payment.storefront import (
-    CHANGE_PLAN_CALLBACK, SHOWCASE_TARIFF_LEVEL, plan_name, showcase_tariff, tariffs_for_storefront)
+    CHANGE_PLAN_CALLBACK, plan_name, showcase_tariff, tariffs_for_storefront)
 from app.service.plan import channels as channel_plan
 from config import db_path, prepay_bundles
 from db import plan_grants
@@ -191,6 +190,14 @@ def parse_payload(payload: bytes | str) -> StarsPayload | None:
         return None
 
 
+# purchase.refusal's reasons as the pre-checkout tells Telegram (the payer sees it)
+PRECHECKOUT_REFUSALS = {
+    'terms': "Invalid payment offer",
+    'offer': "Offer is no longer available",
+    'plan': "Another plan is running",
+}
+
+
 def validate_precheckout_payload(
         payload: bytes | str, user_id: int, currency: str, total_amount: int
 ) -> tuple[bool, str | None]:
@@ -206,12 +213,9 @@ def validate_precheckout_payload(
     if not ok:
         return ok, error
     data = parse_payload(payload)
-    if data["d"] != offer_discount(data["m"], data["o"]):
-        return False, "Invalid payment offer"
-    if not offer_open(user_id, data["o"]):
-        return False, "Offer is no longer available"
-    if (data["m"] != 1 or data["d"]) and not plan_terms_open(user_id, data["v"]):
-        return False, "Another plan is running"
+    reason = purchase.refusal(user_id, purchase.from_payload(data, data["b"]))
+    if reason is not None:
+        return False, PRECHECKOUT_REFUSALS[reason]
     if data["u"] and stars_subscription.second_subscription(user_id, data["p"]):
         # Telegram would charge both every month; a renewal (same payload) passes
         return False, "Subscription is already active"
@@ -306,16 +310,18 @@ def get_sub_message(
 
 def open_bundles_page(data: ControllerParams):
     tariff, _balance, time_left, _notify_left = get_tariff_params_by_tg(data['chat_id'], purchase=True)
+    crypto = data['united_data'].get('pay') == BUNDLES_CRYPTO
     render_messages(data['chat_id'], [bundles_message(
         data['language_code'], tariff['level'], tariff['id'] > 0 and time_left is not None and time_left > 0,
-        get_stars_withdraw_rate_x1000())])
+        None if crypto else get_stars_withdraw_rate_x1000())])
 
 
 def bundles_message(language_code, current_level, plan_running, rate_x1000):
     """Every plan's prepaid months, Relay first: the terms once, each plan's months with their price
     in dollars (as the plans are priced everywhere), in Stars (what the invoice asks) and what they
     save, its months as a row of buttons (the plan's medal and the months), one tap to the invoice. A
-    running plan sees its own: the others' months would renew it, so they are named, change-plan first."""
+    running plan sees its own: the others' months would renew it, so they are named, change-plan first.
+    rate_x1000 None: the page of CryptoBot's invoices (dollars only, its buttons CryptoBot's)."""
     db_users = SQLighter(db_path)
     try:
         tariffs = db_users.getTariffs()
@@ -331,13 +337,17 @@ def bundles_message(language_code, current_level, plan_running, rate_x1000):
         lines = ["<b>%s</b>" % name]
         for months, discount in prepay_bundles:
             full = int(tariff['price']) * months
-            lines.append(get_message('bundlePriceLine', language_code).format(
-                months=months_text(months), price=money_text(charged_cents(full, discount)),
-                stars=stars_to_charge(full, rate_x1000, discount), saved=money_text(full - charged_cents(full, discount))))
+            price, saved = money_text(charged_cents(full, discount)), money_text(full - charged_cents(full, discount))
+            lines.append(get_message('bundlePriceLineUsd', language_code).format(
+                months=months_text(months), price=price, saved=saved) if rate_x1000 is None
+                else get_message('bundlePriceLine', language_code).format(
+                    months=months_text(months), price=price, stars=stars_to_charge(full, rate_x1000, discount),
+                    saved=saved))
         plans.append("\n".join(lines))
         medal = name.split(" ", 1)[0]
         rows.append([{'text': "%s %s" % (medal, months_text(months)),
-                      'callback_data': {'tp': 'bs_stars_pay', 'v': tariff['id'], 'm': months}}
+                      'callback_data': {'tp': 'bs_crbot_input', 'pl': tariff['id'], 'm': months} if rate_x1000 is None
+                      else {'tp': 'bs_stars_pay', 'v': tariff['id'], 'm': months}}
                      for months, _discount in prepay_bundles])
     text = get_message('bundlesBody', language_code).format(
         terms=", ".join("%s −%d%%" % (months_text(months), discount) for months, discount in prepay_bundles),
@@ -373,25 +383,20 @@ def send_invoice(data: ControllerParams):
             notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
             return False
         selected_tariff = next((tariff for tariff in tariffs if tariff['id'] == tariff_id), None)
-    offer = str(data['united_data'].get('o', ''))
-    try:
-        months = int(data['united_data'].get('m', 1))
-        discount = offer_discount(months, offer)
-    except (TypeError, ValueError):
-        discount = None
-    if (selected_tariff is None or selected_tariff['price'] <= 0 or discount is None
-            or (offer and selected_tariff['level'] != SHOWCASE_TARIFF_LEVEL)  # the offer is Relay's
+    terms = purchase.sell(selected_tariff, data['united_data'].get('m', 1), data['united_data'].get('o', ''))
+    if (terms is None
             # a plan's terms (its months, the offer) are not sold while another plan runs
-            or ((months != 1 or discount)
+            or ((terms.months != 1 or terms.discount)
                 and not prepaid_months_sold(current_level, plan_running, selected_tariff['level']))):
         notify(data['callback'], data['message'], get_message('parsingError', data['language_code']), alert=True)
         return False
 
+    months, discount, offer = terms.months, terms.discount, terms.offer
     if not offer_open(data['chat_id'], offer):
         notify(data['callback'], data['message'], get_message('offerNotAvailable', data['language_code']), alert=True)
         return False
 
-    amount_balance = int(selected_tariff['price']) * months
+    amount_balance = terms.credit
     try:
         rate_x1000 = get_invoice_stars_withdraw_rate_x1000()
     except StarsRateUnavailable as e:
@@ -615,13 +620,7 @@ def process_successful_payment(
             # a plan a subscription charge turns on outlasts the next charge (stars_subscription)
             payload_data["b"], config.tariff_period + (stars_subscription.GRACE_HOURS if subscription else 0),
             invoiceHash=f"{payload_data['p']}:{payload_data['r']}:{provider_charge_id or ''}",
-            status="paid",
-            userFlag=WINBACK_OFFER_FLAG if payload_data['o'] == WINBACK_OFFER else None,
-            planId=payload_data['v'] or None,
-            # the price one period was sold for: a later price rise does not undo the invoice
-            planPrice=payload_data['b'] // payload_data['m'] if payload_data['v'] else None,
-            # what the payer was charged, for revenue: a bundle or an offer credits more
-            chargedCents=charged_cents(payload_data['b'], payload_data['d']))
+            status="paid", **purchase.credit_args(purchase.from_payload(payload_data, payload_data["b"])))
         if result_data['already_processed']:
             return False
     finally:

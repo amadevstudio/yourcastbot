@@ -257,16 +257,27 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
   each button that plan's invoice (payload `v`: with no plan running the
   webhook turns it on, as Stars, `credit_once(plan_id=, plan_price=)`), and
   "Another amount" (typed, a top-up). The webhook credits the payload's cents,
-  never the coin. A plan's button carries the plan only (`pl`): the invoice asks
-  the plan's price, read on the tap (`plan_price_cents`). Before 2026-11-08 it
-  asked the button's amount (`v`), and a forged button of $0.01 with Relay's
-  `pl` turned Relay on for it. The webhook turns a plan on only for an invoice
-  of at least its price now (`credit.plan_invoice`), else it is a top-up: an
-  invoice made before a price rise and paid after it too. Locks: `python scripts/payment/test_webhook_credit.py`,
+  never the coin. A plan's button carries the plan only (`pl`, with `m` / `o`
+  for a plan's months or an offer): the invoice asks what the plan sells for,
+  read on the tap (`purchase.sell`). Before 2026-11-08 it asked the button's
+  amount (`v`), and a forged button of $0.01 with Relay's `pl` turned Relay on
+  for it. The webhook turns a plan on only for an invoice of at least its price
+  now a month (`purchase.at_credit`), else it is a top-up: an invoice made
+  before a price rise and paid after it too. Locks: `python scripts/payment/test_webhook_credit.py`,
   `python tools/botsim/test_botsim.py` (bot requirements).
 - Prepaid months and offers (`app/service/payment/offers.py`) credit the full
   price and charge the discounted one; the tick renews month by month from
-  the balance, so nothing else knows about them. The Stars payload carries
+  the balance, so nothing else knows about them. Every pay method sells them
+  through one core, `app/service/payment/purchase.py` (`Terms`: the credit,
+  plan, months, discount, offer; `sell`, `refusal`, `at_credit`,
+  `credit_args`); a pay method is an adapter that carries the terms its own
+  way and asks the core. CryptoBot (2026-11-08; Robokassa not yet): the
+  invoice's payload carries `amount` (the credit) and `v` / `m` / `d` / `o`,
+  the invoice asks the charge; with no pre-checkout the webhook checks the
+  terms when it credits (`at_credit`), and terms that no longer hold (another
+  plan runs, an offer spent, a discount never sold) are a top-up of what was
+  paid. Its page has the bundles button (`bs_long` with `pay: c`: dollars, no
+  Stars, CryptoBot's buttons). The Stars payload carries
   `m` / `d` / `o` / `v`; the pre-checkout accepts only `offer_discount(m, o)` and,
   for an offer, `offer_open`, and a plan's terms (its months; the offer is
   Relay's) only while that plan or none runs (`offers.plan_terms_open`, the
@@ -286,7 +297,8 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
   `charged`; the months are the bundle whose charge matches; spent: the first
   at once and one per period, counted early so less is taken, never more;
   never more months than the balance holds at today's price), once
-  (`payment_history.bundle_back`, written before the switch): what stays is
+  (`payment_history.bundle_back`, written before the switch; any pay method's
+  row, not Stars' only): what stays is
   what was paid for them. Relay's 12 months at 25% off moved to Bronze kept
   $60 for $45 and renewed Bronze for years. The question before the
   switch and its result say how much. A refund of the bundle afterwards takes

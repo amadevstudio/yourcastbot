@@ -243,6 +243,7 @@ FA_MESSAGES = {
     "bundleMonths": "{months} ماه",
     "bundlesOtherPlan": "ماه‌های طرح‌های دیگر ({plans}): اول طرح را عوض کنید، وگرنه موجودی طرح فعلی ({current}) را تمدید می‌کند.",
     "bundlePriceLine": "{months}: ‎${price} ({stars} ⭐)، صرفه‌جویی ‎${saved}",
+    "bundlePriceLineUsd": "{months}: ‎${price}، صرفه‌جویی ‎${saved}",
     "bundleDiscountBack": "تخفیف ماه‌های استفاده‌نشدهٔ بسته: ‎−${amount} از موجودی.",
     "telegram_stars_bundle_description": "{plan} برای {months} ماه با {discount}% تخفیف: ${balance} به موجودی شما در ازای {stars} ⭐. هر ماه از موجودی تمدید می‌شود. نرخ: 1000 ⭐ ≈ ${rate}.",
     "winbackOffer": "یک هفته است Relay خاموش است و قسمت‌های جدید پادکست‌هایتان دیگر به‌صورت فایل نمی‌آیند.\n\nتحویل خودکار را برگردانید: ماه اول {discount}% تخفیف.",
@@ -387,6 +388,7 @@ FA_MESSAGES = {
     "cryptobotPlans": "<b>CryptoBot</b>\nپرداخت با هر ارزی که CryptoBot می‌پذیرد: USDT، TON، BTC، USDC و بیشتر. اگر طرحی فعال نباشد، طرحی که پرداخت می‌کنید بلافاصله فعال می‌شود؛ وگرنه پول به موجودی می‌رود.",
     "cryptobotOtherAmount": "مبلغ دیگر",
     "cryptobotInvoice": "صورتحساب ‎${summa}. ارز را در CryptoBot انتخاب می‌کنید.",
+    "cryptobotBundleInvoice": "{plan} برای {months} ماه با {discount}% تخفیف: ‎${balance} به موجودی در ازای ‎${summa}. ارز را در CryptoBot انتخاب می‌کنید.",
     "whySurvey": "سلام! من توسعه‌دهنده Yourcast هستم. شما با این ربات پادکست گوش می‌دهید و می‌خواهم یک چیز را "
                  "بفهمم: چه چیزی مانع می‌شود که یک طرح بگیرید؟ یک لمس خیلی کمک می‌کند.",
     "whyReward": "🎁 با پاسخ دادن، {days} روز Relay هدیه می‌گیرید: قسمت‌های جدید پادکست‌هایتان خودشان می‌رسند.",
