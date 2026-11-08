@@ -2,7 +2,7 @@
 """botsim from the command line: a scenario, one action per line (README.md).
 
     python tools/botsim/cli.py [--db COPY.db] [--offline] [--ai fake|real|off] [--user 1001] [--lang ru]
-                               [-c ACTION ...] [SCENARIO_FILE | -]
+                               [--html OUT.html] [--lint] [-c ACTION ...] [SCENARIO_FILE | -]
 
 Actions:
     send TEXT            a message (/start, a search, a question)
@@ -38,6 +38,8 @@ def main(argv=None):
     parser.add_argument('--user', type=int, default=1001)
     parser.add_argument('--lang', default='en')
     parser.add_argument('--verbose', action='store_true', help='print every log line as it happens')
+    parser.add_argument('--html', help='write the steps as the chat shows them (tgsim.page) to this file')
+    parser.add_argument('--lint', action='store_true', help='print layout warnings under each step')
     args = parser.parse_args(argv)
 
     lines = list(args.actions)
@@ -52,11 +54,12 @@ def main(argv=None):
         database = os.path.join(copy_dir, 'sim.db')
         shutil.copyfile(args.db, database)
 
+    import tgsim
     from tools.botsim import sim
     try:
         sim.boot(database, network=not args.offline, ai=args.ai, quiet=not args.verbose)
         user = sim.BotSim(args.user, args.lang)
-        failed = False
+        failed, steps = False, []
         for line in lines:
             line = line.strip()
             if not line or line.startswith('#'):
@@ -74,7 +77,16 @@ def main(argv=None):
                 print(step)
             else:
                 print(step)
+                steps.append(step)
+                if args.lint:
+                    for issue in tgsim.check_step(step):
+                        if issue.level != 'note':
+                            print('  lint %s' % issue)
                 failed = failed or bool(step.errors)
+        if args.html:
+            with open(args.html, 'w', encoding='utf-8') as file:
+                file.write(tgsim.page(steps, args.scenario or 'botsim', sim._state['tg']))
+            print('wrote %s' % args.html)
         return 1 if failed else 0
     finally:
         sim.shutdown()

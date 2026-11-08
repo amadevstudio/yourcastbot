@@ -1,256 +1,70 @@
 # -*- coding: utf-8 -*-
 """Telegram, faked for botsim: the Bot API the bot talks to, and the Telethon side it listens on.
 
-The bot sends everything through pyTelegramBotAPI, whose every call ends in
-telebot.apihelper._make_request: FakeBotApi takes its place, keeps each chat
-as Telegram would (message ids, text, buttons, edits, deletes) and answers
-with what the Bot API would return. Nothing leaves the process.
+The Bot API is tgsim's (github.com/amadevstudio/tgsim): a Telegram kept in memory that answers as Telegram does,
+refusals included (HTML it cannot parse, a text over 4096 characters, an edit that changes nothing). The bot sends
+everything through pyTelegramBotAPI, whose every call ends in telebot.apihelper._make_request: BotApi takes its
+place and hands the call to tgsim.
 
-The bot listens through Telethon: FakeClient collects the handlers
-initialize_routes registers, and dispatch() runs them as Telethon does (in
-order, by their filters, until StopPropagation) on events shaped like
-Telethon's: a user's message, a button tap, a document.
+The bot listens through Telethon: FakeClient collects the handlers initialize_routes registers, and dispatch()
+runs them as Telethon does (in order, by their filters, until StopPropagation) on events shaped like Telethon's:
+a user's message, a button tap, a document.
 """
 import itertools
-import json
-import threading
-import time
-from dataclasses import dataclass, field
-from typing import Optional
+import os
+
+import tgsim
 
 
-@dataclass
-class Sent:
-    """A message in a chat as the user would see it."""
-    message_id: int
-    chat_id: int
-    kind: str  # text, audio, photo, document, invoice, rich, ...
-    text: str = ''
-    buttons: list = field(default_factory=list)  # rows of {'text', 'callback_data' | 'url' | ...}
-    reply_to: Optional[int] = None
-    from_bot: bool = True
-    deleted: bool = False
-    extra: dict = field(default_factory=dict)
-
-    def button_texts(self) -> list:
-        return [button.get('text', '') for row in self.buttons for button in row]
+def _upload(name, value) -> tuple:
+    """telebot's file field (an open file, bytes, (filename, file)) as tgsim takes it: (filename, bytes, mime)."""
+    filename, data, mime = None, value, None
+    if isinstance(value, tuple):
+        filename, data = value[0], value[1]
+        mime = value[2] if len(value) > 2 else None
+    elif hasattr(value, 'name'):
+        filename = value.name
+    if hasattr(data, 'read'):
+        data = data.read()
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    return os.path.basename(str(filename)) if filename else name, bytes(data or b''), mime
 
 
-def _buttons(markup) -> list:
-    if not markup:
-        return []
-    if isinstance(markup, str):
-        try:
-            markup = json.loads(markup)
-        except ValueError:
-            return []
-    return [list(row) for row in (markup.get('inline_keyboard') or [])]
+class BotApi:
+    """telebot.apihelper._make_request, answered by tgsim. A refusal is telebot's ApiTelegramException."""
 
+    def __init__(self, tg: tgsim.Telegram):
+        self.tg = tg
 
-def _param(params, *names, default=None):
-    for name in names:
-        if params and params.get(name) not in (None, ''):
-            return params[name]
-    return default
-
-
-class FakeBotApi:
-    """telebot.apihelper._make_request, answered in memory. `log` lists every call."""
-
-    BOT = {'id': 100000001, 'is_bot': True, 'first_name': 'Yourcast (sim)', 'username': 'yourcast_sim_bot'}
-    MEDIA = {'sendAudio': 'audio', 'sendPhoto': 'photo', 'sendDocument': 'document', 'sendVideo': 'video',
-             'sendVoice': 'voice', 'sendAnimation': 'animation'}
-
-    def __init__(self):
-        self.lock = threading.RLock()
-        self.messages: dict = {}  # (chat id, message id) -> Sent
-        self.log: list = []  # (method, params) in order
-        self.toasts: list = []  # (text, alert) of answered taps
-        self._ids = itertools.count(1001)
-        self._files = itertools.count(1)
-        # parts of photo URLs Telegram will not fetch ("failed to get HTTP URL content", cdn.mave.digital);
-        # an uploaded file always goes
-        self.refused_urls: set = set()
-        # getChatMember: (channel id, user id) -> status; anyone else has left
-        self.members: dict = {}
-
-    # --- the chat ---------------------------------------------------------
-    def next_id(self) -> int:
-        with self.lock:
-            return next(self._ids)
-
-    def add(self, sent: Sent) -> Sent:
-        with self.lock:
-            self.messages[(sent.chat_id, sent.message_id)] = sent
-        return sent
-
-    def chat(self, chat_id) -> list:
-        """The chat's messages in order, deleted ones left out."""
-        with self.lock:
-            return [m for (c, _), m in sorted(self.messages.items(), key=lambda kv: kv[0][1])
-                    if c == int(chat_id) and not m.deleted]
-
-    # --- the Bot API --------------------------------------------------------
     def __call__(self, token, method_name, method='get', params=None, files=None):
-        params = dict(params or {})
-        with self.lock:
-            self.log.append((method_name, params, sorted((files or {}).keys())))
-            self._refuse_url(method_name, params)
-            handler = getattr(self, '_' + method_name, None)
-            if handler is not None:
-                return handler(params, files or {})
-            if method_name in self.MEDIA:
-                return self._media(method_name, params, files or {})
-            if method_name.startswith('send') and method_name != 'sendChatAction':
-                return self._send(method_name[4:].lower(), params, text=str(_param(params, 'text', 'caption',
-                                                                                     default='')))
-            return True  # setMyCommands, sendChatAction, pinChatMessage, ...
-
-    def _refuse_url(self, method_name, params):
-        if method_name == 'sendPhoto':
-            url = params.get('photo')
-        elif method_name == 'editMessageMedia':
-            media = params.get('media')
-            url = (json.loads(media) if isinstance(media, str) else (media or {})).get('media')
-        else:
-            return
-        if isinstance(url, str) and url.startswith('http') and any(part in url for part in self.refused_urls):
+        uploads = {name: _upload(name, value) for name, value in (files or {}).items()}
+        try:
+            return self.tg.call(method_name, params, uploads)
+        except tgsim.ApiError as e:
             from telebot.apihelper import ApiTelegramException
-            raise ApiTelegramException(method_name, None, {
-                'error_code': 400, 'description': 'Bad Request: failed to get HTTP URL content'})
+            raise ApiTelegramException(method_name, None, e.json())
 
-    def _message_json(self, sent: Sent) -> dict:
-        data = {'message_id': sent.message_id, 'date': int(time.time()), 'from': self.BOT,
-                'chat': {'id': sent.chat_id, 'type': 'private' if sent.chat_id > 0 else 'channel'}}
-        if sent.kind == 'text' or sent.kind == 'rich':
-            data['text'] = sent.text
-        elif sent.text:
-            data['caption'] = sent.text
-        if sent.buttons:
-            data['reply_markup'] = {'inline_keyboard': sent.buttons}
-        if sent.kind == 'rich' and sent.extra.get('source'):  # rich_message.file_id_of reads this
-            file_id = sent.extra.setdefault('file_id', 'sim-file-%d' % next(self._files))
-            data['rich_message'] = {'blocks': [{'type': 'audio', 'audio': {'file_id': file_id,
-                                                                          'file_unique_id': file_id}}]}
-        if sent.kind in self.MEDIA.values():
-            file_id = sent.extra.setdefault('file_id', 'sim-file-%d' % next(self._files))
-            body = {'file_id': file_id, 'file_unique_id': file_id}
-            if sent.kind == 'audio':
-                body['duration'] = int(_param(sent.extra, 'duration', default=0) or 0)
-            data[sent.kind] = [dict(body, width=1, height=1)] if sent.kind == 'photo' else body
-        return data
+    @property
+    def messages(self) -> dict:
+        """(chat id, message id) -> tgsim.Message"""
+        return self.tg.messages
 
-    def _send(self, kind, params, text='', extra=None) -> dict:
-        reply_to = _param(params, 'reply_to_message_id')
-        sent = self.add(Sent(self.next_id(), int(params['chat_id']), kind, text,
-                             _buttons(params.get('reply_markup')), int(reply_to) if reply_to else None,
-                             extra=dict(extra or {})))
-        return self._message_json(sent)
+    @property
+    def log(self) -> list:
+        """(method, params, upload names) of every call, in order."""
+        return [(call.method, call.params, call.files) for call in self.tg.calls]
 
-    def _sendMessage(self, params, files):
-        return self._send('text', params, str(params.get('text', '')))
-
-    def _sendRichMessage(self, params, files):
-        rich = params.get('rich_message')
-        rich = json.loads(rich) if isinstance(rich, str) else (rich or {})
-        media = [item.get('media') or {} for item in rich.get('media') or []]
-        audio = next((item for item in media if item.get('type') == 'audio'), {})
-        source = '<upload audio>' if str(audio.get('media', '')).startswith('attach://') else audio.get('media')
-        return self._send('rich', params, str(rich.get('html', '')),
-                          {'source': source, 'title': audio.get('title'), 'performer': audio.get('performer'),
-                           'duration': audio.get('duration')})
-
-    def _media(self, method, params, files):
-        kind = self.MEDIA[method]
-        source = params.get(kind) or ('<upload %s>' % kind if kind in files else None)
-        return self._send(kind, params, str(params.get('caption', '')),
-                          {'source': source, 'title': params.get('title'), 'performer': params.get('performer'),
-                           'duration': params.get('duration')})
-
-    def _sendInvoice(self, params, files):
-        return self._send('invoice', params, '%s: %s' % (params.get('title'), params.get('description')),
-                          {'payload': params.get('payload'), 'prices': params.get('prices'),
-                           'currency': params.get('currency')})
-
-    def _createInvoiceLink(self, params, files):
-        return 'https://t.me/$sim-invoice'
-
-    def _target(self, params) -> Optional[Sent]:
-        key = (int(params.get('chat_id', 0) or 0), int(params.get('message_id', 0) or 0))
-        return self.messages.get(key)
-
-    def _not_found(self):
-        from telebot.apihelper import ApiTelegramException
-        raise ApiTelegramException('sim', None, {'error_code': 400, 'description':
-                                                 'Bad Request: message to edit not found'})
-
-    def _editMessageText(self, params, files):
-        sent = self._target(params)
-        if sent is None or sent.deleted:
-            self._not_found()
-        if sent.kind not in ('text', 'rich'):  # Telegram: a photo's caption is not its text
-            from telebot.apihelper import ApiTelegramException
-            raise ApiTelegramException('sim', None, {'error_code': 400, 'description':
-                                                     'Bad Request: there is no text in the message to edit'})
-        new_buttons = _buttons(params.get('reply_markup'))
-        if sent.text == params.get('text') and sent.buttons == new_buttons:
-            from telebot.apihelper import ApiTelegramException
-            raise ApiTelegramException('sim', None, {'error_code': 400, 'description':
-                                                     'Bad Request: message is not modified: specified new message content and reply '
-                                                     'markup are exactly the same as a current content and reply '
-                                                     'markup of the message'})
-        sent.text, sent.buttons = str(params.get('text', '')), new_buttons
-        sent.kind = 'text' if sent.kind == 'rich' else sent.kind
-        return self._message_json(sent)
-
-    def _editMessageCaption(self, params, files):
-        sent = self._target(params)
-        if sent is None or sent.deleted:
-            self._not_found()
-        sent.text, sent.buttons = str(params.get('caption', '')), _buttons(params.get('reply_markup'))
-        return self._message_json(sent)
-
-    def _editMessageReplyMarkup(self, params, files):
-        sent = self._target(params)
-        if sent is None or sent.deleted:
-            self._not_found()
-        sent.buttons = _buttons(params.get('reply_markup'))
-        return self._message_json(sent)
-
-    def _editMessageMedia(self, params, files):
-        sent = self._target(params)
-        if sent is None or sent.deleted:
-            self._not_found()
-        media = params.get('media')
-        media = json.loads(media) if isinstance(media, str) else (media or {})
-        sent.kind = media.get('type', sent.kind)
-        sent.text = str(media.get('caption', ''))
-        sent.buttons = _buttons(params.get('reply_markup'))
-        return self._message_json(sent)
-
-    def _deleteMessage(self, params, files):
-        sent = self._target(params)
-        if sent is None or sent.deleted:
-            from telebot.apihelper import ApiTelegramException
-            raise ApiTelegramException('sim', None, {'error_code': 400, 'description':
-                                                     'Bad Request: message to delete not found'})
-        sent.deleted = True
-        return True
-
-    def _answerCallbackQuery(self, params, files):
-        self.toasts.append((params.get('text'), bool(params.get('show_alert'))))
-        return True
-
-    def _getMe(self, params, files):
-        return dict(self.BOT)
-
-    def _getChatMember(self, params, files):
-        key = (int(params.get('chat_id')), int(params.get('user_id')))
-        return {'status': self.members.get(key, 'left'), 'user': {'id': key[1], 'is_bot': False}}
-
-    def _getChat(self, params, files):
-        chat_id = int(params.get('chat_id', 0) or 0)
-        return {'id': chat_id, 'type': 'private' if chat_id > 0 else 'channel', 'title': 'sim chat'}
+    def refuse_url(self, part: str):
+        """Telegram will not fetch a picture whose URL has `part` ("failed to get HTTP URL content"); an upload
+        always goes."""
+        def names(params):
+            media = params.get('media') if isinstance(params.get('media'), dict) else {}
+            url = params.get('photo') or media.get('media')
+            return isinstance(url, str) and url.startswith('http') and part in url
+        error = tgsim.bad_request('failed to get HTTP URL content')
+        self.tg.fail('sendPhoto', error, names, times=None)
+        self.tg.fail('editMessageMedia', error, names, times=None)
 
 
 # --- Telethon, the listening side ------------------------------------------------
@@ -332,18 +146,25 @@ class CallbackEvent:
 
     query_counter = itertools.count(1)
 
-    def __init__(self, chat_id, data: bytes, message: FakeMessage, lang_code):
+    def __init__(self, chat_id, data: bytes, message: FakeMessage, lang_code, query_id=None, answer=None):
         self.chat_id, self.data, self._message, self._lang = chat_id, data, message, lang_code
+        self._answer = answer
         self.chat = _Chat(chat_id)
         self.query = object()
         self.is_private, self.is_channel, self.is_group = True, False, False
-        self.original_update = type('U', (), {'query_id': next(self.query_counter), 'user_id': chat_id})()
+        query_id = next(self.query_counter) if query_id is None else query_id
+        self.original_update = type('U', (), {'query_id': query_id, 'user_id': chat_id})()
 
     async def get_sender(self):
         return _Sender(self._lang)
 
     async def get_message(self):
         return self._message
+
+    async def answer(self, message=None, cache_time=0, *, url=None, alert=False):
+        """Telethon's answer to the tap (MTProto), told to tgsim as the Bot API's answerCallbackQuery."""
+        if self._answer is not None:
+            self._answer(message, alert)
 
 
 def _builder_takes(builder, event) -> bool:

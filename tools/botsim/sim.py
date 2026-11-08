@@ -3,8 +3,8 @@
 
 boot() must run before anything else of the bot is imported: the bot reads
 config.db_path at import time. It points the bot at a database (a fresh one
-from schema.sql, or a copy of a real one you pass), puts FakeBotApi in place
-of telebot's request function, a fake Telethon client in place of the
+from schema.sql, or a copy of a real one you pass), puts tgsim's Telegram in
+place of telebot's request function (BotApi), a fake Telethon client in place of the
 agent, records Amplitude events instead of sending them, and registers the
 real handlers (app/routes/initialize_routes). Then BotSim is a user:
 
@@ -15,28 +15,29 @@ real handlers (app/routes/initialize_routes). Then BotSim is a user:
     step = sim.deliver()             # the episodes the taps queued, as the send workers would
     step = sim.run_ai()              # the summaries queued (fake model unless ai='real')
     print(step)                      # what the user saw change, handlers, toasts, warnings
+    open('out.html', 'w').write(tgsim.page(steps, tg=sim._state['tg']))   # the steps as the chat shows them
 
 Every incoming update runs synchronously through the real dispatcher
 (TheSender._serve_locked): middlewares, routes, state store, database.
 """
 import asyncio
 import os
-import re
 import shutil
 import sys
 import tempfile
 import threading
 import time
 import types
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Optional
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+import tgsim  # noqa: E402
+
 from tools.botsim import fake_telegram  # noqa: E402
-from tools.botsim.fake_telegram import Sent  # noqa: E402
 
 SCHEMA = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.sql')
 FAKE_TRANSCRIPT = '[0:00] The host opens the episode. [0:30] The guest explains the main idea. [1:00] Advice.'
@@ -89,7 +90,10 @@ def boot(database: Optional[str] = None, network: bool = True, ai: str = 'fake',
     import agent as agent_package
     agent_package.bot_telethon = agent
 
-    api = fake_telegram.FakeBotApi()
+    # quiet=0: the bot is done when the action's threads are (BotSim._settle), not after a pause between calls
+    tg = tgsim.Telegram(bot={'id': 100000001, 'first_name': 'Yourcast (sim)', 'username': 'yourcast_sim_bot'},
+                        quiet=0)
+    api = fake_telegram.BotApi(tg)
     from telebot import apihelper
     apihelper._make_request = api
 
@@ -147,7 +151,7 @@ def boot(database: Optional[str] = None, network: bool = True, ai: str = 'fake',
     initialize_routes.initialize_routes(Balancer(), None, [])
     initialize_routes.t_answer_sender = Balancer()
 
-    _state.update(database=database, client=client, api=api, analytics=analytics, log=log, ai=ai)
+    _state.update(database=database, client=client, tg=tg, api=api, analytics=analytics, log=log, ai=ai)
     return _state
 
 
@@ -163,41 +167,21 @@ def shutdown():
 
 
 @dataclass
-class Step:
-    """What one action of the user changed."""
-    action: str
-    new: list = field(default_factory=list)  # Sent
-    edited: list = field(default_factory=list)  # Sent, as it is now
-    deleted: list = field(default_factory=list)  # message ids
-    toasts: list = field(default_factory=list)  # (text, alert)
+class Step(tgsim.Step):
+    """What one action of the user changed (tgsim.Step), with the bot's side of it: the Telethon handlers that
+    took the update, the Amplitude events, the WARN / ERR log lines."""
     handlers: list = field(default_factory=list)
     analytics: list = field(default_factory=list)  # (event, user id, properties)
-    warnings: list = field(default_factory=list)  # WARN / ERR log lines
-    other_chats: list = field(default_factory=list)  # Sent to someone else (the creator's notices)
-    seconds: float = 0.0
-
-    @property
-    def texts(self) -> list:
-        return [m.text for m in self.new + self.edited]
+    warnings: list = field(default_factory=list)  # (level, line)
 
     @property
     def errors(self) -> list:
         return [line for level, line in self.warnings if level == 'err']
 
     def __str__(self):
-        lines = ['>>> %s  (%.1f s)' % (self.action, self.seconds)]
+        lines = tgsim.text_step(self).splitlines()
         if self.handlers:
-            lines.append('    handlers: ' + ', '.join(self.handlers))
-        for label, messages in (('new', self.new), ('edited', self.edited)):
-            for message in messages:
-                lines.append(render(message, label))
-        for message_id in self.deleted:
-            lines.append('  [deleted #%s]' % message_id)
-        for text, alert in self.toasts:
-            if text:  # a tap answered without a word only stops the spinner
-                lines.append('  [%s] %s' % ('alert' if alert else 'toast', text))
-        for message in self.other_chats:
-            lines.append(render(message, 'to chat %s' % message.chat_id))
+            lines.insert(1, '    handlers: ' + ', '.join(self.handlers))
         for event, _, properties in self.analytics:
             lines.append('  amplitude: %s %s' % (event, properties or ''))
         for level, line in self.warnings:
@@ -205,17 +189,8 @@ class Step:
         return '\n'.join(lines)
 
 
-def render(message: Sent, label: str = '') -> str:
-    head = '  [%s #%d %s%s]' % (label, message.message_id, message.kind,
-                                ' reply to #%d' % message.reply_to if message.reply_to else '')
-    text = re.sub(r'\n{3,}', '\n\n', message.text or '')
-    lines = [head] + ['    ' + line for line in text.splitlines()]
-    if message.kind not in ('text', 'rich') and message.extra.get('source'):
-        lines.append('    (%s: %s)' % (message.kind, str(message.extra['source'])[:120]))
-    for row in message.buttons:
-        lines.append('    ' + '  '.join('[%s%s]' % (button.get('text'), ' -> ' + button['url'] if button.get('url')
-                                                       else '') for button in row))
-    return '\n'.join(lines)
+def render(message: tgsim.Message, label: str = '') -> str:
+    return tgsim.render.text_message(message, label)
 
 
 class BotSim:
@@ -225,20 +200,23 @@ class BotSim:
         if not _state:
             raise RuntimeError('call botsim.boot() first')
         self.user_id, self.lang, self.settle_seconds = int(user_id), lang, settle_seconds
-        self.api, self.client = _state['api'], _state['client']
+        self.tg, self.api, self.client = _state['tg'], _state['api'], _state['client']
+        self.user = self.tg.user(self.user_id, lang)
 
     # --- what the user sees ----------------------------------------------------
     def chat(self) -> list:
-        return self.api.chat(self.user_id)
+        return self.tg.history(self.user_id)
 
-    def last(self, with_buttons: bool = False) -> Optional[Sent]:
-        for message in reversed(self.chat()):
-            if message.from_bot and (message.buttons or not with_buttons):
-                return message
-        return None
+    def last(self, with_buttons: bool = False) -> Optional[tgsim.Message]:
+        return self.user.last(with_buttons)
 
     def screen(self, count: int = 3) -> str:
-        return '\n'.join(render(m, 'bot' if m.from_bot else 'you') for m in self.chat()[-count:])
+        return self.user.screen(count)
+
+    def bot_message(self, kind: str = 'text', text: str = '', **media) -> tgsim.Message:
+        """A message of the bot's already in the chat (an episode's audio whose buttons a test taps)."""
+        with self.tg.lock:
+            return self.tg._new(self.user_id, kind, self.tg._public_bot(), text, media=media)
 
     # --- what the user does ------------------------------------------------------
     def send(self, text: str) -> Step:
@@ -260,23 +238,32 @@ class BotSim:
         event = fake_telegram.NewMessageEvent(self.user_id, message, self.lang)
         return self._run('voice (%d seconds)' % duration, event)
 
-    def tap(self, button, message: Optional[Sent] = None) -> Step:
+    def tap(self, button, message: Optional[tgsim.Message] = None) -> Step:
         """`button`: its text (or part of it), or (row, column). The message: the bot's latest
         one that has that button, unless given."""
-        target, chosen = self._find_button(button, message)
+        target, chosen = self.user.find_button(button, message)
         data = chosen.get('callback_data')
         if data is None:
             raise ValueError('%r is not a callback button: %r' % (button, chosen))
-        bot_message = fake_telegram.FakeMessage(target.message_id, self.user_id, target.text, sender_lang=None)
-        event = fake_telegram.CallbackEvent(self.user_id, str(data).encode('utf-8'), bot_message, self.lang)
-        return self._run('tap %r on #%d' % (chosen.get('text'), target.message_id), event)
+        return self.tap_data(str(data), target, 'tap %r on #%d' % (chosen.get('text'), target.message_id))
 
-    def tap_data(self, data: str, message: Optional[Sent] = None) -> Step:
+    def tap_data(self, data: str, message: Optional[tgsim.Message] = None, label: Optional[str] = None) -> Step:
         """A tap with this callback data (an old button, a crafted one) on `message` or the latest."""
-        target = message or self.last() or Sent(0, self.user_id, 'text')
-        bot_message = fake_telegram.FakeMessage(target.message_id, self.user_id, target.text)
-        event = fake_telegram.CallbackEvent(self.user_id, data.encode('utf-8'), bot_message, self.lang)
-        return self._run('tap data %s' % data, event)
+        target = message or self.last()
+        with self.tg.lock:  # a query Telegram knows, so the bot's answerCallbackQuery is checked
+            query_id = next(self.tg._query_ids)
+            self.tg.queries[str(query_id)] = {'answered': False, 'chat_id': self.user_id, 'user_id': self.user_id,
+                                              'data': data}
+        bot_message = fake_telegram.FakeMessage(target.message_id if target else 0, self.user_id,
+                                                target.text if target else '')
+        def answer(text, alert):
+            self.api(None, 'answerCallbackQuery', params={'callback_query_id': query_id, 'text': text,
+                                                          'show_alert': alert})
+        event = fake_telegram.CallbackEvent(self.user_id, data.encode('utf-8'), bot_message, self.lang, query_id,
+                                            answer)
+        step = self._run(label or 'tap data %s' % data, event)
+        step.unanswered_tap = not self.tg.queries[str(query_id)]['answered']
+        return step
 
     def deliver(self, by_url: bool = True) -> Step:
         """The episodes queued, sent now as the send workers would. `by_url`: every file goes as
@@ -331,30 +318,10 @@ class BotSim:
 
     # --- plumbing -------------------------------------------------------------------
     def _user_message(self, text, **kwargs) -> fake_telegram.FakeMessage:
-        message_id = self.api.next_id()
-        self.api.add(Sent(message_id, self.user_id, 'file' if kwargs.get('file') else 'text', text, from_bot=False))
-        return fake_telegram.FakeMessage(message_id, self.user_id, text, sender_lang=self.lang, **kwargs)
-
-    def _find_button(self, button, message):
-        candidates = [message] if message is not None else [m for m in reversed(self.chat())
-                                                            if m.from_bot and m.buttons]
-        for candidate in candidates:
-            if isinstance(button, tuple):
-                row, column = button
-                try:
-                    return candidate, candidate.buttons[row][column]
-                except IndexError:
-                    continue
-            for row in candidate.buttons:
-                for chosen in row:
-                    if chosen.get('text') == button:
-                        return candidate, chosen
-            for row in candidate.buttons:
-                for chosen in row:
-                    if str(button).lower() in str(chosen.get('text', '')).lower():
-                        return candidate, chosen
-        raise LookupError('no button %r in the chat; latest: %s' % (
-            button, candidates[0].button_texts() if candidates else []))
+        with self.tg.lock:
+            sent = self.tg._new(self.user_id, 'document' if kwargs.get('file') else 'text', dict(self.user.data),
+                                text)
+        return fake_telegram.FakeMessage(sent.message_id, self.user_id, text, sender_lang=self.lang, **kwargs)
 
     def _run(self, label, event) -> Step:
         handlers = []
@@ -366,25 +333,14 @@ class BotSim:
         return step
 
     def _observe(self, label, work) -> Step:
-        api, started = self.api, time.time()
-        before = {m.message_id: (m.text, m.buttons, m.kind) for m in self.api.chat(self.user_id)}
-        seen = set(api.messages)
-        toasts, analytics, log = len(api.toasts), len(_state['analytics']), len(_state['log'])
+        analytics, log = len(_state['analytics']), len(_state['log'])
         threads = set(threading.enumerate())
-        work()
-        self._settle(threads)
-        step = Step(label, seconds=time.time() - started)
-        for message in self.api.chat(self.user_id):
-            if message.message_id not in before:
-                if message.from_bot:
-                    step.new.append(message)
-            elif before[message.message_id] != (message.text, message.buttons, message.kind):
-                step.edited.append(message)
-        step.deleted = [message_id for message_id in before
-                        if api.messages.get((self.user_id, message_id)) is None
-                        or api.messages[(self.user_id, message_id)].deleted]
-        step.other_chats = [m for key, m in api.messages.items() if key not in seen and m.chat_id != self.user_id]
-        step.toasts = api.toasts[toasts:]
+
+        def run():
+            work()
+            self._settle(threads)
+        seen = tgsim.observe(self.tg, label, self.user_id, run, self.lang)
+        step = Step(**{f.name: getattr(seen, f.name) for f in fields(seen)})
         step.analytics = _state['analytics'][analytics:]
         step.warnings = [(level, line) for level, line in _state['log'][log:] if level in ('warn', 'err')]
         return step

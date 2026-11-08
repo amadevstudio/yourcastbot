@@ -1,0 +1,2 @@
+# botsim on top of the bot's requirements.txt: pip install -r requirements.txt -r tools/botsim/requirements.txt
+tgsim @ git+https://github.com/amadevstudio/tgsim@v0.1.1
