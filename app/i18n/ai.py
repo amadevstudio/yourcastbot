@@ -495,12 +495,12 @@ ROWS = {
         '✨ תמליל מדויק יותר שמראה מי מדבר לא נכנס במה שנשאר למסלול שלכם ב-30 הימים האלה, אז הנה התמליל הרגיל.'),
     # a plan's description (paymentModule.ai_plan_text): its AI in a line
     'trf_descr_ai': (
-        'ИИ: пересказы и расшифровки – {hours} ч аудио за 30 дней, вопросы – до {questions} в день и {month} за 30 дней.',
-        'AI: summaries and transcripts – {hours} h of audio per 30 days, questions – up to {questions} a day and {month} in 30 days.',
-        'IA: resumos e transcrições – {hours} h de áudio a cada 30 dias, perguntas – até {questions} por dia e {month} em 30 dias.',
-        'IA: resúmenes y transcripciones – {hours} h de audio cada 30 días, preguntas – hasta {questions} al día y {month} en 30 días.',
-        'KI: Zusammenfassungen und Transkripte – {hours} Std. Audio pro 30 Tage, Fragen – bis zu {questions} am Tag und {month} in 30 Tagen.',
-        'AI: סיכומים ותמלילים – {hours} שעות אודיו ל-30 יום, שאלות – עד {questions} ביום ו-{month} ב-30 יום.'),
+        'ИИ: пересказы и расшифровки подкастов и голосовых – общий лимит {hours} ч аудио за 30 дней, вопросы – до {questions} в день и {month} за 30 дней.',
+        'AI: podcast and voice message summaries and transcripts – a shared allowance of {hours} h of audio per 30 days, questions – up to {questions} a day and {month} in 30 days.',
+        'IA: resumos e transcrições de podcasts e mensagens de voz – limite compartilhado de {hours} h de áudio a cada 30 dias, perguntas – até {questions} por dia e {month} em 30 dias.',
+        'IA: resúmenes y transcripciones de podcasts y mensajes de voz – límite compartido de {hours} h de audio cada 30 días, preguntas – hasta {questions} al día y {month} en 30 días.',
+        'KI: Zusammenfassungen und Transkripte von Podcasts und Sprachnachrichten – gemeinsames Kontingent von {hours} Std. Audio pro 30 Tage, Fragen – bis zu {questions} am Tag und {month} in 30 Tagen.',
+        'AI: סיכומים ותמלילים של פודקאסטים והודעות קוליות – מכסה משותפת של {hours} שעות אודיו ל-30 יום, שאלות – עד {questions} ביום ו-{month} ב-30 יום.'),
     'trf_descr_ai_paid': (
         'Из них {paid} ч – точной моделью, с разметкой, кто говорит.',
         '{paid} h of it with the precise model that shows who is speaking.',
