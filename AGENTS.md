@@ -1063,7 +1063,10 @@ stopped (forgot, another app, something missing, no need for podcasts in
 Telegram, own words), the week's gift; a search button after the answer
 (not under the question: a tap there turns the question into search). A
 pilot: newest rows first, `OLD_PER_RUN` (300) an hour, `why_old_limit`
-(config, 1000) in all, raised by the owner after reading the blocks; one in
+(config) in all: 1000, then 11000, all of them (the owner's call, 2026-11-08:
+of the pilot's 1000, 3 in 4 had blocked the bot long ago and 3% of those
+reached answered; a block after it cannot be seen: the bot hears of one only
+when it sends again); one in
 ten (hundreds digit of the id 0) is a holdout, marked `control`, never sent
 (`survey_control`), the revival read against it. Digest recipients stay out
 while the digest's A/B runs. The adapter backfills a NULL
