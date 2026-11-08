@@ -60,6 +60,8 @@ def test_start(user):
             "the menu replaces the welcome screen")
     settings = user.tap('Settings')
     _assert(settings.edited and len(settings.edited[0].buttons) >= 2, "settings: a list of sections")
+    _assert(not menu.unanswered_tap and not settings.unanswered_tap,
+            "a tap without a toast is answered when its handler is done (the button kept spinning)")
 
 
 def test_text_is_a_search(user):
@@ -315,6 +317,7 @@ def test_show_notes(user):
     ai.remember_episode('simref0000000003', 'https://cdn.example.com/ep3.mp3', None, 'Episode Three', 'Sim Show', 600)
     empty = user.tap_data(json.dumps({'tp': 'desc', 'r': 'simref0000000003'}))
     _assert(not empty.new and empty.toasts and empty.toasts[0].text, "no text: a toast, no empty message")
+    _assert(not empty.refusals, "a tap answered by a toast is not answered again")
 
 
 def _plan_row(user_id):

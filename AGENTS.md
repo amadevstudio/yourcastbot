@@ -584,6 +584,17 @@ Locks: `python app/service/podcast/test_feed_cache.py`,
 `python app/service/podcast/test_cover.py` (CD gates; the rss, page and
 editor parts run where the bot's requirements are installed).
 
+## Taps
+
+Every tap is answered once: a toast or an alert through `notify` (which marks
+the `Callback` answered), else the incoming worker answers it with nothing
+when the handler is done (`notify.answer_tap`). Before, most taps had no
+answer and the button kept its spinner (32 of 49 in botsim, 2026-11-08).
+Answer a tap through `notify`, never `bot.answer_callback_query` directly:
+Telegram refuses a second answer, so the worker's would lose the toast.
+A page row (❮ Menu ❯) says `goBackMenuShort`: a third of the width.
+Lock: `python tools/botsim/test_botsim.py`.
+
 ## Screen state
 
 The saved state of a screen is gone when a button of an old message is

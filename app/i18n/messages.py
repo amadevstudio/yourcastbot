@@ -497,6 +497,27 @@ messages = {
         }
 
     },
+    # the middle of a page row (❮ Menu ❯): a third of the width
+    "goBackMenuShort": {
+        "ru": {
+            "ro_msg": "❮❮ Меню"
+        },
+        "en": {
+            "ro_msg": "❮❮ Menu"
+        },
+        "pt-BR": {
+            "ro_msg": "❮❮ Menu"
+        },
+        "es": {
+            "ro_msg": "❮❮ Menú"
+        },
+        "de": {
+            "ro_msg": "❮❮ Menü"
+        },
+        "he": {
+            "ro_msg": "❮❮ תפריט"
+        }
+    },
     "skipWelcome": {
         "ru": {
             "ro_msg": emojiCodes["rewindToNext"] + " Пропустить и открыть меню"
@@ -1073,7 +1094,7 @@ messages = {
     },
     "channelConnect": {
         "ru": {
-            "ro_msg": emojiCodes.get('electricPlug') + " " + "Подключённые каналы"
+            "ro_msg": emojiCodes.get('electricPlug') + " " + "Мои каналы"
         },
         "en": {
             "ro_msg": emojiCodes.get('electricPlug') + " " + "Connected channels"

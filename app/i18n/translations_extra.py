@@ -76,7 +76,7 @@ EXTRA_TRANSLATIONS = {
     "podcastTop": {
         "es": "👑 Top de podcasts 🌍",
         "de": "👑 Top-Podcasts 🌍",
-        "he": "👑 הפודקאסטים המובילים 🌍",
+        "he": "👑 טופ פודקאסטים 🌍",
     },
     "podcastTopLang": {
         "es": "👑 Top local",

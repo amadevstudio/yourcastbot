@@ -142,9 +142,9 @@ def construct_settings_message(language_code, chat_id) -> list[MessageStructures
         }])
     if ai_summary.enabled():
         keyboard.append([{
-            'text': get_message('voiceLanguage', language_code) + ' · '
+            'text': get_message('settingsVoiceTitle', language_code) + ' · '
                     + get_message('summaryLanguageMine' if _stored_summary_language(user, 'voice_summary_language') == 'mine'
-                                  else 'voiceLanguageOriginal', language_code),
+                                  else 'settingsVoiceOriginal', language_code),
             'callback_data': {'tp': 'v', 'p': ':lang'},
         }])
     if show_digest_reminder_settings(has_bot_subscription):

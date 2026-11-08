@@ -34,6 +34,7 @@ FA_MESSAGES = {
     "showFileSizes": "حجم فایل‌ها",
     "goBack": "❮❮ بازگشت",
     "goBackMenu": "❮❮ بازگشت به منو",
+    "goBackMenuShort": "❮❮ منو",
     "skipWelcome": "⏭ رد شدن و باز کردن منو",
     "backToCHannel": "بازگشت به کانال",
     "thereis": "تعداد",
