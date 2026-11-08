@@ -1418,7 +1418,16 @@ Lock: `python scripts/test_db_snapshot.py` (CD gate).
 `python tools/botsim/cli.py -c "send /start" -c "tap menu"` prints what the
 user would see. Use it to walk a flow end to end before shipping it (it
 found the OPML duplicate channels and the `flush=` TypeError). It needs the
-bot's requirements; a copy of a real database stays outside the repo.
+bot's requirements and `tools/botsim/requirements.txt`; a copy of a real
+database stays outside the repo.
+
+The Bot API side is tgsim (github.com/amadevstudio/tgsim, pinned by tag;
+ascenditbot uses it too): it refuses what Telegram refuses, so a step's `!!`
+line is a call that fails in production. `--html out.html` shows the steps as
+the chat draws them, `--lint` prints layout mistakes. A change to how
+Telegram is modeled goes to tgsim (a new tag), not into `tools/botsim`;
+`tools/botsim` keeps only what is this bot's: the Telethon events, boot, and
+the actions `deliver` and `ai`.
 README: `tools/botsim/README.md`. Lock: `python tools/botsim/test_botsim.py`.
 
 ## Tests

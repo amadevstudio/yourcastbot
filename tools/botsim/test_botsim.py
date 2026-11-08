@@ -22,6 +22,7 @@ if _ROOT not in sys.path:
 try:
     import telebot  # noqa: F401
     import telethon  # noqa: F401
+    import tgsim  # noqa: F401  (tools/botsim/requirements.txt)
 except ImportError as e:  # CI has no bot requirements
     print("skip botsim (%s)" % e.__class__.__name__)
     sys.exit(0)
@@ -216,8 +217,7 @@ def test_transcript_alone(user):
     from db import ai
     ai.remember_episode('simref0000000005', 'https://cdn.example.com/ep5.mp3', None, 'Episode Five', 'Sim Show',
                         1800)
-    from tools.botsim.fake_telegram import Sent
-    audio = Sent(user.api.next_id(), USER, 'audio', 'Episode Five')  # the audio the buttons are on
+    audio = user.bot_message('audio', 'Episode Five')  # the audio the buttons are on
     step = user.tap_data(json.dumps({'tp': 'trn', 'r': 'simref0000000005'}), message=audio)
     _assert(step.handlers == ['action_processor(recs, trn)'] and len(step.new) == 1
             and step.new[0].text == '📥 Transcript: queued…' and step.new[0].reply_to == audio.message_id,
@@ -314,7 +314,7 @@ def test_show_notes(user):
     _assert(step.new[0].reply_to is not None, "a reply to the message the button is on (the audio)")
     ai.remember_episode('simref0000000003', 'https://cdn.example.com/ep3.mp3', None, 'Episode Three', 'Sim Show', 600)
     empty = user.tap_data(json.dumps({'tp': 'desc', 'r': 'simref0000000003'}))
-    _assert(not empty.new and empty.toasts and empty.toasts[0][0], "no text: a toast, no empty message")
+    _assert(not empty.new and empty.toasts and empty.toasts[0].text, "no text: a toast, no empty message")
 
 
 def _plan_row(user_id):
@@ -499,9 +499,9 @@ def test_free_bronze_for_channels():
     _assert('https://t.me/simchannel' in urls and {'tp': channels.CHECK_ACTION} in _callbacks(step)
             and any('end it at any time' in text for text in step.texts), "the screen: the channel, Check, the terms")
     step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
-    _assert(step.toasts and 'Not subscribed yet: Sim channel' in step.toasts[-1][0] and _plan_row(2010)[2] == 0,
+    _assert(step.toasts and 'Not subscribed yet: Sim channel' in step.toasts[-1].text and _plan_row(2010)[2] == 0,
             "not subscribed: said, nothing on")
-    user.api.members[(-100501, 2010)] = 'member'
+    user.tg.set_member(-100501, 2010, 'member')
     step = user.tap_data(json.dumps({'tp': channels.CHECK_ACTION}))
     _assert(any('Bronze is on' in text for text in step.texts) and _plan_row(2010)[0] == bronze
             and _plan_row(2010)[2] == 168 and not step.errors, "subscribed: Bronze on for a week")

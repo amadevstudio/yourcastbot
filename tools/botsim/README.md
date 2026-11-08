@@ -14,7 +14,7 @@ routes, the services and the database. Only the edges are fake.
 | Edge | In production | In botsim |
 |------|---------------|-----------|
 | Updates in (messages, taps, files) | Telethon client | `FakeClient` collects the handlers; `dispatch()` runs them as Telethon does |
-| Messages out | pyTelegramBotAPI -> `apihelper._make_request` -> Bot API | `FakeBotApi` keeps each chat (ids, text, buttons, edits, deletes) and answers like the Bot API |
+| Messages out | pyTelegramBotAPI -> `apihelper._make_request` -> Bot API | `BotApi` hands each call to [tgsim](https://github.com/amadevstudio/tgsim): it keeps each chat (ids, text, buttons, edits, deletes) and answers as the Bot API does, refusals included |
 | Uploads over 50 MB | Telethon agent | none (an error says so) |
 | Amplitude | HTTP | recorded in the step |
 | Logger | log files | collected, WARN / ERR shown in the step |
@@ -22,7 +22,16 @@ routes, the services and the database. Only the edges are fake.
 | AI summaries | OpenRouter | a canned summary and answer (`ai='fake'`), or real with `ai='real'` |
 | Database | `db/yourcast.db` | a fresh one from `schema.sql`, or a copy you pass |
 
-Needs the bot's requirements (`requirements.txt`).
+Needs the bot's requirements and tgsim:
+`pip install -r requirements.txt -r tools/botsim/requirements.txt`.
+
+tgsim refuses what Telegram refuses (HTML it cannot parse, a text over
+4096 characters, a reply to a message that is gone, an edit that changes
+nothing, a tap answered twice); the step prints each refusal as `!!`.
+`--html out.html` writes the steps as the chat shows them (formatting,
+buttons cut at a phone's width, edits, toasts, lint under each message);
+`--lint` prints the layout warnings under each step (a `%s` left in, an
+`&nbsp;` shown, two spaces, a word glued to a number, a label a phone cuts).
 
 ## Command line
 

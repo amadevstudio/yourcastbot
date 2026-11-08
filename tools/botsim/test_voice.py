@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 try:
     import telebot
     import telethon
+    import tgsim  # noqa: F401  (tools/botsim/requirements.txt)
 except ImportError:
     print('skip voice botsim (bot requirements not installed)')
     sys.exit(0)
