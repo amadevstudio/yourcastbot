@@ -11,41 +11,25 @@ as for Stars): a second delivery finds it and credits nothing.
 import datetime
 
 import config
+from app.service.payment import purchase
 from db.sqliteAdapter import SQLighter
 
 
-def credit_once(tg_id, service: str, invoice_id, cents: int, invoice_hash=None, plan_id=None, plan_price=None):
+def credit_once(tg_id, service: str, invoice_id, cents: int, invoice_hash=None, terms=None):
     """(user, result): result['already_processed'] for an invoice credited before,
     else result_mode, current_tariff and current_subscription for the message.
-    plan_id / plan_price: a plan's invoice turns that plan on when none runs
-    (applyPaymentReplenishmentOnce planId / planPrice)."""
+    terms: what the invoice sold (purchase.at_credit; it credits terms.credit): a plan's
+    invoice turns that plan on when none runs, a bundle credits its months."""
     db = SQLighter(config.db_path)
     try:
         user = db.get_user_by_tg(tg_id)
         result = db.applyPaymentReplenishmentOnce(
-            user, service, invoice_id, datetime.datetime.now(), int(cents), config.tariff_period,
-            invoiceHash=invoice_hash, status="paid",
-            planId=int(plan_id) if plan_id else None, planPrice=plan_price if plan_id else None)
+            user, service, invoice_id, datetime.datetime.now(), int(terms.credit if terms else cents),
+            config.tariff_period, invoiceHash=invoice_hash, status="paid",
+            **(purchase.credit_args(terms) if terms else {}))
         return user, result
     finally:
         db.close()
-
-
-def plan_invoice(plan_id, cents):
-    """The plan a webhook's invoice may turn on: the invoice's plan when it asked at least the
-    plan's price now, else None (a top-up). The bot reads the price for the invoice; one for less
-    was made from a forged button before that (a CryptoBot invoice for $0.01 named Relay). An
-    invoice made before a price rise and paid after it is a top-up too: rare, and the money stays."""
-    if not plan_id:
-        return None
-    db = SQLighter(config.db_path)
-    try:
-        plan = db.getTariffById(int(plan_id))
-    finally:
-        db.close()
-    if plan is None or int(plan['price'] or 0) <= 0 or int(cents) < int(plan['price']):
-        return None
-    return int(plan_id)
 
 
 def notify(bot, coroutine, what: str) -> bool:

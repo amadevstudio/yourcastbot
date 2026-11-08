@@ -120,6 +120,14 @@ ROWS = {
         'El descuento de los meses no usados del paquete: −{amount} US$ del saldo.',
         'Der Rabatt für die ungenutzten Monate des Pakets: −{amount} $ vom Guthaben.',
         'ההנחה על החודשים שלא נוצלו בחבילה: ‎−${amount} מהיתרה.'),
+    # bundlePriceLine without Stars: the bundles page of CryptoBot's invoices
+    'bundlePriceLineUsd': (
+        '{months}: {price}$, экономия {saved}$',
+        '{months}: ${price}, you save ${saved}',
+        '{months}: US${price}, economia de US${saved}',
+        '{months}: {price} US$, ahorras {saved} US$',
+        '{months}: {price} $, du sparst {saved} $',
+        '{months}: ‎${price}, חיסכון של ‎${saved}'),
     'telegram_stars_bundle_description': (
         '{plan} на {months} мес. со скидкой {discount}%: на баланс {balance}$ за {stars} ⭐. Продление каждый месяц с баланса. Курс: 1000 ⭐ ≈ {rate}$.',
         '{plan} for {months} months, {discount}% off: ${balance} to your balance for {stars} ⭐. Renews monthly from the balance. Rate: 1000 ⭐ ≈ ${rate}.',
@@ -425,6 +433,14 @@ ROWS = {
         'Factura por ${summa}. Eliges la moneda en CryptoBot.',
         'Rechnung über ${summa}. Die Münze wählst du in CryptoBot.',
         'חשבון על ‎${summa}. את המטבע בוחרים ב-CryptoBot.'),
+    # a bundle's CryptoBot invoice (purchase.py): what goes to the balance and what is paid
+    'cryptobotBundleInvoice': (
+        '{plan} на {months} мес. со скидкой {discount}%: на баланс {balance}$, к оплате {summa}$. Монету выберете в CryptoBot.',
+        '{plan} for {months} months, {discount}% off: ${balance} to your balance for ${summa}. You pick the coin in CryptoBot.',
+        '{plan} por {months} meses com {discount}% de desconto: US${balance} no saldo por US${summa}. Você escolhe a moeda no CryptoBot.',
+        '{plan} por {months} meses con {discount}% de descuento: {balance} US$ al saldo por {summa} US$. Eliges la moneda en CryptoBot.',
+        '{plan} für {months} Monate, {discount}% Rabatt: {balance} $ aufs Guthaben für {summa} $. Die Münze wählst du in CryptoBot.',
+        '{plan} ל-{months} חודשים בהנחה של {discount}%: ‎${balance} ליתרה תמורת ‎${summa}. את המטבע בוחרים ב-CryptoBot.'),
     # "what stops you from taking a plan?" (app/jobs/why_survey.py)
     'whySurvey': (
         'Здравствуйте! Я разработчик Yourcast. Вы слушаете подкасты через бота, и мне важно понять одно: '

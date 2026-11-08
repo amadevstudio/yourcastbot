@@ -223,7 +223,7 @@ class RouteMap:
         'bs_cryptobot': {
             'method': cryptoBotPaymentModule.open_subscription_page,
             'available_from': ['call'],
-            'routes': ['bs_crbot_input']
+            'routes': ['bs_crbot_input', 'bs_long']
         },
         'bs_crbot_input': {
             'method': cryptoBotPaymentModule.open_amount_input_page,
@@ -239,7 +239,7 @@ class RouteMap:
         'bs_long': {
             'method': starsPaymentModule.open_bundles_page,
             'available_from': ['call'],
-            'routes': ['bs_stars_pay']
+            'routes': ['bs_stars_pay', 'bs_crbot_input']
         },
         'bs_stars_pay': {
             'method': starsPaymentModule.send_invoice,

@@ -126,6 +126,21 @@ def test_cryptobot(user):
                 "a forged button's amount is not billed: a plan's invoice asks the plan's price")
         missing = user.tap_data(json.dumps({'tp': 'bs_crbot_input', 'v': 0.01, 'pl': 999}))
         _assert(len(invoices) == 2 and missing.toasts, "no such plan: no invoice")
+        user.tap_data(json.dumps({'tp': 'bs_cryptobot'}))
+        bundles = user.tap('Several months')
+        page = (bundles.edited or bundles.new)[0]
+        _assert('6 mo: $25.50, you save $4.50' in page.text and '⭐' not in page.text,
+                "CryptoBot has every plan's prepaid months too, priced in dollars")
+        six = next(json.loads(b['callback_data']) for row in page.buttons for b in row
+                   if json.loads(b['callback_data']).get('pl') == 3 and json.loads(b['callback_data']).get('m') == 6)
+        step = user.tap_data(json.dumps(six))
+        _assert(invoices[-1]['amount'] == '25.50' and json.loads(invoices[-1]['payload'])
+                == {'tgid': USER, 'amount': 3000, 'v': 3, 'm': 6, 'd': 15, 'net': 'testnet'},
+                "6 months of Relay: 15% off charged, the full price credited, the terms in the payload")
+        _assert('$30 to your balance for $25.50' in (step.edited or step.new)[0].text,
+                "the invoice says what goes to the balance and what is paid")
+        user.tap_data(json.dumps({'tp': 'bs_crbot_input', 'pl': 3, 'm': 6, 'd': 60}))
+        _assert(json.loads(invoices[-1]['payload'])['d'] == 15, "the discount is the bundle's, not the button's")
         user.tap_data(json.dumps({'tp': 'bs_crbot_input'}))
         typed = user.send('3')
         _assert(invoices[-1]['amount'] == '3.00' and 'v' not in json.loads(invoices[-1]['payload'])

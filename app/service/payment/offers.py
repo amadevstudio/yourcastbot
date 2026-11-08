@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Stars prices that credit more than they charge: prepaid months of every plan
-and Relay's win-back offer (one month at a discount, once per user).
+"""Prices that credit more than they charge: prepaid months of every plan and
+Relay's win-back offer (one month at a discount, once per user). Every pay method
+sells them through purchase.py (Stars, CryptoBot).
 
 The balance is credited at full price (price * months) and the hourly tick
 renews month by month from it, as from any top-up. Only the charge is
@@ -26,6 +27,8 @@ from config import db_path, prepay_bundles, tariff_period, winback_offer_discoun
 
 # the page of every plan's prepaid months (starsPaymentModule.open_bundles_page)
 BUNDLES_CALLBACK = "bs_long"
+# its `pay` for CryptoBot's invoices (cryptoBotPaymentModule); none: Stars
+BUNDLES_CRYPTO = "c"
 # the payload's "o" for the win-back offer; its single use is users.flags[WINBACK_OFFER_FLAG]
 WINBACK_OFFER = "wb"
 WINBACK_OFFER_FLAG = "winback_offer_used"
@@ -95,7 +98,6 @@ def bundle_discount_back(telegram_id, price, balance, now=None, database=None) -
     is the bundle's discount over its months, rounded down."""
     from db import payments
     from db.connection import connect_sqlite
-    from db.stars_refund import STARS_SERVICE_TYPE
     now = datetime.datetime.now() if now is None else now  # payment_history.datetime is the server's local time
     connection = connect_sqlite(db_path if database is None else database)
     try:
@@ -104,9 +106,10 @@ def bundle_discount_back(telegram_id, price, balance, now=None, database=None) -
         settled = "p.bundle_back IS NULL" if payments.has_column(connection, 'bundle_back') else "1"
         rows = connection.execute(
             "SELECT p.rowid, p.amount, p.charged, p.datetime FROM payment_history p "
-            "JOIN users u ON u.id = p.user_id WHERE u.telegramId = ? AND p.service_type = ? "
+            # every pay method's bundles (purchase.py): Stars, CryptoBot
+            "JOIN users u ON u.id = p.user_id WHERE u.telegramId = ? "
             "AND p.status = 'paid' AND p.charged < p.amount AND " + settled + " ORDER BY p.datetime DESC",
-            (int(telegram_id), STARS_SERVICE_TYPE)).fetchall()
+            (int(telegram_id),)).fetchall()
     finally:
         connection.close()
     room = max(0, int(balance)) // int(price) if int(price or 0) > 0 else 0
