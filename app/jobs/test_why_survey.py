@@ -30,6 +30,7 @@ if _ROOT not in sys.path:
 import config  # noqa: E402
 from app.jobs import why_survey  # noqa: E402
 from app.service import analytics_events  # noqa: E402
+from db import tariff_rows  # noqa: E402
 
 WELCOME = why_survey.WELCOME_CHANNEL_ID
 DAY = 86400
@@ -211,6 +212,24 @@ def test_old():
                 "one in ten (hundreds digit 0) is the holdout: marked, counted, never sent; it fills the cap")
         why_survey.send_surveys(path, now + 7200, send=telegram)
         _assert(sent == [] and _flags(path)[7101] is None, "why_old_limit in all: the pilot stops there")
+        c = sqlite3.connect(path)
+        c.execute("INSERT INTO users (telegramId, lang, nosub_digest_sent_at) VALUES (7108, 'en', ?)", (digest(400),))
+        c.commit()
+        c.close()
+        why_survey.why_old_limit = 6
+        saved_level = tariff_rows.running_plan_level
+
+        def level(chat_id, database=None):
+            if chat_id == 7101:
+                raise ValueError("a row that cannot be read")
+            return saved_level(chat_id, database)
+        tariff_rows.running_plan_level = level
+        try:
+            why_survey.send_surveys(path, now + 10800, send=telegram)
+        finally:
+            tariff_rows.running_plan_level = saved_level
+        _assert(sent == [7108] and _flags(path)[7101] is None,
+                "a row the plan check cannot read is skipped, the rest of the batch goes")
         _assert(why_survey.holdout(7000) and why_survey.holdout(123456009)
                 and not why_survey.holdout(123456109) and not why_survey.holdout(5551234567), "the holdout digit")
     finally:
