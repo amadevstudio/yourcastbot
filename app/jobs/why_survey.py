@@ -78,7 +78,8 @@ def due(database=None, now=None) -> list:
     now = time.time() if now is None else now
     database = db_path if database is None else database
     connection = connect_sqlite(database)
-    unmarked = ("u.telegramId > 0 AND u.deleted_at IS NULL "
+    # a chat id, not a channel's @name: one old row holds text, and text is > 0 in SQLite
+    unmarked = ("typeof(u.telegramId) = 'integer' AND u.telegramId > 0 AND u.deleted_at IS NULL "
                 "AND json_extract(COALESCE(u.flags, '{}'), '$.%s') IS NULL" % SURVEY_FLAG)
     try:
         limit = connection.execute(

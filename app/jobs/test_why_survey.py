@@ -188,17 +188,20 @@ def test_old():
             INSERT INTO tariffs VALUES (3, 3, 500, -1);
         """)
         # by row id (newest last): 7101, 7102 (a digest a week ago: the A/B's), 7000 (holdout), 7103, 7104,
-        # 7105 (a digest a month ago: old), 7106 (a Relay that ended: the trials' groups, not old), 7107 (blocked).
+        # 7105 (a digest a month ago: old), 7106 (a Relay that ended: the trials' groups, not old), 7107 (blocked),
+        # a channel's @name where a chat id goes (an old row: it failed every batch).
         # The adapter backfills a NULL digest time with now (as on the server long ago): old ones have a date.
         c.executemany("INSERT INTO users (telegramId, lang, deleted_at, nosub_digest_sent_at) VALUES (?, 'en', ?, ?)",
                       [(7101, None, digest(400)), (7102, None, digest(7)), (7000, None, digest(400)),
                        (7103, None, digest(400)), (7104, None, digest(400)), (7105, None, digest(30)),
-                       (7106, None, digest(400)), (7107, '2026-01-01 00:00:00', digest(400))])
+                       (7106, None, digest(400)), (7107, '2026-01-01 00:00:00', digest(400)),
+                       ('@somechannel', None, digest(400))])
         c.execute("INSERT INTO winback VALUES (7106, ?, 0)", (now - DAY,))
         c.commit()
         c.close()
         _assert(why_survey.send_surveys(path, now, send=telegram) == 3 and sent == [7105, 7104, 7103],
-                "the old accounts, newest first, OLD_PER_RUN an hour; not a digest's, a trial's or a blocked one")
+                "the old accounts, newest first, OLD_PER_RUN an hour; not a digest's, a trial's, a blocked one "
+                "or an @name")
         _assert(_flags(path)[7103] == 'sent' and _flags(path, 'why_group')[7103] == 'old', "marked old")
         _assert([e for e in events if e[1] == 'survey_sent'][0][2] == {'group': 'old'}, "counted as old")
         sent.clear()
