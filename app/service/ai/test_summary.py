@@ -122,6 +122,13 @@ def test_openrouter():
     summary.summarize('words', 'Seven', 'Show', summary.ORIGINAL, session=session)
     _assert('language the episode is spoken in' in session.calls[1][2]['messages'][1]['content'],
             "or the episode's own")
+    voice_session = FakeSession(FakeResponse(200, {'choices': [{'message': {'content': 'X.'}, 'finish_reason': 'stop'}]}))
+    summary.summarize('#1\nПривет.', 'Voice messages', '', summary.ORIGINAL,
+                      session=voice_session, voice='batch')
+    system, asked = (m['content'] for m in voice_session.calls[0][2]['messages'])
+    _assert('the first one too' in asked and 'Do not translate' in asked and 'Voice messages' not in asked
+            and '#1, #2' in system and 'never with a word for it' in system,
+            "a voice summary: every sentence in the speaker's language, no title in the interface's, #n labels")
     _assert(summary.summary_language(None, 'fa') == summary.ORIGINAL
             and summary.summary_language(summary.ORIGINAL, 'fa') == summary.ORIGINAL,
             "the episode's language by default")

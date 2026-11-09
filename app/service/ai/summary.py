@@ -58,12 +58,13 @@ VOICE_SYSTEM = (
 )
 
 VOICE_BATCH_SYSTEM = VOICE_SYSTEM + (
-    " The input is a sequence of voice messages, labelled by recording number, in sending order. "
+    " The input is a sequence of voice messages, labelled #1, #2 and so on, in sending order. "
     "Write ONE coherent summary of the entire sequence, not separate summaries pasted together. "
     "Respect explicit corrections and clarifications in later messages. Keep unrelated topics and "
     "different speakers distinct; do not invent agreement or assume every message has the same speaker. "
     "If statements conflict without a clear correction, preserve that uncertainty. "
-    "Refer to recording numbers when useful, never invent a single timeline for the batch."
+    "When useful, refer to a recording as # and its number (#2), never with a word for it; "
+    "never invent a single timeline for the batch."
 )
 
 SYSTEM_ASK = (
@@ -125,8 +126,10 @@ def summary_language(preference, language_code) -> str:
 
 def _language_instruction(language, voice=False) -> str:
     if language == ORIGINAL and voice:
-        # the system prompt is English: without this a Russian message came back summarized in English
-        return ('Write the summary in the language the speaker uses in the transcript. '
+        # the system prompt is English: without this a Russian message came back summarized in English,
+        # and with it alone a batch's first sentence still came in English (2026-11-09)
+        return ('Write every sentence of the summary, the first one too, in the language the speaker uses '
+                'in the transcript; these instructions are in English, the speaker may not be. '
                 'Do not translate it, and do not write in English unless the speaker does.')
     if language == ORIGINAL:
         return 'Write the summary in the language the episode is spoken in.'
@@ -149,6 +152,8 @@ def line_starts(transcript) -> str:
 def summarize(transcript, title, show, language, session=None, model=None, voice=False) -> tuple[str, float]:
     """(summary text, USD as OpenRouter billed it) for one episode in `language` (summary_language).
     `model`: the asker's (paid_models.summary_model), else the configured one."""
+    if voice:  # a voice message's title is the bot's own words in the interface language, not the speaker's
+        title = show = ''
     body = openrouter.post('chat/completions', session, json={
         'model': model or ai_summary_model,
         'max_tokens': MAX_TOKENS,
