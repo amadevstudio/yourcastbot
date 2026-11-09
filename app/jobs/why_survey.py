@@ -78,7 +78,8 @@ def due(database=None, now=None) -> list:
     now = time.time() if now is None else now
     database = db_path if database is None else database
     connection = connect_sqlite(database)
-    unmarked = ("u.telegramId > 0 AND u.deleted_at IS NULL "
+    # a chat id, not a channel's @name: one old row holds text, and text is > 0 in SQLite
+    unmarked = ("typeof(u.telegramId) = 'integer' AND u.telegramId > 0 AND u.deleted_at IS NULL "
                 "AND json_extract(COALESCE(u.flags, '{}'), '$.%s') IS NULL" % SURVEY_FLAG)
     try:
         limit = connection.execute(
@@ -119,9 +120,18 @@ def due(database=None, now=None) -> list:
             found.setdefault(telegram_id, (telegram_id, lang, group))
     rows = [row for telegram_id, row in found.items()
             if telegram_id != int(creatorId) and telegram_id not in covered
-            and running_plan_level(telegram_id, database) <= 0]
+            and _no_plan(running_plan_level, telegram_id, database)]
     old_rows = [row for row in rows if row[2] == "old"][:room]
     return [row for row in rows if row[2] != "old"] + old_rows
+
+
+def _no_plan(running_plan_level, telegram_id, database) -> bool:
+    """No plan running; a row it cannot read is skipped, never the batch (one did, 2026-11-08)."""
+    try:
+        return running_plan_level(telegram_id, database) <= 0
+    except Exception as e:
+        logger.warn("why survey: skipped", telegram_id, type(e).__name__, e)
+        return False
 
 
 def holdout(telegram_id) -> bool:

@@ -42,7 +42,7 @@ def due(database=None, now=None) -> list:
     try:
         return [(row[0], row[1]) for row in connection.execute(
             "SELECT u.telegramId, u.lang FROM users u "
-            "WHERE u.telegramId > 0 AND u.deleted_at IS NULL "
+            "WHERE typeof(u.telegramId) = 'integer' AND u.telegramId > 0 AND u.deleted_at IS NULL "
             "AND u.created_at <= datetime(?, 'unixepoch') AND u.created_at >= datetime(?, 'unixepoch') "
             "AND json_extract(COALESCE(u.flags, '{}'), '$.%s') IS NULL "
             "AND NOT EXISTS (SELECT 1 FROM user_channel_cs s WHERE s.user_telegram_id = u.telegramId "

@@ -30,6 +30,7 @@ if _ROOT not in sys.path:
 import config  # noqa: E402
 from app.jobs import why_survey  # noqa: E402
 from app.service import analytics_events  # noqa: E402
+from db import tariff_rows  # noqa: E402
 
 WELCOME = why_survey.WELCOME_CHANNEL_ID
 DAY = 86400
@@ -188,17 +189,20 @@ def test_old():
             INSERT INTO tariffs VALUES (3, 3, 500, -1);
         """)
         # by row id (newest last): 7101, 7102 (a digest a week ago: the A/B's), 7000 (holdout), 7103, 7104,
-        # 7105 (a digest a month ago: old), 7106 (a Relay that ended: the trials' groups, not old), 7107 (blocked).
+        # 7105 (a digest a month ago: old), 7106 (a Relay that ended: the trials' groups, not old), 7107 (blocked),
+        # a channel's @name where a chat id goes (an old row: it failed every batch).
         # The adapter backfills a NULL digest time with now (as on the server long ago): old ones have a date.
         c.executemany("INSERT INTO users (telegramId, lang, deleted_at, nosub_digest_sent_at) VALUES (?, 'en', ?, ?)",
                       [(7101, None, digest(400)), (7102, None, digest(7)), (7000, None, digest(400)),
                        (7103, None, digest(400)), (7104, None, digest(400)), (7105, None, digest(30)),
-                       (7106, None, digest(400)), (7107, '2026-01-01 00:00:00', digest(400))])
+                       (7106, None, digest(400)), (7107, '2026-01-01 00:00:00', digest(400)),
+                       ('@somechannel', None, digest(400))])
         c.execute("INSERT INTO winback VALUES (7106, ?, 0)", (now - DAY,))
         c.commit()
         c.close()
         _assert(why_survey.send_surveys(path, now, send=telegram) == 3 and sent == [7105, 7104, 7103],
-                "the old accounts, newest first, OLD_PER_RUN an hour; not a digest's, a trial's or a blocked one")
+                "the old accounts, newest first, OLD_PER_RUN an hour; not a digest's, a trial's, a blocked one "
+                "or an @name")
         _assert(_flags(path)[7103] == 'sent' and _flags(path, 'why_group')[7103] == 'old', "marked old")
         _assert([e for e in events if e[1] == 'survey_sent'][0][2] == {'group': 'old'}, "counted as old")
         sent.clear()
@@ -208,6 +212,24 @@ def test_old():
                 "one in ten (hundreds digit 0) is the holdout: marked, counted, never sent; it fills the cap")
         why_survey.send_surveys(path, now + 7200, send=telegram)
         _assert(sent == [] and _flags(path)[7101] is None, "why_old_limit in all: the pilot stops there")
+        c = sqlite3.connect(path)
+        c.execute("INSERT INTO users (telegramId, lang, nosub_digest_sent_at) VALUES (7108, 'en', ?)", (digest(400),))
+        c.commit()
+        c.close()
+        why_survey.why_old_limit = 6
+        saved_level = tariff_rows.running_plan_level
+
+        def level(chat_id, database=None):
+            if chat_id == 7101:
+                raise ValueError("a row that cannot be read")
+            return saved_level(chat_id, database)
+        tariff_rows.running_plan_level = level
+        try:
+            why_survey.send_surveys(path, now + 10800, send=telegram)
+        finally:
+            tariff_rows.running_plan_level = saved_level
+        _assert(sent == [7108] and _flags(path)[7101] is None,
+                "a row the plan check cannot read is skipped, the rest of the batch goes")
         _assert(why_survey.holdout(7000) and why_survey.holdout(123456009)
                 and not why_survey.holdout(123456109) and not why_survey.holdout(5551234567), "the holdout digit")
     finally:
