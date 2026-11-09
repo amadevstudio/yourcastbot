@@ -26,15 +26,15 @@ def process(request, session, send, edit, send_file):
         raise summary.SummaryUnavailable('voice collection is incomplete')
     if request['kind'] == batches.FINISH:
         return 0
-    sections = []
-    for number, row in enumerate(rows, 1):
+    texts = []
+    for row in rows:
         member = ai.accessible_episode(row['ref'], request['chat_id'])
         found = ai.transcript(row['ref']) if member else None
         if found is None:
             raise summary.SummaryUnavailable('private recording expired')
-        label = get_message('voiceNumber', request.get('ui_lang')).format(number=number)
-        sections.append(label + '\n' + found['text'])
-    whole = '\n\n'.join(sections)
+        texts.append(found['text'])
+    label = get_message('voiceNumber', request.get('ui_lang'))
+    whole = '\n\n'.join(label.format(number=number) + '\n' + text for number, text in enumerate(texts, 1))
     ai.save_transcript(request['ref'], whole, 'voice_batch', 0, sum(row['seconds'] for row in rows))
     if request['kind'] == batches.TEXT_ALL:
         if not send_file(request['chat_id'], episode, whole, 'voice_batch', request.get('ui_lang'), request.get('reply_to')):
@@ -46,7 +46,9 @@ def process(request, session, send, edit, send_file):
         else:
             # Each recording's clock starts at zero. A combined summary cites recording numbers,
             # never a time that would misleadingly open the wrong recording.
-            material = summary._MARK.sub('', whole)
+            # The model's labels are #n, not the interface's words: "Voice message 1" in English around
+            # Russian speech turned the summary's first sentence English.
+            material = summary._MARK.sub('', '\n\n'.join('#%d\n%s' % pair for pair in enumerate(texts, 1)))
             if len(material) > summary.MAX_TRANSCRIPT_CHARS:
                 raise summary.SummaryUnavailable('voice collection exceeds model context')
             text, cost = summary.summarize(material, episode['title'], '', request['lang'], session=session,
