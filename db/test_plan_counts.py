@@ -13,7 +13,6 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from db import plan_counts  # noqa: E402
-from app.controller.builders.adminModule import format_plan_lines  # noqa: E402
 
 CREATOR = 9000
 
@@ -81,7 +80,7 @@ def test_counts():
         }, got
         assert got['holders'] == [(7004, 'channels')], got
         assert got['no_plan'] == 2, got  # 7005, 7006
-        text = format_plan_lines(got)
+        text = plan_counts.format_lines(got)
         for line in ("Bronze: 1 / 0 / 1", "Silver: 0 / 1 / 0", "Relay: 2 / 2 / 0 (из них неделя за опрос: 1)",
                      "Бесплатный тариф за подписку на каналы: 1", "Кто: 7004", "Без тарифа: 2"):
             assert line in text, (line, text)
@@ -104,7 +103,7 @@ def test_old_schema():
 
 
 def test_many_holders():
-    text = format_plan_lines({'levels': {1: {'paid': 0, 'trial': 0, 'granted': 25}},
+    text = plan_counts.format_lines({'levels': {1: {'paid': 0, 'trial': 0, 'granted': 25}},
                               'holders': [(7100 + i, 'channels') for i in range(25)], 'no_plan': 0})
     assert "и ещё 5" in text and "7119" in text and "7120" not in text, text
     print("ok  holders past the first 20 are a count")

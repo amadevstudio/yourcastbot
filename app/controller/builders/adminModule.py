@@ -55,34 +55,6 @@ def format_users_count_message(
     return text
 
 
-PLAN_NAMES = {1: 'Bronze', 2: 'Silver', 3: 'Relay'}
-GRANT_NAMES = {'channels': 'за подписку на каналы'}
-HOLDERS_SHOWN = 20
-
-
-def format_plan_lines(plans: dict) -> str:
-    """Plans now, per level: paid / trial (the survey's weeks among them) / a grant's; the grants'
-    holders; no plan."""
-    lines = ["Тарифы сейчас (оплачен / триал / бесплатно):"]
-    for level, counts in sorted(plans['levels'].items()):
-        survey = " (из них неделя за опрос: %d)" % counts['survey'] if counts.get('survey') else ""
-        lines.append("%s: %d / %d / %d%s" % (
-            PLAN_NAMES.get(level, "уровень %d" % level),
-            counts['paid'], counts['trial'], counts['granted'], survey))
-    holders = plans['holders']
-    kinds = {}
-    for _, kind in holders:
-        kinds[kind] = kinds.get(kind, 0) + 1
-    for kind, count in sorted(kinds.items()):
-        lines.append("Бесплатный тариф %s: %d" % (GRANT_NAMES.get(kind, kind), count))
-    if holders:
-        shown = ", ".join(str(telegram_id) for telegram_id, _ in holders[:HOLDERS_SHOWN])
-        more = len(holders) - HOLDERS_SHOWN
-        lines.append("Кто: " + shown + (" и ещё %d" % more if more > 0 else ""))
-    lines.append("Без тарифа: %d" % plans['no_plan'])
-    return "\n".join(lines)
-
-
 _users_count_lock = threading.Lock()
 _users_count_running = False
 
@@ -104,7 +76,7 @@ def compute_users_count_text() -> str:
     extra = ''
     try:
         from db import plan_counts
-        extra = format_plan_lines(plan_counts.running(config.db_path, config.creatorId))
+        extra = plan_counts.format_lines(plan_counts.running(config.db_path, config.creatorId))
     except Exception as e:
         logger.err("usersCount plans:", e)
     try:
