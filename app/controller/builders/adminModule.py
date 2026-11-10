@@ -75,8 +75,15 @@ def compute_users_count_text() -> str:
         db_users.close()
     extra = ''
     try:
+        from db import plan_counts
+        extra = plan_counts.format_lines(plan_counts.running(config.db_path, config.creatorId))
+    except Exception as e:
+        logger.err("usersCount plans:", e)
+    try:
         from app.jobs.circle_health import format_status_lines
-        extra = format_status_lines(database=config.db_path)
+        circle = format_status_lines(database=config.db_path)
+        if circle:
+            extra = (extra + "\n" + circle) if extra else circle
     except Exception as e:
         logger.err("usersCount circle status:", e)
     text = format_users_count_message(

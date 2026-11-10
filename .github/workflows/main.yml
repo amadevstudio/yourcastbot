@@ -89,6 +89,7 @@ jobs:
           python3 app/service/record/test_free_limit.py
           python3 app/service/plan/test_entitlements.py
           python3 db/test_plan_grants.py
+          python3 db/test_plan_counts.py
           python3 app/service/plan/test_channels.py
           python3 app/controller/builders/test_onboarding.py
           python3 app/controller/builders/test_latest_episode.py
