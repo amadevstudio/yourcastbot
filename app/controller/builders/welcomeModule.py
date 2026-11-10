@@ -18,9 +18,15 @@ from lib.tools.logger import logger
 
 # t.me/<bot>?start=src_ph: where a launch post's reader came from, the /start screen as usual
 SOURCE_LINK = re.compile(r'src_([a-z0-9_-]{1,32})', re.IGNORECASE)
+# t.me/<bot>?start=_tgr_<referrer>: a Telegram affiliate's link (Stars affiliate program,
+# the client config's starref_start_param_prefixes); Telegram pays the affiliate, the bot only notes it
+AFFILIATE_PREFIX = '_tgr_'
+AFFILIATE_SOURCE = 'affiliate'
 
 
 def link_source(start_data: str) -> str | None:
+    if start_data.startswith(AFFILIATE_PREFIX):
+        return AFFILIATE_SOURCE
     found = SOURCE_LINK.fullmatch(start_data)
     return found.group(1).lower() if found else None
 

@@ -945,7 +945,10 @@ level as the user property `plan` (0: none). A digest's Listen button carries
 episode limit `lim` (`source: free_limit`; the stop itself is `free_limit_hit`). A link `t.me/<bot>?start=src_<name>` (a launch post:
 `src_ph`, `src_x`) is a bare /start (the welcome screen), never an action; a
 user it signs up keeps it (`users.flags` `source`, the first link only), and
-`new_user` carries `link_source`, also as the user property (lock:
+`new_user` carries `link_source`, also as the user property. A Telegram affiliate's
+link (`start=_tgr_<referrer>`, the Stars affiliate program set in the bot's profile)
+is the same bare /start with the source `affiliate`: Telegram pays the affiliate its
+share of the Stars, the bot credits the full price as before (lock:
 `python app/controller/builders/test_onboarding.py`,
 `python app/service/payment/test_referral_award.py`). Tracking never fails the caller and never creates a
 user row (it reads `users`, not `get_user_by_tg`). Nor does it slow one: events go
