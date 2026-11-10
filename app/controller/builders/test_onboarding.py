@@ -239,6 +239,11 @@ def test_taps_reach_the_handler(welcome):
         _assert(welcome.link_source('src_') is None and welcome.link_source('src_a b') is None
                 and welcome.link_source('podcast_5') is None and welcome.link_source('src_' + 'x' * 33) is None,
                 "anything else is not a source")
+        called.clear()
+        affiliate = {'route_name': 'start', 'callback': None, 'message': types.SimpleNamespace(text='/start _tgr_AbC-12')}
+        options = welcome.start_related_options(affiliate)
+        _assert(options['action'] is None and options['source'] == 'affiliate' and called[0] == 'affiliate',
+                "a Telegram affiliate's link is the /start screen, its sign-up marked affiliate")
     finally:
         welcome.referral_processing, welcome.action_processing = saved
 
