@@ -117,9 +117,9 @@ def test_compute_text(db_path):
     config.db_path = db_path
     try:
         text = adminModule.compute_users_count_text()
-        if "Всего: 1" not in text:
+        if "Пользователи: 1</b>" not in text:
             raise AssertionError(text)
-        if "Последний круг" in text or "Кругов сегодня" in text:
+        if "Круг " in text:
             raise AssertionError("no circle lines before a finish: %r" % text)
         print("ok  compute_users_count_text")
 
@@ -129,9 +129,7 @@ def test_compute_text(db_path):
         circle_health.mark_circle_finished(
             now=datetime.datetime(2026, 9, 7, 16, 46, 0), database=db_path)
         text = adminModule.compute_users_count_text()
-        if "Последний круг: 46 мин (16:46)" not in text:
-            raise AssertionError(text)
-        if "Кругов сегодня: 1" not in text:
+        if "Круг 46 мин (16:46) · сегодня 1, вчера 0" not in text:
             raise AssertionError(text)
         print("ok  compute_users_count_text includes daily circle lines")
     finally:

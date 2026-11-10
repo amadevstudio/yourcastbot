@@ -37,22 +37,21 @@ def format_users_count_message(
         total: int, with_subs: int, with_bot_sub: int,
         receive_episodes: int, digest_reminder: int, blocked: int,
         updater_channel_id: int, max_channel_id: int,
-        extra_status_lines: str = '') -> str:
-    text = (
-        "Всего: " + str(total)
-        + "\nС подписками на каналы: " + str(with_subs)
-        + "\nС подпиской на бота: " + str(with_bot_sub)
-        + "\nПолучают выпуски (тариф + уведомления): "
-        + str(receive_episodes)
-        + "\nНапоминание о боте (уведомления, без тарифа): "
-        + str(digest_reminder)
-        + "\nЗаблокировали бота (не считаются выше): " + str(blocked)
-        + "\nОбход подкастов: "
-        + str(updater_channel_id) + " / " + str(max_channel_id)
-    )
-    if extra_status_lines:
-        text += "\n" + extra_status_lines
-    return text
+        plan_lines: str = '', circle_line: str = '') -> str:
+    """Blocks with a header each, a few numbers to a line. Blocked users are not in the total."""
+    blocks = [
+        "👥 <b>Пользователи: %d</b> · ещё %d заблокировали\n"
+        "С подписками на подкасты: %d\n"
+        "С тарифом: %d · из них получают выпуски: %d\n"
+        "Дайджест без тарифа: %d"
+        % (total, blocked, with_subs, with_bot_sub, receive_episodes, digest_reminder)]
+    if plan_lines:
+        blocks.append(plan_lines)
+    circle = "🔄 <b>Обход</b>: %s / %s" % (updater_channel_id, max_channel_id)
+    if circle_line:
+        circle += "\n" + circle_line
+    blocks.append(circle)
+    return "\n\n".join(blocks)
 
 
 _users_count_lock = threading.Lock()
@@ -73,23 +72,22 @@ def compute_users_count_text() -> str:
         max_channel_id = int(last_channel_row['id']) if last_channel_row else 0
     finally:
         db_users.close()
-    extra = ''
+    plans = ''
     try:
         from db import plan_counts
-        extra = plan_counts.format_lines(plan_counts.running(config.db_path, config.creatorId))
+        plans = plan_counts.format_lines(plan_counts.running(config.db_path, config.creatorId))
     except Exception as e:
         logger.err("usersCount plans:", e)
+    circle = ''
     try:
-        from app.jobs.circle_health import format_status_lines
-        circle = format_status_lines(database=config.db_path)
-        if circle:
-            extra = (extra + "\n" + circle) if extra else circle
+        from app.jobs.circle_health import format_status_line
+        circle = format_status_line(database=config.db_path)
     except Exception as e:
         logger.err("usersCount circle status:", e)
     text = format_users_count_message(
         total, with_subs, with_bot_sub, receive_episodes, digest_reminder,
         blocked, storage.get_last_channel_id(), max_channel_id,
-        extra_status_lines=extra)
+        plan_lines=plans, circle_line=circle)
     logger.log(
         "usersCount computed in %.2fs" % (time.monotonic() - started,))
     return text
