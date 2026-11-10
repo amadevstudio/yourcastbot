@@ -90,11 +90,11 @@ def mark_circle_finished(now=None, database=None):
     }
 
 
-def format_status_lines(database=None):
-    """Extra /usersCount lines. Empty if the updater has not finished a circle."""
+def _status(database):
+    """(minutes, clock, today, yesterday) of the last finished circle, or None."""
     finished = runtime_kv.get_kv(KEY_FINISHED_AT, default='', database=database)
     if not finished:
-        return ''
+        return None
     try:
         duration_sec = int(
             runtime_kv.get_kv(KEY_DURATION_SEC, default='0', database=database)
@@ -105,9 +105,24 @@ def format_status_lines(database=None):
     yesterday = runtime_kv.get_kv(
         KEY_CIRCLES_YESTERDAY, default='0', database=database)
     clock = finished[11:16] if len(finished) >= 16 else finished
+    return duration_sec // 60, clock, circles or '0', yesterday or '0'
+
+
+def format_status_lines(database=None):
+    """The admin page's circle lines. Empty if the updater has not finished a circle."""
+    status = _status(database)
+    if not status:
+        return ''
     return (
         "Последний круг: %s мин (%s)\n"
         "Кругов сегодня: %s\n"
-        "Кругов вчера: %s"
-        % (duration_sec // 60, clock, circles or '0', yesterday or '0')
+        "Кругов вчера: %s" % status
     )
+
+
+def format_status_line(database=None):
+    """/usersCount's circle line. Empty if the updater has not finished a circle."""
+    status = _status(database)
+    if not status:
+        return ''
+    return "Круг %s мин (%s) · сегодня %s, вчера %s" % status

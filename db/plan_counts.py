@@ -11,30 +11,34 @@ Lock: python db/test_plan_counts.py
 from db.connection import connect_sqlite
 
 PLAN_NAMES = {1: 'Bronze', 2: 'Silver', 3: 'Relay'}
-GRANT_NAMES = {'channels': 'за подписку на каналы'}
+GRANT_NAMES = {'channels': 'за каналы'}
 HOLDERS_SHOWN = 20
 
 
 def format_lines(plans: dict) -> str:
-    """Plans now, per level: paid / trial (the survey's weeks among them) / a grant's; the grants'
-    holders; no plan."""
-    lines = ["Тарифы сейчас (оплачен / триал / бесплатно):"]
-    for level, counts in sorted(plans['levels'].items()):
-        survey = " (из них неделя за опрос: %d)" % counts['survey'] if counts.get('survey') else ""
-        lines.append("%s: %d / %d / %d%s" % (
-            PLAN_NAMES.get(level, "уровень %d" % level),
-            counts['paid'], counts['trial'], counts['granted'], survey))
+    """The /usersCount plans block (HTML): no plan in the header, a line per level that has anyone
+    (paid, trial with the survey's weeks among them, a grant's; zeros left out), the grants' holders."""
     holders = plans['holders']
-    kinds = {}
-    for _, kind in holders:
-        kinds[kind] = kinds.get(kind, 0) + 1
-    for kind, count in sorted(kinds.items()):
-        lines.append("Бесплатный тариф %s: %d" % (GRANT_NAMES.get(kind, kind), count))
-    if holders:
-        shown = ", ".join(str(telegram_id) for telegram_id, _ in holders[:HOLDERS_SHOWN])
-        more = len(holders) - HOLDERS_SHOWN
-        lines.append("Кто: " + shown + (" и ещё %d" % more if more > 0 else ""))
-    lines.append("Без тарифа: %d" % plans['no_plan'])
+    kinds = sorted({kind for _, kind in holders})
+    granted = GRANT_NAMES.get(kinds[0], kinds[0]) if len(kinds) == 1 else "бесплатно"
+    lines = ["💳 <b>Тарифы</b> · без тарифа %d" % plans['no_plan']]
+    for level, counts in sorted(plans['levels'].items(), reverse=True):
+        parts = []
+        if counts['paid']:
+            parts.append("%d опл." % counts['paid'])
+        if counts['trial']:
+            survey = " (%d за опрос)" % counts['survey'] if counts.get('survey') else ""
+            parts.append("%d триал%s" % (counts['trial'], survey))
+        if counts['granted']:
+            parts.append("%d %s" % (counts['granted'], granted))
+        if parts:
+            lines.append("%s: %s" % (PLAN_NAMES.get(level, "уровень %d" % level), " · ".join(parts)))
+    for kind in kinds:
+        ids = [telegram_id for telegram_id, held in holders if held == kind]
+        shown = ", ".join("<code>%s</code>" % telegram_id for telegram_id in ids[:HOLDERS_SHOWN])
+        more = len(ids) - HOLDERS_SHOWN
+        lines.append("%s: %s%s" % (GRANT_NAMES.get(kind, kind).capitalize(), shown,
+                                   " и ещё %d" % more if more > 0 else ""))
     return "\n".join(lines)
 
 
