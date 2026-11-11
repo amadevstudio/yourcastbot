@@ -34,6 +34,21 @@ ROWS = {
         '<b>Pago único</b>\n\nRecarga el saldo una vez: el plan se renueva con él mientras alcance.',
         '<b>Einmalzahlung</b>\n\nLade dein Guthaben einmal auf: der Tarif verlängert sich davon, solange es reicht.',
         '<b>תשלום חד-פעמי</b>\n\nטענו את היתרה פעם אחת: התוכנית מתחדשת ממנה כל עוד היא מספיקה.'),
+    # Under the one-time page and the survey's "paying is inconvenient": a card that does not work in
+    # the user's country (survey texts from Iran, Cuba, Venezuela, 2026-11) is not the end of it.
+    'payAbroadHint': (
+        '🌍 Карта не проходит в вашей стране? Звёзды можно купить на fragment.com за TON для своего '
+        '@username или получить в подарок от друга. CryptoBot принимает USDT, TON и другие монеты.',
+        "🌍 Cards don't work where you live? Stars can be bought on fragment.com with TON for your "
+        '@username, or a friend can gift them to you. CryptoBot takes USDT, TON and other coins.',
+        '🌍 Cartão não funciona no seu país? Dá para comprar Estrelas no fragment.com com TON para o seu '
+        '@username, ou um amigo pode te dar de presente. O CryptoBot aceita USDT, TON e outras moedas.',
+        '🌍 ¿La tarjeta no funciona en tu país? Puedes comprar Estrellas en fragment.com con TON para tu '
+        '@username, o un amigo puede regalártelas. CryptoBot acepta USDT, TON y otras monedas.',
+        '🌍 Karte funktioniert in deinem Land nicht? Sterne kannst du auf fragment.com mit TON für deinen '
+        '@username kaufen, oder ein Freund schenkt sie dir. CryptoBot nimmt USDT, TON und andere Coins.',
+        '🌍 הכרטיס לא עובר במדינה שלך? אפשר לקנות כוכבים ב-fragment.com עם TON עבור ה-@username שלך, '
+        'או לקבל אותם במתנה מחבר. CryptoBot מקבל USDT, TON ומטבעות נוספים.'),
     'starsSubPlanButton': (
         '⭐ {plan} – {stars} ⭐ в месяц',
         '⭐ {plan} – {stars} ⭐ a month',
