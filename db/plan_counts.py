@@ -3,8 +3,8 @@
 survey's week, `users.flags` `why_reward`) or a grant's (db/plan_grants.py), and the live chats with no
 plan.
 
-Paid for is `tariff_rows.paid_for_days`: a payment (not the creator's tests) or a Patreon
-replenishment. A user with two live tariff rows counts once, at the higher level. Read-only; a table
+Paid for is `tariff_rows.paid_for_days`: a payment or a Patreon replenishment. The creator's
+account is in no line: its plan is paid by tests and its own Patreon address. A user with two live tariff rows counts once, at the higher level. Read-only; a table
 the database does not have yet counts as empty.
 Lock: python db/test_plan_counts.py
 """
@@ -55,7 +55,7 @@ def running(database, creator_id) -> dict:
         paid = []
         if _has(connection, 'payment_history'):
             paid.append("EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id "
-                        "AND p.status = 'paid' AND u.telegramId != :creator)")
+                        "AND p.status = 'paid')")
         if _has(connection, 'payment_service_user_data'):
             paid.append("EXISTS(SELECT 1 FROM payment_service_user_data s WHERE s.user_id = u.id "
                         "AND s.last_replenishment IS NOT NULL)")
@@ -68,7 +68,7 @@ def running(database, creator_id) -> dict:
             "SELECT level, COUNT(*), SUM(held), SUM(NOT held AND paid), SUM(NOT held AND NOT paid AND survey) "
             "FROM (SELECT u.id, MAX(t.level) level, MAX(%s) held, MAX(%s) paid, MAX(%s) survey "
             "FROM users u JOIN user_tariff_cs utc ON utc.uid = u.id JOIN tariffs t ON t.id = utc.tariff_id "
-            "WHERE u.deleted_at IS NULL AND utc.tariff_id > 0 AND utc.time_left > 0 GROUP BY u.id) "
+            "WHERE u.deleted_at IS NULL AND u.telegramId != :creator AND utc.tariff_id > 0 AND utc.time_left > 0 GROUP BY u.id) "
             "GROUP BY level ORDER BY level" % (held, " OR ".join(paid) or "0", survey),
             {'creator': int(creator_id)}).fetchall()
         levels = {int(level): {'paid': int(paid_n), 'trial': int(total - held_n - paid_n),
@@ -79,9 +79,10 @@ def running(database, creator_id) -> dict:
             holders = [(row[0], row[1]) for row in connection.execute(
                 "SELECT u.telegramId, g.kind FROM plan_grants g JOIN users u ON u.id = g.user_id "
                 "JOIN user_tariff_cs utc ON utc.uid = u.id AND utc.tariff_id = g.tariff_id "
-                "WHERE g.ended_at IS NULL AND u.deleted_at IS NULL AND utc.time_left > 0 "
-                "GROUP BY u.id ORDER BY g.started_at")]
-        live = connection.execute("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL").fetchone()[0]
+                "WHERE g.ended_at IS NULL AND u.deleted_at IS NULL AND u.telegramId != ? AND utc.time_left > 0 "
+                "GROUP BY u.id ORDER BY g.started_at", (int(creator_id),))]
+        live = connection.execute("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND telegramId != ?",
+                                  (int(creator_id),)).fetchone()[0]
         on_plan = sum(counts['paid'] + counts['trial'] + counts['granted'] for counts in levels.values())
         return {'levels': levels, 'holders': holders, 'no_plan': int(live) - on_plan}
     finally:
