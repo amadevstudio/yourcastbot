@@ -51,7 +51,7 @@ def test_counts():
             (5, 7005, None, 1, 0),     # Bronze run out: no plan
             (6, 7006, None, 0, 0),     # no plan
             (7, 7007, '2026-01-01', 3, 100),  # blocked: nowhere
-            (8, CREATOR, None, 3, 100),       # the creator's test payment is not paid
+            (8, CREATOR, None, 3, 100),       # the creator: tests and its own Patreon, in no line
             (9, 7009, None, 2, 50),    # Silver with two rows: once
             (10, 7010, None, 1, 100),  # Bronze, an ended grant, paid since
         ]
@@ -63,7 +63,7 @@ def test_counts():
                   "VALUES (9, 2, 0, -1, 50)")
         c.executemany("INSERT INTO payment_history VALUES (?, ?, 500)",
                       [(1, 'paid'), (2, 'refunded'), (8, 'paid'), (10, 'paid')])
-        c.execute("INSERT INTO payment_service_user_data VALUES (3, '2026-10-01')")
+        c.executemany("INSERT INTO payment_service_user_data VALUES (?, '2026-10-01')", [(3,), (8,)])
         # the survey's week: 7002's trial; 7001 paid after it, so paid
         c.execute("""UPDATE users SET flags = '{"why_reward": 1}' WHERE id IN (1, 2)""")
         c.execute("INSERT INTO plan_grants (user_id, kind, tariff_id, started_at) VALUES (4, 'channels', 1, 1)")
@@ -76,17 +76,17 @@ def test_counts():
         assert got['levels'] == {
             1: {'paid': 1, 'trial': 0, 'survey': 0, 'granted': 1},
             2: {'paid': 0, 'trial': 1, 'survey': 0, 'granted': 0},
-            3: {'paid': 2, 'trial': 2, 'survey': 1, 'granted': 0},
+            3: {'paid': 2, 'trial': 1, 'survey': 1, 'granted': 0},
         }, got
         assert got['holders'] == [(7004, 'channels')], got
         assert got['no_plan'] == 2, got  # 7005, 7006
         text = plan_counts.format_lines(got)
         assert text == ("💳 <b>Тарифы</b> · без тарифа 2\n"
-                        "Relay: 2 опл. · 2 триал (1 за опрос)\n"
+                        "Relay: 2 опл. · 1 триал (1 за опрос)\n"
                         "Silver: 1 триал\n"
                         "Bronze: 1 опл. · 1 за каналы\n"
                         "За каналы: <code>7004</code>"), text
-        print("ok  plans per level, grant holders, no plan")
+        print("ok  plans per level, grant holders, no plan, the creator in none")
 
 
 def test_old_schema():
