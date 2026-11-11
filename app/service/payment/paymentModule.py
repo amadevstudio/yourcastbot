@@ -170,7 +170,8 @@ def open_once_page(data: ControllerParams):
         'callback_data': {'tp': BUNDLES_CALLBACK}}])
     menu_keyboard.append([go_back_inline_button(language_code)])
     render_messages(data['chat_id'], [{
-        'type': 'text', 'text': get_message('payOnceBody', language_code), 'reply_markup': menu_keyboard}])
+        'type': 'text', 'text': get_message('payOnceBody', language_code) + "\n\n" + get_message('payAbroadHint', language_code),
+        'disable_web_page_preview': True, 'reply_markup': menu_keyboard}])
 
 
 def open_subscription_tariffs_page(data: ControllerParams):

@@ -104,6 +104,10 @@ remove plan management or hide Bronze/Silver.
   first, then Patreon) and "One-time payment" (`bs_once`: Stars, CryptoBot,
   Robokassa for the creator, Relay's longest prepaid bundle), then
   change-plan. Every pay method stays one level down; none is dropped.
+  The one-time page, and the survey's answer "paying is inconvenient", say
+  how to pay where cards do not work (`payAbroadHint`: Stars on
+  fragment.com for TON or as a friend's gift, CryptoBot's coins): survey
+  texts from Iran, Cuba and Venezuela (2026-11) could not pay at all.
   Lock: `python app/service/payment/test_storefront.py`.
 - Keep `bs_trfs` on the main `/subscription` keyboard. The change-plan
   page lists every SKU (Bronze / Silver / Relay + disable).

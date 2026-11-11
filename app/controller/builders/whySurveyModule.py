@@ -87,6 +87,8 @@ def answer(data):
                        else "whyMoreIdle" if choice in IDLE_ANSWERS else "whyMore", language_code)
     if hours:
         text = get_message("whyRewardGiven", language_code).format(days=REWARD_HOURS // 24) + "\n\n" + text
+    if choice == "pay":  # paying is inconvenient: often a card that does not work in the country
+        text += "\n\n" + get_message("payAbroadHint", language_code)
     text += "\n\n" + get_message("whyChannelLine", language_code)
     _replace_question(data, {
         'type': 'text', 'disable_web_page_preview': True, 'text': text,

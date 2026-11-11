@@ -374,6 +374,7 @@ FA_MESSAGES = {
     "payOnceButton": "💳 پرداخت یک‌باره",
     "payRecurringBody": "<b>اشتراک</b>\n\nپرداخت هر ماه خودکار انجام می‌شود و طرحتان بدون یادآوری تمدید می‌شود. هر وقت خواستید لغو کنید.",
     "payOnceBody": "<b>پرداخت یک‌باره</b>\n\nیک بار موجودی را شارژ کنید: تا وقتی موجودی هست، طرح از آن تمدید می‌شود.",
+    "payAbroadHint": "🌍 کارت بانکی در کشور شما کار نمی‌کند؟ Telegram Stars را می‌توانید در fragment.com با TON برای @username خودتان بخرید، یا دوستی آن را به شما هدیه بدهد. Crypto Bot هم USDT، TON و ارزهای دیگر را می‌پذیرد.",
     "starsSubPlanButton": "⭐ {plan} – ماهی {stars} ⭐",
     "starsSubActiveUntil": "🔁 اشتراک Stars شما فعال است، پرداخت بعدی در {date}.",
     "starsSubButton": "🔁 اشتراک: طرح خودش تمدید می‌شود",

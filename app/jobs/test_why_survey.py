@@ -381,11 +381,13 @@ def test_answers():
                 and "our channel" in renders[-1]['text']
                 and renders[-1]['reply_markup'][1][0]['callback_data'] == {'tp': 'bck'},
                 "the answer says the gift and asks for more, the channel to read and to write, and Back")
+        _assert('fragment.com' in renders[-1]['text'], "'paying is inconvenient' hears how to pay from abroad")
         _assert(edits == [55] and not sent_anew and screens[7001] == [{'id': 55, 'type': 'text'}],
                 "it replaces the tapped question, which becomes the screen Back and search edit")
         module.why_route(dict(tap, united_data={'tp': 'why', 'a': 'own'}))
         _assert('Write it in one message' in renders[-1]['text'] and 'Relay is on' not in renders[-1]['text']
                 and events[-1][1]['reward_hours'] == 0, "a second answer: no second gift; 'own' asks for the text")
+        _assert('fragment.com' not in renders[-1]['text'], "other answers do not")
         flags[(7002, 'why_survey')], flags[(7002, 'why_group')] = 'sent', 'old'
         module.why_route(dict(tap, chat_id=7002, united_data={'tp': 'why', 'a': 'forgot'}))
         _assert('Find your podcast' in renders[-1]['text']
