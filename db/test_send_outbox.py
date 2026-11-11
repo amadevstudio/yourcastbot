@@ -428,6 +428,17 @@ def test_flood_wait_seconds(_db_path=None):
         outbox._retry_delay(1, outbox.OutboxRetryableError(_DiskBusy())), 60,
         "disk wait is not the 2s backoff")
 
+    class _HostWait(Exception):
+        def __init__(self, seconds):
+            super().__init__("429 Client Error: Too Many Requests for url: https://cdn.example/ep.mp3")
+            self.response = type('Response', (), {'headers': {'Retry-After': str(seconds)}})()
+    _assert_eq(
+        outbox._retry_delay(1, _HostWait(300)), 300,
+        "the episode host's Retry-After sets the delay, not the 2s backoff")
+    _assert_eq(
+        (outbox._is_terminal_rec_error(_HostWait(300)), outbox._is_terminal_rec_error(_HostWait(8 * 86400))),
+        (False, True), "a host wait of a week fails the row at once, minutes retry")
+
 
 def test_touch_renews_one_lease(db_path):
     first_id = outbox.enqueue(

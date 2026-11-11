@@ -875,6 +875,13 @@ Rules:
 - **Dead enclosure** (timeout, DNS, Telegram could not fetch the URL) is
   terminal: do not spend `MAX_ATTEMPTS` on it. Tell the user with site +
   file links.
+- **The episode's host says 429** (requests' `429 Client Error`, not
+  Telegram's flood): its `Retry-After` is the delay; an hour or more is
+  terminal like a dead enclosure (podomatic's `x-over-quota`, a show's
+  traffic spent, answers with a date a week away: eight tries in four
+  minutes each asked the host again, then "unavailable" anyway). WARN, not
+  ERR. Lock: `python lib/telegram/general/test_errors.py`,
+  `python db/test_send_outbox.py`.
 - **Host cooldown** (`bot_runtime_kv`, 30 min) is a separate rule. One
   timeout/DNS fault only counts (once per job, HEAD + GET is one); the
   second in another job within 10 min cools the host. One hiccup must not

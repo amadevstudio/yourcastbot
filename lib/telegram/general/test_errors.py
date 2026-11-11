@@ -3,6 +3,8 @@
 
 Run from the repo root: python lib/telegram/general/test_errors.py
 """
+import datetime
+import email.utils
 import os
 import sys
 
@@ -14,7 +16,8 @@ if _ROOT not in sys.path:
 from lib.telegram.general.errors import (  # noqa: E402
     message_to_edit_not_found, user_unavailable_error,
     audio_source_gone, expected_send_noise, message_to_delete_not_found,
-    entities_parse_error, file_refused, telegram_server_error, channel_gone_error)
+    entities_parse_error, file_refused, telegram_server_error, channel_gone_error,
+    enclosure_retry_after, ENCLOSURE_WAIT_MAX)
 
 
 def _assert_eq(got, expected, label):
@@ -23,7 +26,36 @@ def _assert_eq(got, expected, label):
     print("ok  %s = %r" % (label, got))
 
 
+class _HostRefused(Exception):
+    """requests' HTTPError from raise_for_status: the text and the response's headers."""
+    def __init__(self, code, headers):
+        super().__init__("%s Client Error: Too Many Requests for url: https://cdn.example/ep.mp3" % code)
+        self.response = type('Response', (), {'headers': headers})()
+
+
+def check_enclosure_rate_limit():
+    week = email.utils.format_datetime(
+        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=8), usegmt=True)
+    over_quota = _HostRefused(429, {'Retry-After': week, 'x-over-quota': 'yes'})
+    _assert_eq(audio_source_gone(over_quota), True, "enclosure 429 for a week is gone for now")
+    _assert_eq(enclosure_retry_after(over_quota) > 7 * 86400, True, "a Retry-After date is seconds from now")
+    short = _HostRefused(429, {'Retry-After': '120'})
+    _assert_eq(enclosure_retry_after(short), 120, "Retry-After seconds")
+    _assert_eq(audio_source_gone(short), False, "enclosure 429 for two minutes retries")
+    _assert_eq(audio_source_gone(_HostRefused(429, {'Retry-After': str(ENCLOSURE_WAIT_MAX)})), True,
+               "an hour's wait is gone for now")
+    bare = _HostRefused(429, {})
+    _assert_eq((enclosure_retry_after(bare), audio_source_gone(bare)), (None, False),
+               "enclosure 429 without Retry-After retries")
+    _assert_eq(enclosure_retry_after(_HostRefused(429, {'Retry-After': 'soon'})), None, "junk Retry-After")
+    _assert_eq(expected_send_noise(bare), True, "enclosure 429 is expected noise, not ERR")
+    _assert_eq(enclosure_retry_after(RuntimeError("Too Many Requests: retry after 5")), None,
+               "Telegram's 429 is not the host's")
+    _assert_eq(enclosure_retry_after(_HostRefused(403, {'Retry-After': '120'})), None, "only a 429 waits")
+
+
 def main():
+    check_enclosure_rate_limit()
     unavailable = [
         "Forbidden: bot was blocked by the user",
         "Bad Request: chat not found",
