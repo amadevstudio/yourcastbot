@@ -32,7 +32,7 @@ import config
 from config import db_path
 from db.connection import connect_sqlite
 from lib.tools.logger import logger
-from lib.telegram.general.errors import audio_source_gone
+from lib.telegram.general.errors import audio_source_gone, enclosure_retry_after
 
 # Short lease: the worker must touch() while downloading/sending.
 # A dead worker then frees the row in minutes, not half an hour.
@@ -320,7 +320,7 @@ def job_from_row(row):
 
 
 def flood_wait_seconds(error):
-    """Telegram retry-after (or a cause's own retry_after_seconds), else None."""
+    """Telegram retry-after, an enclosure host's Retry-After, or a cause's own retry_after_seconds, else None."""
     if error is None:
         return None
     if isinstance(error, OutboxRetryableError) and error.cause is not None:
@@ -329,6 +329,10 @@ def flood_wait_seconds(error):
     explicit = getattr(error, 'retry_after_seconds', None)
     if explicit:
         return int(explicit)
+    # The episode's host asked to wait (429 Retry-After under an hour; longer is terminal).
+    host_wait = enclosure_retry_after(error)
+    if host_wait:
+        return int(host_wait)
     from lib.telegram.general.errors import (
         get_timeout_from_error_bot, get_timeout_from_error_client)
     pause = get_timeout_from_error_bot(error)

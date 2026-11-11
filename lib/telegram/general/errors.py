@@ -1,3 +1,5 @@
+import datetime
+import email.utils
 import re
 import sys
 
@@ -144,12 +146,48 @@ def message_has_no_text(e):
 _ENCLOSURE_REFUSED = re.compile(r'\b(400|401|403|404|410|451) Client Error\b')
 
 
+# The episode's host rate-limits the file (requests' "429 Client Error"; Telegram's own 429 reads
+# "Too Many Requests: retry after"). Its Retry-After is when to ask again. An hour or more is a
+# refusal for now: podomatic answers 429 "x-over-quota" with a date a week away when a show's
+# traffic is spent (2026-11-09: eight tries in four minutes, each asking the host again, then
+# "unavailable" anyway). Such a click hears "unavailable" at once; a short wait is retried then.
+ENCLOSURE_WAIT_MAX = 3600
+_ENCLOSURE_429 = re.compile(r'\b429 Client Error\b')
+
+
+def enclosure_rate_limited(error) -> bool:
+	return error is not None and _ENCLOSURE_429.search(str(error)) is not None
+
+
+def enclosure_retry_after(error):
+	"""Seconds an enclosure host's 429 asks to wait (Retry-After: seconds or a date), else None."""
+	if not enclosure_rate_limited(error):
+		return None
+	headers = getattr(getattr(error, 'response', None), 'headers', None) or {}
+	value = str(headers.get('Retry-After') or '').strip()
+	if value.isdigit():
+		return int(value)
+	try:
+		when = email.utils.parsedate_to_datetime(value)
+	except (TypeError, ValueError, IndexError):
+		return None
+	if when is None:
+		return None
+	if when.tzinfo is None:
+		when = when.replace(tzinfo=datetime.timezone.utc)
+	return max(0, int((when - datetime.datetime.now(datetime.timezone.utc)).total_seconds()))
+
+
 def audio_source_gone(error):
-	"""File cannot be sent this attempt: 4xx on the URL, Telegram URL fetch, or CDN/DNS."""
+	"""File cannot be sent this attempt: 4xx on the URL, a 429 for an hour or more, Telegram URL
+	fetch, or CDN/DNS."""
 	text = str(error)
 	if "failed to get HTTP URL content" in text:
 		return True
 	if _ENCLOSURE_REFUSED.search(text) or "404 Not Found" in text or "410 Gone" in text:
+		return True
+	wait = enclosure_retry_after(error)
+	if wait is not None and wait >= ENCLOSURE_WAIT_MAX:
 		return True
 	return enclosure_host_fault(error)
 
@@ -175,7 +213,7 @@ def telegram_server_error(error) -> bool:
 
 
 def expected_send_noise(error) -> bool:
-	"""Blocked user, flood, stale edit, dead enclosure — not a process bug."""
+	"""Blocked user, flood, stale edit, dead or rate-limited enclosure: not a process bug."""
 	if error is None:
 		return False
 	if user_unavailable_error(error) or channel_gone_error(error):
@@ -184,7 +222,7 @@ def expected_send_noise(error) -> bool:
 		return True
 	if get_timeout_from_error_bot(error) or get_timeout_from_error_client(error):
 		return True
-	if media_fetch_failed(error) or audio_source_gone(error):
+	if media_fetch_failed(error) or audio_source_gone(error) or enclosure_rate_limited(error):
 		return True
 	if telegram_server_error(error):
 		return True
