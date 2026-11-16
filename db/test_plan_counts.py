@@ -112,7 +112,32 @@ def test_many_holders():
     print("ok  holders past the first 20 are a count")
 
 
+def test_holder_names():
+    holders = [(7201, 'channels'), (7202, 'channels'), (7203, 'channels'), (7204, 'channels')]
+    chats = {7201: {'username': 'listener'}, 7202: {'first_name': 'Ann <b>', 'last_name': 'Lee'},
+             7203: {}}
+
+    def request(method, params):
+        assert method == 'getChat', method
+        if params['chat_id'] not in chats:
+            raise RuntimeError('chat not found')
+        return chats[params['chat_id']]
+
+    names = plan_counts.holder_names(holders, request)
+    assert names == {7201: '@listener', 7202: 'Ann <b> Lee'}, names
+    text = plan_counts.format_lines({'levels': {1: {'paid': 0, 'trial': 0, 'granted': 4}},
+                                     'holders': holders, 'no_plan': 0}, names)
+    assert text.endswith("За каналы: <code>7201</code> @listener, <code>7202</code> Ann &lt;b&gt; Lee, "
+                         "<code>7203</code>, <code>7204</code>"), text
+    asked = []
+    plan_counts.holder_names([(7300 + i, 'channels') for i in range(25)],
+                             lambda method, params: asked.append(params['chat_id']) or {})
+    assert len(asked) == plan_counts.HOLDERS_SHOWN, asked
+    print("ok  holders by @username or name, escaped; unknown by id; only those shown are asked")
+
+
 if __name__ == '__main__':
     test_counts()
     test_old_schema()
     test_many_holders()
+    test_holder_names()

@@ -3,21 +3,53 @@
 survey's week, `users.flags` `why_reward`) or a grant's (db/plan_grants.py), and the live chats with no
 plan.
 
+A holder is shown by id and, when Telegram tells (`holder_names`, getChat), @username or name.
+
 Paid for is `tariff_rows.paid_for_days`: a payment or a Patreon replenishment. The creator's
 account is in no line: its plan is paid by tests and its own Patreon address. A user with two live tariff rows counts once, at the higher level. Read-only; a table
 the database does not have yet counts as empty.
 Lock: python db/test_plan_counts.py
 """
 from db.connection import connect_sqlite
+from lib.markup import telegram_html
 
 PLAN_NAMES = {1: 'Bronze', 2: 'Silver', 3: 'Relay'}
 GRANT_NAMES = {'channels': 'за каналы'}
 HOLDERS_SHOWN = 20
 
 
-def format_lines(plans: dict) -> str:
+def _shown(holders) -> dict:
+    """{kind: the first HOLDERS_SHOWN holders' telegram ids}."""
+    shown = {}
+    for telegram_id, kind in holders:
+        shown.setdefault(kind, [])
+        if len(shown[kind]) < HOLDERS_SHOWN:
+            shown[kind].append(telegram_id)
+    return shown
+
+
+def holder_names(holders, request) -> dict:
+    """{telegram_id: '@username' or the name} for the holders shown, by getChat; one Telegram does
+    not answer for is left out (shown by id alone)."""
+    names = {}
+    for ids in _shown(holders).values():
+        for telegram_id in ids:
+            try:
+                chat = request('getChat', {'chat_id': int(telegram_id)})
+            except Exception:
+                continue
+            name = ('@' + chat['username'] if chat.get('username') else
+                    ' '.join(part for part in (chat.get('first_name'), chat.get('last_name')) if part))
+            if name.strip():
+                names[telegram_id] = name.strip()
+    return names
+
+
+def format_lines(plans: dict, names: dict = None) -> str:
     """The /usersCount plans block (HTML): no plan in the header, a line per level that has anyone
-    (paid, trial with the survey's weeks among them, a grant's; zeros left out), the grants' holders."""
+    (paid, trial with the survey's weeks among them, a grant's; zeros left out), the grants' holders
+    (with `names`, from holder_names)."""
+    names = names or {}
     holders = plans['holders']
     kinds = sorted({kind for _, kind in holders})
     granted = GRANT_NAMES.get(kinds[0], kinds[0]) if len(kinds) == 1 else "бесплатно"
@@ -35,7 +67,9 @@ def format_lines(plans: dict) -> str:
             lines.append("%s: %s" % (PLAN_NAMES.get(level, "уровень %d" % level), " · ".join(parts)))
     for kind in kinds:
         ids = [telegram_id for telegram_id, held in holders if held == kind]
-        shown = ", ".join("<code>%s</code>" % telegram_id for telegram_id in ids[:HOLDERS_SHOWN])
+        shown = ", ".join("<code>%s</code>%s" % (telegram_id, " " + telegram_html.escape(names[telegram_id])
+                                                 if telegram_id in names else "")
+                          for telegram_id in ids[:HOLDERS_SHOWN])
         more = len(ids) - HOLDERS_SHOWN
         lines.append("%s: %s%s" % (GRANT_NAMES.get(kind, kind).capitalize(), shown,
                                    " и ещё %d" % more if more > 0 else ""))
