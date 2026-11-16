@@ -75,7 +75,9 @@ def compute_users_count_text() -> str:
     plans = ''
     try:
         from db import plan_counts
-        plans = plan_counts.format_lines(plan_counts.running(config.db_path, config.creatorId))
+        from app.service.plan.channels import bot_request
+        running = plan_counts.running(config.db_path, config.creatorId)
+        plans = plan_counts.format_lines(running, plan_counts.holder_names(running['holders'], bot_request))
     except Exception as e:
         logger.err("usersCount plans:", e)
     circle = ''
