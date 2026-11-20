@@ -79,7 +79,7 @@ def income_processing():
 				+ "\n\n" + tariff_info_message
 		# деньги пришли, осталось до конца х дней, хватает для продления?
 		elif result == 1:
-			if current_subscription['balance'] > current_tariff['price']:
+			if current_subscription['balance'] >= current_tariff['price']:  # the tick renews at >=
 				prolongation = get_message('enough_to_prolongation', language_code)
 			else:
 				prolongation = get_message('not_enough_to_prolongation', language_code)

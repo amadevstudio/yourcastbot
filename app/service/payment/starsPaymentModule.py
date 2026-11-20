@@ -644,7 +644,7 @@ def _payment_result_message(result, current_tariff, current_subscription, langua
             + " " + get_message('subscribe_now', language_code) \
             + "\n\n" + tariff_info_message
     elif result == 1:
-        if current_subscription['balance'] > current_tariff['price']:
+        if current_subscription['balance'] >= current_tariff['price']:  # the tick renews at >=
             prolongation = get_message('enough_to_prolongation', language_code)
         else:
             prolongation = get_message('not_enough_to_prolongation', language_code)

@@ -37,9 +37,6 @@ def main():
     from app.service.ai import summary
     real_summarize = summary.summarize
     sim.boot(network=False, ai='fake')
-    from app.service.payment import starsPaymentModule
-    starsPaymentModule._stars_rate_x1000 = starsPaymentModule.STARS_DEFAULT_WITHDRAW_RATE_X1000
-    starsPaymentModule._stars_rate_updated_at = time.time()
     from app.controller.builders import summaryModule
     from app.jobs import ai_watcher as worker
     from app.service.ai import transcript, voice

@@ -679,6 +679,18 @@ def subscription(stars):
         os.remove(path)
 
 
+def renewal_line(stars):
+    """Money that covers the plan's price exactly renews it (the tick renews at >=): the payment's message
+    said "not enough to renew" for a $5 payment on Relay."""
+    from app.i18n.messages import get_message
+    message = stars._payment_result_message(1, {'level': 3, 'price': 500},
+                                            {'balance': 500, 'time_left': 100, 'notify_count': -1}, 'en')
+    _assert(get_message('enough_to_prolongation', 'en') in message, "exactly the price is enough to renew")
+    message = stars._payment_result_message(1, {'level': 3, 'price': 500},
+                                            {'balance': 499, 'time_left': 100, 'notify_count': -1}, 'en')
+    _assert(get_message('not_enough_to_prolongation', 'en') in message, "a cent short is not")
+
+
 def click_pack(stars):
     """A pack of episodes (db/click_packs.py): its invoice bills the pack as config has it, the
     pre-checkout refuses one whose size or price changed, a payload cannot mix a pack with a plan's
@@ -744,6 +756,7 @@ def main():
     bundle_take_back(stars)
     subscription(stars)
     click_pack(stars)
+    renewal_line(stars)
     print("all Stars invoice checks passed")
 
 

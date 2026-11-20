@@ -94,6 +94,14 @@ def boot(database: Optional[str] = None, network: bool = True, ai: str = 'fake',
     tg = tgsim.Telegram(bot={'id': 100000001, 'first_name': 'Yourcast (sim)', 'username': 'yourcast_sim_bot'},
                         quiet=0)
     api = fake_telegram.BotApi(tg)
+    client.tg = tg
+
+    def to_telethon(update):
+        """A payment's updates (tgsim's User.pay) to the bot's Telethon handlers, now, in this thread."""
+        raw = fake_telegram.raw_update(client, update)
+        if raw is not None:
+            asyncio.run(fake_telegram.dispatch(client, raw))
+    tg.listeners.append(to_telethon)
     from telebot import apihelper
     apihelper._make_request = api
 
@@ -150,6 +158,12 @@ def boot(database: Optional[str] = None, network: bool = True, ai: str = 'fake',
     from app.routes import initialize_routes
     initialize_routes.initialize_routes(Balancer(), None, [])
     initialize_routes.t_answer_sender = Balancer()
+
+    # The Stars rate is asked of Telegram by asyncio.run, and botsim serves a handler inside the event loop
+    # (production's run in worker threads): the default rate, cached for good, so every invoice can be sent.
+    from app.service.payment import starsPaymentModule
+    starsPaymentModule._stars_rate_x1000 = starsPaymentModule.STARS_DEFAULT_WITHDRAW_RATE_X1000
+    starsPaymentModule._stars_rate_updated_at = float('inf')
 
     _state.update(database=database, client=client, tg=tg, api=api, analytics=analytics, log=log, ai=ai)
     return _state
@@ -263,6 +277,16 @@ class BotSim:
                                             answer)
         step = self._run(label or 'tap data %s' % data, event)
         step.unanswered_tap = not self.tg.queries[str(query_id)]['answered']
+        return step
+
+    def pay(self, invoice=None) -> Step:
+        """Pays an invoice as Telegram does (the latest in the chat, a message, or an invoice link): tgsim asks
+        the bot's pre-checkout and, on its yes, sends the payment; both reach the bot's Telethon handlers.
+        A refusal or no answer is a note on the step."""
+        inner = []
+        step = self._observe('pay', lambda: inner.append(self.user.pay(invoice)))
+        if inner:
+            step.notes.extend(inner[0].notes)
         return step
 
     def deliver(self, by_url: bool = True) -> Step:
