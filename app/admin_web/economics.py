@@ -50,7 +50,8 @@ def _segments(conn) -> dict[int, tuple[str, int]]:
     """
     rows = conn.execute(
         "SELECT u.telegramId tg, t.level level, u.telegramId != ? AND "
-        "EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id AND p.status = 'paid') paid "
+        "EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id AND p.status = 'paid'"
+        + payments.not_pack_sql(conn) + ") paid "
         "FROM users u JOIN user_tariff_cs utc ON utc.uid = u.id "
         "JOIN tariffs t ON t.id = utc.tariff_id "
         "WHERE utc.tariff_id > 0 AND utc.time_left > 0", (int(config.creatorId),)).fetchall()

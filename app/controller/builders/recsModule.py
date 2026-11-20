@@ -647,11 +647,11 @@ def send_record_direct(
     }
 
     # without a plan: free_rec_per_week episodes by click in any 7 days;
-    # a plan nobody paid for: trial_rec_per_day in any 24 hours
+    # a plan nobody paid for: trial_rec_per_day in any 24 hours; past them, a pack (db/click_packs.py)
     open_links = outbox.open_user_rec_links(chat_id)
     if quiet and len(open_links) >= LATEST_OPEN_LIMIT:
         return False  # several podcasts ticked at once: a few episodes, not a flood
-    hit = free_limit.limit_hit(chat_id, link, open_links)
+    hit = free_limit.limit_hit(chat_id, link, open_links, use_pack=not quiet)  # a pack is spent by a tap
     if hit is not None:
         if not quiet:
             render_messages(chat_id, [free_limit.hit_message(hit, lang_code)])

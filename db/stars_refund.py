@@ -18,7 +18,9 @@ says it).
 Once per payment: the row's status is checked and changed in one transaction,
 so the service message and the daily check of the bot's transactions can both
 see the same refund. The inviter's referral days stay. A grant's days (db/plan_grants.py) were
-never bought: a refund takes none of them.
+never bought: a refund takes none of them. A pack of episodes (db/click_packs.py) credited no
+balance: its refund turns the row `refunded` and nothing else, and the pack's episodes not used go
+with it (click_packs counts only packs still paid; the used ones were delivered).
 Lock: python app/service/payment/test_stars_refund.py
 """
 from config import db_path, tariff_period
@@ -26,6 +28,8 @@ from db import payments, plan_grants
 from db.connection import connect_sqlite
 
 STARS_SERVICE_TYPE = 'telegramStars'  # starsPaymentModule.STARS_SERVICE_TYPE (no telebot here)
+PACK_SERVICE_TYPE = 'telegramStarsPack'  # db/click_packs.SERVICE_TYPE
+SERVICE_TYPES = (STARS_SERVICE_TYPE, PACK_SERVICE_TYPE)
 REFUNDED = 'refunded'
 
 
@@ -33,22 +37,29 @@ def apply_refund(charge_id, database=None, period=tariff_period):
     """The payment with this Telegram charge id is taken back. None when there
     is no such paid Stars payment (unknown, or taken back before); else a dict:
     user_id, amount (cents off the balance), hours (taken off the plan),
-    time_left, balance (after), tariff_id."""
+    time_left, balance (after), tariff_id; and pack (the episodes of a pack, 0 for
+    any other payment: a pack's refund takes nothing off the balance or the plan)."""
     connection = connect_sqlite(db_path if database is None else database)
     try:
         connection.execute("BEGIN IMMEDIATE")
         back = "COALESCE(bundle_back, 0)" if payments.has_column(connection, 'bundle_back') else "0"
         payment = connection.execute(
-            "SELECT user_id, amount - " + back + " FROM payment_history "
-            "WHERE service_type = ? AND invoice_id = ? AND status = 'paid'",
-            (STARS_SERVICE_TYPE, str(charge_id))).fetchone()
+            "SELECT user_id, amount - " + back + ", service_type FROM payment_history "
+            "WHERE service_type IN (?, ?) AND invoice_id = ? AND status = 'paid'",
+            SERVICE_TYPES + (str(charge_id),)).fetchone()
         if payment is None:
             connection.commit()
             return None
-        user_id, amount = int(payment[0]), int(payment[1] or 0)
+        user_id, amount, service_type = int(payment[0]), int(payment[1] or 0), payment[2]
         connection.execute(
             "UPDATE payment_history SET status = ? WHERE service_type = ? AND invoice_id = ?",
-            (REFUNDED, STARS_SERVICE_TYPE, str(charge_id)))
+            (REFUNDED, service_type, str(charge_id)))
+        if service_type == PACK_SERVICE_TYPE:
+            pack = connection.execute(
+                "SELECT episodes FROM click_packs WHERE charge_id = ?", (str(charge_id),)).fetchone()
+            connection.commit()
+            return {'user_id': user_id, 'amount': 0, 'hours': 0, 'time_left': 0, 'balance': 0,
+                    'tariff_id': 0, 'pack': int(pack[0]) if pack else 0, 'charged': amount}
 
         row = connection.execute(
             "SELECT utc.tariff_id, utc.balance, utc.time_left, t.price FROM user_tariff_cs utc "
@@ -56,7 +67,7 @@ def apply_refund(charge_id, database=None, period=tariff_period):
         if row is None:  # a payment always writes the row; nothing to take it from
             connection.commit()
             return {'user_id': user_id, 'amount': amount, 'hours': 0,
-                    'time_left': 0, 'balance': 0, 'tariff_id': 0}
+                    'time_left': 0, 'balance': 0, 'tariff_id': 0, 'pack': 0}
         tariff_id, balance, time_left = int(row[0] or 0), int(row[1] or 0) - amount, int(row[2] or 0)
         price = int(row[3] or 0)
         hours = 0
@@ -70,7 +81,7 @@ def apply_refund(charge_id, database=None, period=tariff_period):
             (balance, time_left, user_id))
         connection.commit()
         return {'user_id': user_id, 'amount': amount, 'hours': hours,
-                'time_left': time_left, 'balance': balance, 'tariff_id': tariff_id}
+                'time_left': time_left, 'balance': balance, 'tariff_id': tariff_id, 'pack': 0}
     except BaseException:
         connection.rollback()
         raise
@@ -79,11 +90,11 @@ def apply_refund(charge_id, database=None, period=tariff_period):
 
 
 def paid_charge_ids(database=None) -> set:
-    """Charge ids of the Stars payments that still count as paid."""
+    """Charge ids of the Stars payments (packs too) that still count as paid."""
     connection = connect_sqlite(db_path if database is None else database)
     try:
         return {str(row[0]) for row in connection.execute(
-            "SELECT invoice_id FROM payment_history WHERE service_type = ? AND status = 'paid'",
-            (STARS_SERVICE_TYPE,))}
+            "SELECT invoice_id FROM payment_history WHERE service_type IN (?, ?) AND status = 'paid'",
+            SERVICE_TYPES)}
     finally:
         connection.close()

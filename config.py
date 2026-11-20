@@ -127,12 +127,16 @@ server_usd_month = 10
 # the share of a payment that reaches us, by payment_history.service_type (others: all of it), for the
 # admin economics page. Stars are sold at Telegram's withdraw rate, but the rewards come through Fragment
 # in TON: an estimate of what conversion and fees take (2-5% by unofficial accounts, no official figure)
-payout_share = {'telegramStars': 0.95}
+payout_share = {'telegramStars': 0.95, 'telegramStarsPack': 0.95}
 
 # максимальное число подписок и количества в обновлении
 max_subscriptions_without_tariff = 15
 # episodes a listener without a plan gets by click in any 7 days (app/service/record/free_limit.py)
 free_rec_per_week = 10
+# a pack of episodes by click sold for Stars at that limit (db/click_packs.py): its episodes, which do not
+# expire, and its price in cents (Stars at the withdraw rate: 65 cents is ~50 Stars). 0 episodes: not sold
+click_pack_episodes = 30
+click_pack_cents = 65
 # episodes by click a plan nobody paid for (the welcome trial, referral days) gets in any 24 hours:
 # one trial took ~1000 episodes of one show in 4 days and held a rec worker of 4 (2026-10)
 trial_rec_per_day = 100

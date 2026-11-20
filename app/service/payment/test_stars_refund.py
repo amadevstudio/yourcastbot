@@ -172,6 +172,35 @@ def test_notice_and_once():
         os.remove(path)
 
 
+def test_pack():
+    """A pack of episodes (db/click_packs.py) taken back: the pack goes, the balance and the plan stay,
+    the chat hears it was the pack, and the daily check finds a pack's refund as any other."""
+    from db import click_packs
+    path = _db()
+    try:
+        uid = _user(path, 9401, RELAY, time_left=PERIOD, balance=120)
+        click_packs.credit(9401, 'pack-1', 30, 65, database=path)
+        click_packs.credit(9401, 'pack-2', 30, 65, database=path)
+        _assert(not ever_paid(9401, path), "a pack is no payment for a plan")
+        sent, told = [], []
+        with patch.object(stars_refund.analytics_events, 'track', lambda *a, **k: None):
+            refund = stars_refund.process_refund('pack-1', 'message', path, send=lambda c, m: sent.append((c, m)) or [1],
+                                                 notify_creator=told.append)
+        _assert(refund['pack'] == 30 and _plan(path, uid) == (RELAY, 120, PERIOD),
+                "the pack goes; the balance and the plan stay")
+        _assert('pack of 30 episodes' in sent[0][1][0]['text'] and 'pack of 30 episodes' in told[0],
+                "the chat and the creator hear it was the pack")
+        _assert(click_packs.left(9401, database=path) == 30, "the other pack stays")
+
+        def request(offset):
+            return {'transactions': [{'id': 'pack-2', 'amount': 50, 'date': 1, 'receiver': {'type': 'user'}}]}
+        with patch.object(stars_refund.analytics_events, 'track', lambda *a, **k: None):
+            found = stars_refund.check_transactions(request, path, send=lambda c, m: [1], notify_creator=lambda t: None)
+        _assert(found == 1 and click_packs.left(9401, database=path) == 0, "a chargeback of a pack is found by the daily check")
+    finally:
+        os.remove(path)
+
+
 def test_transactions():
     path = _db()
     try:
@@ -205,4 +234,5 @@ if __name__ == '__main__':
     test_balance_and_hours()
     test_notice_and_once()
     test_transactions()
+    test_pack()
     print("all stars refund checks passed")

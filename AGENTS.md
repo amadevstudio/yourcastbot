@@ -119,6 +119,8 @@ remove plan management or hide Bronze/Silver.
   `python app/jobs/test_relay_remind.py`).
 - Do not write a test that a live SKU or the picker is gone. The lock
   is `python app/service/payment/test_storefront.py`.
+- The pack of episodes at the free week's limit (Episode packs) is first
+  there and is no plan: every plan's invoice and change-plan stay under it.
 - The D-3 reminder and the daemon's "not prolonged" notice name the plan
   that ends, the user's own (`plan_ending_text` / `plan_off_text` in
   `app/service/payment/storefront.py`), not always Relay. Relay's text stays
@@ -184,7 +186,9 @@ models drop it. The inviter's referral days stay. Two ways in
 a chargeback sends one, the bot's transactions once a day in the jobs role
 (`getStarTransactions`: an outgoing transaction whose id is a paid charge id).
 The chat hears what was taken, the creator gets an `#info`. A Stars
-subscription is left as it is.
+subscription is left as it is. A pack of episodes (Episode packs) credited
+no balance: its refund turns the row `refunded` and takes its unused
+episodes, nothing else.
 Lock: `python app/service/payment/test_stars_refund.py` (CD gate).
 
 ## Payment effects
@@ -212,7 +216,8 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
 ## Referrals, paywall, prepaid months, win-back
 
 - A payment awards the inviter once per invitee, whatever the pay method
-  (Stars, the CryptoBot and Robokassa webhooks): `award_referrer_for_payment`
+  (Stars, the CryptoBot and Robokassa webhooks; a pack of episodes is no
+  payment for a plan and awards nothing, Episode packs): `award_referrer_for_payment`
   takes `users.ref_id` off the invitee (`claim_referrer`, one transaction)
   before `giveAward('replenished')`. Never award before the claim: a crash in
   between loses one bonus, never doubles it. A `/start` link names an
@@ -940,7 +945,8 @@ it "Listen", "Show notes" and "Summary" were all `recs`. What the bot does on it
 (the tick did not renew it; `paid_before` false is a trial that did not
 convert), `plan_reminder_sent {level, days_left, paid_before, offer, shows}`
 (D-3), `winback_sent {stage, offer}`, `payment {method, amount_cents,
-charged_cents, offer, ...}` (Stars, CryptoBot),
+charged_cents, offer, ...}` (Stars, CryptoBot; a pack of episodes: method
+`telegramStarsPack`, `pack` its episodes),
 `summary_ready {cached, seconds, model}`, `transcript_ready {source, made, seconds, model}`
 (both with `source: voice` for voice messages; the voice handlers, outside the route map,
 send `voice_help`, `voice_received {seconds | rejected}`, `voice_requested {output, mode,
@@ -1218,14 +1224,56 @@ it: Relay's invoice when the trial is Relay (paying lifts the limit at once),
 else the Stars page, and change-plan (`free_limit.click_limit`). Automatic deliveries, manual
 refresh, the episode list and the digest text are not limited; the
 digest's "Listen" is a click like any other. At the limit the click is
-not queued: the message lists every plan with its Stars price, Relay
-first, plus the page of plans (Storefront rules: no SKU hidden).
+not queued: the message offers a pack of episodes first (Episode packs,
+below), then lists every plan with its Stars price, Relay first, plus the
+page of plans (Storefront rules: no SKU hidden).
 Each stop is the Amplitude event `free_limit_hit {limit: week|trial, quiet,
 hours}` (quiet: the newest episode after a subscription, no message), sent
 after the answer; the limit's buttons carry `s: lim` (`source: free_limit`):
 on 2026-11-05 22 free users met the cap in two weeks and none paid, unseen.
 Lock: `python app/service/record/test_free_limit.py` (CD gate; the message
 part runs where the bot's requirements are installed).
+
+## Episode packs
+
+B2C sells at the moment of need (the owner's call, 2026-11-20): of 44 chats
+that met the free week from 23.10 to 20.11, 34 met it once (a burst: a season
+to listen offline), and monthly plans at that moment sold nothing. So the
+free week's limit offers first `click_pack_episodes` (30) episodes by click
+for `click_pack_cents` (65, ~50 Stars at the withdraw rate): no plan, no
+subscription, they do not expire (`db/click_packs.py`, button `bs_pack`,
+`s: lim`; every plan stays under it). Config 0 episodes: not sold.
+
+- A pack is a payment, not a plan. Its `payment_history` row (service type
+  `telegramStarsPack`, `paid`, amount = charged = the price) is revenue, a
+  payer on the page "Product" and a refundable charge; its episodes are a row
+  of `click_packs` keyed by the charge id, written in the same transaction,
+  once (a retried update credits nothing). It credits no balance and opens no
+  plan's rights: `tariff_rows.ever_paid` leaves it out (`payments.not_pack_sql`,
+  NULL-safe), so no paid plan's AI hours, better models, half-days refund or
+  trial-offer change; no referral award and no payment effect (the inviter's
+  days for $0.65 from a second account would be a free month).
+- What is left is counted, never counted down: the packs still paid minus the
+  episodes used. A use is a row per episode written when its click is queued
+  (`click_packs.use`, one transaction: two taps never take the last episode
+  twice) and counts while fresh (`USE_GRACE_SECONDS`), waiting in the outbox
+  or delivered within a day after it. A click that failed counts for nothing:
+  its episode comes back by itself, no refund to forget or do twice, and the
+  same episode fetched free later is the week's, not the pack's. The same
+  episode again is free. Only a tap spends a pack (`limit_hit(use_pack=)`), never the
+  quiet newest episode after a subscription. Past any limit (the week, a
+  trial's or a grant's day) a pack pays for the click; the windows do not
+  count a pack's episodes, so a pack is on top of the week, never eaten by it.
+- The pre-checkout accepts a pack only as sold now (`k` and `b` of the payload
+  equal config's); a payload mixing a pack with a plan's terms is refused. A
+  refund (Stars refunds) turns the row `refunded`: the pack's unused episodes
+  go, the balance and the plan stay, the chat hears it was the pack.
+- Read it by: `bs_pack` taps (`source: free_limit`), `payment {method:
+  telegramStarsPack, pack}`, rows of that service type. Decide on the next ~40
+  chats at the limit: 3+ buy, keep it; 0-1, the need is not there.
+Locks: `python db/test_click_packs.py` (CD gate), `python tools/botsim/test_click_pack.py`
+(bot requirements), `python app/service/payment/test_stars_invoice.py`,
+`python app/service/payment/test_stars_refund.py`, `python app/controller/builders/test_latest_episode.py`.
 
 ## AI summaries
 

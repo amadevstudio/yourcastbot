@@ -42,6 +42,7 @@ STARS_SERVICE_TYPE = "telegramStars"
 STARS_WITHDRAW_RATE_KEY = "stars_usd_withdraw_rate_x1000"
 STARS_DEFAULT_WITHDRAW_RATE_X1000 = 1300
 STARS_RATE_CACHE_TTL_SECONDS = 24 * 60 * 60
+MAX_PACK_EPISODES = 1000
 
 _stars_rate_x1000: int | None = None
 _stars_rate_updated_at: float | None = None
@@ -64,6 +65,7 @@ class StarsPayload(TypedDict):
     o: str  # offer the discount comes from ("" or offers.WINBACK_OFFER)
     v: int  # plan the invoice is for, turned on if none runs (0: an invoice from before)
     u: int  # 1: a Stars subscription, Telegram charges this payload every 30 days
+    k: int  # a pack of this many episodes by click (db/click_packs.py), no balance; 0: not a pack
 
 
 def _json_value_to_py(value):
@@ -145,7 +147,7 @@ def stars_to_charge(balance_amount: int, rate_x1000: int, discount: int = 0) -> 
 
 def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1000: int,
                    months: int = 1, discount: int = 0, offer: str = "", plan_id: int = 0,
-                   subscription: bool = False) -> str:
+                   subscription: bool = False, pack: int = 0) -> str:
     payload = {
         "t": int(chat_id),
         "b": int(balance_amount),
@@ -162,6 +164,8 @@ def create_payload(chat_id: int, balance_amount: int, stars_amount: int, rate_x1
         payload["v"] = int(plan_id)
     if subscription:
         payload["u"] = 1
+    if pack:
+        payload["k"] = int(pack)
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -185,6 +189,7 @@ def parse_payload(payload: bytes | str) -> StarsPayload | None:
             "o": str(data.get("o", "")),
             "v": int(data.get("v", 0)),
             "u": int(data.get("u", 0)),
+            "k": int(data.get("k", 0)),
         }
     except Exception:
         return None
@@ -213,6 +218,11 @@ def validate_precheckout_payload(
     if not ok:
         return ok, error
     data = parse_payload(payload)
+    if data["k"]:
+        # a pack is sold as it is now: an invoice from before a change of its size or price is not
+        if data["k"] != config.click_pack_episodes or data["b"] != config.click_pack_cents:
+            return False, PRECHECKOUT_REFUSALS['terms']
+        return True, None
     reason = purchase.refusal(user_id, purchase.from_payload(data, data["b"]))
     if reason is not None:
         return False, PRECHECKOUT_REFUSALS[reason]
@@ -240,6 +250,9 @@ def validate_payment_payload(
         return False, "Invalid balance amount"
     if data["u"] and (data["m"] != 1 or data["d"] or data["o"] or not data["v"]):
         return False, "Invalid subscription"
+    if data["k"] and (not 0 < data["k"] <= MAX_PACK_EPISODES
+                      or data["m"] != 1 or data["d"] or data["o"] or data["v"] or data["u"]):
+        return False, "Invalid pack"
     return True, None
 
 
@@ -432,6 +445,66 @@ def send_invoice(data: ControllerParams):
         return False
 
 
+def send_pack_invoice(data: ControllerParams):
+    """The pack of episodes (db/click_packs.py) from the free limit's button: its invoice, the pack's
+    size and price as config has them now (the pre-checkout asks them again)."""
+    language_code = data['language_code']
+    episodes, cents = int(config.click_pack_episodes or 0), int(config.click_pack_cents or 0)
+    if episodes <= 0 or cents <= 0:
+        notify(data['callback'], data['message'], get_message('parsingError', language_code), alert=True)
+        return False
+    try:
+        rate_x1000 = get_invoice_stars_withdraw_rate_x1000()
+    except StarsRateUnavailable as e:
+        logger.err(e)
+        notify(data['callback'], data['message'], get_message('telegram_stars_invoice_error', language_code), alert=True)
+        return False
+    stars = stars_for_balance(cents, rate_x1000)
+    title = get_message('clickPackInvoiceTitle', language_code).format(episodes=episodes)[:32]
+    try:
+        bot.send_invoice(
+            data['chat_id'], title,
+            get_message('clickPackInvoiceDescription', language_code).format(episodes=episodes)[:255],
+            create_payload(data['chat_id'], cents, stars, rate_x1000, pack=episodes),
+            "", STARS_CURRENCY, [types.LabeledPrice(label=title, amount=stars)])
+    except Exception as e:
+        logger.err(e)
+        notify(data['callback'], data['message'], get_message('telegram_stars_invoice_error', language_code), alert=True)
+        return False
+
+
+def _process_pack_payment(chat_id, payload_data, charge_id, provider_charge_id) -> bool:
+    """A pack's payment: its row and its episodes once (db/click_packs.py), no balance, no plan, no
+    referral award or payment effect: a payment for clicks opens no paid plan's rights."""
+    from app.core.sender import outbox
+    from db import click_packs
+    if not click_packs.credit(chat_id, charge_id, payload_data['k'], payload_data['b'],
+                              invoice_hash=f"{payload_data['p']}:{payload_data['r']}:{provider_charge_id or ''}"):
+        return False  # credited before (or no such user: nothing to credit)
+    analytics_events.track(chat_id, 'payment', {
+        'method': click_packs.SERVICE_TYPE, 'amount_cents': payload_data['b'],
+        'charged_cents': payload_data['b'], 'pack': payload_data['k']})
+    db = SQLighter(config.db_path)
+    try:
+        user = db.get_user_by_tg(chat_id)
+    finally:
+        db.close()
+    language_code = (user['lang'] if user is not None else None) or 'en'
+    try:
+        left = click_packs.left(chat_id, outbox.open_user_rec_links(chat_id))
+    except Exception as e:
+        logger.warn("pack left after payment:", type(e).__name__, e)
+        left = payload_data['k']
+    outer_sender(chat_id, [{
+        'type': 'text',
+        'text': get_message('clickPackBought', language_code).format(episodes=payload_data['k'], left=left),
+        'reply_markup': [[{'text': get_message('goBackMenu', language_code), 'callback_data': {'tp': 'menu'}}]]}])
+    if config.server:
+        from app.controller.builders.adminModule import send_message_to_creator
+        send_message_to_creator("New income by Telegram Stars: a pack of %d episodes" % payload_data['k'], level='info')
+    return True
+
+
 def cancel_subscription(user_id, charge_id) -> None:
     """Stop a user's Stars subscription from renewing (the paid period runs to its
     end). editUserStarSubscription is not in pyTelegramBotAPI 4.11: the raw request."""
@@ -606,6 +679,8 @@ def process_successful_payment(
     payload_data = parse_payload(payload)
     if payload_data is None:
         return False
+    if payload_data['k']:
+        return _process_pack_payment(chat_id, payload_data, charge_id, provider_charge_id)
     subscription = bool(payload_data['u'])
 
     db = SQLighter(config.db_path)
