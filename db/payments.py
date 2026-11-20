@@ -45,6 +45,18 @@ def ensure_bundle_back_column(connection) -> None:
     _ensure_column(connection, 'bundle_back')
 
 
+PACK_SERVICE_TYPE = 'telegramStarsPack'  # db/click_packs.SERVICE_TYPE
+
+
+def not_pack_sql(connection, alias='p') -> str:
+    """" AND <alias> is no pack of episodes" (db/click_packs.py: a payment for clicks, not for a plan),
+    for the readers that ask whether a plan was paid for; '' for a payment_history without service_type
+    (the minimal tables of tests: production's has it in its key)."""
+    if not has_column(connection, 'service_type'):
+        return ""
+    return " AND %s.service_type IS NOT '%s'" % (alias, PACK_SERVICE_TYPE)  # NULL-safe
+
+
 def revenue_sql(connection, alias='p') -> str:
     """The cents a payment row brought in, for a query over payment_history `alias`."""
     if has_charged(connection):

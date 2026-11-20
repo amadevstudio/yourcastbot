@@ -17,15 +17,21 @@ them (storefront rules: no SKU hidden). At the trial's limit: Relay's invoice
 (paying lifts the limit at once) and change-plan. Each stop is an Amplitude
 event (`free_limit_hit`) and the buttons carry `s: lim`, so the limit's
 funnel (stop, invoice, payment) can be read.
-Lock: python app/service/record/test_free_limit.py
+
+A pack of episodes (db/click_packs.py, `click_pack_episodes` for `click_pack_cents` in Stars) is
+the first button at the free week's limit: no plan, no subscription, the episodes do not expire.
+A click past any limit takes one from the chat's packs while they have one (not the quiet newest
+episode after a subscription: a pack is spent only by a tap); the windows do not count a pack's
+episodes, so a pack is on top of the week, never eaten by it.
+Lock: python app/service/record/test_free_limit.py, python db/test_click_packs.py
 """
 import math
 import time
 from typing import NamedTuple, Optional
 
 from app.service.plan import entitlements, features
-from config import db_path
-from db import usage
+from config import click_pack_cents, click_pack_episodes, db_path
+from db import click_packs, usage
 from db.tariff_rows import running_plan_level
 
 
@@ -36,11 +42,13 @@ def has_running_plan(chat_id, database=None) -> bool:
 
 def window_check(chat_id, link, open_links, limit, window_seconds, now=None, database=None):
     """(allowed, seconds until the next episode or None): `limit` distinct episodes by click in
-    any `window_seconds`, waiting clicks (open_links) included; the same episode again is free."""
+    any `window_seconds`, waiting clicks (open_links) included; the same episode again is free.
+    Episodes a pack pays for (db/click_packs.py) are not the window's."""
     now = time.time() if now is None else now
     since = now - window_seconds
     counted = usage.episodes_since(chat_id, 'rec', since, database=database)
     counted |= {usage.episode_ref(other) for other in open_links}
+    counted -= click_packs.counting_refs(chat_id, open_links, now=now, database=database)
     if usage.episode_ref(link) in counted or len(counted) < limit:
         return True, None
     leaves = usage.first_to_leave(chat_id, 'rec', since, database=database)
@@ -81,16 +89,20 @@ class Hit(NamedTuple):
     count: Optional[int] = None  # the episodes the limit allows; None: the profile's
 
 
-def limit_hit(chat_id, link, open_links, now=None, database=None) -> Optional[Hit]:
+def limit_hit(chat_id, link, open_links, now=None, database=None, use_pack=True) -> Optional[Hit]:
     """None when this click may be queued: the chat's profile (entitlements) says how many
     episodes in what window: no plan, the free week's; a plan nobody paid for, the trial's day;
-    a paid plan, none; a grant (db/plan_grants.py), its profile's."""
+    a paid plan, none; a grant (db/plan_grants.py), its profile's. Past it, the chat's packs
+    (db/click_packs.py) pay for the click while they have an episode; use_pack False (the quiet
+    newest episode after a subscription) leaves them alone."""
     rights = entitlements.of(chat_id, database)
     count = rights.get('clicks')
     if count is None:
         return None
     allowed, wait = window_check(chat_id, link, open_links, count, rights.get('clicks_hours') * 3600, now, database)
     if allowed:
+        return None
+    if use_pack and click_packs.use(chat_id, link, open_links, now=now, database=database):
         return None
     return Hit('grant' if rights.grant else 'trial' if rights.running else 'week', wait, rights.level, count)
 
@@ -152,17 +164,38 @@ def plans_offer(language_code, source=None, free_bronze=False) -> tuple[str, lis
     return text, rows
 
 
+PACK_CALLBACK = 'bs_pack'  # the pack's invoice (starsPaymentModule.send_pack_invoice)
+
+
+def pack_offer(language_code, source=None) -> tuple[str, list]:
+    """(line, rows): the pack of episodes and its button with its Stars price, ('', []) when packs are
+    not sold (`click_pack_episodes` 0)."""
+    if not click_pack_episodes:
+        return "", []
+    from app.i18n.messages import get_message
+    from app.service.payment.starsPaymentModule import get_stars_withdraw_rate_x1000, stars_for_balance
+    stars = stars_for_balance(click_pack_cents, get_stars_withdraw_rate_x1000())
+    tag = {'s': source} if source else {}
+    line = get_message("clickPackLine", language_code).format(episodes=click_pack_episodes, stars=stars)
+    return line, [[{'text': get_message("clickPackButton", language_code).format(
+        episodes=click_pack_episodes, stars=stars), 'callback_data': {'tp': PACK_CALLBACK, **tag}}]]
+
+
 def limit_message(language_code, wait_seconds, limit=None):
-    """The limit as a message: every plan, Stars price on its button, Relay first."""
+    """The limit as a message: a pack of episodes first (no plan, no subscription), then every
+    plan, Stars price on its button, Relay first."""
     from app.i18n.messages import get_message
     from app.service.analytics_events import LIMIT_SOURCE
 
     limit = features.profile(features.NONE)['clicks'] if limit is None else limit
+    pack_line, pack_rows = pack_offer(language_code, source=LIMIT_SOURCE)
     plans_text, rows = plans_offer(language_code, source=LIMIT_SOURCE, free_bronze=True)
     text = "<b>" + get_message("freeEpisodesUsed", language_code).format(limit=limit) + "</b>\n"
-    text += wait_text(wait_seconds, language_code) + " "
+    text += wait_text(wait_seconds, language_code) + "\n\n"
+    if pack_line:
+        text += pack_line + "\n\n"
     text += get_message("freeEpisodesAnyPlan", language_code) + "\n\n" + plans_text
-    return {'type': 'text', 'text': text.strip(), 'reply_markup': rows,
+    return {'type': 'text', 'text': text.strip(), 'reply_markup': pack_rows + rows,
             'disable_web_page_preview': True}
 
 

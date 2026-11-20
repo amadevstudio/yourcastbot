@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Free weekly episodes: the 11th click is refused, the same episode is not,
 waiting clicks count, a paid plan has no limit; a plan nobody paid for (the
-trial) gets trial_rec_per_day a day; the limit message lists every plan with
-its Stars price and keeps the page of plans, the trial's has Relay's invoice.
+trial) gets trial_rec_per_day a day; the limit message offers a pack of episodes
+first, then lists every plan with its Stars price and keeps the page of plans, the
+trial's has Relay's invoice. The pack itself: python db/test_click_packs.py
 
 Run from the repo root: python app/service/record/test_free_limit.py
 (the message part runs where the bot's requirements are installed).
@@ -160,11 +161,15 @@ def _check_message():
     finally:
         sqliteAdapter.SQLighter, starsPaymentModule.get_stars_withdraw_rate_x1000 = saved
     buttons = [row[0]['callback_data'] for row in message['reply_markup']]
-    _assert([b.get('v') for b in buttons[:3]] == [3, 1, 2], "every plan is offered, Relay first")
-    _assert(all(b['tp'] == 'bs_stars_pay' for b in buttons[:3]), "each plan opens its Stars invoice")
-    _assert(buttons[3] == {'tp': 'bs_trfs', 's': 'lim'}, "the page of plans (other ways to pay) stays")
+    from config import click_pack_episodes
+    _assert(buttons[0] == {'tp': free_limit.PACK_CALLBACK, 's': 'lim'}, "a pack of episodes first: no plan, no subscription")
+    _assert(('+%d episodes – 50 ⭐' % click_pack_episodes) in message['reply_markup'][0][0]['text']
+            and 'never expire' in message['text'], "the pack says its episodes, its Stars and that they do not expire")
+    _assert([b.get('v') for b in buttons[1:4]] == [3, 1, 2], "every plan is still offered, Relay first")
+    _assert(all(b['tp'] == 'bs_stars_pay' for b in buttons[1:4]), "each plan opens its Stars invoice")
+    _assert(buttons[4] == {'tp': 'bs_trfs', 's': 'lim'}, "the page of plans (other ways to pay) stays")
     _assert(all(b.get('s') == 'lim' for b in buttons), "every button says it came from the limit")
-    _assert('385 ⭐' in message['reply_markup'][0][0]['text'], "Relay shows its Stars price")
+    _assert('385 ⭐' in message['reply_markup'][1][0]['text'], "Relay shows its Stars price")
     _assert('10 of 10' in message['text'] and '30 h' in message['text'], "the limit and the wait are named")
 
 

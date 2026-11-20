@@ -8,7 +8,8 @@ A payment turns on the plan it was for when no plan runs (a running one is
 only topped up); prepaid months and the offer are not sold to a running
 Bronze or Silver, neither at the invoice nor at the pre-checkout (a switch in
 between), and the longest bundle is one tap from /subscription. The end of a
-trial opens the offer; payment_history keeps what a payment charged.
+trial opens the offer; payment_history keeps what a payment charged. A pack of
+episodes is billed as sold now and credited once, with no balance or plan.
 
 Needs the bot's requirements (starsPaymentModule imports telebot).
 Run from the repo root: python app/service/payment/test_stars_invoice.py
@@ -678,6 +679,54 @@ def subscription(stars):
         os.remove(path)
 
 
+def click_pack(stars):
+    """A pack of episodes (db/click_packs.py): its invoice bills the pack as config has it, the
+    pre-checkout refuses one whose size or price changed, a payload cannot mix a pack with a plan's
+    terms, and its payment is a pack once: no balance, no plan, no referral award."""
+    sent = []
+    data = {'chat_id': 603, 'language_code': 'en', 'message': None, 'callback': None, 'united_data': {}}
+    with patch.object(stars, 'get_invoice_stars_withdraw_rate_x1000', lambda: RATE), \
+            patch.object(stars, 'notify', lambda *a, **kw: None), \
+            patch.object(stars.bot, 'send_invoice', lambda *a, **kw: sent.append(a)):
+        stars.send_pack_invoice(data)
+    payload = json.loads(sent[0][3])
+    episodes, cents = stars.config.click_pack_episodes, stars.config.click_pack_cents
+    _assert_eq((payload['k'], payload['b'], payload['s']), (episodes, cents, stars.stars_for_balance(cents, RATE)),
+               "the pack's invoice: its episodes, its price, its Stars")
+    _assert(('+%d episodes' % episodes) in sent[0][1] and sent[0][5] == 'XTR', "titled with the episodes, in Stars")
+    _assert(stars.validate_precheckout_payload(sent[0][3], 603, 'XTR', payload['s'])[0], "the pre-checkout lets it through")
+    with patch.object(stars.config, 'click_pack_episodes', episodes + 10):
+        _assert_eq(stars.validate_precheckout_payload(sent[0][3], 603, 'XTR', payload['s']),
+                   (False, "Invalid payment offer"), "a pack sold before its size changed is refused before the money")
+    mixed = stars.create_payload(603, cents, payload['s'], RATE, plan_id=3, pack=episodes)
+    _assert_eq(stars.validate_payment_payload(mixed, 603, 'XTR', payload['s']), (False, "Invalid pack"),
+               "a pack never carries a plan")
+
+    path = _temp_db()
+    try:
+        def no_award(_tg):
+            raise AssertionError("a pack must not award the inviter")
+        messages = []
+        with patch.object(stars.config, 'db_path', path), \
+                patch.object(stars, 'outer_sender', lambda chat, msgs: messages.append(msgs[0])), \
+                patch.object(stars, 'award_referrer_for_payment', no_award), \
+                patch('db.click_packs.db_path', path), patch('app.core.sender.outbox.open_user_rec_links', lambda *_: set()):
+            first = stars.process_successful_payment(603, 'XTR', payload['s'], sent[0][3], 'pack-charge-1')
+            again = stars.process_successful_payment(603, 'XTR', payload['s'], sent[0][3], 'pack-charge-1')
+        _assert_eq((first, again), (True, False), "a pack's charge is credited once")
+        conn = sqlite3.connect(path)
+        try:
+            rows = conn.execute("SELECT service_type, status, amount, charged FROM payment_history").fetchall()
+            plan = conn.execute("SELECT tariff_id, balance, time_left FROM user_tariff_cs").fetchone()
+        finally:
+            conn.close()
+        _assert_eq(rows, [('telegramStarsPack', 'paid', cents, cents)], "one pack payment: revenue, not a top-up")
+        _assert_eq(plan, (3, 0, 0), "no balance and no plan: a pack is clicks, not days")
+        _assert(('Left in your packs: %d' % episodes) in messages[0]['text'], "the payer hears how many episodes they have")
+    finally:
+        os.remove(path)
+
+
 def main():
     pricing()
     from app.controller.builders.test_open_recs import import_builder
@@ -694,6 +743,7 @@ def main():
     page_rows(stars)
     bundle_take_back(stars)
     subscription(stars)
+    click_pack(stars)
     print("all Stars invoice checks passed")
 
 

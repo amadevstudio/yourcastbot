@@ -28,6 +28,8 @@ MAX_PAGES = 200
 
 def notice_text(refund: dict, language_code) -> str:
     from app.service.payment.paymentSafeModule import days_left_text, money_text
+    if refund.get('pack'):  # a pack credited no balance: its episodes go, nothing else
+        return get_message('clickPackRefunded', language_code).format(episodes=refund['pack'])
     lines = [get_message('starsRefunded', language_code).format(amount=money_text(refund['amount']))]
     if refund['hours']:
         if refund['time_left'] > 0:
@@ -67,8 +69,9 @@ def process_refund(charge_id, source, database=None, send=None, notify_creator=N
     chat_id, language_code = _chat(refund['user_id'], database)
     if chat_id is not None:
         analytics_events.track(chat_id, 'payment_refunded', {
-            'method': stars_refund.STARS_SERVICE_TYPE, 'source': source,
-            'amount_cents': refund['amount'], 'hours': refund['hours']}, database=database)
+            'method': stars_refund.PACK_SERVICE_TYPE if refund.get('pack') else stars_refund.STARS_SERVICE_TYPE,
+            'source': source, 'amount_cents': refund.get('charged', refund['amount']), 'hours': refund['hours'],
+            'pack': refund.get('pack') or None}, database=database)
         try:
             if send is None:
                 from lib.telegram.general.message_master import outer_sender as send
@@ -81,6 +84,8 @@ def process_refund(charge_id, source, database=None, send=None, notify_creator=N
         except Exception as e:
             logger.warn('stars refund notice:', type(e).__name__, e)
     (notify_creator or _notify_creator)(
+        "Telegram Stars refund (%s): user %s, a pack of %d episodes ($%.2f) taken back"
+        % (source, refund['user_id'], refund['pack'], refund.get('charged', 0) / 100) if refund.get('pack') else
         "Telegram Stars refund (%s): user %s, $%.2f off the balance, %d h of the plan taken back, balance $%.2f"
         % (source, refund['user_id'], refund['amount'] / 100, refund['hours'], refund['balance'] / 100))
     return refund

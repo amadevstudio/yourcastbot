@@ -10,6 +10,7 @@ account is in no line: its plan is paid by tests and its own Patreon address. A 
 the database does not have yet counts as empty.
 Lock: python db/test_plan_counts.py
 """
+from db import payments
 from db.connection import connect_sqlite
 from lib.markup import telegram_html
 
@@ -89,7 +90,7 @@ def running(database, creator_id) -> dict:
         paid = []
         if _has(connection, 'payment_history'):
             paid.append("EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id "
-                        "AND p.status = 'paid')")
+                        "AND p.status = 'paid'" + payments.not_pack_sql(connection) + ")")
         if _has(connection, 'payment_service_user_data'):
             paid.append("EXISTS(SELECT 1 FROM payment_service_user_data s WHERE s.user_id = u.id "
                         "AND s.last_replenishment IS NOT NULL)")

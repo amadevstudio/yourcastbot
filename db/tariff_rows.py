@@ -22,6 +22,7 @@ from __future__ import annotations
 import sqlite3
 
 from db.connection import connect_sqlite
+from db import payments
 from lib.tools.logger import logger
 
 
@@ -133,13 +134,15 @@ def paid_for_days(chat_id, database=None) -> bool:
 
 
 def ever_paid(chat_id, database=None) -> bool:
-    """A payment of this Telegram chat went through, ever (payment_history keys users.id)."""
+    """A payment of this Telegram chat went through, ever (payment_history keys users.id). A pack of
+    episodes (db/click_packs.py) is a payment for clicks, not for a plan: it opens no paid plan's rights."""
     if database is None:
         from config import db_path as database
     connection = connect_sqlite(database)
     try:
         return connection.execute(
             "SELECT 1 FROM payment_history p JOIN users u ON u.id = p.user_id "
-            "WHERE u.telegramId = ? AND p.status = 'paid' LIMIT 1", (int(chat_id),)).fetchone() is not None
+            "WHERE u.telegramId = ? AND p.status = 'paid'" + payments.not_pack_sql(connection) + " LIMIT 1",
+            (int(chat_id),)).fetchone() is not None
     finally:
         connection.close()

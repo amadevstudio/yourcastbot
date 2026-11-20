@@ -87,6 +87,7 @@ jobs:
           python3 app/jobs/test_own_show_nudge.py
           python3 app/jobs/test_why_survey.py
           python3 app/service/record/test_free_limit.py
+          python3 db/test_click_packs.py
           python3 app/service/plan/test_entitlements.py
           python3 db/test_plan_grants.py
           python3 db/test_plan_counts.py
@@ -108,6 +109,7 @@ jobs:
           python3 db/test_voice.py
           python3 tools/botsim/test_voice.py
           python3 tools/botsim/test_botsim.py
+          python3 tools/botsim/test_click_pack.py
           python3 app/jobs/test_quiet_start.py
           python3 app/jobs/test_nosub_rule.py
           python3 app/jobs/test_updater_resume.py

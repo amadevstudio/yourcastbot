@@ -58,9 +58,12 @@ def test_behaviour(recs):
     recs.app.service.podcast.podcast.podcast_info_query = lambda *a, **k: (state['root'], {'itunesLink': None})
     recs.outbox.open_user_rec_links = lambda chat_id: state['open']
     recs.outbox.enqueue_user_rec = lambda job: queued.append(job)
-    hits = []
-    recs.free_limit.limit_hit = lambda chat_id, link, open_links: (
-        None if state['allowed'] else recs.free_limit.Hit('week', 3600, 0))
+    hits, packs = [], []
+
+    def limit_hit(chat_id, link, open_links, use_pack=True):
+        packs.append(use_pack)
+        return None if state['allowed'] else recs.free_limit.Hit('week', 3600, 0)
+    recs.free_limit.limit_hit = limit_hit
     recs.free_limit.hit_message = lambda hit, lang: {'type': 'text', 'text': 'limit'}
     recs.analytics_events.free_limit_hit = lambda chat_id, limit, quiet, wait: hits.append((chat_id, limit, quiet))
     recs.render_messages = lambda chat_id, structures, *a, **k: renders.append(structures)
@@ -75,6 +78,7 @@ def test_behaviour(recs):
     _assert(recs.send_latest_episode(7, 1001, 'en') is False and not renders,
             "at the free limit: nothing, and no limit message for a gift nobody asked for")
     _assert(hits == [(1001, 'week', True)], "the stop is counted, as a quiet one")
+    _assert(packs and not any(packs), "the gift after a subscription never spends a paid pack (db/click_packs.py)")
     state['allowed'], state['open'] = True, {'a', 'b', 'c'}
     _assert(recs.send_latest_episode(7, 1001, 'en') is False, "three clicks waiting: no more (several ticks at once)")
     state['open'], state['root'] = set(), False
@@ -86,8 +90,10 @@ def test_behaviour(recs):
 
     state['root'], state['allowed'] = root, True
     older = sha256('g1_Wed, 21 Oct 2026 10:00:00 GMT_Older'.encode()).hexdigest()[:recs.maxPodcastDateCallDataHexLen]
+    packs.clear()
     recs.send_record_direct({'id': 7, 'itunes_id': 500}, 1001, 'en', older, None)
     _assert(queued[-1]['func_params']['podcastInfo']['title'] == 'Older', "a click still sends the episode it names")
+    _assert(packs == [True], "a tap may spend a pack past the limit")
     state['allowed'] = False
     recs.send_record_direct({'id': 7, 'itunes_id': 500}, 1001, 'en', older, None)
     _assert(renders and renders[-1][0]['text'] == 'limit', "and a click at the limit still hears why")

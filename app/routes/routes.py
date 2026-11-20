@@ -245,6 +245,11 @@ class RouteMap:
             'method': starsPaymentModule.send_invoice,
             'available_from': ['call']
         },
+        # a pack of episodes by click from the free limit (free_limit.PACK_CALLBACK, db/click_packs.py)
+        'bs_pack': {
+            'method': starsPaymentModule.send_pack_invoice,
+            'available_from': ['call']
+        },
         'bs_stars_sub': {
             'method': starsPaymentModule.send_subscription_offer,
             'available_from': ['call']
