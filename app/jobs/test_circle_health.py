@@ -68,11 +68,7 @@ def test_users_count_lines(db_path):
         "Последний круг: 46 мин (16:46)\n"
         "Кругов сегодня: 1\n"
         "Кругов вчера: 0",
-        "usersCount extra lines")
-    _assert_eq(
-        circle_health.format_status_line(database=db_path),
-        "Круг 46 мин (16:46) · сегодня 1, вчера 0",
-        "usersCount circle line")
+        "usersCount and the admin page's circle lines")
 
 
 def main():

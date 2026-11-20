@@ -3,7 +3,7 @@
 survey's week, `users.flags` `why_reward`) or a grant's (db/plan_grants.py), and the live chats with no
 plan.
 
-A holder is shown by id and, when Telegram tells (`holder_names`, getChat), @username or name.
+A holder is shown by @username or name when Telegram tells (`holder_names`, getChat), else by id.
 
 Paid for is `tariff_rows.paid_for_days`: a payment or a Patreon replenishment. The creator's
 account is in no line: its plan is paid by tests and its own Patreon address. A user with two live tariff rows counts once, at the higher level. Read-only; a table
@@ -16,6 +16,8 @@ from lib.markup import telegram_html
 
 PLAN_NAMES = {1: 'Bronze', 2: 'Silver', 3: 'Relay'}
 GRANT_NAMES = {'channels': 'за каналы'}
+GRANT_MARKS = {'channels': '📢'}
+PAID, TRIAL = '💳', '🧪'
 HOLDERS_SHOWN = 20
 
 
@@ -47,34 +49,38 @@ def holder_names(holders, request) -> dict:
 
 
 def format_lines(plans: dict, names: dict = None) -> str:
-    """The /usersCount plans block (HTML): no plan in the header, a line per level that has anyone
-    (paid, trial with the survey's weeks among them, a grant's; zeros left out), the grants' holders
-    (with `names`, from holder_names)."""
+    """The /usersCount plans block (HTML): a legend of the marks used, no plan, a line per level that
+    has anyone (paid, trial with the survey's weeks among them, a grant's; zeros left out), the grants'
+    holders by @username or name (with `names`, from holder_names), by id when Telegram did not say."""
     names = names or {}
     holders = plans['holders']
     kinds = sorted({kind for _, kind in holders})
-    granted = GRANT_NAMES.get(kinds[0], kinds[0]) if len(kinds) == 1 else "бесплатно"
-    lines = ["💳 <b>Тарифы</b> · без тарифа %d" % plans['no_plan']]
+    grant = (_mark(kinds[0]), GRANT_NAMES.get(kinds[0], kinds[0])) if len(kinds) == 1 else ('🎁', "бесплатно")
+    used, rows = set(), []
     for level, counts in sorted(plans['levels'].items(), reverse=True):
         parts = []
-        if counts['paid']:
-            parts.append("%d опл." % counts['paid'])
-        if counts['trial']:
-            survey = " (%d за опрос)" % counts['survey'] if counts.get('survey') else ""
-            parts.append("%d триал%s" % (counts['trial'], survey))
-        if counts['granted']:
-            parts.append("%d %s" % (counts['granted'], granted))
+        for mark, n in ((PAID, counts['paid']), (TRIAL, counts['trial']), (grant[0], counts['granted'])):
+            if n:
+                survey = " (%d за опрос)" % counts['survey'] if mark == TRIAL and counts.get('survey') else ""
+                parts.append("%s %d%s" % (mark, n, survey))
+                used.add(mark)
         if parts:
-            lines.append("%s: %s" % (PLAN_NAMES.get(level, "уровень %d" % level), " · ".join(parts)))
+            rows.append("%s: %s" % (PLAN_NAMES.get(level, "уровень %d" % level), " · ".join(parts)))
+    legend = ", ".join("%s %s" % pair for pair in ((PAID, "оплатили"), (TRIAL, "триал"), grant) if pair[0] in used)
+    lines = ["🎫 <b>Тарифы</b>%s" % (" (%s)" % legend if legend else "")]
+    lines.append("Без тарифа: %d" % plans['no_plan'])
+    lines += rows
     for kind in kinds:
         ids = [telegram_id for telegram_id, held in holders if held == kind]
-        shown = ", ".join("<code>%s</code>%s" % (telegram_id, " " + telegram_html.escape(names[telegram_id])
-                                                 if telegram_id in names else "")
-                          for telegram_id in ids[:HOLDERS_SHOWN])
+        shown = ", ".join(telegram_html.escape(names[telegram_id]) if telegram_id in names
+                          else "<code>%s</code>" % telegram_id for telegram_id in ids[:HOLDERS_SHOWN])
         more = len(ids) - HOLDERS_SHOWN
-        lines.append("%s: %s%s" % (GRANT_NAMES.get(kind, kind).capitalize(), shown,
-                                   " и ещё %d" % more if more > 0 else ""))
+        lines.append("%s %s%s" % (_mark(kind), shown, " и ещё %d" % more if more > 0 else ""))
     return "\n".join(lines)
+
+
+def _mark(kind) -> str:
+    return GRANT_MARKS.get(kind, '🎁')
 
 
 def _has(connection, table) -> bool:

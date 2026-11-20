@@ -34,23 +34,25 @@ def is_admin(data: ControllerParams) -> bool:
 
 
 def format_users_count_message(
-        total: int, with_subs: int, with_bot_sub: int,
-        receive_episodes: int, digest_reminder: int, blocked: int,
-        updater_channel_id: int, max_channel_id: int,
-        plan_lines: str = '', circle_line: str = '') -> str:
-    """Blocks with a header each, a few numbers to a line. Blocked users are not in the total."""
-    blocks = [
-        "👥 <b>Пользователи: %d</b> · ещё %d заблокировали\n"
-        "С подписками на подкасты: %d\n"
-        "С тарифом: %d · из них получают выпуски: %d\n"
-        "Дайджест без тарифа: %d"
-        % (total, blocked, with_subs, with_bot_sub, receive_episodes, digest_reminder)]
-    if plan_lines:
-        blocks.append(plan_lines)
-    circle = "🔄 <b>Обход</b>: %s / %s" % (updater_channel_id, max_channel_id)
-    if circle_line:
-        circle += "\n" + circle_line
-    blocks.append(circle)
+        total: int, with_subs: int, receive_episodes: int, digest_reminder: int, blocked: int,
+        updater_channel_id: int, max_channel_id: int, new=None, languages=(), other_languages: int = 0,
+        plan_lines: str = '', money_lines: str = '', circle_lines: str = '') -> str:
+    """Blocks with a header each and one thing to a line, a blank line between them. Blocked users
+    are not in the total; newcomers (`new`: day, week, month) are who came, blocked since or not."""
+    users = ["👥 <b>Пользователи: %d</b> · заблокировали %d" % (total, blocked)]
+    if new is not None:
+        users.append("Новые: +%d за сутки, +%d за неделю, +%d за месяц" % tuple(new))
+    if languages:
+        langs = ["%s %d" % pair for pair in languages] + (["другие %d" % other_languages] if other_languages else [])
+        users.append("Языки: " + ", ".join(langs))
+    blocks = ["\n".join(users),
+              "🎧 <b>Подкасты</b>\n"
+              "С подписками: %d\n"
+              "Получают выпуски: %d\n"
+              "Дайджест без тарифа: %d" % (with_subs, receive_episodes, digest_reminder)]
+    blocks += [lines for lines in (plan_lines, money_lines) if lines]
+    circle = "🔄 <b>Обход каналов</b>\nСейчас канал %s из %s" % (updater_channel_id, max_channel_id)
+    blocks.append(circle + ("\n" + circle_lines if circle_lines else ""))
     return "\n\n".join(blocks)
 
 
@@ -64,7 +66,6 @@ def compute_users_count_text() -> str:
     try:
         total = db_users.count_users()
         with_subs = db_users.count_users(True)
-        with_bot_sub = db_users.count_users(payed=True)
         receive_episodes = db_users.count_users(receive_episodes=True)
         digest_reminder = db_users.count_users(digest_reminder=True)
         blocked = db_users.count_users(deleted=True)
@@ -80,16 +81,24 @@ def compute_users_count_text() -> str:
         plans = plan_counts.format_lines(running, plan_counts.holder_names(running['holders'], bot_request))
     except Exception as e:
         logger.err("usersCount plans:", e)
+    extra, money = {}, ''
+    try:
+        from db import admin_counts
+        got = admin_counts.counts(config.db_path, config.creatorId)
+        money = admin_counts.format_money(got.pop('money'))
+        extra = got
+    except Exception as e:
+        logger.err("usersCount newcomers and money:", e)
     circle = ''
     try:
-        from app.jobs.circle_health import format_status_line
-        circle = format_status_line(database=config.db_path)
+        from app.jobs.circle_health import format_status_lines
+        circle = format_status_lines(database=config.db_path)
     except Exception as e:
         logger.err("usersCount circle status:", e)
     text = format_users_count_message(
-        total, with_subs, with_bot_sub, receive_episodes, digest_reminder,
-        blocked, storage.get_last_channel_id(), max_channel_id,
-        plan_lines=plans, circle_line=circle)
+        total, with_subs, receive_episodes, digest_reminder, blocked,
+        storage.get_last_channel_id(), max_channel_id, **extra,
+        plan_lines=plans, money_lines=money, circle_lines=circle)
     logger.log(
         "usersCount computed in %.2fs" % (time.monotonic() - started,))
     return text

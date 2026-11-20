@@ -208,29 +208,37 @@ def test_mixed_telegram_id_types(db_path):
 
 
 def test_report_text():
-    text = format_users_count_message(6, 3, 2, 1, 1, 1, 3, 7)
+    text = format_users_count_message(6, 3, 1, 1, 1, 3, 7)
     _assert_eq(
         text,
-        "👥 <b>Пользователи: 6</b> · ещё 1 заблокировали\n"
-        "С подписками на подкасты: 3\n"
-        "С тарифом: 2 · из них получают выпуски: 1\n"
+        "👥 <b>Пользователи: 6</b> · заблокировали 1\n\n"
+        "🎧 <b>Подкасты</b>\n"
+        "С подписками: 3\n"
+        "Получают выпуски: 1\n"
         "Дайджест без тарифа: 1\n\n"
-        "🔄 <b>Обход</b>: 3 / 7",
+        "🔄 <b>Обход каналов</b>\n"
+        "Сейчас канал 3 из 7",
         "admin report text")
     with_blocks = format_users_count_message(
-        6, 3, 2, 1, 1, 1, 3, 7,
-        plan_lines="💳 <b>Тарифы</b> · без тарифа 4",
-        circle_line="Круг 46 мин (16:46) · сегодня 1, вчера 0")
+        6, 3, 1, 1, 1, 3, 7, new=(0, 2, 5), languages=[('en', 3), ('fa', 2)], other_languages=1,
+        plan_lines="🎫 <b>Тарифы</b>\nБез тарифа: 4",
+        money_lines="💰 <b>За 30 дней</b>\nПлатежей нет",
+        circle_lines="Последний круг: 46 мин (16:46)\nКругов сегодня: 1\nКругов вчера: 0")
     _assert_eq(
         with_blocks,
-        "👥 <b>Пользователи: 6</b> · ещё 1 заблокировали\n"
-        "С подписками на подкасты: 3\n"
-        "С тарифом: 2 · из них получают выпуски: 1\n"
+        "👥 <b>Пользователи: 6</b> · заблокировали 1\n"
+        "Новые: +0 за сутки, +2 за неделю, +5 за месяц\n"
+        "Языки: en 3, fa 2, другие 1\n\n"
+        "🎧 <b>Подкасты</b>\n"
+        "С подписками: 3\n"
+        "Получают выпуски: 1\n"
         "Дайджест без тарифа: 1\n\n"
-        "💳 <b>Тарифы</b> · без тарифа 4\n\n"
-        "🔄 <b>Обход</b>: 3 / 7\n"
-        "Круг 46 мин (16:46) · сегодня 1, вчера 0",
-        "admin report with plans and circle heartbeat")
+        "🎫 <b>Тарифы</b>\nБез тарифа: 4\n\n"
+        "💰 <b>За 30 дней</b>\nПлатежей нет\n\n"
+        "🔄 <b>Обход каналов</b>\n"
+        "Сейчас канал 3 из 7\n"
+        "Последний круг: 46 мин (16:46)\nКругов сегодня: 1\nКругов вчера: 0",
+        "admin report: users, podcasts, plans, money, circle, a blank line between")
 
 
 def test_live_clone_db_still_consistent():
@@ -247,7 +255,7 @@ def test_live_clone_db_still_consistent():
         last = db.get_last_channel_id()
         max_id = int(last['id']) if last else 0
         print(format_users_count_message(
-            got['total'], got['with_subs'], got['payed'],
+            got['total'], got['with_subs'],
             got['receive_episodes'], got['digest_reminder'],
             got['deleted'], 1, max_id))
     except Exception as e:

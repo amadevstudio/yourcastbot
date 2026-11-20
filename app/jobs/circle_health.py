@@ -109,7 +109,7 @@ def _status(database):
 
 
 def format_status_lines(database=None):
-    """The admin page's circle lines. Empty if the updater has not finished a circle."""
+    """The circle lines of the admin page and /usersCount. Empty if the updater has not finished a circle."""
     status = _status(database)
     if not status:
         return ''
@@ -118,11 +118,3 @@ def format_status_lines(database=None):
         "Кругов сегодня: %s\n"
         "Кругов вчера: %s" % status
     )
-
-
-def format_status_line(database=None):
-    """/usersCount's circle line. Empty if the updater has not finished a circle."""
-    status = _status(database)
-    if not status:
-        return ''
-    return "Круг %s мин (%s) · сегодня %s, вчера %s" % status
