@@ -904,6 +904,21 @@ Rules:
   thread. Do not dump mailings onto rec/circle/send workers. The admin
   HTTP API is a fourth supervisor role (`admin`) bound to localhost.
 
+## /usersCount
+
+The creator's count (`adminModule.compute_users_count_text`) is blocks with a
+header each, one thing to a line and a blank line between them (the owner's
+rule: spacing and paragraphs first): users (blocked apart, newcomers by day,
+week and month from `users.created_at`, the six biggest languages and the
+rest), podcasts, plans (`db/plan_counts.py`: a legend of the marks used, 💳
+paid, 🧪 trial, 📢 free for channels; holders by @username or name, by id when
+Telegram does not say), the last 30 days' money (`db/admin_counts.py`:
+payments charged by method, packs of episodes, refunds, balances) and the
+circle. The creator's account is in no count but the total and the newcomers.
+A block that fails is left out, never the message.
+Locks: `python db/test_count_users.py`, `python db/test_plan_counts.py`,
+`python db/test_admin_counts.py`, `python app/jobs/test_circle_health.py`.
+
 ## Diagnostics API
 
 `GET /api/diag/ping|audit|missed?tg=&hour=|refetches?hours=|digest?hours=|outbox?hours=|errors?hours=&q=|feed?channel=`
