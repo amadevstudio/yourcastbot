@@ -58,6 +58,7 @@ Actions, one per line in a scenario file (`#` starts a comment):
 | `tap ROW,COL` | taps a button of the bot's latest message with buttons, by position from 0 |
 | `data JSON` | taps a button with this callback data (an old screen, a crafted button) |
 | `file PATH [MIME]` | sends a document (an OPML file) |
+| `pay` | pays the latest invoice in the chat: the bot's pre-checkout handler answers, then its payment handler gets the payment (Stars) |
 | `deliver` | the episodes the taps queued, sent as the send workers would |
 | `ai` | the summaries queued, made as the jobs process would |
 | `screen [N]` | prints the last N messages of the chat |
@@ -126,8 +127,11 @@ question). Where the requirements are not installed (CI) it is skipped.
 
 - How Telegram renders a message (HTML, rich messages, a time in a reply
   that plays the audio from there).
-- Real uploads, Stars payments (only the pre-checkout and payment handlers
-  can be called with crafted updates), inline mode.
+- Real uploads, inline mode. Stars payments go through the bot's own
+  handlers (`pay`: tgsim's pre-checkout and payment, handed to Telethon as
+  `UpdateBotPrecheckoutQuery` and `MessageActionPaymentSentMe`), at
+  Telegram's default rate (`STARS_DEFAULT_WITHDRAW_RATE_X1000`: botsim does
+  not ask Telegram for it). Refunds still come as a crafted update.
 - Load, concurrency, the send pools and their claim order (their tests are
   in `db/test_send_outbox.py` and `app/core/balancers/`).
 

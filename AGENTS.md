@@ -1517,7 +1517,9 @@ database stays outside the repo.
 The Bot API side is tgsim (github.com/amadevstudio/tgsim, pinned by tag;
 ascenditbot uses it too): it refuses what Telegram refuses, so a step's `!!`
 line is a call that fails in production. `--html out.html` shows the steps as
-the chat draws them, `--lint` prints layout mistakes. A change to how
+the chat draws them, `--lint` prints layout mistakes. `pay` pays the latest
+invoice through the bot's own pre-checkout and payment handlers (tgsim's
+payment, turned into Telethon's raw updates), at the default Stars rate. A change to how
 Telegram is modeled goes to tgsim (a new tag), not into `tools/botsim`;
 `tools/botsim` keeps only what is this bot's: the Telethon events, boot, and
 the actions `deliver` and `ai`.

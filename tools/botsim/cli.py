@@ -10,6 +10,7 @@ Actions:
     tap ROW,COL          a button of the bot's latest message with buttons, by position
     data JSON            a tap with this callback data on the latest message
     file PATH [MIME]     a document (an OPML file)
+    pay                  pays the latest invoice in the chat (the bot's pre-checkout, then the payment)
     deliver              the episodes the taps queued, sent as the send workers would
     ai                   the summaries queued (a canned one unless --ai real)
     screen [N]           the last N messages of the chat
@@ -110,6 +111,8 @@ def run(user, line):
     if verb == 'file':
         path, _, mime = rest.partition(' ')
         return user.send_file(os.path.basename(path), open(path, 'rb').read(), mime.strip() or 'application/xml')
+    if verb == 'pay':
+        return user.pay()
     if verb == 'deliver':
         return user.deliver()
     if verb == 'ai':

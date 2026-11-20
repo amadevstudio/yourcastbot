@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """The pack of episodes end to end in botsim: the free week's limit offers the pack first (every plan
-still under it), its button opens a Stars invoice Telegram accepts, the payment is credited once and
-said, and the next click past the week goes on the pack.
+still under it), its button opens a Stars invoice Telegram accepts, paying it goes through the bot's
+own pre-checkout and payment handlers (botsim's `pay`), the payment is credited once and said, the
+next click past the week goes on the pack, and an invoice whose pack changed is refused before the money.
 
 Needs the bot's and botsim's requirements. Run from the repo root: python tools/botsim/test_click_pack.py
 """
@@ -32,8 +33,6 @@ def main():
     sim.boot(network=False, ai='fake')
     try:
         from app.service.payment import starsPaymentModule as stars
-        stars._stars_rate_x1000 = stars.STARS_DEFAULT_WITHDRAW_RATE_X1000  # Telegram's rate is not asked here
-        stars._stars_rate_updated_at = time.time()
         import config
         from app.service.record import free_limit
         from db import click_packs, usage
@@ -67,17 +66,28 @@ def main():
         assert payload['k'] == config.click_pack_episodes and payload['b'] == config.click_pack_cents, payload
         print("ok  a Stars invoice for the pack, the tap answered")
 
-        raw = json.dumps(payload, separators=(",", ":"))
-        assert stars.validate_precheckout_payload(raw, USER, 'XTR', payload['s'])[0]
-        step = ok(user._observe('pay', lambda: stars.process_successful_payment(USER, 'XTR', payload['s'], raw, 'sim-pack-1')),
-                  "the payment")
+        step = ok(user.pay(), "paid through the bot's pre-checkout and payment handlers")
+        assert not step.notes, step.notes
         assert ('Left in your packs: %d' % config.click_pack_episodes) in step.new[-1].text, step.new[-1].text
-        assert not stars.process_successful_payment(USER, 'XTR', payload['s'], raw, 'sim-pack-1'), "credited once"
+        charge = sim._state['tg'].payments[-1]['telegram_payment_charge_id']
+        raw = json.dumps(payload, separators=(",", ":"))
+        assert not stars.process_successful_payment(USER, 'XTR', payload['s'], raw, charge), "credited once"
         print("ok  credited once and said")
 
         assert free_limit.limit_hit(USER, 'https://cdn.example/next.mp3', ()) is None
         assert click_packs.left(USER) == config.click_pack_episodes - 1
         print("ok  the next click past the week goes on the pack")
+
+        ok(user.tap('📦', message), "another pack's invoice")
+        saved = config.click_pack_episodes
+        config.click_pack_episodes = saved + 10  # the pack changed between the invoice and the payment
+        try:
+            step = user.pay()
+        finally:
+            config.click_pack_episodes = saved
+        assert any('refused the payment: Invalid payment offer' in note for note in step.notes), step.notes
+        assert click_packs.left(USER) == config.click_pack_episodes - 1, "nothing credited"
+        print("ok  an invoice whose pack changed is refused at the pre-checkout, before the money")
     finally:
         sim.shutdown()
     print("all click pack walk checks passed")
