@@ -83,9 +83,7 @@ def test_counts():
         text = plan_counts.format_lines(got)
         assert text == ("🎫 <b>Тарифы</b> (💳 оплатили, 🧪 триал, 📢 за каналы)\n"
                         "Без тарифа: 2\n"
-                        "Relay: 💳 2 · 🧪 1 (1 за опрос)\n"
-                        "Silver: 🧪 1\n"
-                        "Bronze: 💳 1 · 📢 1\n"
+                        "Relay 💳 2 🧪 1 (1 за опрос) · Silver 🧪 1 · Bronze 💳 1 📢 1\n"
                         "📢 <code>7004</code>"), text
         print("ok  plans per level, grant holders, no plan, the creator in none")
 
@@ -109,7 +107,7 @@ def test_many_holders():
     text = plan_counts.format_lines({'levels': {1: {'paid': 0, 'trial': 0, 'granted': 25}},
                               'holders': [(7100 + i, 'channels') for i in range(25)], 'no_plan': 0})
     assert "и ещё 5" in text and "7119" in text and "7120" not in text, text
-    assert "Bronze: 📢 25" in text and "Silver" not in text, text
+    assert "Bronze 📢 25" in text and "Silver" not in text, text
     assert text.startswith("🎫 <b>Тарифы</b> (📢 за каналы)\nБез тарифа: 0\n"), text
     print("ok  holders past the first 20 are a count")
 
@@ -142,10 +140,10 @@ def test_legend():
     assert text == "🎫 <b>Тарифы</b>\nБез тарифа: 3", text
     text = plan_counts.format_lines({'levels': {2: {'paid': 1, 'trial': 0, 'granted': 0}}, 'holders': [],
                                      'no_plan': 0})
-    assert text == "🎫 <b>Тарифы</b> (💳 оплатили)\nБез тарифа: 0\nSilver: 💳 1", text
+    assert text == "🎫 <b>Тарифы</b> (💳 оплатили)\nБез тарифа: 0\nSilver 💳 1", text
     text = plan_counts.format_lines({'levels': {1: {'paid': 0, 'trial': 0, 'granted': 2}},
                                      'holders': [(7401, 'channels'), (7402, 'other')], 'no_plan': 0})
-    assert "(🎁 бесплатно)" in text and "Bronze: 🎁 2" in text, text
+    assert "(🎁 бесплатно)" in text and "Bronze 🎁 2" in text, text
     assert text.endswith("📢 <code>7401</code>\n🎁 <code>7402</code>"), text
     print("ok  the legend names only the marks used; two kinds of grant are free, each with its holders")
 

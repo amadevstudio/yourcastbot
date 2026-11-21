@@ -37,21 +37,20 @@ def format_users_count_message(
         total: int, with_subs: int, receive_episodes: int, digest_reminder: int, blocked: int,
         updater_channel_id: int, max_channel_id: int, new=None, languages=(), other_languages: int = 0,
         plan_lines: str = '', money_lines: str = '', circle_lines: str = '') -> str:
-    """Blocks with a header each and one thing to a line, a blank line between them. Blocked users
-    are not in the total; newcomers (`new`: day, week, month) are who came, blocked since or not."""
+    """Blocks with a header each, two or three lines to a block (the header carries the first thing),
+    a blank line between them. Blocked users are not in the total; newcomers (`new`: day, week,
+    month) are who came, blocked since or not."""
     users = ["👥 <b>Пользователи: %d</b> · заблокировали %d" % (total, blocked)]
     if new is not None:
-        users.append("Новые: +%d за сутки, +%d за неделю, +%d за месяц" % tuple(new))
+        users.append("Новые +%d за сутки · +%d за неделю · +%d за месяц" % tuple(new))
     if languages:
         langs = ["%s %d" % pair for pair in languages] + (["другие %d" % other_languages] if other_languages else [])
-        users.append("Языки: " + ", ".join(langs))
+        users.append(", ".join(langs))
     blocks = ["\n".join(users),
-              "🎧 <b>Подкасты</b>\n"
-              "С подписками: %d\n"
-              "Получают выпуски: %d\n"
-              "Дайджест без тарифа: %d" % (with_subs, receive_episodes, digest_reminder)]
+              "🎧 <b>Подкасты</b>: с подписками %d\n"
+              "Получают выпуски %d · дайджест без тарифа %d" % (with_subs, receive_episodes, digest_reminder)]
     blocks += [lines for lines in (plan_lines, money_lines) if lines]
-    circle = "🔄 <b>Обход каналов</b>\nСейчас канал %s из %s" % (updater_channel_id, max_channel_id)
+    circle = "🔄 <b>Обход</b>: канал %s из %s" % (updater_channel_id, max_channel_id)
     blocks.append(circle + ("\n" + circle_lines if circle_lines else ""))
     return "\n\n".join(blocks)
 
@@ -91,8 +90,8 @@ def compute_users_count_text() -> str:
         logger.err("usersCount newcomers and money:", e)
     circle = ''
     try:
-        from app.jobs.circle_health import format_status_lines
-        circle = format_status_lines(database=config.db_path)
+        from app.jobs.circle_health import format_status_line
+        circle = format_status_line(database=config.db_path)
     except Exception as e:
         logger.err("usersCount circle status:", e)
     text = format_users_count_message(

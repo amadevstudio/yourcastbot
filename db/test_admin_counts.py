@@ -89,15 +89,15 @@ def test_counts():
         print("ok  30 days' payments charged, by method, packs among them, refunds; live balances")
 
         assert admin_counts.format_money(money) == (
-            "💰 <b>За 30 дней</b>\n"
-            "Платежи: 3 на $6.65 (⭐ 2, CryptoBot 1)\n"
-            "Пакеты выпусков: 1 на $0.65\n"
-            "Возвращено: 1\n"
-            "На балансах: $1 003.00 у 2"), admin_counts.format_money(money)
+            "💰 <b>За 30 дней</b>: 3 платежа на $6.65 (⭐ 2, CryptoBot 1)\n"
+            "Пакеты 1 на $0.65 · возвращено 1 · на балансах $1 003.00 у 2"), admin_counts.format_money(money)
         quiet = dict(money, payments=0, cents=0, methods=[], packs=0, pack_cents=0, refunded=0,
                      balance_cents=0, balance_users=0)
-        assert admin_counts.format_money(quiet) == "💰 <b>За 30 дней</b>\nПлатежей нет\nПакеты выпусков: 0"
-        print("ok  the money block: a line each, the packs always, refunds and balances when there are any")
+        assert admin_counts.format_money(quiet) == "💰 <b>За 30 дней</b>: платежей нет\nПакеты 0"
+        words = [admin_counts.format_money(dict(money, payments=n)).split(" на ")[0].split(": ")[1]
+                 for n in (1, 2, 5, 11, 21, 112)]
+        assert words == ["1 платёж", "2 платежа", "5 платежей", "11 платежей", "21 платёж", "112 платежей"], words
+        print("ok  the money block: payments in the header; packs, refunds and balances in one line")
 
 
 def test_old_schema():

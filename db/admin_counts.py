@@ -106,18 +106,26 @@ def dollars(cents) -> str:
     return '$' + '{:,.2f}'.format(cents / 100.0).replace(',', ' ')
 
 
+def _payments_word(n) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return "платёж"
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return "платежа"
+    return "платежей"
+
+
 def format_money(money: dict) -> str:
-    """The /usersCount money block (HTML)."""
-    lines = ["💰 <b>За 30 дней</b>"]
+    """The /usersCount money block (HTML): the payments in the header, the packs always, refunds and
+    balances when there are any, in one line."""
     if money['payments']:
         methods = ", ".join("%s %d" % (label, n) for label, n in money['methods'])
-        lines.append("Платежи: %d на %s (%s)" % (money['payments'], dollars(money['cents']), methods))
+        head = "%d %s на %s (%s)" % (money['payments'], _payments_word(money['payments']),
+                                    dollars(money['cents']), methods)
     else:
-        lines.append("Платежей нет")
-    lines.append("Пакеты выпусков: %d%s" % (
-        money['packs'], " на %s" % dollars(money['pack_cents']) if money['packs'] else ""))
+        head = "платежей нет"
+    rest = ["Пакеты %d%s" % (money['packs'], " на %s" % dollars(money['pack_cents']) if money['packs'] else "")]
     if money['refunded']:
-        lines.append("Возвращено: %d" % money['refunded'])
+        rest.append("возвращено %d" % money['refunded'])
     if money['balance_users']:
-        lines.append("На балансах: %s у %d" % (dollars(money['balance_cents']), money['balance_users']))
-    return "\n".join(lines)
+        rest.append("на балансах %s у %d" % (dollars(money['balance_cents']), money['balance_users']))
+    return "💰 <b>За 30 дней</b>: %s\n%s" % (head, " · ".join(rest))
