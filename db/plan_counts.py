@@ -49,9 +49,10 @@ def holder_names(holders, request) -> dict:
 
 
 def format_lines(plans: dict, names: dict = None) -> str:
-    """The /usersCount plans block (HTML): a legend of the marks used, no plan, a line per level that
-    has anyone (paid, trial with the survey's weeks among them, a grant's; zeros left out), the grants'
-    holders by @username or name (with `names`, from holder_names), by id when Telegram did not say."""
+    """The /usersCount plans block (HTML): a legend of the marks used, no plan, one line of the levels
+    that have anyone (paid, trial with the survey's weeks among them, a grant's; zeros left out), the
+    grants' holders by @username or name (with `names`, from holder_names), by id when Telegram did
+    not say."""
     names = names or {}
     holders = plans['holders']
     kinds = sorted({kind for _, kind in holders})
@@ -65,11 +66,12 @@ def format_lines(plans: dict, names: dict = None) -> str:
                 parts.append("%s %d%s" % (mark, n, survey))
                 used.add(mark)
         if parts:
-            rows.append("%s: %s" % (PLAN_NAMES.get(level, "уровень %d" % level), " · ".join(parts)))
+            rows.append("%s %s" % (PLAN_NAMES.get(level, "уровень %d" % level), " ".join(parts)))
     legend = ", ".join("%s %s" % pair for pair in ((PAID, "оплатили"), (TRIAL, "триал"), grant) if pair[0] in used)
     lines = ["🎫 <b>Тарифы</b>%s" % (" (%s)" % legend if legend else "")]
     lines.append("Без тарифа: %d" % plans['no_plan'])
-    lines += rows
+    if rows:
+        lines.append(" · ".join(rows))
     for kind in kinds:
         ids = [telegram_id for telegram_id, held in holders if held == kind]
         shown = ", ".join(telegram_html.escape(names[telegram_id]) if telegram_id in names

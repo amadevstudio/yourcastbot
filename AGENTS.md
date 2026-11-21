@@ -907,8 +907,10 @@ Rules:
 ## /usersCount
 
 The creator's count (`adminModule.compute_users_count_text`) is blocks with a
-header each, one thing to a line and a blank line between them (the owner's
-rule: spacing and paragraphs first): users (blocked apart, newcomers by day,
+header each, a blank line between them (the owner's rule: spacing and
+paragraphs first) and compact (the owner's call, 2026-11-21: half the lines;
+the header carries the block's first number, related numbers share a line
+with " · "): users (blocked apart, newcomers by day,
 week and month from `users.created_at`, the six biggest languages and the
 rest), podcasts, plans (`db/plan_counts.py`: a legend of the marks used, 💳
 paid, 🧪 trial, 📢 free for channels; holders by @username or name, by id when
