@@ -49,7 +49,8 @@ def holder_names(holders, request) -> dict:
 
 
 def format_lines(plans: dict, names: dict = None) -> str:
-    """The /usersCount plans block (HTML): a legend of the marks used, no plan, one line of the levels
+    """The /usersCount plans block (HTML): a legend of the marks used, on a plan and no plan (the
+    total "with a plan" was a line of its own before the blocks of 2026-11-20), one line of the levels
     that have anyone (paid, trial with the survey's weeks among them, a grant's; zeros left out), the
     grants' holders by @username or name (with `names`, from holder_names), by id when Telegram did
     not say."""
@@ -69,7 +70,8 @@ def format_lines(plans: dict, names: dict = None) -> str:
             rows.append("%s %s" % (PLAN_NAMES.get(level, "уровень %d" % level), " ".join(parts)))
     legend = ", ".join("%s %s" % pair for pair in ((PAID, "оплатили"), (TRIAL, "триал"), grant) if pair[0] in used)
     lines = ["🎫 <b>Тарифы</b>%s" % (" (%s)" % legend if legend else "")]
-    lines.append("Без тарифа: %d" % plans['no_plan'])
+    on_plan = sum(counts['paid'] + counts['trial'] + counts['granted'] for counts in plans['levels'].values())
+    lines.append("С тарифом %d · без тарифа %d" % (on_plan, plans['no_plan']))
     if rows:
         lines.append(" · ".join(rows))
     for kind in kinds:

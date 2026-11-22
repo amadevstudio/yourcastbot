@@ -14,6 +14,7 @@ from app.i18n.messages import get_message
 from app.repository.storage import storage
 from app.service import analytics_events
 from app.service.payment import paymentSafeModule
+from db import activity
 from db.sqliteAdapter import SQLighter
 from lib.analytics.analytics import Analytics, SpecialEventDataNewUserType, SmartEventTelegramProcessingType, \
     SpecialEventDataPodcastOpenedByLink
@@ -22,6 +23,7 @@ from scripts import restart_bot
 
 
 def get_user(user_id: int) -> Any:
+    activity.touch(user_id)  # the chat used the bot now (the weekly digest reads it); never raises
     db_users = SQLighter(config.db_path)
     user = db_users.get_user_by_tg(user_id)
 

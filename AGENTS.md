@@ -780,6 +780,21 @@ digest episodes. A "listen later" list was tried and left out (it halved
 episode titles in the list for little use). Locks:
 `python db/test_listening.py`, `python app/jobs/test_digest_episodes.py`.
 
+A chat that has not used the bot in 90 days (`nosub_digest.DORMANT_DAYS`) gets
+the digest at most once a year (`DORMANT_COOLDOWN`; the owner's call,
+2026-11-22: of 5.7k weekly digests, 478 went to chats that had done anything in
+90 days, most of the rest to chats whose only show is TED Talks Daily, the one
+/start subscribes them to). Use is `db/activity.last_used`: the latest of a
+message, tap or inline query (`user_activity`, written by
+`default_middleware.get_user` at most once an hour per chat), registration
+(`users.created_at`) and the usage ledger's rows the chat asked for (clicks,
+summaries, transcripts, questions; never `circle`). The ledger began on
+2026-10-21 and `user_activity` on 2026-11-22: use before them is unknown and
+reads as none. One tap brings the weekly digest back. Read when the row is
+sent, as the tariff is; a failed read is the weekly digest, never a lost one.
+Lock: `python db/test_activity.py` (CD gate; the send part needs the bot's
+requirements).
+
 RSS failures and Python/library exceptions go to dated `rss`/`runtime_*`
 logs, visible through the existing read-only diagnostics. `/api/diag/outbox`
 also reports recovery queue aggregates; no new write endpoint or token.
@@ -913,8 +928,9 @@ the header carries the block's first number, related numbers share a line
 with " · "): users (blocked apart, newcomers by day,
 week and month from `users.created_at`, the six biggest languages and the
 rest), podcasts, plans (`db/plan_counts.py`: a legend of the marks used, 💳
-paid, 🧪 trial, 📢 free for channels; holders by @username or name, by id when
-Telegram does not say), the last 30 days' money (`db/admin_counts.py`:
+paid, 🧪 trial, 📢 free for channels; "with a plan N · no plan M", the total
+the count had before the blocks and lost in them, 2026-11-22; holders by
+@username or name, by id when Telegram does not say), the last 30 days' money (`db/admin_counts.py`:
 payments charged by method, packs of episodes, refunds, balances) and the
 circle. The creator's account is in no count but the total and the newcomers.
 A block that fails is left out, never the message.
