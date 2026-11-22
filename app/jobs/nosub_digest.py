@@ -7,10 +7,18 @@ process drains that queue so the RSS circle is not blocked.
 
 Last-sent and opt-out are columns on users (durable, like other account
 prefs). Leftover runtime_kv flags are migrated once into digest_outbox.
+
+A chat that has not used the bot in DORMANT_DAYS (db/activity.last_used: a
+message, a tap, a click, an AI request, registration) gets the digest at most
+once a year (the owner's call, 2026-11-22: of ~8.7k chats that had not blocked
+the bot, 336 had done anything in 30 days; 5.2k got a weekly digest, mostly of
+TED Talks Daily, the show /start subscribes them to).
 """
 import datetime
 
 DIGEST_COOLDOWN = datetime.timedelta(days=7)
+DORMANT_DAYS = 90
+DORMANT_COOLDOWN = datetime.timedelta(days=365)
 DIGEST_MUTE_ACTION = "digestMute"
 DIGEST_TOGGLE_ACTION = "digestToggle"
 
@@ -76,9 +84,20 @@ def digest_is_due(sent_at, now=None, cooldown=DIGEST_COOLDOWN) -> bool:
     return now - parsed >= cooldown
 
 
-def should_send_nosub_digest(user, now=None, has_tariff=False) -> bool:
+def is_dormant(last_used, now=None) -> bool:
+    """last_used: epoch seconds (db/activity.last_used), None when nothing says the chat ever used it."""
+    if last_used is None:
+        return True
+    if now is None:
+        now = datetime.datetime.utcnow()
+    used = datetime.datetime.utcfromtimestamp(float(last_used))
+    return now - used >= datetime.timedelta(days=DORMANT_DAYS)
+
+
+def should_send_nosub_digest(user, now=None, has_tariff=False, dormant=False) -> bool:
     """has_tariff is read when the row is sent, not when it was queued:
-    a user who paid in between must not get the 'without Relay' nudge."""
+    a user who paid in between must not get the 'without Relay' nudge.
+    dormant (is_dormant): at most one digest a year."""
     if user is None:
         return False
     if has_tariff:
@@ -87,7 +106,8 @@ def should_send_nosub_digest(user, now=None, has_tariff=False) -> bool:
         return False
     if not digest_enabled(user):
         return False
-    return digest_is_due(_user_field(user, "nosub_digest_sent_at"), now=now)
+    return digest_is_due(_user_field(user, "nosub_digest_sent_at"), now=now,
+                         cooldown=DORMANT_COOLDOWN if dormant else DIGEST_COOLDOWN)
 
 
 def should_skip_item_parse(target_connections, feed_last_date) -> bool:

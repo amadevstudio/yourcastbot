@@ -17,14 +17,14 @@ from app.core.sender.outbox import OutboxRetryableError
 from app.i18n.messages import get_message
 from app.jobs import digest_outbox
 from app.jobs.digest_outbox import migrate_from_kv, pending_count
-from app.jobs.nosub_digest import DIGEST_MUTE_ACTION, should_send_nosub_digest
+from app.jobs.nosub_digest import DIGEST_MUTE_ACTION, is_dormant, should_send_nosub_digest
 from app.jobs.relay_remind import relay_nudge_markup
 from app.service import analytics_events
 from app.service.payment import plan_end
 from app.service.payment.storefront import SHOWCASE_TARIFF_LEVEL
 from config import db_path
 from db.sqliteAdapter import SQLighter
-from db import ai, listening
+from db import activity, ai, listening
 from lib.markup import telegram_html
 from lib.telegram.general.message_master import outer_sender
 from lib.tools.logger import logger
@@ -93,6 +93,16 @@ def _relay_price(db_users) -> int:
     return 500
 
 
+def _dormant(user_tg_id, database) -> bool:
+    """Has not used the bot in nosub_digest.DORMANT_DAYS. A failed read is not dormant: the weekly
+    digest as before, never a lost one."""
+    try:
+        return is_dormant(activity.last_used(user_tg_id, database))
+    except Exception as e:
+        logger.warn("digest activity:", type(e).__name__, e)
+        return False
+
+
 def send_digest_to_user(user_tg_id, database=None):
     """Send one reminder if the user is still eligible.
 
@@ -104,7 +114,8 @@ def send_digest_to_user(user_tg_id, database=None):
         user = db_users.get_user_by_tg(user_tg_id)
         if not should_send_nosub_digest(
                 user,
-                has_tariff=db_users.is_user_have_bot_subscription(user_tg_id)):
+                has_tariff=db_users.is_user_have_bot_subscription(user_tg_id),
+                dormant=_dormant(user_tg_id, database)):
             return False
         user_language = app.service.user.language.user_language(user['lang'])
         entries = listening.digest(user_tg_id, database)
