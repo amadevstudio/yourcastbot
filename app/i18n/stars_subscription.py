@@ -37,32 +37,32 @@ ROWS = {
     # Under the one-time page and the survey's "paying is inconvenient": a card that does not work in
     # the user's country (survey texts from Iran, Cuba, Venezuela, 2026-11) is not the end of it.
     'payAbroadButton': (
-        '🌍 Карта не проходит? Крипта, Fragment',
-        "🌍 Card doesn't work? Crypto, Fragment",
-        '🌍 Cartão não funciona? Cripto, Fragment',
-        '🌍 ¿No funciona la tarjeta? Cripto, Fragment',
-        '🌍 Karte geht nicht? Krypto, Fragment',
-        '🌍 הכרטיס לא עובר? קריפטו, Fragment'),
+        '🌍 Карта не проходит?',
+        "🌍 Card doesn't work?",
+        '🌍 Cartão não funciona?',
+        '🌍 ¿No funciona la tarjeta?',
+        '🌍 Karte geht nicht?',
+        '🌍 הכרטיס לא עובר?'),
     'fragmentStarsButton': (
-        '⭐ Купить Stars на Fragment (TON)',
-        '⭐ Buy Stars on Fragment (TON)',
-        '⭐ Comprar Estrelas no Fragment (TON)',
-        '⭐ Comprar Estrellas en Fragment (TON)',
-        '⭐ Stars auf Fragment kaufen (TON)',
-        '⭐ לקנות Stars ב-Fragment (TON)'),
+        '⭐ Купить Stars на Fragment',
+        '⭐ Buy Stars on Fragment',
+        '⭐ Comprar Estrelas no Fragment',
+        '⭐ Comprar Estrellas en Fragment',
+        '⭐ Stars auf Fragment kaufen',
+        '⭐ לקנות Stars ב-Fragment'),
     'payAbroadHint': (
-        '🌍 Карта не проходит в вашей стране? Звёзды можно купить на fragment.com за TON для своего '
-        '@username или получить в подарок от друга. CryptoBot принимает USDT, TON и другие монеты.',
-        "🌍 Cards don't work where you live? Stars can be bought on fragment.com with TON for your "
-        '@username, or a friend can gift them to you. CryptoBot takes USDT, TON and other coins.',
-        '🌍 Cartão não funciona no seu país? Dá para comprar Estrelas no fragment.com com TON para o seu '
-        '@username, ou um amigo pode te dar de presente. O CryptoBot aceita USDT, TON e outras moedas.',
-        '🌍 ¿La tarjeta no funciona en tu país? Puedes comprar Estrellas en fragment.com con TON para tu '
-        '@username, o un amigo puede regalártelas. CryptoBot acepta USDT, TON y otras monedas.',
-        '🌍 Karte funktioniert in deinem Land nicht? Sterne kannst du auf fragment.com mit TON für deinen '
-        '@username kaufen, oder ein Freund schenkt sie dir. CryptoBot nimmt USDT, TON und andere Coins.',
-        '🌍 הכרטיס לא עובר במדינה שלך? אפשר לקנות כוכבים ב-fragment.com עם TON עבור ה-@username שלך, '
-        'או לקבל אותם במתנה מחבר. CryptoBot מקבל USDT, TON ומטבעות נוספים.'),
+        '🌍 Карта не проходит в вашей стране? Звёзды можно купить на fragment.com для своего @username '
+        'или получить в подарок от друга.',
+        "🌍 Cards don't work where you live? Stars can be bought on fragment.com for your @username, "
+        'or a friend can gift them to you.',
+        '🌍 Cartão não funciona no seu país? Dá para comprar Estrelas no fragment.com para o seu @username, '
+        'ou um amigo pode te dar de presente.',
+        '🌍 ¿La tarjeta no funciona en tu país? Puedes comprar Estrellas en fragment.com para tu @username, '
+        'o un amigo te las puede regalar.',
+        '🌍 Karte funktioniert in deinem Land nicht? Sterne kannst du auf fragment.com für deinen @username '
+        'kaufen, oder ein Freund schenkt sie dir.',
+        '🌍 הכרטיס לא עובר במדינה שלך? אפשר לקנות כוכבים ב-fragment.com עבור ה-@username שלך, '
+        'או לקבל אותם במתנה מחבר.'),
     'starsSubPlanButton': (
         '⭐ {plan} – {stars} ⭐ в месяц',
         '⭐ {plan} – {stars} ⭐ a month',

@@ -80,7 +80,11 @@ def main():
     page_types = [row[0]["callback_data"]["tp"] for row in subscription_pay_rows("en")]
     _assert_eq(page_types, ["bs_recur", "bs_once", "bs_once", CHANGE_PLAN_CALLBACK],
                "/subscription: subscription, one-time payment, no card (the same page), change plan")
-    _assert("Crypto" in subscription_pay_rows("en")[2][0]["text"], "the no-card row names crypto")
+    _assert(subscription_pay_rows("en")[2][0]["text"] == "🌍 Card doesn't work?",
+            "the no-card row names no way to pay (crypto is not advertised: not legal everywhere)")
+    _assert(all(word not in get_message("payAbroadHint", lang).lower() for lang in ("en", "ru", "fa")
+                for word in ("crypto", "usdt", "ton ", "крипт", "کریپتو")),
+            "the hint names Fragment and gifts, no coins")
     once_types = [row[0].get("callback_data", {}).get("tp") or row[0].get("url") for row in once_pay_rows("en")]
     _assert_eq(once_types, ["bs_stars", "https://fragment.com/stars/buy", "bs_cryptobot"],
                "one-time: Stars first, Stars on Fragment, CryptoBot kept")

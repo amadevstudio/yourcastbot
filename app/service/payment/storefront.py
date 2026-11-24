@@ -151,8 +151,9 @@ FRAGMENT_STARS_URL = "https://fragment.com/stars/buy"
 
 def pay_abroad_row(language_code, source=None):
     """Where cards do not work (Iran, Cuba, Venezuela: the survey, 2026-11): the one-time page,
-    which says how (Stars on Fragment for TON or as a gift, CryptoBot's coins), named so on the
-    first screen. The owner's call (2026-11-24): it was one level down under "One-time payment"."""
+    which says how (Stars on Fragment or as a gift), named so on the first screen. The owner's call
+    (2026-11-24): it was one level down under "One-time payment". Crypto is not named anywhere (not
+    legal everywhere): CryptoBot stays a plain button on that page, as before."""
     tag = {"s": source} if source else {}
     return [{'text': get_message("payAbroadButton", language_code),
              'callback_data': dict({'tp': ONCE_CALLBACK}, **tag)}]

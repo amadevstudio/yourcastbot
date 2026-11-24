@@ -114,11 +114,14 @@ remove plan management or hide Bronze/Silver.
 - Where cards do not work (the survey's texts: Iran, Cuba, Venezuela) the way
   to pay is on the first screen (`storefront.pay_abroad_row`, 2026-11-24): on
   `/subscription` under "One-time payment" and at every limit that sells a
-  plan (`free_limit.plans_offer`, before change-plan), "Card doesn't work?
-  Crypto, Fragment" opens the one-time page (`bs_once`: the hint, Stars,
-  "Buy Stars on Fragment (TON)" as a link to fragment.com/stars/buy,
-  CryptoBot). No Russian acquirer: the owner turned Robokassa off on purpose
-  and does not sell in Russia (2026-11-24); Russians buy Stars.
+  plan (`free_limit.plans_offer`, before change-plan), "Card doesn't work?"
+  opens the one-time page (`bs_once`: the hint, Stars, "Buy Stars on
+  Fragment" as a link to fragment.com/stars/buy, CryptoBot). Crypto is not
+  advertised (the owner's call, 2026-11-24: not legal everywhere): no text
+  names coins, TON or crypto; CryptoBot is a plain button on the one-time page
+  and its own pages, nothing more. No Russian acquirer: the owner turned
+  Robokassa off on purpose and does not sell in Russia (2026-11-24); Russians
+  buy Stars.
 - Stars, Crypto, and Robokassa list every live SKU. Relay may be first.
 - Digest / D-3 / expiry nudges keep change-plan next to the Relay CTA.
 - D-3 ("Relay ends in N days, $5") goes only to users who will expire:
