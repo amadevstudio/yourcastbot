@@ -159,6 +159,8 @@ def plans_offer(language_code, source=None, free_bronze=False) -> tuple[str, lis
     if free_bronze:
         from app.service.plan import channels
         rows += channels.entry_row(0, language_code)
+    from app.service.payment.storefront import pay_abroad_row
+    rows.append(pay_abroad_row(language_code, source))  # no card: CryptoBot, Stars on Fragment
     rows.append([{'text': get_message("tariffs", language_code),
                   'callback_data': {'tp': CHANGE_PLAN_CALLBACK, **tag}}])
     return text, rows

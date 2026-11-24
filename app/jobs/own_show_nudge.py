@@ -10,10 +10,15 @@ welcome show gets one message: send a name or a link, or an OPML export,
 or tap a popular podcast (the welcome screen's buttons: a tap subscribes,
 state independent).
 
-An A/B test: chats with an even Telegram id get it, odd ones are the
-control. Both are marked (`users.flags` `own_show_nudge`: sent, unsent,
-control), so the admin page "Product" compares the groups. Once per chat,
-never to a blocked one, never fails the jobs role.
+It was an A/B test (even ids got it, odd ones were the control): of the
+newcomers whose first week was over on 2026-11-24, 5 of 66 meant to get it
+subscribed to a show of their own against 0 of 58 in the control, and 26%
+blocked the bot against 38%. The owner's call (2026-11-24): every newcomer
+gets it now. The chats marked `control` stay marked (`users.flags`
+`own_show_nudge`: sent, unsent, control), so the admin page "Product" still
+reads the test. With the trial waiting for a show of the chat's own
+(app/service/plan/trial.py) the nudge says so. Once per chat, never to a
+blocked one, never fails the jobs role.
 Lock: python app/jobs/test_own_show_nudge.py
 """
 import time
@@ -28,10 +33,6 @@ NUDGE_FLAG = "own_show_nudge"
 AFTER_HOURS = 1
 WINDOW_HOURS = 6
 CHECK_SECONDS = 600
-
-
-def group(telegram_id) -> str:
-    return "sent" if int(telegram_id) % 2 == 0 else "control"
 
 
 def due(database=None, now=None) -> list:
@@ -59,6 +60,14 @@ def nudge_message(language_code, telegram_id, database=None) -> dict:
     top_list, mark, ticked = onboarding.picker(language_code, telegram_id, database=database)
     screen = onboarding.welcome_message(language_code, top_list, ticked, mark)[0]
     screen['text'] = get_message("ownShowNudge", language_code)
+    from app.service.plan import trial
+    try:
+        hours = trial.pending_hours(telegram_id, database)
+    except Exception as e:  # the nudge goes without the line
+        logger.warn("own show nudge, trial:", telegram_id, type(e).__name__, e)
+        hours = None
+    if hours:
+        screen['text'] += "\n\n" + get_message("ownShowNudgeTrial", language_code).format(**trial.days_args(hours, language_code))
     return screen
 
 
@@ -72,17 +81,13 @@ def _mark(telegram_id, value, database=None):
 
 
 def send_nudges(database=None, now=None, send=None) -> int:
-    """Nudge the chats due (the control half is only marked); how many got it."""
+    """Nudge the chats due; how many got it."""
     if send is None:
         from lib.telegram.general.message_master import outer_sender as send
     sent = 0
     for telegram_id, lang in due(database, now):
         lang = lang or "en"
         try:
-            if group(telegram_id) == "control":
-                _mark(telegram_id, "control", database)
-                analytics_events.track(telegram_id, "own_show_nudge", {"group": "control"}, database=database)
-                continue
             _mark(telegram_id, "unsent", database)  # first: a crash in between never sends it twice
             if send(telegram_id, [nudge_message(lang, telegram_id, database)]):
                 _mark(telegram_id, "sent", database)

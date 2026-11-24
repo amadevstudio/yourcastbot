@@ -73,7 +73,7 @@ def referral_processing(data: ControllerParams, refer_id: int | None, action_mod
         data['chat_id'], 0, "new", invited=result_message_for_refer is not None)
     if welcome_message is not None:
         # подписка на ted talks daily (только при выдаче награды, то есть в первый раз)
-        pc_name, _ = add_sub(data['chat_id'], 21, 160904630, 'itunes')
+        pc_name, _ = add_sub(data['chat_id'], 21, 160904630, 'itunes', start_trial=False)
         if pc_name is not None:
             welcome_message += "\n\n" + \
                                get_message(

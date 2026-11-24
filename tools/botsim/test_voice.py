@@ -45,8 +45,14 @@ def main():
     from db.sqliteAdapter import SQLighter
     import config
 
+    from app.service.plan import trial
+
+    def own_show(user_id):  # the welcome trial waits for a show of the chat's own (app/service/plan/trial.py)
+        assert trial.start(user_id, 1000 + user_id % 1000, config.db_path)
+
     user = sim.BotSim(user_id=8101, lang='en')
     ok(user.send('/start'))
+    own_show(8101)
     ok(user.send('/menu'))
     help_step = ok(user.tap('🎙 Voice messages'))
     assert not help_step.new and '24 hours' in help_step.edited[-1].text, 'the menu is edited into the help'
@@ -56,6 +62,7 @@ def main():
     ok(user.tap('🎙 Voice messages'))
     menu_user = sim.BotSim(user_id=8105, lang='en')
     ok(menu_user.send('/start'))
+    own_show(8105)
     ok(menu_user.send('/menu'))
     ok(menu_user.tap('🎙 Voice messages'))
     ok(menu_user.tap('Voice summary language'))
@@ -201,6 +208,7 @@ def main():
     # Every entry point, including a crafted batch button, checks ownership.
     other = sim.BotSim(user_id=8102, lang='en')
     ok(other.send('/start'))
+    own_show(8102)
     for action in ('trn', 'sum', 'ask', 'desc'):
         for ref in (batch, rows[0]['ref']):
             step = ok(other.tap_data(json.dumps({'tp': action, 'r': ref})))

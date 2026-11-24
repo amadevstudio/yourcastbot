@@ -42,8 +42,9 @@ def _first_cta(markup):
 
 
 PAYWALL = [{'tp': 'bs_stars_pay'}, {'tp': 'bs_trfs'}]
-EVERY_PLAN = [{'tp': 'bs_stars_pay', 'v': 3}, {'tp': 'bs_stars_pay', 'v': 1}, {'tp': 'bs_trfs'}]
-FREE_BRONZE = [{'tp': 'bs_stars_pay', 'v': 3}, {'tp': 'bs_stars_pay', 'v': 1}, {'tp': 'bs_chan'}, {'tp': 'bs_trfs'}]
+EVERY_PLAN = [{'tp': 'bs_stars_pay', 'v': 3}, {'tp': 'bs_stars_pay', 'v': 1}, {'tp': 'bs_once'}, {'tp': 'bs_trfs'}]
+FREE_BRONZE = [{'tp': 'bs_stars_pay', 'v': 3}, {'tp': 'bs_stars_pay', 'v': 1}, {'tp': 'bs_chan'}, {'tp': 'bs_once'},
+               {'tp': 'bs_trfs'}]
 
 
 def _ctas(markup):

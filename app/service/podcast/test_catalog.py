@@ -140,7 +140,7 @@ def test_subscribe():
 
     saved = (catalog.lookup, subscription.SQLighter, subscription.add_sub_rss)
     subscription.SQLighter = DB
-    subscription.add_sub_rss = lambda u, p, sid, sname, rss_link, additional_info=None: (written.append(rss_link)
+    subscription.add_sub_rss = lambda u, p, sid, sname, rss_link, additional_info=None, start_trial=True: (written.append(rss_link)
                                                                                           or ('Show', 5))
     try:
         for source, feed in ((catalog.INDEX, 'https://older.example/feed'), (catalog.APPLE, 'https://apple.example/feed')):

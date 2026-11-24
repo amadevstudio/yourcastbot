@@ -10,7 +10,10 @@ from db.sqliteAdapter import SQLighter
 from lib.tools.logger import logger
 
 
-def add_sub(u_tg_id, podcast_id, service_id, service_name='itunes') -> Tuple[str | None, int | None]:
+def add_sub(u_tg_id, podcast_id, service_id, service_name='itunes',
+            start_trial=True) -> Tuple[str | None, int | None]:
+    """start_trial: a show of the chat's own starts its pending trial (app/service/plan/trial.py); the welcome
+    show /start subscribes every newcomer to does not."""
     last_date, pc_name = None, None
 
     if service_name == 'itunes':
@@ -48,12 +51,12 @@ def add_sub(u_tg_id, podcast_id, service_id, service_name='itunes') -> Tuple[str
 
     return add_sub_rss(
         u_tg_id, podcast_id, service_id, service_name, rss_link,
-        additional_info={"lastDate": last_date, "pcName": pc_name})
+        additional_info={"lastDate": last_date, "pcName": pc_name}, start_trial=start_trial)
 
 
 def add_sub_rss(
         u_tg_id, podcast_id, service_id, service_name, rss_link,
-        additional_info: dict = None) -> Tuple[str | None, int | None]:
+        additional_info: dict = None, start_trial=True) -> Tuple[str | None, int | None]:
     if additional_info is None:
         additional_info = {}
 
@@ -122,6 +125,11 @@ def add_sub_rss(
     podcast_data['mark'] = None
     podcast_data["have_new_episodes"] = False
     storage.set_user_state_data(u_tg_id, 'podcast', podcast_data)
+
+    # a newcomer's trial starts with the first show of its own (app/service/plan/trial.py); never raises
+    if start_trial:
+        from app.service.plan import trial
+        trial.on_subscribed(u_tg_id, new_channel["id"])
 
     return pc_name, podcast_data['id']
 

@@ -135,6 +135,45 @@ ROWS = {
         'La importación se detuvo. Las suscripciones ya añadidas se quedan; puedes enviar el archivo otra vez.',
         'Der Import wurde abgebrochen. Bereits hinzugefügte Abos bleiben; du kannst die Datei noch einmal schicken.',
         'הייבוא נעצר. המינויים שכבר נוספו נשארים; אפשר לשלוח את הקובץ שוב.'),
+    'award_welcome_pending': (
+        '🎧 Добро пожаловать в Yourcast Relay\n\n'
+        'Подпишитесь на свой подкаст – и {days} Relay бесплатно: новые выпуски будут приходить файлом прямо в этот чат.\n\n'
+        'Что сделать сейчас (30 сек):\n1) Нажмите подкаст ниже или найдите свой в Поиске\n2) Включите 🔔 уведомления\n\n'
+        'Потом можно подключить свой канал – бот будет постить туда новые эпизоды сам.',
+        '🎧 Welcome to Yourcast Relay\n\n'
+        'Subscribe to a podcast of yours and get {days} days of Relay free: new episodes arrive as audio files right in this chat.\n\n'
+        'Do this now (30 sec):\n1) Tap a podcast below or find yours in Search\n2) Turn on 🔔 notifications\n\n'
+        'Then connect your channel: the bot will post new episodes for you.',
+        '🎧 Bem-vindo ao Yourcast Relay\n\n'
+        'Assine um podcast seu e ganhe {days} dias de Relay grátis: episódios novos chegam como arquivo neste chat.\n\n'
+        'Faça agora (30 seg):\n1) Toque num podcast abaixo ou busque o seu\n2) Ligue o 🔔\n\n'
+        'Depois conecte seu canal: o bot posta os episódios por você.',
+        '🎧 Bienvenido a Yourcast Relay\n\n'
+        'Suscríbete a un pódcast tuyo y tendrás {days} días de Relay gratis: los episodios nuevos llegan como archivo a este chat.\n\n'
+        'Haz esto ahora (30 s):\n1) Toca un pódcast abajo o búscalo\n2) Activa 🔔\n\n'
+        'Luego conecta tu canal: el bot publicará los episodios.',
+        '🎧 Willkommen bei Yourcast Relay\n\n'
+        'Abonniere einen eigenen Podcast und du bekommst {days} Tage Relay gratis: neue Folgen kommen als Datei in diesen Chat.\n\n'
+        'Jetzt (30 Sek.):\n1) Tippe unten auf einen Podcast oder suche deinen\n2) Schalte 🔔 ein\n\n'
+        'Danach kannst du deinen Kanal verbinden: der Bot postet die Folgen.',
+        '🎧 ברוכים הבאים ל-Yourcast Relay\n\n'
+        'הירשמו לפודקאסט שלכם וקבלו {days} ימי Relay בחינם: פרקים חדשים יגיעו כקובץ לצ\'אט הזה.\n\n'
+        'מה לעשות עכשיו (30 שנ\'):\n1) לחצו על פודקאסט למטה או חפשו\n2) הפעילו 🔔\n\n'
+        'אחר כך אפשר לחבר ערוץ: הבוט יפרסם לשם פרקים.'),
+    'trialStarted': (
+        '🎁 Relay включён на {days} бесплатно: новые выпуски ваших подкастов будут сами приходить сюда файлом.',
+        '🎁 Relay is on for {days} days, free: new episodes of your podcasts will arrive here as files on their own.',
+        '🎁 Relay ligado por {days} dias, grátis: os episódios novos dos seus podcasts vão chegar aqui como arquivo sozinhos.',
+        '🎁 Relay activado {days} días gratis: los episodios nuevos de tus pódcasts llegarán aquí como archivo solos.',
+        '🎁 Relay ist {days} Tage gratis an: neue Folgen deiner Podcasts kommen von selbst als Datei hierher.',
+        '🎁 Relay פעיל {days} ימים בחינם: פרקים חדשים של הפודקאסטים שלכם יגיעו לכאן כקובץ מעצמם.'),
+    'ownShowNudgeTrial': (
+        '🎁 С первым своим подкастом включится Relay на {days} бесплатно.',
+        '🎁 Your first podcast of your own turns on Relay for {days} days, free.',
+        '🎁 Com o seu primeiro podcast, o Relay liga por {days} dias, grátis.',
+        '🎁 Con tu primer pódcast propio se activa Relay {days} días gratis.',
+        '🎁 Mit deinem ersten eigenen Podcast geht Relay für {days} Tage gratis an.',
+        '🎁 עם הפודקאסט הראשון שלכם Relay נפתח ל-{days} ימים בחינם.'),
 }
 TRANSLATIONS = {key: {lang: {'ro_msg': value} for lang, value in zip(LANGUAGES, row)}
                 for key, row in ROWS.items()}
