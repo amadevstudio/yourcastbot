@@ -217,6 +217,14 @@ def award_referrer_for_payment(invitee_tg_id):
 NEWCOMER_HOURS = 24
 
 
+def _has_own_show(db, telegram_id) -> bool:
+    """A subscription to a show other than the welcome one /start gives."""
+    from app.service.payment.plan_end import WELCOME_CHANNEL_ID
+    return db.cursor.execute(
+        "SELECT 1 FROM user_channel_cs WHERE user_telegram_id = ? AND channel_id != ? LIMIT 1",
+        (int(telegram_id), WELCOME_CHANNEL_ID)).fetchone() is not None
+
+
 def _joined_recently(db, telegram_id) -> bool:
     """The user row is younger than NEWCOMER_HOURS (users.created_at; NULL for old users)."""
     row = db.cursor.execute(
@@ -292,20 +300,31 @@ def giveAward(refer_tg_id, refered_tg_id, mode, invited=False):
     # новым пользователям — подписка
     elif mode == 'new':
         pc_count = db.select_users_subs_count(refer_tg_id)
+        newcomer = pc_count == 0 or _joined_recently(db, refer_tg_id)
 
-        if pc_count == 0 or _joined_recently(db, refer_tg_id):
+        if newcomer:
             on_period = tariff_new_user_period
             if invited:
                 # a friend's link: the welcome plan is longer
                 on_period += tariff_ref_invitee_period
                 message += get_message("award_welcome_invited", language_code).format(
                     days=tariff_ref_invitee_period // 24) + "\n\n"
-            message += get_message("award_welcome", language_code)
         else:
             on_period = tariff_secret_start_cmd_period
             message += get_message("secret_award_welcome", language_code)
 
         current_subscription = db.getUserSubscriptionByTg(refer_tg_id)
+
+        if current_subscription is None and newcomer and not _has_own_show(db, refer_tg_id):
+            # the trial waits for the chat's first show of its own (app/service/plan/trial.py): the
+            # "no plan" row now (a second /start gives nothing), the plan with that subscription
+            from app.service.plan.trial import PENDING_FLAG, days_args
+            db.subscribeUserToTariffByTg(refer_tg_id, 0, 0, 0, 0)
+            db.set_user_flag(refer_tg_id, PENDING_FLAG, int(on_period))
+            db.close()
+            return message + get_message("award_welcome_pending", language_code).format(**days_args(on_period, language_code))
+        if newcomer:
+            message += get_message("award_welcome", language_code)
 
         if current_subscription is None:
             extreme = db.getExtremeTariff('max')

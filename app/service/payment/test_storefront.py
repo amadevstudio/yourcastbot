@@ -78,12 +78,14 @@ def main():
     # /subscription asks how to pay first (owner's call, 2026-10-22): a subscription
     # or one payment, then change plan. Every method stays one level down.
     page_types = [row[0]["callback_data"]["tp"] for row in subscription_pay_rows("en")]
-    _assert_eq(page_types, ["bs_recur", "bs_once", CHANGE_PLAN_CALLBACK],
-               "/subscription: subscription, one-time payment, change plan")
-    once_types = [row[0]["callback_data"]["tp"] for row in once_pay_rows("en")]
-    _assert_eq(once_types, ["bs_stars", "bs_cryptobot"], "one-time: Stars first, CryptoBot kept")
+    _assert_eq(page_types, ["bs_recur", "bs_once", "bs_once", CHANGE_PLAN_CALLBACK],
+               "/subscription: subscription, one-time payment, no card (the same page), change plan")
+    _assert("Crypto" in subscription_pay_rows("en")[2][0]["text"], "the no-card row names crypto")
+    once_types = [row[0].get("callback_data", {}).get("tp") or row[0].get("url") for row in once_pay_rows("en")]
+    _assert_eq(once_types, ["bs_stars", "https://fragment.com/stars/buy", "bs_cryptobot"],
+               "one-time: Stars first, Stars on Fragment, CryptoBot kept")
     _assert_eq(
-        [row[0]["callback_data"]["tp"] for row in once_pay_rows("en", True)][-1],
+        [row[0].get("callback_data", {}).get("tp") for row in once_pay_rows("en", True)][-1],
         "bs_robokassa",
         "creator still gets Robokassa last")
 

@@ -43,15 +43,22 @@ def _db():
     return sqlite3.connect(sim._state['database'])
 
 
+def own_show(user_id):
+    """The chat subscribed to a show of its own: its pending trial starts (app/service/plan/trial.py)."""
+    from app.service.plan import trial
+    return trial.start(user_id, 1000 + user_id % 1000, sim._state['database'])
+
+
 def test_start(user):
     step = user.send('/start')
     _assert(step.handlers[-1] == 'processor(start)' and len(step.new) == 2 and not step.edited
-            and '14 days free' in step.new[0].text and 'Welcome!' in step.new[1].text,
-            "/start: the welcome plan stays, the welcome screen comes under it (it used to be edited into it)")
+            and '14 days of Relay free' in step.new[0].text and 'Welcome!' in step.new[1].text,
+            "/start: the welcome text stays, the welcome screen comes under it (it used to be edited into it)")
     _assert(not step.errors, "no error on the way")
     plan = _db().execute("SELECT ut.tariff_id, ut.time_left FROM user_tariff_cs ut JOIN users u ON u.id = ut.uid "
                          "WHERE u.telegramId = ?", (USER,)).fetchone()
-    _assert(plan is not None and plan[0] == 3 and plan[1] > 0, "a new user gets the welcome Relay")
+    _assert(plan is not None and plan[0] == 0, "no plan yet: the trial waits for a show of the chat's own")
+    _assert(own_show(USER) == 14 * 24, "the first show of its own starts the welcome Relay")
     _assert(('new_user', ) == step.analytics[0][:1],
             "a newcomer's first /start reaches Amplitude as new_user (recorded, not sent)")
 
@@ -81,8 +88,8 @@ def test_storefront(user):
     step = user.send('/subscription')
     kinds = [json.loads(button['callback_data']).get('tp')
              for row in step.new[0].buttons for button in row if button.get('callback_data')]
-    _assert(kinds[:3] == ['bs_recur', 'bs_once', 'bs_trfs'],
-            "/subscription: a subscription, a one-time payment, change plan")
+    _assert(kinds[:4] == ['bs_recur', 'bs_once', 'bs_once', 'bs_trfs'],
+            "/subscription: a subscription, a one-time payment, no card (the same page), change plan")
     step = user.tap('💳')
     once = [json.loads(button['callback_data']).get('tp')
             for row in step.edited[0].buttons for button in row if button.get('callback_data')]
@@ -360,6 +367,7 @@ def test_downgrade_refund():
     db.close()
     trial = sim.BotSim(2001, 'en')
     trial.send('/start')
+    own_show(2001)
     before = _plan_row(2001)
     ask = trial.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': bronze}))
     _assert(_plan_row(2001) == before and 'Change plan: ' in ask.texts[0] and 'Going back to' in ask.texts[0]
@@ -378,6 +386,7 @@ def test_downgrade_refund():
 
     off = sim.BotSim(2003, 'en')
     off.send('/start')
+    own_show(2003)
     ask = off.tap_data(json.dumps({'tp': 'bs_trf_v', 'v': 0}))
     _assert(_plan_row(2003)[0] == relay and 'off?' in ask.texts[0], "turning the plan off is asked first too")
     off.tap('Turn off')
@@ -385,6 +394,7 @@ def test_downgrade_refund():
 
     payer = sim.BotSim(2002, 'en')
     payer.send('/start')
+    own_show(2002)
     db = _db()
     db.execute("INSERT INTO payment_history (user_id, service_type, invoice_id, status, amount, datetime) "
                "SELECT id, 'stars', 'sim-1', 'paid', 500, datetime('now') FROM users WHERE telegramId = 2002")

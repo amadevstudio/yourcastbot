@@ -222,7 +222,7 @@ def test_message():
         over = opmlModule.result_message('en', opml.Result(['A'], [], [], ['E', 'F']), cut=True)
     ctas = [row[0]['callback_data'] for row in over['reply_markup']]
     _assert('E, F' in over['text'] and ctas == [{'tp': 'bs_stars_pay', 'v': 3}, {'tp': 'bs_stars_pay', 'v': 1},
-                                                 {'tp': 'bs_trfs'}],
+                                                 {'tp': 'bs_once'}, {'tp': 'bs_trfs'}],
             "over the free limit: named, every plan's invoice (Relay first) and change-plan")
     _assert(str(opml.MAX_FEEDS) in over['text'], "a cut file says so")
     _assert(opmlModule.result_message('en', opml.Result([], [], [], []))['text']

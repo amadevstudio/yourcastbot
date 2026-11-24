@@ -139,11 +139,16 @@ def _invitee_gets_longer_welcome():
         with patch.object(paymentSafeModule, 'db_path', path):
             plain = giveAward(2001, 0, 'new')
             invited = giveAward(2002, 0, 'new', invited=True)
+        from app.service.plan import trial
         welcome = paymentSafeModule.tariff_new_user_period
-        _assert_eq(_plan(path, 2001), (3, welcome), "a plain sign-up gets the usual welcome plan")
-        _assert_eq(_plan(path, 2002), (3, welcome + paymentSafeModule.tariff_ref_invitee_period),
+        _assert_eq(_plan(path, 2001), (0, 0), "no plan yet: the trial waits for a show of the chat's own")
+        _assert_eq(trial.pending_hours(2001, path), welcome, "a plain sign-up waits for the usual welcome plan")
+        _assert_eq(trial.pending_hours(2002, path), welcome + paymentSafeModule.tariff_ref_invitee_period,
                    "a friend's link adds the invitee bonus")
         _assert("+7" in invited and "+7" not in plain, "the invitee is told why the plan is longer")
+        _assert("14" in plain and "Subscribe to a podcast of yours" in plain, "and how to start it")
+        with patch.object(paymentSafeModule, 'db_path', path):
+            _assert_eq(giveAward(2001, 0, 'new'), None, "a second /start gives nothing")
     finally:
         os.remove(path)
 
@@ -198,7 +203,8 @@ def _link_naming_nobody_creates_nobody():
             _assert_eq(db.get_user_by_tg(3001)['ref_id'], None, "nor stored as the referrer")
         finally:
             db.close()
-        _assert_eq(_plan(path, 3001), (3, paymentSafeModule.tariff_new_user_period),
+        from app.service.plan import trial
+        _assert_eq(trial.pending_hours(3001, path), paymentSafeModule.tariff_new_user_period,
                    "and the sign-up gets no invitee bonus")
     finally:
         os.remove(path)

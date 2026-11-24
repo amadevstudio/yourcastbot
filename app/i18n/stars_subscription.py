@@ -36,6 +36,20 @@ ROWS = {
         '<b>תשלום חד-פעמי</b>\n\nטענו את היתרה פעם אחת: התוכנית מתחדשת ממנה כל עוד היא מספיקה.'),
     # Under the one-time page and the survey's "paying is inconvenient": a card that does not work in
     # the user's country (survey texts from Iran, Cuba, Venezuela, 2026-11) is not the end of it.
+    'payAbroadButton': (
+        '🌍 Карта не проходит? Крипта, Fragment',
+        "🌍 Card doesn't work? Crypto, Fragment",
+        '🌍 Cartão não funciona? Cripto, Fragment',
+        '🌍 ¿No funciona la tarjeta? Cripto, Fragment',
+        '🌍 Karte geht nicht? Krypto, Fragment',
+        '🌍 הכרטיס לא עובר? קריפטו, Fragment'),
+    'fragmentStarsButton': (
+        '⭐ Купить Stars на Fragment (TON)',
+        '⭐ Buy Stars on Fragment (TON)',
+        '⭐ Comprar Estrelas no Fragment (TON)',
+        '⭐ Comprar Estrellas en Fragment (TON)',
+        '⭐ Stars auf Fragment kaufen (TON)',
+        '⭐ לקנות Stars ב-Fragment (TON)'),
     'payAbroadHint': (
         '🌍 Карта не проходит в вашей стране? Звёзды можно купить на fragment.com за TON для своего '
         '@username или получить в подарок от друга. CryptoBot принимает USDT, TON и другие монеты.',

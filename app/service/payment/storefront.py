@@ -140,9 +140,22 @@ def subscription_pay_rows(language_code):
           'callback_data': {'tp': RECURRING_CALLBACK}}],
         [{'text': get_message("payOnceButton", language_code),
           'callback_data': {'tp': ONCE_CALLBACK}}],
+        pay_abroad_row(language_code),
         [{'text': get_message("tariffs", language_code),
           'callback_data': {'tp': CHANGE_PLAN_CALLBACK}}],
     ]
+
+
+FRAGMENT_STARS_URL = "https://fragment.com/stars/buy"
+
+
+def pay_abroad_row(language_code, source=None):
+    """Where cards do not work (Iran, Cuba, Venezuela: the survey, 2026-11): the one-time page,
+    which says how (Stars on Fragment for TON or as a gift, CryptoBot's coins), named so on the
+    first screen. The owner's call (2026-11-24): it was one level down under "One-time payment"."""
+    tag = {"s": source} if source else {}
+    return [{'text': get_message("payAbroadButton", language_code),
+             'callback_data': dict({'tp': ONCE_CALLBACK}, **tag)}]
 
 
 def once_pay_rows(language_code, include_robokassa=False):
@@ -150,6 +163,7 @@ def once_pay_rows(language_code, include_robokassa=False):
     rows = [
         [{'text': get_message("payViaTelegramStars", language_code),
           'callback_data': {'tp': 'bs_stars'}}],
+        [{'text': get_message("fragmentStarsButton", language_code), 'url': FRAGMENT_STARS_URL}],
         [{'text': get_message("payViaCryptoBot", language_code),
           'callback_data': {'tp': 'bs_cryptobot'}}],
     ]

@@ -111,6 +111,14 @@ remove plan management or hide Bronze/Silver.
   Lock: `python app/service/payment/test_storefront.py`.
 - Keep `bs_trfs` on the main `/subscription` keyboard. The change-plan
   page lists every SKU (Bronze / Silver / Relay + disable).
+- Where cards do not work (the survey's texts: Iran, Cuba, Venezuela) the way
+  to pay is on the first screen (`storefront.pay_abroad_row`, 2026-11-24): on
+  `/subscription` under "One-time payment" and at every limit that sells a
+  plan (`free_limit.plans_offer`, before change-plan), "Card doesn't work?
+  Crypto, Fragment" opens the one-time page (`bs_once`: the hint, Stars,
+  "Buy Stars on Fragment (TON)" as a link to fragment.com/stars/buy,
+  CryptoBot). No Russian acquirer: the owner turned Robokassa off on purpose
+  and does not sell in Russia (2026-11-24); Russians buy Stars.
 - Stars, Crypto, and Robokassa list every live SKU. Relay may be first.
 - Digest / D-3 / expiry nudges keep change-plan next to the Relay CTA.
 - D-3 ("Relay ends in N days, $5") goes only to users who will expire:
@@ -223,7 +231,8 @@ Lock: `python app/jobs/test_payment_effects.py` (CD gate).
   between loses one bonus, never doubles it. A `/start` link names an
   existing user other than oneself, or nobody (`user_exists_tg`):
   `get_user_by_tg` creates a row for any number. An invitee's welcome plan is
-  `tariff_ref_invitee_period` longer. A user with podcasts and no plan who
+  `tariff_ref_invitee_period` longer (it starts with the first show of the
+  chat's own: Welcome trial). A user with podcasts and no plan who
   sends /start is "returning" and gets the 2-day plan, unless the row is
   under a day old (`paymentSafeModule._joined_recently`): a first command
   from the bot's menu (/search) creates the user with no plan, and a
@@ -1087,16 +1096,41 @@ hours after joining (`users.created_at`, UTC), a chat still here with no
 subscription but the welcome show gets one message (`app/jobs/own_show_nudge.py`,
 jobs role, every 10 minutes): send a name or a link, or an OPML export, or
 tap a popular podcast (the welcome screen's buttons, state independent).
-An A/B test: even Telegram ids get it, odd ones are the control; both are
-marked (`users.flags` `own_show_nudge`: sent, unsent, control) and tracked
-(`own_show_nudge {group}`), and the page "Product" compares the groups: every
-marked newcomer whatever the page's period, and the read it is decided on,
-those meant to get it (sent and unsent: a nudge Telegram did not take stays in
-its group, else the blocked leave it) against the control, on newcomers whose
-first week is over (a show of their own, a block within the week). Once
-per chat: a send Telegram did not take is marked unsent, not retried.
+It was an A/B test (even ids got it, odd ones were the control): on
+2026-11-24, of the newcomers whose first week was over, 5 of 66 meant to get
+it had a show of their own against 0 of 58, and 26% blocked the bot against
+38%. Every newcomer gets it since (the owner's call, 2026-11-24). Marks stay
+(`users.flags` `own_show_nudge`: sent, unsent, control; `own_show_nudge
+{group}`), so the page "Product" still reads the test from the chats marked
+then. A chat whose trial waits for a show of its own (Welcome trial) hears
+it under the nudge. Once per chat: a send Telegram did not take is marked
+unsent, not retried.
 Lock: `python app/jobs/test_own_show_nudge.py` (CD gate),
 `python app/admin_web/test_product.py`.
+
+## Welcome trial
+
+The welcome Relay starts with the chat's first show of its own, not at
+/start (`app/service/plan/trial.py`; the owner's call, 2026-11-24: none of
+309 newcomers in 30 days paid, none of 224 ended trials answered the survey
+and 3 of them opened the bot again; most trials ran out on a chat whose only
+show was the welcome one). /start (`giveAward` mode `new`) gives a newcomer
+with no show of its own the "no plan" row and `users.flags` `trial_pending`
+(the hours: `tariff_new_user_period`, a friend's link's days on top), and says
+how to start it (`award_welcome_pending`). A newcomer who subscribed before
+/start (a first command from the bot's menu) gets the plan at once, as
+before; a returning user's 2 days are unchanged. The first subscription to a
+show but the welcome one (`subscription.add_sub_rss`: the podcast page, the
+welcome screen, an OPML import, a link; the welcome subscription passes
+`start_trial=False`) starts it: Relay for those hours and one message
+(`trialStarted`, with the plan's lines), event `trial_started {hours,
+trigger}`. The flag is claimed in one statement: two subscriptions at once
+start it once. A plan running then (paid, a grant) keeps the flag for after
+it; a chat that ever paid drops it. Never fails the subscription. Chats that
+joined before keep the trial they got.
+Lock: `python app/service/plan/test_trial.py` (CD gate; needs the bot's
+requirements), `python app/service/payment/test_referral_award.py`,
+`python tools/botsim/test_botsim.py`.
 
 ## Why nobody pays: the survey
 
