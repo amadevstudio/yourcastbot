@@ -23,10 +23,6 @@ function pct(part: number, whole: number) {
   return whole ? Math.round((part / whole) * 100) : 0;
 }
 
-function pct1(part: number, whole: number) {
-  return whole ? ((part / whole) * 100).toFixed(1) : "0.0";
-}
-
 function usd(value: number) {
   return `$${value < 1 && value > 0 ? value.toFixed(3) : value.toFixed(2)}`;
 }
@@ -300,29 +296,6 @@ export default function Product() {
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-          </Card>
-
-          <Card className="min-w-0">
-            <h2 className="mb-1 font-semibold">Дайджест: A/B</h2>
-            <Hint className="mb-4">
-              Получили дайджест с начала теста (30.10), по разряду десятков id: нечётный – b. Нажатия
-              "Слушать" – в Amplitude, решение 20.11. Здесь – сторожевые метрики: выключили, заблокировали,
-              и оплаты (сигнал, не статистика).
-            </Hint>
-            {data.digest_ab.length === 0 ? (
-              <Hint>Дайджестов с начала теста ещё не было.</Hint>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {data.digest_ab.map((v) => (
-                  <Metric
-                    key={v.variant}
-                    label={`Вариант ${v.variant}`}
-                    value={v.recipients}
-                    hint={`Выключили ${v.muted} (${pct1(v.muted, v.recipients)}%), заблокировали ${v.blocked} (${pct1(v.blocked, v.recipients)}%), заплатили ${v.paid}.`}
-                  />
-                ))}
               </div>
             )}
           </Card>
