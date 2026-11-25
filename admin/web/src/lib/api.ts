@@ -159,7 +159,6 @@ export type Product = {
   paid_first_days: { days: number; matured: number; paid: number; own_sub: number; own_sub_paid: number };
   nudge: (NudgeRead & { group: string; own_sub: number; got_episode: number; blocked: number; paid: number })[];
   nudge_read: { assigned: NudgeRead; control: NudgeRead };
-  digest_ab: { variant: string; recipients: number; muted: number; blocked: number; paid: number }[];
   survey: {
     holdout: number;
     groups: { group: string; sent: number; answered: number; rewarded: number; blocked: number; paid: number }[];

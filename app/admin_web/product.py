@@ -28,7 +28,6 @@ ENDING_HOURS = 72  # a trial "ends soon": the D-3 reminder's window
 MAX_WEEKS = 13
 PAY_DAYS = 30  # "paid within the first N days": the share of newcomers that pay
 NUDGE_WEEK_DAYS = 7  # the own-show nudge's A/B is read on newcomers whose first week is over
-DIGEST_AB_SINCE = '2026-10-30 21:04:00'  # the digest's A/B began (UTC, as nosub_digest_sent_at)
 _FMT = '%Y-%m-%d %H:%M:%S'
 
 
@@ -38,8 +37,6 @@ def _stamp(ts: float) -> str:
 
 _PAID = ("EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id "
          "AND p.status = 'paid' AND u.telegramId != :creator)")
-_PAID_SINCE = ("EXISTS(SELECT 1 FROM payment_history p WHERE p.user_id = u.id "
-               "AND p.status = 'paid' AND p.datetime >= :ab AND u.telegramId != :creator)")
 _OWN_SUB = ("EXISTS(SELECT 1 FROM user_channel_cs s WHERE s.user_telegram_id = u.telegramId "
             "AND s.channel_id != :welcome)")
 _GOT_EPISODE = ("EXISTS(SELECT 1 FROM usage_events e WHERE e.user_id = u.telegramId "
@@ -99,21 +96,6 @@ def _nudge_read(groups: list) -> dict:
         picked = [g for g in groups if g['group'] in names]
         return {key: sum(g[key] for g in picked) for key in ('new', 'matured', 'matured_own_sub', 'matured_blocked')}
     return {'assigned': total(('sent', 'unsent')), 'control': total(('control',))}
-
-
-def _digest_ab(conn, params) -> list:
-    """The digest's A/B (digest_watcher.digest_variant: the tens digit of the chat id, odd is
-    b): who got a digest since it began, and of them who muted it, blocked the bot or paid
-    since. The table keeps the last digest's time only, and a muted or blocked chat gets no
-    more, so "the last one came since" is everyone it reached. Listen taps are Amplitude's."""
-    rows = conn.execute(
-        "SELECT CASE (ABS(u.telegramId) / 10) %% 2 WHEN 1 THEN 'b' ELSE 'a' END variant, COUNT(*) n, "
-        "SUM(u.nosub_digest_enabled = 0) muted, SUM(u.deleted_at IS NOT NULL AND u.deleted_at >= :ab) blocked, "
-        "SUM(%s) paid "
-        "FROM users u WHERE u.nosub_digest_sent_at >= :ab GROUP BY variant ORDER BY variant" % _PAID_SINCE,
-        {**params, 'ab': DIGEST_AB_SINCE}).fetchall()
-    return [{'variant': row['variant'], 'recipients': row['n'], 'muted': row['muted'] or 0,
-             'blocked': row['blocked'] or 0, 'paid': row['paid'] or 0} for row in rows]
 
 
 SURVEY_TEXTS = 50
@@ -261,7 +243,6 @@ def product(days: int = 30, database: Optional[str] = None, now: Optional[float]
             'paid_first_days': _paid_first_days(conn, params),
             'nudge': nudge,
             'nudge_read': _nudge_read(nudge),
-            'digest_ab': _digest_ab(conn, params),
             'survey': _survey(conn, params),
             'ai': _ai(conn, since, until),
             'activity': _activity(conn, since, until),

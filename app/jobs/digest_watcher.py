@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """Drain digest_outbox in the jobs process. Do not run this from updater.
 
-The digest's A/B (2026-10-30: ~5.2k digests a week, 25 Listen taps, 0.5%):
-variant "a" is the digest as it was; "b" (digest_variant) leads with the
-episodes, says Relay in one line under them and, to a chat that never paid
-and has not spent the win-back offer, offers the first month of Relay at its
-discount (plan_end.trial_offer, the invoice above the Stars page). Both carry
-`s` on the pay buttons and `variant` on digest_sent, so Amplitude tells them
-apart. Lock: python app/jobs/test_digest_episodes.py
+The digest leads with the episodes, says Relay in one line under them and, to
+a chat that never paid and has not spent the win-back offer, offers the first
+month of Relay at its discount (plan_end.trial_offer, the invoice above the
+Stars page). It was variant "b" of an A/B (30.10-20.11.2026): Listen taps
+1.03% for the old digest, 0.93% for this one (p = 0.79), blocks and mutes no
+worse, so it stayed for everyone (the owner's call, 2026-11-25). The pay
+buttons carry `s`. Lock: python app/jobs/test_digest_episodes.py
 """
 import time
 import json
@@ -43,14 +43,10 @@ def _gist(entry):
         return None
 
 
-def digest_variant(telegram_id) -> str:
-    """'a' or 'b', by the tens digit: the own-show nudge splits by parity, the two must not overlap."""
-    return 'b' if (abs(int(telegram_id)) // 10) % 2 else 'a'
-
-
-def digest_message(entries, language, gist=_gist, variant='a', offer=('', None)):
-    """offer: (line, invoice row) of plan_end.trial_offer, shown in variant b."""
-    lead = variant == 'b' and entries
+def digest_message(entries, language, gist=_gist, offer=('', None)):
+    """The episodes first (no episodes: the generic reminder), then one line on Relay;
+    offer: (line, invoice row) of plan_end.trial_offer."""
+    lead = bool(entries)
     text = '' if lead else get_message('youHaveNewEpisodes', language)
     listen = []
     if entries:
@@ -123,17 +119,16 @@ def send_digest_to_user(user_tg_id, database=None):
             # Every queued show was muted/unsubscribed. Do not replace the
             # suppressed episodes with a generic reminder of those same shows.
             return False
-        variant = digest_variant(user_tg_id)
         offer = ('', None)
-        if variant == 'b' and entries:
+        if entries:
             offer = plan_end.trial_offer(user_tg_id, SHOWCASE_TARIFF_LEVEL, _relay_price(db_users), user_language,
                                          analytics_events.DIGEST_SOURCE, database=database)
-        sent = outer_sender(user['telegramId'], [digest_message(entries, user_language, variant=variant, offer=offer)],
+        sent = outer_sender(user['telegramId'], [digest_message(entries, user_language, offer=offer)],
                             on_flood='raise')
         if sent:
             db_users.mark_nosub_digest_sent(user_tg_id)
             listening.ack_digest(user_tg_id, entries, database)
-            analytics_events.track(user_tg_id, 'digest_sent', {'episodes': len(entries), 'variant': variant,
+            analytics_events.track(user_tg_id, 'digest_sent', {'episodes': len(entries),
                                                                'offer': bool(offer[1])}, database)
             return True
         return False
