@@ -5,11 +5,13 @@ A Spanish-speaking reader asked for iVoox (2026-11-26). Its shows were in the bo
 from iVoox feeds, all in Apple's catalog), but a link from iVoox opened nothing: the link page took
 the show's web page for a feed.
 
-- A show's page `https://www.ivoox.com/<slug>_sq_f<show>_1.html`, its feed
-  `.../<slug>_fg_f<show>_filtro_1.xml` and the short link `https://go.ivoox.com/sq/<n>` (`f1<n>` in
-  the long ones) name the same show; its feed is `feed_fg_f<show>_filtro_1.xml`, whatever the slug.
-  A channel we poll from iVoox keeps its own address (`stored_feed`): a feed with another slug is
-  the same show.
+- A show's page `https://www.ivoox.com/<slug>_sq_f<show>_1.html` and the short link
+  `https://go.ivoox.com/sq/<n>` (`f1<n>` in the long one) name the show; its feed is
+  `feed_fg_f<show>_filtro_1.xml`, whatever the slug. A channel we poll from iVoox keeps its own
+  address (`stored_feed`): a feed with another slug is the same show.
+- A feed (`_fg_`) is no page: it is taken as it is, as any RSS link. A fan of a show who pays for
+  its episodes makes a private feed of them on iVoox (Mis Apoyos, since 2025) to add to another
+  app; rewritten to the public feed it would lose what they paid for.
 - An episode's page `.../<slug>-audios-mp3_rf_<episode>_1.html` (or `go.ivoox.com/rf/<episode>`)
   does not name its show: the page does, in its schema.org data (`partOfSeries`), else in its
   "Episodio de" link. The feed lists the episode with that number in its guid
@@ -24,7 +26,7 @@ from typing import Callable, Iterable, NamedTuple, Optional
 from lib.tools.logger import logger
 
 _HOST = r'https?://(?:[\w-]+\.)*ivoox\.com/'
-SHOW = re.compile(_HOST + r'\S*?_(?:sq|fg)_f(\d+)', re.I)
+SHOW = re.compile(_HOST + r'\S*?_sq_f(\d+)', re.I)
 SHORT_SHOW = re.compile(r'https?://go\.ivoox\.com/sq/(\d+)', re.I)
 EPISODE = re.compile(_HOST + r'\S*?_rf_(\d+)', re.I)
 SHORT_EPISODE = re.compile(r'https?://go\.ivoox\.com/rf/(\d+)', re.I)
