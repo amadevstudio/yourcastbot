@@ -203,6 +203,29 @@ def test_link_page(user):
     _assert([(link.show_id, link.episode_id, chat) for link, chat in sent] == [(42, 1000000000007, USER), (43, 9, USER)],
             "an Apple episode link sends its episode, from the page and from search; a show link does not")
 
+    sent, saved = [], (searchModule.send_ivoox_episode_later, searchModule.ivoox.show_of_episode)
+    searchModule.send_ivoox_episode_later = lambda page, episode, chat_id, lang: sent.append((page, episode, chat_id))
+    searchModule.ivoox.show_of_episode = lambda episode: '1234567' if episode == '987654321' else None
+    try:
+        user.send('/menu')
+        page = user.tap('Apple Podcasts, RSS')
+        _assert(any('iVoox' in text for text in page.texts), "the link page names iVoox")
+        show = user.send('https://www.ivoox.com/podcast-a-show_sq_f1234567_1.html')
+        _assert(show.handlers[-1] == 'processor(addBRss)' and not any('does not match' in t for t in show.texts)
+                and show.new and not show.errors and not sent, "an iVoox show's page opens the show, sends nothing")
+        user.send('/menu')
+        episode = user.send('https://www.ivoox.com/an-episode-audios-mp3_rf_987654321_1.html')
+        _assert(episode.new and not episode.errors, "an iVoox episode link from search opens its show")
+        user.send('/menu')
+        user.tap('Apple Podcasts, RSS')
+        lost = user.send('https://www.ivoox.com/unknown-audios-mp3_rf_111_1.html')
+        _assert(any('does not match' in t for t in lost.texts), "an episode whose page names no show: said so")
+    finally:
+        searchModule.send_ivoox_episode_later, searchModule.ivoox.show_of_episode = saved
+    _assert([(page.get('sId'), episode, chat) for page, episode, chat in sent]
+            == [('https://www.ivoox.com/feed_fg_f1234567_filtro_1.xml', '987654321', USER)],
+            "an iVoox episode link sends its episode from the show's feed")
+
 
 def test_summary_and_question(user):
     from db import ai

@@ -18,7 +18,7 @@ from lib.markup import telegram_html
 from agent.bot_telebot import bot
 from app.controller.builders.podcastModule import (
     filter_genre, channel_query)
-from app.controller.builders.recsModule import load_records_data, send_apple_episode_later
+from app.controller.builders.recsModule import load_records_data, send_apple_episode_later, send_ivoox_episode_later
 from app.controller.general.notify import notify
 from app.core.message.navigationBuilder import get_full_message_navigation, FullMessageNavigation, \
     determine_search_query_and_page
@@ -28,7 +28,7 @@ from app.repository.storage import storage, telegram_cache
 from app.routes.message_tools import go_back_inline_markup
 from app.routes.ptypes import ControllerParams, InlineControllerParams
 from app.routes.routes_list import AvailableRoutes
-from app.service.podcast import apple_episode, catalog, opml
+from app.service.podcast import apple_episode, catalog, ivoox, opml
 from app.service.record.caption import record_caption
 from app.service.record.delivery import fetch_by_url_first
 from config import db_path, botName, server, maxPodcastDateCallDataHexLen
@@ -51,29 +51,39 @@ def apple_podcast_id(text) -> int | None:
     return int(found.group(1)) if found else None
 
 
-def feed_page(url: str) -> dict:
+def feed_page(url: str, ivoox_show: str = None) -> dict:
     """The podcast page an RSS link opens: the show we poll at that address, or the catalog's
     show with that feed (matched as an OPML import matches it: iTunes-listed delivery), else
-    the feed itself."""
-    root, _ = app.service.podcast.podcast.podcast_info_query({'rss_link': url}, 'rss', cached=True)
-    title = '' if root is False else next(
-        (str(child.text or '').strip() for child in root if child.tag == 'title'), '')
+    the feed itself. An iVoox show (`ivoox_show`) is the channel we poll from it, whatever the
+    slug of its address."""
     connection = connect_sqlite(db_path)
     try:
         known = opml.known_channels(connection)
     finally:
         connection.close()
+    if ivoox_show is not None:
+        url = ivoox.stored_feed(ivoox_show, known.keys()) or url
+    root, _ = app.service.podcast.podcast.podcast_info_query({'rss_link': url}, 'rss', cached=True)
+    title = '' if root is False else next(
+        (str(child.text or '').strip() for child in root if child.tag == 'title'), '')
     channel_id, service_id, service_name = opml.resolve(opml.Feed(title or url, url), known)
     return {'id': channel_id} if channel_id is not None else {'sId': service_id, 'sName': service_name}
 
 
 def open_link(data: ControllerParams, text) -> bool:
-    """A link sent to the bot opens its podcast: a show or an episode in Apple Podcasts (an
-    episode is also sent, as a click on it would send it), or an RSS feed. False: not a link."""
+    """A link sent to the bot opens its podcast: a show or an episode in Apple Podcasts or iVoox
+    (an episode is also sent, as a click on it would send it), or an RSS feed. False: not a link."""
     text = str(text or '').strip()
     itunes_id = apple_podcast_id(text)
+    ivoox_link = ivoox.parse(text) if itunes_id is None else None
+    if ivoox_link is not None and ivoox_link.show is None:  # an episode: its page names the show
+        ivoox_link = ivoox_link._replace(show=ivoox.show_of_episode(ivoox_link.episode))
     if itunes_id is not None:
         page = {'sId': itunes_id, 'sName': 'itunes'}
+    elif ivoox_link is not None and ivoox_link.show is not None:
+        page = feed_page(ivoox.feed_url(ivoox_link.show), ivoox_show=ivoox_link.show)
+    elif ivoox_link is not None:  # an iVoox episode whose page did not say its show
+        return False
     elif FEED_LINK.fullmatch(text):
         page = feed_page(text)
     else:
@@ -90,6 +100,8 @@ def open_link(data: ControllerParams, text) -> bool:
     episode_link = apple_episode.parse(text) if itunes_id is not None else None
     if episode_link is not None:
         send_apple_episode_later(episode_link, data['chat_id'], data['language_code'])
+    if ivoox_link is not None and ivoox_link.show is not None and ivoox_link.episode is not None:
+        send_ivoox_episode_later(page, ivoox_link.episode, data['chat_id'], data['language_code'])
     return True
 
 
