@@ -66,7 +66,7 @@ FA_MESSAGES = {
     "exitSearchMode": "🆑 پاک کردن جستجو",
     "channelConnect": "🔌 کانال‌های متصل",
     "add_by_rss": "🔗 افزودن از Apple Podcasts، RSS، OPML",
-    "addingByRssMessage": "🔗 لینک یک پادکست را بفرستید:\n• از Apple Podcasts، لینک برنامه یا یک قسمت (اشتراک‌گذاری ← کپی لینک). قسمت به‌صورت فایل همین‌جا می‌رسد\n• لینک فید RSS، مثل https://example.com/feed.xml",
+    "addingByRssMessage": "🔗 لینک یک پادکست را بفرستید:\n• از Apple Podcasts، لینک برنامه یا یک قسمت (اشتراک‌گذاری ← کپی لینک). قسمت به‌صورت فایل همین‌جا می‌رسد\n• از iVoox، لینک برنامه یا یک قسمت. قسمت هم به‌صورت فایل می‌رسد\n• لینک فید RSS، مثل https://example.com/feed.xml",
     "wrongUrl": "لینک با قالب درست مطابقت ندارد",
     "subscriptions": "🎤 اشتراک‌ها",
     "update": "📥 به‌روزرسانی",

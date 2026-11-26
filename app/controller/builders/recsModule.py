@@ -8,7 +8,7 @@ import app.service.podcast.card
 import app.service.podcast.podcast
 import app.service.record.caption
 import app.service.record.helpers
-from app.service.podcast import apple_episode
+from app.service.podcast import apple_episode, ivoox
 from lib.markup import telegram_html
 import lib.tools.time_tools.general
 from lib.requests.url import normalize_url
@@ -716,6 +716,49 @@ def send_apple_episode(link: apple_episode.Link, chat_id: int, lang_code: str) -
 def send_apple_episode_later(link: apple_episode.Link, chat_id: int, lang_code: str):
     """send_apple_episode off the incoming worker: it asks Apple and reads the feed."""
     Thread(target=send_apple_episode, args=(link, chat_id, lang_code), daemon=True).start()
+
+
+def _ivoox_channel(page: dict) -> dict | None:
+    """The channel to send from, for the podcast page an iVoox link opened (searchModule.feed_page)."""
+    if page.get('id') is not None:
+        db = SQLighter(db_path)
+        try:
+            row = db.get_channel(page['id'])
+        finally:
+            db.close()
+        if row is None:
+            return None
+        return {'id': row['id'], 'itunes_id': row['itunes_id'] or None, 'rss_link': row['rss_link']}
+    if page.get('sName') == 'itunes':
+        return {'id': None, 'itunes_id': page['sId']}
+    return {'id': None, 'rss_link': page.get('sId')}
+
+
+def send_ivoox_episode(page: dict, episode: str, chat_id: int, lang_code: str) -> bool:
+    """The episode an iVoox link names, as a click on it would send it (the free limit counts it),
+    found in the show's feed by its number. Not there: "not found"; the show's page is open anyway."""
+    try:
+        channel = _ivoox_channel(page)
+        root = False
+        if channel is not None and channel.get('itunes_id') is not None:
+            root, _ = app.service.podcast.podcast.podcast_info_query(
+                {'entity': 'podcast', 'id': channel['itunes_id']}, cached=True)
+        elif channel is not None and channel.get('rss_link'):
+            root, _ = app.service.podcast.podcast.podcast_info_query(
+                {'rss_link': channel['rss_link']}, 'rss', cached=True)
+        guid = ivoox.episode_guid(root, episode)
+        if guid is None:
+            render_messages(chat_id, [{'type': 'text', 'text': get_message('notFoundOrFuture', lang_code)}])
+            return False
+        return send_record_direct(channel, chat_id, lang_code, None, None, guid=guid)
+    except Exception as e:
+        logger.warn("ivoox episode link:", episode, e)
+        return False
+
+
+def send_ivoox_episode_later(page: dict, episode: str, chat_id: int, lang_code: str):
+    """send_ivoox_episode off the incoming worker: it reads the feed."""
+    Thread(target=send_ivoox_episode, args=(dict(page), episode, chat_id, lang_code), daemon=True).start()
 
 
 def send_record_thread(input_data, thonbot):

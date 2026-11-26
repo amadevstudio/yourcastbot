@@ -1127,31 +1127,37 @@ messages = {
         "ru": {
             "ro_msg": emojiCodes.get('link') + " " + ("Пришлите ссылку на подкаст:\n"
                     "• из Apple Podcasts, на подкаст или на выпуск (Поделиться → Скопировать ссылку). Выпуск придёт сюда файлом\n"
+                    "• из iVoox, на подкаст или на выпуск. Выпуск тоже придёт файлом\n"
                     "• на RSS-ленту, например https://example.com/feed.xml")
         },
         "en": {
             "ro_msg": emojiCodes.get('link') + " " + ("Send a podcast link:\n"
                     "• from Apple Podcasts, to a show or an episode (Share → Copy Link). The episode arrives here as a file\n"
+                    "• from iVoox, to a show or an episode. The episode arrives as a file too\n"
                     "• to an RSS feed, like https://example.com/feed.xml")
         },
         "pt-BR": {
             "ro_msg": emojiCodes.get('link') + " " + ("Envie o link de um podcast:\n"
                     "• do Apple Podcasts, de um programa ou de um episódio (Compartilhar → Copiar Link). O episódio chega aqui como arquivo\n"
+                    "• do iVoox, de um programa ou de um episódio. O episódio também chega como arquivo\n"
                     "• de um feed RSS, como https://example.com/feed.xml")
         },
         "es": {
             "ro_msg": emojiCodes.get('link') + " " + ("Envía el enlace de un pódcast:\n"
                     "• de Apple Podcasts, de un programa o de un episodio (Compartir → Copiar enlace). El episodio llega aquí como archivo\n"
+                    "• de iVoox, de un programa o de un episodio. El episodio también llega como archivo\n"
                     "• de un feed RSS, como https://example.com/feed.xml")
         },
         "de": {
             "ro_msg": emojiCodes.get('link') + " " + ("Schick einen Podcast-Link:\n"
                     "• aus Apple Podcasts, zu einer Sendung oder einer Folge (Teilen → Link kopieren). Die Folge kommt hier als Datei an\n"
+                    "• aus iVoox, zu einer Sendung oder einer Folge. Auch die Folge kommt als Datei an\n"
                     "• zu einem RSS-Feed, etwa https://example.com/feed.xml")
         },
         "he": {
             "ro_msg": emojiCodes.get('link') + " " + ("שלחו קישור לפודקאסט:\n"
                     "• מ-Apple Podcasts, לתוכנית או לפרק (שיתוף → העתקת קישור). הפרק יגיע לכאן כקובץ\n"
+                    "• מ-iVoox, לתוכנית או לפרק. גם הפרק יגיע כקובץ\n"
                     "• לפיד RSS, למשל https://example.com/feed.xml")
         }
     },

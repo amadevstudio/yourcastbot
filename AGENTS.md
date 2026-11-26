@@ -556,6 +556,20 @@ page: a link to a podcast, or an OPML file. A link there or in search
   format, so second). Neither knowing it, or a guid our copy of the feed
   lacks: "not found", the page is open anyway. Asked for 2026-11-07: share
   the link, get the file to listen offline.
+- iVoox (`app/service/podcast/ivoox.py`; asked for 2026-11-26 by a
+  Spanish-speaking reader: its shows were polled already, its links opened
+  an empty page, the show's web page read as a feed). A show's page (`_sq_f<show>`), its
+  feed (`_fg_f<show>`) or a short link (`go.ivoox.com/sq/<n>`, `f1<n>`) opens
+  the show by its feed `feed_fg_f<show>_filtro_1.xml`, or the channel we poll
+  from that show whatever the slug of its address (`ivoox.stored_feed`), then
+  matched as any feed (below). An episode (`_rf_<episode>`, `go.ivoox.com/rf/`)
+  does not name its show: its web page does (schema.org `partOfSeries`, else
+  the "Episodio de" link; a fetch in the incoming worker, `public_only`,
+  6 s); the show's page opens and the episode is queued as a click
+  (`recsModule.send_ivoox_episode`, off the incoming worker), found in the
+  feed by its number in the guid, link or file. A page that names no show is
+  "wrong link"; an episode the feed lacks is "not found", the page open.
+  The link page names iVoox on a line of its own.
 - Any other http(s) link is a feed, matched as an OPML import matches one
   (`searchModule.feed_page`, `opml.resolve`): a channel we poll at that
   address, else the catalog's show with that feed (iTunes-listed delivery),
@@ -563,7 +577,8 @@ page: a link to a podcast, or an OPML file. A link there or in search
   from the first commit) and said "wrong link" to every other feed; fetches
   of a feed's URL are `public_only` (Episode delivery), as for OPML.
 
-Locks: `python app/service/podcast/test_apple_episode.py` (CD gate),
+Locks: `python app/service/podcast/test_apple_episode.py`,
+`python app/service/podcast/test_ivoox.py` (CD gates),
 `python app/controller/builders/test_latest_episode.py`,
 `python tools/botsim/test_botsim.py`.
 
