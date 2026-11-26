@@ -558,8 +558,8 @@ page: a link to a podcast, or an OPML file. A link there or in search
   the link, get the file to listen offline.
 - iVoox (`app/service/podcast/ivoox.py`; asked for 2026-11-26 by a
   Spanish-speaking reader: its shows were polled already, its links opened
-  an empty page, the show's web page read as a feed). A show's page (`_sq_f<show>`), its
-  feed (`_fg_f<show>`) or a short link (`go.ivoox.com/sq/<n>`, `f1<n>`) opens
+  an empty page, the show's web page read as a feed). A show's page (`_sq_f<show>`) or a
+  short link (`go.ivoox.com/sq/<n>`, `f1<n>`) opens
   the show by its feed `feed_fg_f<show>_filtro_1.xml`, or the channel we poll
   from that show whatever the slug of its address (`ivoox.stored_feed`), then
   matched as any feed (below). An episode (`_rf_<episode>`, `go.ivoox.com/rf/`)
@@ -569,7 +569,10 @@ page: a link to a podcast, or an OPML file. A link there or in search
   (`recsModule.send_ivoox_episode`, off the incoming worker), found in the
   feed by its number in the guid, link or file. A page that names no show is
   "wrong link"; an episode the feed lacks is "not found", the page open.
-  The link page names iVoox on a line of its own.
+  The link page names iVoox on a line of its own. A feed (`_fg_`) is taken
+  as it is, as any RSS link: a fan who pays for a show's episodes makes a
+  private feed of them on iVoox (Mis Apoyos), and the public feed in its
+  place would lose them.
 - Any other http(s) link is a feed, matched as an OPML import matches one
   (`searchModule.feed_page`, `opml.resolve`): a channel we poll at that
   address, else the catalog's show with that feed (iTunes-listed delivery),

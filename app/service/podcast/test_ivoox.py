@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""iVoox links (app/service/podcast/ivoox.py): a show's page, feed and short link name its feed;
+"""iVoox links (app/service/podcast/ivoox.py): a show's page and short link name its feed (a feed
+is taken as it is);
 an episode's page names its show; the feed's item is found by the episode's number.
 
 No network: the episode page is a made-up one shaped as iVoox's. Run from the repo root:
@@ -20,17 +21,18 @@ def test_parse():
     show = ivoox.Link('1234567', None)
     assert ivoox.parse('https://www.ivoox.com/podcast-some-show_sq_f1234567_1.html') == show
     assert ivoox.parse('  https://ivoox.com/podcast-some-show_sq_f1234567_1.html?utm=x ') == show
-    assert ivoox.parse('http://www.ivoox.com/some-show_fg_f1234567_filtro_1.xml') == show
-    assert ivoox.parse('https://feeds.ivoox.com/feed_fg_f1234567_filtro_1.xml') == show
     assert ivoox.parse('https://go.ivoox.com/sq/234567') == show  # the short link drops the 1
     episode = ivoox.Link(None, '987654321')
     assert ivoox.parse('https://www.ivoox.com/an-episode-title-audios-mp3_rf_987654321_1.html') == episode
     assert ivoox.parse('https://go.ivoox.com/rf/987654321') == episode
     assert ivoox.parse('Escucha esto: https://www.ivoox.com/x-audios-mp3_rf_987654321_1.html') == episode
+    for feed in ('http://www.ivoox.com/some-show_fg_f1234567_filtro_1.xml',
+                 'https://feeds.ivoox.com/feed_fg_f1234567_filtro_1.xml?token=made-up'):
+        assert ivoox.parse(feed) is None, feed  # a feed, a fan's private one too, is taken as it is
     for other in ('https://www.ivoox.com/', 'https://example.com/podcast_sq_f1234567_1.html',
                   'https://podcasts.apple.com/us/podcast/x/id123', 'ivoox', None, ''):
         assert ivoox.parse(other) is None, other
-    print("ok  show pages, feeds, short links and episode links; other links are not iVoox")
+    print("ok  show pages, short links and episode links; feeds as they are; other links are not iVoox")
 
 
 def test_feeds():
